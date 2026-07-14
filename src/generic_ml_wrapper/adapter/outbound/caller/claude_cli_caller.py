@@ -23,7 +23,11 @@ if TYPE_CHECKING:
 
 BINARY = "claude"
 _SETTINGS = Path.home() / ".claude" / "settings.json"
-_STATUSLINE: dict[str, object] = {"type": "command", "command": "gmlw statusline", "padding": 0}
+_STATUSLINE: dict[str, object] = {
+    "type": "command",
+    "command": status_line_config.statusline_command(),
+    "padding": 0,
+}
 
 
 class ClaudeCliCaller(CliCaller):

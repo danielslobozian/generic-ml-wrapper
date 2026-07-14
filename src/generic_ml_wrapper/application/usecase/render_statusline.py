@@ -5,11 +5,16 @@
 from __future__ import annotations
 
 import json
-from typing import cast
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
-    render_job_usage,
     render_statusline,
+    render_usage_row,
 )
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
@@ -59,25 +64,49 @@ class RenderStatuslineUseCase(RenderStatusline):
         if job and session and status.session_cost_usd is not None:
             self._usage.record_session_cost(job, session, status.session_cost_usd)
         line = render_statusline(status, self._workspace.inspect())
-        footer = self._job_footer(job) if job else ""
+        footer = self._usage_footer(job, session) if job else ""
         if not footer:
             return line
         return f"{line}\n{footer}" if line else footer
 
-    def _job_footer(self, job: str) -> str:
+    def _usage_footer(self, job: str, session: str | None) -> str:
+        """The usage rows below the live line: session, then job total across sessions.
+
+        The current session's usage comes first; the whole-job total is added only when
+        the job spans other sessions. Empty when the job has no recorded activity.
+        """
         turns = self._turns.turns_for_job(job)
         costs = self._usage.session_costs(job)
         if not turns and not costs:
             return ""
-        tokens = sum(
-            turn.input_tokens
-            + turn.output_tokens
-            + turn.cache_creation_tokens
-            + turn.cache_read_tokens
-            for turn in turns
+        rows: list[str] = []
+        if session is not None:
+            session_turns = [turn for turn in turns if turn.session_id == session]
+            rows.append(
+                render_usage_row(
+                    "session",
+                    session,
+                    len(session_turns),
+                    _tokens(session_turns),
+                    costs.get(session, 0.0),
+                )
+            )
+            spans_other_sessions = any(turn.session_id != session for turn in turns) or any(
+                other != session for other in costs
+            )
+            if not spans_other_sessions:
+                return rows[0]
+        rows.append(
+            render_usage_row("job", job, len(turns), _tokens(turns), round(sum(costs.values()), 2))
         )
-        cost = round(sum(costs.values()), 2)
-        return render_job_usage(job, len(turns), tokens, cost)
+        return "\n".join(rows)
+
+
+def _tokens(turns: Sequence[TurnUsage]) -> int:
+    return sum(
+        turn.input_tokens + turn.output_tokens + turn.cache_creation_tokens + turn.cache_read_tokens
+        for turn in turns
+    )
 
 
 def _decode(payload_json: str) -> dict[str, object]:

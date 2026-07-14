@@ -9,8 +9,8 @@ from generic_ml_wrapper.application.domain.model.client_status import ClientStat
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
-    render_job_usage,
     render_statusline,
+    render_usage_row,
 )
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
@@ -127,13 +127,23 @@ def test_render_git_without_repo_name() -> None:
     assert render_statusline(_status(), detached) == "git wip"
 
 
-# ── job usage footer ──
-def test_render_job_usage_row_with_turns() -> None:
-    assert render_job_usage("JOB-1", 3, 45194, 0.43) == "  job JOB-1 · 3 turns · 45194 tok · $0.43"
+# ── usage footer rows ──
+def test_render_usage_row_with_turns() -> None:
+    assert (
+        render_usage_row("job", "JOB-1", 3, 45194, 0.43)
+        == "  job JOB-1 · 3 turns · 45194 tok · $0.43"
+    )
 
 
-def test_render_job_usage_row_without_turns_shows_only_cost() -> None:
-    assert render_job_usage("JOB-1", 0, 0, 0.43) == "  job JOB-1 · $0.43"
+def test_render_usage_row_without_turns_shows_only_cost() -> None:
+    assert render_usage_row("job", "JOB-1", 0, 0, 0.43) == "  job JOB-1 · $0.43"
+
+
+def test_render_usage_row_session_label() -> None:
+    assert (
+        render_usage_row("session", "JOB-1_002", 2, 100, 0.10)
+        == "  session JOB-1_002 · 2 turns · 100 tok · $0.10"
+    )
 
 
 # ── use case ──
@@ -153,7 +163,7 @@ def test_use_case_records_cost_and_renders() -> None:
     assert usage.recorded == [("JOB-1", "JOB-1_001", 0.4321)]
 
 
-def test_use_case_appends_job_usage_footer_when_metered() -> None:
+def test_use_case_shows_only_the_session_row_for_a_single_session() -> None:
     turns = FakePerTurnStore(
         [
             TurnUsage(
@@ -162,7 +172,23 @@ def test_use_case_appends_job_usage_footer_when_metered() -> None:
         ]
     )
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
-    assert out == "  job JOB-1 · 1 turns · 45194 tok · $0.00"  # payload empty → footer only
+    # one session → just the current-session row (no separate job total)
+    assert out == "  session JOB-1_001 · 1 turns · 45194 tok · $0.00"
+
+
+def test_use_case_shows_session_then_job_row_across_sessions() -> None:
+    turns = FakePerTurnStore(
+        [
+            TurnUsage("JOB-1_001", 100, 20, None, "m"),  # a prior session
+            TurnUsage("JOB-1_002", 300, 40, None, "m"),  # the current session
+            TurnUsage("JOB-1_002", 10, 5, None, "m"),
+        ]
+    )
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
+    # current session first, then the job total across both sessions
+    assert out == (
+        "  session JOB-1_002 · 2 turns · 355 tok · $0.00\n  job JOB-1 · 3 turns · 475 tok · $0.00"
+    )
 
 
 def test_use_case_has_no_footer_without_job_usage() -> None:
