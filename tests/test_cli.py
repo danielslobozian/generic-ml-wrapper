@@ -32,6 +32,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
     WorkflowExistsError,
 )
+from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.inbound.set_credential import (
     SetCredential,
@@ -62,15 +63,25 @@ def _config_absent(*_: object, **__: object) -> bool:
     return False
 
 
+class _Greeting(RenderGreeting):
+    def __init__(self, text: str | None = None) -> None:
+        self._text = text
+
+    def execute(self) -> str | None:
+        return self._text
+
+
 @pytest.fixture(autouse=True)
 def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep ``main``'s self-init from touching the real ~/.gmlw during CLI tests.
 
     Also pin ``config_exists`` to ``True`` so ``main`` takes the (stubbed) bootstrap
-    branch, not the first-run branch — first-run wiring is exercised on its own below.
+    branch, not the first-run branch — first-run wiring is exercised on its own below —
+    and stub the host greeting off so ``start`` tests don't read the real config.
     """
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
     monkeypatch.setattr(app.config, "config_exists", _config_present)
+    monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting(None))
 
 
 def test_parser_parses_start_with_flags() -> None:
@@ -458,6 +469,42 @@ def test_first_run_is_silent_when_multi_client_unresolved(
 
 def test_build_first_run_init_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_first_run_init(), FirstRunInit)
+
+
+def test_first_run_announces_the_chosen_persona(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app.config, "config_exists", _config_absent)
+    outcome = FirstRunOutcome(found=["cursor"], chosen="cursor", persona="butler")
+    monkeypatch.setattr(app, "build_first_run_init", lambda: _FakeFirstRun(outcome, []))
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    assert app.main(["jobs"]) == 0
+    assert "persona 'butler' selected" in capsys.readouterr().err
+
+
+def test_start_prints_the_host_greeting_to_stderr(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting("Good evening, Daniel."))
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> int:
+            return 0
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["start", "JOB-1"]) == 0
+    captured = capsys.readouterr()
+    assert "Good evening, Daniel." in captured.err  # greeting on stderr, not stdout
+    assert "Good evening, Daniel." not in captured.out
+
+
+def test_build_render_greeting_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_render_greeting(), RenderGreeting)
 
 
 def test_creds_set_reads_stdin_and_stores_without_echoing(

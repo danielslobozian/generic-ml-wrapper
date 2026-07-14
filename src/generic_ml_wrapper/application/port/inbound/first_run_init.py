@@ -16,10 +16,13 @@ class FirstRunOutcome:
         found: The installed clients detected, in canonical order (empty when none).
         chosen: The client seeded as the default, or ``None`` when none was chosen
             (nothing installed, or a non-interactive multi-client run).
+        persona: The persona seeded into ``[companion]``, or ``None`` when the user
+            skipped it or the run was non-interactive.
     """
 
     found: list[str]
     chosen: str | None
+    persona: str | None = None
 
 
 class FirstRunInit(ABC):

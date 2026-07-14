@@ -192,9 +192,12 @@ class CompanionSettings:
     Attributes:
         persona: The selected persona name, or ``None`` — the companion is invisible
             (no injected persona, no host greeting) until one is chosen.
+        name: The name the host greeting addresses the user by, or ``None`` to fall
+            back (to the OS user today; to the learned name once that lands).
     """
 
     persona: str | None
+    name: str | None
 
 
 def companion(path: Path | None = None) -> CompanionSettings:
@@ -206,8 +209,13 @@ def companion(path: Path | None = None) -> CompanionSettings:
     Returns:
         The resolved settings; ``persona`` is ``None`` unless ``[companion] persona`` is set.
     """
-    value = _table(_load(path), "companion").get("persona")
-    return CompanionSettings(persona=value if isinstance(value, str) and value else None)
+    table = _table(_load(path), "companion")
+    persona = table.get("persona")
+    name = table.get("name")
+    return CompanionSettings(
+        persona=persona if isinstance(persona, str) and persona else None,
+        name=name if isinstance(name, str) and name else None,
+    )
 
 
 @dataclass(frozen=True)
