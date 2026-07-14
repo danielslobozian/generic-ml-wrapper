@@ -1,0 +1,17 @@
+{
+  "include": [
+    "src",
+    "tests"
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "strict",
+  "executionEnvironments": [
+    {
+      // Tests are strict too, minus two pytest/white-box idioms: they inspect
+      // adapter internals and define autouse fixtures pyright can't see are used.
+      "root": "tests",
+      "reportPrivateUsage": false,
+      "reportUnusedFunction": false
+    }
+  ]
+}

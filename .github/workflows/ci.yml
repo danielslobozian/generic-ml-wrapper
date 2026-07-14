@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# CI is a thin caller of nox (see noxfile.py), run through uv from the committed
+# uv.lock -- so the check here is byte-for-byte the local gate AND every build-time
+# input is pinned: GitHub Actions by commit SHA, uv by [tool.uv] required-version,
+# and nox by the lock (`uv run --frozen nox`). A dependency -- or a tool that runs
+# the gate -- can only move via a deliberate `uv lock --upgrade` or a SHA bump.
+# lint/typecheck/imports/coverage are version-independent (their own single jobs, no
+# --python filter, which would silently drop a session declaring no interpreter);
+# tests fan out across the interpreter matrix.
+env:
+  UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Run tests (nox from the lock)
+        run: uv run --frozen nox --python ${{ matrix.python-version }} -s tests
+
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Lint + format check (nox from the lock)
+        run: uv run --frozen nox -s lint
+
+  typecheck:
+    name: typecheck (pyright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Type check (nox from the lock)
+        run: uv run --frozen nox -s typecheck
+
+  import-contracts:
+    name: architecture contracts (import-linter)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Check architecture contracts (nox from the lock)
+        run: uv run --frozen nox -s imports
+
+  coverage:
+    name: coverage (>=80%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Tests with coverage floor (nox from the lock)
+        run: uv run --frozen nox -s coverage
+
+  # A single, stable check that rolls up every gate job, so branch protection can
+  # require "ci" instead of every matrix + gate job name.
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    needs: [test, lint, typecheck, import-contracts, coverage]
+    if: ${{ always() }}
+    steps:
+      - name: All gate jobs passed
+        run: |
+          results="${{ needs.test.result }} ${{ needs.lint.result }} ${{ needs.typecheck.result }} ${{ needs.import-contracts.result }} ${{ needs.coverage.result }}"
+          echo "gate results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ]; then
+              echo "a gate job did not pass"
+              exit 1
+            fi
+          done
+          echo "all gate jobs passed"

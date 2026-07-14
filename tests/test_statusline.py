@@ -1,0 +1,185 @@
+# SPDX-FileCopyrightText: 2026 Daniel Slobozian
+# SPDX-License-Identifier: Apache-2.0
+"""Tests for status parsing, rendering, and the RenderStatusline use case."""
+
+import json
+
+from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
+from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.domain.model.workspace import Workspace
+from generic_ml_wrapper.application.domain.service.statusline_renderer import (
+    render_job_usage,
+    render_statusline,
+)
+from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
+from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
+from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+
+_CLAUDE_PAYLOAD: dict[str, object] = {
+    "model": {"display_name": "Opus 4.8"},
+    "context_window": {"used_percentage": 34},
+    "cost": {"total_cost_usd": 0.4321},
+    "rate_limits": {
+        "five_hour": {"used_percentage": 12},
+        "seven_day": {"used_percentage": 47},
+    },
+}
+
+_NO_WORKSPACE = Workspace(folder=None, repo=None, branch=None, short_sha=None, dirty=0)
+_REPO = Workspace(folder="~/dev/app", repo="app", branch="main", short_sha="abc1234", dirty=3)
+
+
+class FakeUsageStore(UsageStorePort):
+    def __init__(self) -> None:
+        self.recorded: list[tuple[str, str, float]] = []
+
+    def record_session_cost(self, job: str, session: str, cost_usd: float) -> None:
+        self.recorded.append((job, session, cost_usd))
+
+    def session_costs(self, job: str) -> dict[str, float]:
+        return {}
+
+
+class FakePerTurnStore(PerTurnMeteringPort):
+    def __init__(self, turns: list[TurnUsage] | None = None) -> None:
+        self._turns = turns or []
+
+    def record(self, job: str, turn: TurnUsage) -> None:
+        raise NotImplementedError
+
+    def turns_for_job(self, job: str) -> list[TurnUsage]:
+        return self._turns
+
+
+class FakeWorkspaceInspector(WorkspaceInspectorPort):
+    def __init__(self, workspace: Workspace) -> None:
+        self.workspace = workspace
+
+    def inspect(self) -> Workspace:
+        return self.workspace
+
+
+def _status(**overrides: object) -> ClientStatus:
+    fields: dict[str, object] = {
+        "model": None,
+        "context_pct": None,
+        "session_cost_usd": None,
+        "extras": (),
+    }
+    fields.update(overrides)
+    return ClientStatus(**fields)  # type: ignore[arg-type]
+
+
+# ── parser ──
+def test_claude_parser_reads_the_fields() -> None:
+    status = ClaudeStatusParser().parse(_CLAUDE_PAYLOAD)
+    assert status.model == "Opus 4.8"
+    assert status.context_pct == 34
+    assert status.session_cost_usd == 0.4321
+    assert status.extras == ("quota 5h 12% · wk 47%",)
+
+
+def test_claude_parser_reads_partial_quota() -> None:
+    status = ClaudeStatusParser().parse({"rate_limits": {"five_hour": {"used_percentage": 80}}})
+    assert status.extras == ("quota 5h 80%",)
+
+
+def test_claude_parser_tolerates_missing_fields() -> None:
+    parsed = ClaudeStatusParser().parse({})
+    assert parsed == _status()
+    assert parsed.extras == ()
+
+
+# ── renderer ──
+def test_render_omits_missing_fields() -> None:
+    assert render_statusline(_status(), _NO_WORKSPACE) == ""
+    assert render_statusline(_status(model="Opus 4.8"), _NO_WORKSPACE) == "Opus 4.8"
+
+
+def test_render_full_line() -> None:
+    status = _status(
+        model="Opus 4.8", context_pct=34, extras=("quota 5h 12% · wk 47%",), session_cost_usd=0.43
+    )
+    line = render_statusline(status, _REPO)
+    assert "git app/main abc1234 dirty:3" in line
+    assert "📁 ~/dev/app" in line
+    assert "Opus 4.8" in line
+    assert "ctx 34%" in line
+    assert "quota 5h 12% · wk 47%" in line
+    assert "$0.43" in line
+
+
+def test_render_places_extras_between_context_and_cost() -> None:
+    status = _status(context_pct=34, extras=("quota 5h 12%", "plan auto 8%"), session_cost_usd=0.43)
+    line = render_statusline(status, _NO_WORKSPACE)
+    assert line == "ctx 34%  ·  quota 5h 12%  ·  plan auto 8%  ·  $0.43"
+
+
+def test_render_git_omits_sha_and_dirty_when_clean() -> None:
+    clean = Workspace(folder=None, repo="app", branch="main", short_sha=None, dirty=0)
+    assert render_statusline(_status(), clean) == "git app/main"
+
+
+def test_render_git_without_repo_name() -> None:
+    detached = Workspace(folder=None, repo=None, branch="wip", short_sha=None, dirty=0)
+    assert render_statusline(_status(), detached) == "git wip"
+
+
+# ── job usage footer ──
+def test_render_job_usage_row_with_turns() -> None:
+    assert render_job_usage("JOB-1", 3, 45194, 0.43) == "  job JOB-1 · 3 turns · 45194 tok · $0.43"
+
+
+def test_render_job_usage_row_without_turns_shows_only_cost() -> None:
+    assert render_job_usage("JOB-1", 0, 0, 0.43) == "  job JOB-1 · $0.43"
+
+
+# ── use case ──
+def _use_case(
+    usage: FakeUsageStore, workspace: Workspace, turns: FakePerTurnStore | None = None
+) -> RenderStatuslineUseCase:
+    return RenderStatuslineUseCase(
+        ClaudeStatusParser(), usage, FakeWorkspaceInspector(workspace), turns or FakePerTurnStore()
+    )
+
+
+def test_use_case_records_cost_and_renders() -> None:
+    usage = FakeUsageStore()
+    line = _use_case(usage, _REPO).execute(json.dumps(_CLAUDE_PAYLOAD), "JOB-1", "JOB-1_001")
+    assert "$0.43" in line
+    assert "git app/main" in line
+    assert usage.recorded == [("JOB-1", "JOB-1_001", 0.4321)]
+
+
+def test_use_case_appends_job_usage_footer_when_metered() -> None:
+    turns = FakePerTurnStore(
+        [
+            TurnUsage(
+                "JOB-1_001", 3106, 7, None, "m", cache_creation_tokens=42081, cache_read_tokens=0
+            )
+        ]
+    )
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
+    assert out == "  job JOB-1 · 1 turns · 45194 tok · $0.00"  # payload empty → footer only
+
+
+def test_use_case_has_no_footer_without_job_usage() -> None:
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE).execute(
+        json.dumps(_CLAUDE_PAYLOAD), "JOB-1", "JOB-1_001"
+    )
+    assert "\n" not in out  # no turns recorded and the fake reports no costs
+
+
+def test_use_case_skips_recording_without_job_or_session() -> None:
+    usage = FakeUsageStore()
+    _use_case(usage, _NO_WORKSPACE).execute(json.dumps(_CLAUDE_PAYLOAD), None, None)
+    assert usage.recorded == []
+
+
+def test_use_case_tolerates_bad_json() -> None:
+    usage = FakeUsageStore()
+    line = _use_case(usage, _NO_WORKSPACE).execute("not json", "J", "J_1")
+    assert line == ""
+    assert usage.recorded == []

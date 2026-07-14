@@ -1,0 +1,57 @@
+# .pre-commit-config.yaml -- the gates that run BEFORE a commit is written.
+#
+# A failing hook rejects the commit, so malformed code can never reach local
+# history (and therefore can never be pushed). The linters are local hooks backed
+# by the project's own .venv, so no extra environment and no network is needed.
+#
+# One-time setup after cloning:
+#   nox -s dev
+#   .venv/bin/pre-commit install
+#   .venv/bin/pre-commit install --hook-type commit-msg
+#
+# Run manually against all files:
+#   .venv/bin/pre-commit run --all-files
+#
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff (lint)
+        entry: .venv/bin/ruff check .
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: lint-imports
+        name: import-linter (architecture contracts)
+        entry: .venv/bin/lint-imports
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: ruff-format
+        name: ruff (format check)
+        entry: .venv/bin/ruff format --check .
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: pyright
+        name: pyright (strict type checking)
+        entry: .venv/bin/pyright --pythonpath .venv/bin/python
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: guard-branch
+        name: branch guard (no commits to main; naming convention)
+        entry: tools/hooks/guard-branch.sh
+        language: script
+        pass_filenames: false
+        always_run: true
+
+      - id: no-ai-attribution
+        name: no AI attribution in commit message
+        entry: tools/hooks/check-commit-msg.sh
+        language: script
+        stages: [commit-msg]

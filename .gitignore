@@ -1,0 +1,44 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test / coverage / tooling caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.nox/
+.ruff_cache/
+coverage.xml
+
+# Editors / OS / tools
+.idea/
+.vscode/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Secrets — nothing secret belongs in this public repo, but guard anyway
+.env
+*.pem
+*.key
+secrets/
+credentials.toml
+
+# Local bootstrap/publish tooling — never published.
+# secret-audit.sh contains the literal private terms it scans for, so it must
+# not be committed (it would reintroduce the very leak it checks for).
+/setup-repo.sh
+/secret-audit.sh

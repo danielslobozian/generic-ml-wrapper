@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="gmlw">
+  <style>
+    .frame { fill: none; stroke: #ea580c; stroke-width: 3; }
+    .hit { fill: #ea580c; }
+    .bar { fill: none; stroke: #1f2937; stroke-width: 3; }
+    @media (prefers-color-scheme: dark) {
+      .frame { stroke: #22c55e; }
+      .hit { fill: #22c55e; }
+      .bar { stroke: #f3f4f6; }
+    }
+  </style>
+  <rect class="frame" x="8" y="10" width="48" height="44" rx="6"/>
+  <rect class="hit" x="16" y="20" width="32" height="8" rx="2"/>
+  <rect class="bar" x="16" y="33" width="18" height="8" rx="2"/>
+  <rect class="bar" x="16" y="44" width="26" height="8" rx="2"/>
+</svg>

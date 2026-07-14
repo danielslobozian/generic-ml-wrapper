@@ -1,0 +1,213 @@
+# SPDX-FileCopyrightText: 2026 Daniel Slobozian
+# SPDX-License-Identifier: Apache-2.0
+"""The composition root: build the wired inbound use cases."""
+
+from __future__ import annotations
+
+import uuid
+from pathlib import Path
+
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
+    FilesystemLayoutSeeder,
+)
+from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
+from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
+    FilesystemCredentialsStore,
+)
+from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
+from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
+    FilesystemTranscriptStore,
+)
+from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
+    FilesystemWorkflowSource,
+)
+from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
+    LocalGitWorkspaceInspector,
+)
+from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
+from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
+from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
+from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
+from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
+from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
+from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
+from generic_ml_wrapper.application.port.inbound.start_job import StartJob
+from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
+from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
+from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
+from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
+from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common.spec_loader import load_class
+
+
+def _ledger() -> Ledger:
+    """The shared SQLite ledger backing the session/turn/usage stores."""
+    return Ledger(paths.LEDGER)
+
+
+def _transcript() -> TranscriptPort | None:
+    """The transcript store when ``[transcript]`` is enabled, else ``None`` (off)."""
+    settings = config.transcript()
+    if not settings.enabled:
+        return None
+    root = Path(settings.root) if settings.root else paths.TRANSCRIPTS
+    return FilesystemTranscriptStore(root)
+
+
+def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource:
+    """Build the filesystem workflow source with the standard ``~/.gmlw`` roots.
+
+    Args:
+        interceptors: The interceptor chain applied to context sections at compile.
+
+    Returns:
+        A workflow source that compiles context from workflows, profile, and rules.
+    """
+    return FilesystemWorkflowSource(paths.WORKFLOWS, paths.PROFILE, paths.RULES, interceptors)
+
+
+def _interceptor_chain() -> InterceptorChain:
+    """Build the interceptor chain from ``[[interceptors]]`` config.
+
+    A configured interceptor whose spec cannot be loaded raises ``SpecLoadError`` (the
+    CLI surfaces it) rather than being silently skipped -- a config typo should not
+    quietly disable an interceptor the user asked for.
+
+    Returns:
+        The configured chain (empty when none are configured).
+    """
+    loaded: list[tuple[str, InterceptorPort]] = []
+    for target, spec in config.interceptors():
+        # A configured-but-unloadable spec is a config error the user should see -- not a
+        # silent no-op that disables an interceptor they asked for. load_class raises
+        # SpecLoadError, which the CLI surfaces (nothing configured -> nothing loaded).
+        interceptor_class = load_class(spec, InterceptorPort)
+        # load_class guarantees a concrete subclass; the abstract-usage flag is a
+        # false positive (the generic loader resolves the exact base type).
+        loaded.append((target, interceptor_class()))  # pyright: ignore[reportAbstractUsage]
+    return InterceptorChain(loaded)
+
+
+def build_start_job() -> StartJob:
+    """Build the StartJob use case wired to the filesystem store and default callers.
+
+    Returns:
+        A ready-to-run StartJob.
+    """
+    interceptors = _interceptor_chain()
+    return StartJobUseCase(
+        store=SqliteSessionStore(_ledger()),
+        workflows=_workflow_source(interceptors),
+        callers=DefaultCliCallerProvider(
+            config.caller_overrides(),
+            metering=SqlitePerTurnStore(_ledger()),
+            transcript=_transcript(),
+            interceptors=interceptors,
+        ),
+        uuid_factory=lambda: str(uuid.uuid4()),
+        credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
+    )
+
+
+def build_list_jobs() -> ListJobs:
+    """Build the ListJobs use case wired to the filesystem store.
+
+    Returns:
+        A ready-to-run ListJobs.
+    """
+    return ListJobsUseCase(store=SqliteSessionStore(_ledger()))
+
+
+def build_list_sessions() -> ListSessions:
+    """Build the ListSessions use case wired to the filesystem store.
+
+    Returns:
+        A ready-to-run ListSessions.
+    """
+    return ListSessionsUseCase(store=SqliteSessionStore(_ledger()))
+
+
+def build_list_workflows() -> ListWorkflows:
+    """Build the ListWorkflows use case wired to the filesystem workflow source.
+
+    Returns:
+        A ready-to-run ListWorkflows.
+    """
+    return ListWorkflowsUseCase(workflows=_workflow_source(InterceptorChain(())))
+
+
+def build_set_credential() -> SetCredential:
+    """Build the SetCredential use case wired to the filesystem credentials store.
+
+    Returns:
+        A ready-to-run SetCredential.
+    """
+    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.CREDENTIALS))
+
+
+def build_bootstrap() -> Bootstrap:
+    """Build the Bootstrap use case wired to the filesystem layout seeder.
+
+    Returns:
+        A ready-to-run Bootstrap.
+    """
+    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+
+
+def build_export_usage() -> ExportUsage:
+    """Build the ExportUsage use case wired to the filesystem usage store.
+
+    Returns:
+        A ready-to-run ExportUsage.
+    """
+    return ExportUsageUseCase(
+        usage=SqliteUsageStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+    )
+
+
+def build_render_statusline() -> RenderStatusline:
+    """Build the RenderStatusline use case (Claude Code only in v0.1.0).
+
+    Returns:
+        A ready-to-run RenderStatusline.
+    """
+    return RenderStatuslineUseCase(
+        parser=ClaudeStatusParser(),
+        usage=SqliteUsageStore(_ledger()),
+        workspace=LocalGitWorkspaceInspector(),
+        turns=SqlitePerTurnStore(_ledger()),
+    )
+
+
+def build_new_workflow() -> NewWorkflow:
+    """Build the NewWorkflow use case wired to its outbound adapters.
+
+    Returns:
+        A ready-to-run NewWorkflow.
+    """
+    interceptors = _interceptor_chain()
+    return NewWorkflowUseCase(
+        workflows=_workflow_source(interceptors),
+        store=SqliteSessionStore(_ledger(), kind="authoring"),
+        callers=DefaultCliCallerProvider(
+            config.caller_overrides(),
+            metering=SqlitePerTurnStore(_ledger()),
+            transcript=_transcript(),
+            interceptors=interceptors,
+        ),
+        uuid_factory=lambda: str(uuid.uuid4()),
+    )

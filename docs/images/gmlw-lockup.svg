@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 72" width="200" height="72" fill="none" role="img" aria-label="gmlw">
+  <g transform="translate(8,14) scale(0.66)">
+    <rect x="9" y="8" width="46" height="48" rx="6" stroke="#ea580c" stroke-width="2.6"/>
+    <rect x="17" y="18" width="30" height="6" rx="2" fill="#ea580c"/>
+    <rect x="17" y="28" width="18" height="6" rx="2" stroke="#1f2937" stroke-width="2.2"/>
+    <rect x="17" y="38" width="26" height="6" rx="2" stroke="#1f2937" stroke-width="2.2"/>
+  </g>
+  <text x="58" y="47" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="32" font-weight="500" letter-spacing="-1">
+    <tspan fill="#ea580c">&gt;</tspan><tspan fill="#1f2937">gmlw</tspan>
+  </text>
+</svg>

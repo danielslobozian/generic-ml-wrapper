@@ -1,0 +1,47 @@
+name: PR hygiene
+
+# Server-side enforcement of the "no AI attribution" rule. The commit-msg hook
+# (tools/hooks/check-commit-msg.sh) covers commit messages locally, but hooks are
+# opt-in and `--no-verify`-bypassable, and a PR's title/body live only on GitHub.
+# This required check gives the rule teeth: it scans the PR title, body, AND every
+# commit message in the PR, with the SAME regex the local hook uses.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  no-ai-attribution:
+    name: no AI attribution
+    runs-on: ubuntu-latest
+    env:
+      # Kept byte-for-byte in sync with tools/hooks/check-commit-msg.sh.
+      PATTERN: 'co-authored-by:[[:space:]]*.*(claude|copilot|chatgpt|gpt-|anthropic|openai)|generated with[[:space:]]+\[?(claude|copilot|chatgpt)|🤖[[:space:]]*generated'
+    steps:
+      - name: Check PR title and body
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s\n%s' "$TITLE" "$BODY" | grep -qiE "$PATTERN"; then
+            echo "::error::PR title or body contains AI attribution -- please remove it."
+            exit 1
+          fi
+          echo "OK: no AI attribution in PR title/body."
+
+      - name: Check commit messages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          msgs=$(gh api --paginate \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits" \
+            --jq '.[].commit.message')
+          if printf '%s' "$msgs" | grep -qiE "$PATTERN"; then
+            echo "::error::A commit message contains AI attribution -- please amend it."
+            exit 1
+          fi
+          echo "OK: no AI attribution in commit messages."

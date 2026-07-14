@@ -1,0 +1,40 @@
+[importlinter]
+root_package = generic_ml_wrapper
+
+# Rule 1 — domain purity. The innermost ring models the world; it must not import
+# use cases, ports, the composition root, or any adapter. (The interceptor_chain ->
+# port.outbound.interceptor edge this catches was the sole violation at review time,
+# fixed by defining the Interceptor abstraction in the domain and having the outbound
+# InterceptorPort extend it.)
+[importlinter:contract:domain-purity]
+name = Domain must not import use cases, ports, wiring, or adapters
+type = forbidden
+source_modules =
+    generic_ml_wrapper.application.domain
+forbidden_modules =
+    generic_ml_wrapper.application.usecase
+    generic_ml_wrapper.application.port
+    generic_ml_wrapper.application.wiring
+    generic_ml_wrapper.adapter
+
+# Rule 2 — the application ring (domain + use cases + ports) is independent of the
+# adapter and composition layers. Dependencies point inward, never outward.
+[importlinter:contract:application-ring]
+name = Application ring must not import adapters or the composition root
+type = forbidden
+source_modules =
+    generic_ml_wrapper.application.domain
+    generic_ml_wrapper.application.usecase
+    generic_ml_wrapper.application.port
+forbidden_modules =
+    generic_ml_wrapper.adapter
+    generic_ml_wrapper.application.wiring
+
+# Rule 3 — ports are abstractions; use cases depend on them, never the reverse.
+[importlinter:contract:ports-no-usecases]
+name = Ports must not import use cases
+type = forbidden
+source_modules =
+    generic_ml_wrapper.application.port
+forbidden_modules =
+    generic_ml_wrapper.application.usecase

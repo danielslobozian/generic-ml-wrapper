@@ -1,0 +1,115 @@
+[build-system]
+requires = ["hatchling>=1.18"]
+build-backend = "hatchling.build"
+
+[project]
+name = "generic-ml-wrapper"
+version = "0.1.0.dev0"
+description = "A wrapper around an ML coding CLI: enter at a job, get a named resumable session, optionally driven by a workflow."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+authors = [{ name = "Daniel Slobozian" }]
+keywords = ["llm", "ai", "cli", "agent", "claude", "workflow", "wrapper", "session"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Software Development",
+  "Topic :: Utilities",
+]
+# generic-ml-cache is the record/replay cache the context compressor calls through,
+# so compressing the same context replays for free and returns an identical result.
+# core + adapters + bootstrap are the library packages (not the cli/daemon drivers).
+dependencies = [
+  "generic-ml-cache-core>=1.0.0",
+  "generic-ml-cache-adapters>=1.0.0",
+  "generic-ml-cache-bootstrap>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/danielslobozian/generic-ml-wrapper"
+Repository = "https://github.com/danielslobozian/generic-ml-wrapper"
+Issues = "https://github.com/danielslobozian/generic-ml-wrapper/issues"
+Changelog = "https://github.com/danielslobozian/generic-ml-wrapper/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7",
+  "pytest-cov",
+  "ruff>=0.6",
+  # Pinned exactly: pyright's diagnostics change between releases, so a float would
+  # silently change what `typecheck` enforces. Bump deliberately via `uv lock --upgrade`.
+  "pyright==1.1.411",
+  "import-linter>=2",
+]
+
+[dependency-groups]
+# nox runs the gates; pre-commit wires the git hooks. Bootstrap tooling, not
+# needed inside the hermetic gate envs (uv installs `dev` by default on sync).
+dev = ["nox>=2026.4.10", "pre-commit>=4.6.0"]
+
+[tool.uv]
+# Single source of truth for the uv version, local and CI: `astral-sh/setup-uv`
+# reads this when no explicit version is given, so the tool that resolves the lock
+# is pinned exactly. Bump deliberately alongside a `uv lock --upgrade`.
+required-version = "==0.11.17"
+
+[project.scripts]
+gmlw = "generic_ml_wrapper.adapter.inbound.cli.app:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/generic_ml_wrapper"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+# Demo-tape helpers are throwaway scripts for regenerating the README GIFs, not
+# shipped API — exempt from the strict lint the package is held to.
+extend-exclude = ["docs/tapes"]
+
+[tool.ruff.lint]
+# Strict from line one. ANN (mandatory annotations) and D (docstrings) are the
+# aggressive ones, kept on because the package is public and the bar is set now.
+select = [
+  "E", "W", "F",   # pycodestyle + pyflakes
+  "I",             # import sorting
+  "N",             # pep8-naming
+  "UP",            # pyupgrade
+  "B",             # flake8-bugbear
+  "BLE",           # flake8-blind-except
+  "A",             # flake8-builtins
+  "C4",            # flake8-comprehensions
+  "SIM",           # flake8-simplify
+  "PTH",           # flake8-use-pathlib
+  "RET",           # flake8-return
+  "ARG",           # flake8-unused-arguments
+  "PT",            # flake8-pytest-style
+  "TID",           # flake8-tidy-imports
+  "PL",            # pylint
+  "TRY",           # tryceratops
+  "RUF",           # ruff-specific
+  "ANN",           # flake8-annotations
+  "D",             # pydocstyle
+  "S",             # flake8-bandit
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests: asserts are the point; fakes implement port methods with unused args;
+# magic values, one-line lambdas, placeholder paths, and inline exception
+# messages are idiomatic in test setup.
+"tests/*" = ["S101", "D", "ANN", "ARG", "PLR2004", "PLW0108", "S108", "TRY003"]
+"noxfile.py" = ["D"]               # task file, not shipped API
