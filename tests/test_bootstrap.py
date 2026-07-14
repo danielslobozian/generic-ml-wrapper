@@ -24,6 +24,7 @@ def test_seeder_creates_the_layout_and_config(tmp_path: Path) -> None:
         "client": {},
         "callers": {},
         "logging": {},
+        "companion": {},
         "transcript": {},
         "compress": {},
     }
@@ -37,6 +38,7 @@ def test_seeder_bakes_in_the_chosen_default_client(tmp_path: Path) -> None:
         "client": {"default": "cursor"},
         "callers": {},
         "logging": {},
+        "companion": {},
         "transcript": {},
         "compress": {},
     }

@@ -11,7 +11,9 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSee
 if TYPE_CHECKING:
     from pathlib import Path
 
-_DIRS = ("profile/me", "profile/company", "rules", "persona")
+# The personas/ folder is seeded on demand by the persona source (packaged defaults),
+# so it is not created here.
+_DIRS = ("profile/me", "profile/company", "rules")
 _CONFIG = "config.toml"
 
 # The seed for the ``[client] default`` line: the active choice picked on first run,
@@ -81,9 +83,9 @@ __CLIENT_DEFAULT__
 # sources; [startup] decides, per mode, which are active and which are compressed. Modes:
 # default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`).
 # Sources: me.user (profile/me/*.md), me.learned (profile/me/learned*), company
-# (profile/company/*.md), rules (rules/*.md), persona (persona/*.md); a workflow run also
-# composes its base and steps. Omit all of this for the built-in per-mode defaults; the
-# default-mode defaults, shown explicitly:
+# (profile/company/*.md), rules (rules/*.md), persona (the selected persona + shared floor,
+# see [companion]); a workflow run also composes its base and steps. Omit all of this for the
+# built-in per-mode defaults; the default-mode defaults, shown explicitly:
 # [startup.default.context.me]
 # user    = { activated = true,  compression = false }
 # learned = { activated = true,  compression = false }
@@ -96,6 +98,13 @@ __CLIENT_DEFAULT__
 # [startup.workflow.context]
 # base  = { compression = false }
 # steps = { compression = true }
+
+[companion]
+# The persona gmlw adopts: its tone is injected as the `persona` context source (when that
+# source is activated above), and — coming soon — it voices a free host greeting at launch.
+# Off (invisible) until set. See the choices with: gmlw persona list. Author your own by
+# dropping a file in ~/.gmlw/personas/. Built-in: plain | companion | mentor | butler | terse.
+# persona = "companion"
 
 [compress]
 # When a source has compression = true, gmlw compresses it through generic-ml-cache

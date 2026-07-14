@@ -17,8 +17,8 @@ TRANSCRIPTS = HOME / "transcripts"
 WORKFLOWS = HOME / "workflows"
 PROFILE = HOME / "profile"
 RULES = HOME / "rules"
-# The persona folder: one tone/companion block per file, injected as a context source.
-PERSONA = HOME / "persona"
+# The personas folder: one persona per file; the selected one is injected as a source.
+PERSONAS = HOME / "personas"
 CREDENTIALS = HOME / "credentials.toml"
 # Authoring sessions (gmlw workflow new) live apart from real work jobs, so they
 # never appear in `gmlw jobs` and their spend is its own bucket.

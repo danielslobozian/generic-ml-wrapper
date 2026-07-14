@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.context_compressor import (
         ContextCompressorPort,
     )
+    from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 
 _COMMON = "_common"
 _META = "create-workflow"
@@ -47,9 +48,10 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         profile_root: Path | None = None,
         rules_root: Path | None = None,
         interceptors: InterceptorChain | None = None,
-        persona_root: Path | None = None,
+        personas: PersonaSourcePort | None = None,
         compressor: ContextCompressorPort | None = None,
         startup: Callable[[str], dict[str, config.SourceSetting]] | None = None,
+        companion: Callable[[], str | None] | None = None,
     ) -> None:
         """Bind the source to its roots and context policy.
 
@@ -58,20 +60,25 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             profile_root: The user's profile directory, or ``None`` to omit it.
             rules_root: The global rules directory, or ``None`` to omit it.
             interceptors: The per-section interceptor chain, or ``None`` for none.
-            persona_root: The persona directory, or ``None`` to omit it.
+            personas: The persona source; the selected persona (plus the shared floor)
+                is the ``persona`` context section. ``None`` omits the section.
             compressor: The typed compressor for per-source compression, or ``None``
                 to leave every source verbatim.
             startup: Resolves a mode's activation matrix; defaults to the baked-in
                 matrix (:func:`config.default_startup`), so the composition root
                 injects :func:`config.startup` to honor the user's config file.
+            companion: Resolves the selected persona name; defaults to none selected
+                (the persona section stays invisible until the composition root injects
+                :func:`config.companion`).
         """
         self._root = root
         self._profile_root = profile_root
         self._rules_root = rules_root
         self._interceptors = interceptors or InterceptorChain(())
-        self._persona_root = persona_root
+        self._personas = personas
         self._compressor = compressor
         self._startup = startup or config.default_startup
+        self._companion = companion or (lambda: None)
 
     def seed(self) -> None:
         """Copy the packaged default workflows into ``root``, never overwriting."""
@@ -217,7 +224,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
     def _read_source(self, source: ContextSource) -> str:
         """Read a profile-family source's raw text from its filesystem location."""
         if source is context_source.PERSONA:
-            return self._concat_dir(self._persona_root)
+            return self._persona()
         if source is context_source.ME_USER:
             return self._me_user()
         if source is context_source.ME_LEARNED:
@@ -225,6 +232,24 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         if source is context_source.COMPANY and self._profile_root is not None:
             return self._concat_dir(self._profile_root / "company")
         return ""
+
+    def _persona(self) -> str:
+        """Compose the selected persona's tone body over the shared floor.
+
+        Invisible (``""``) until a persona is selected and found: no source, no
+        selection, or an unknown name all yield nothing, so a stranger is never
+        greeted by a character.
+        """
+        if self._personas is None:
+            return ""
+        name = self._companion()
+        if not name:
+            return ""
+        persona = self._personas.get(name)
+        if persona is None:
+            return ""
+        parts = [persona.body, self._personas.floor()]
+        return "\n\n---\n\n".join(part for part in parts if part)
 
     def _me_user(self) -> str:
         """Concatenate ``profile/me/*.md`` — the user about the user — excluding learned."""

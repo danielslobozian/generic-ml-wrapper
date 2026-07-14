@@ -23,6 +23,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     JobId,
     WorkflowName,
 )
+from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -43,6 +44,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_export_usage,
     build_first_run_init,
     build_list_jobs,
+    build_list_personas,
     build_list_sessions,
     build_list_workflows,
     build_new_workflow,
@@ -121,6 +123,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     workflow_list = workflow_sub.add_parser("list", help="list the runnable workflows")
     _add_json_flag(workflow_list)
+
+    persona = sub.add_parser("persona", help="list the selectable personas")
+    persona_sub = persona.add_subparsers(dest="persona_command", metavar="<action>")
+    persona_list = persona_sub.add_parser("list", help="list the selectable personas")
+    _add_json_flag(persona_list)
 
     creds = sub.add_parser("creds", help="manage per-workflow credentials")
     creds_sub = creds.add_subparsers(dest="creds_command", metavar="<action>")
@@ -241,7 +248,24 @@ def format_workflows(names: list[str]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:
+def format_personas(personas: list[Persona]) -> str:
+    """Render the selectable personas as human-readable lines.
+
+    Args:
+        personas: The personas to render.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    if not personas:
+        return "No personas."
+    lines = [f'{len(personas)} persona(s)  (select with: [companion] persona = "<name>")', ""]
+    width = max(len(persona.name) for persona in personas)
+    lines += [f"  {persona.name:<{width}}  {persona.description}" for persona in personas]
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command dispatcher)
     """Run the CLI.
 
     Args:
@@ -266,6 +290,8 @@ def main(argv: list[str] | None = None) -> int:
             return _statusline()
         if args.command == "workflow":
             return _workflow(args)
+        if args.command == "persona":
+            return _persona(args)
         if args.command == "creds":
             return _creds(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
@@ -393,5 +419,17 @@ def _workflow(args: argparse.Namespace) -> int:
     if args.workflow_command == "list":
         names = build_list_workflows().execute()
         print(_as_json(names) if bool(args.json) else format_workflows(names))
+        return 0
+    return 0
+
+
+def _persona(args: argparse.Namespace) -> int:
+    if args.persona_command == "list":
+        personas = build_list_personas().execute()
+        if bool(args.json):
+            payload = [{"name": p.name, "description": p.description} for p in personas]
+            print(_as_json(payload))
+        else:
+            print(format_personas(personas))
         return 0
     return 0
