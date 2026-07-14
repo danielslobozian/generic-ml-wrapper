@@ -11,8 +11,13 @@ class LayoutSeederPort(ABC):
     """Create the wrapper's runtime directories and a default config, missing-only."""
 
     @abstractmethod
-    def ensure(self) -> None:
+    def ensure(self, default_client: str | None = None) -> None:
         """Create any missing runtime directories and seed a default config.
 
         Idempotent: existing directories and an existing config are left untouched.
+
+        Args:
+            default_client: When seeding a new config, bake this in as the active
+                ``[client] default``. ``None`` seeds the all-commented template, so
+                the built-in default applies until the file is edited.
         """

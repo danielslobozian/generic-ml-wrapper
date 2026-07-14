@@ -10,6 +10,8 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
+from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_chooser import TtyClientChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
@@ -32,6 +34,7 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
+from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunInit
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
@@ -44,6 +47,7 @@ from generic_ml_wrapper.application.port.outbound.interceptor import Interceptor
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.usecase.first_run_init import FirstRunInitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
@@ -167,6 +171,19 @@ def build_bootstrap() -> Bootstrap:
         A ready-to-run Bootstrap.
     """
     return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+
+
+def build_first_run_init() -> FirstRunInit:
+    """Build the FirstRunInit use case wired to PATH detection and a TTY chooser.
+
+    Returns:
+        A ready-to-run FirstRunInit that seeds ``~/.gmlw`` with a detected default.
+    """
+    return FirstRunInitUseCase(
+        detector=PathClientDetector(),
+        seeder=FilesystemLayoutSeeder(paths.HOME),
+        chooser=TtyClientChooser(),
+    )
 
 
 def build_export_usage() -> ExportUsage:

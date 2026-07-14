@@ -24,6 +24,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     WorkflowName,
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
+from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -40,6 +41,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_export_usage,
+    build_first_run_init,
     build_list_jobs,
     build_list_sessions,
     build_list_workflows,
@@ -253,7 +255,10 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
     # Self-initialize on a real command; skip the statusline hot path and bare help.
     if args.command not in (None, "statusline"):
-        build_bootstrap().execute()
+        if config.config_exists():
+            build_bootstrap().execute()
+        else:  # first run: detect clients, seed a config with a default baked in
+            _announce_first_run(build_first_run_init().execute())
     try:
         if args.command == "start":
             return _start(args)
@@ -277,6 +282,29 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(view)
     return 0
+
+
+def _announce_first_run(outcome: FirstRunOutcome) -> None:
+    """Narrate first-run init to stderr (stdout stays clean for view/--json output).
+
+    Args:
+        outcome: What first-run init found and chose.
+    """
+    if outcome.chosen is not None:
+        print(
+            f"gmlw: first run — set '{outcome.chosen}' as your default client. "
+            "Change it any time in ~/.gmlw/config.toml.",
+            file=sys.stderr,
+        )
+    elif not outcome.found:
+        print(
+            "gmlw: first run — no supported client found on your PATH "
+            "(claude, cursor-agent, codex, vibe). Seeded ~/.gmlw/config.toml; "
+            "install one or set [client] default there.",
+            file=sys.stderr,
+        )
+    # Several found but none chosen (non-interactive): stay silent; the built-in
+    # 'claude' default applies and the seeded config records nothing to undo.
 
 
 def _view(args: argparse.Namespace) -> str | None:

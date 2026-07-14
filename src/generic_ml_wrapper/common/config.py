@@ -24,6 +24,18 @@ def _config_path() -> Path:
     return paths.HOME / "config.toml"
 
 
+def config_exists(path: Path | None = None) -> bool:
+    """Report whether the config file is present (the first-run signal).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        ``True`` when the file exists, ``False`` on the first run before it is seeded.
+    """
+    return (path or _config_path()).exists()
+
+
 def _load(path: Path | None = None) -> dict[str, object]:
     target = path or _config_path()
     try:

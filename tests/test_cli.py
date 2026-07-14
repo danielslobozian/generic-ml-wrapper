@@ -18,6 +18,10 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     TurnRow,
     UsageReport,
 )
+from generic_ml_wrapper.application.port.inbound.first_run_init import (
+    FirstRunInit,
+    FirstRunOutcome,
+)
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
@@ -48,10 +52,23 @@ class _RecordingBootstrap(Bootstrap):
         self._calls.append("init")
 
 
+def _config_present(*_: object, **__: object) -> bool:
+    return True
+
+
+def _config_absent(*_: object, **__: object) -> bool:
+    return False
+
+
 @pytest.fixture(autouse=True)
 def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Keep ``main``'s self-init from touching the real ~/.gmlw during CLI tests."""
+    """Keep ``main``'s self-init from touching the real ~/.gmlw during CLI tests.
+
+    Also pin ``config_exists`` to ``True`` so ``main`` takes the (stubbed) bootstrap
+    branch, not the first-run branch — first-run wiring is exercised on its own below.
+    """
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
+    monkeypatch.setattr(app.config, "config_exists", _config_present)
 
 
 def test_parser_parses_start_with_flags() -> None:
@@ -362,6 +379,83 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(app.sys, "stdin", io.StringIO(""))
     assert app.main(["statusline"]) == 0
     assert calls == []
+
+
+class _FakeFirstRun(FirstRunInit):
+    def __init__(self, outcome: FirstRunOutcome, calls: list[str]) -> None:
+        self._outcome = outcome
+        self._calls = calls
+
+    def execute(self) -> FirstRunOutcome:
+        self._calls.append("first-run")
+        return self._outcome
+
+
+def test_main_runs_first_run_init_when_config_absent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    boot: list[str] = []
+    first: list[str] = []
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
+    monkeypatch.setattr(app.config, "config_exists", _config_absent)
+    monkeypatch.setattr(
+        app,
+        "build_first_run_init",
+        lambda: _FakeFirstRun(FirstRunOutcome(found=["cursor"], chosen="cursor"), first),
+    )
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    assert app.main(["jobs"]) == 0
+    assert first == ["first-run"]  # first-run ran
+    assert boot == []  # bootstrap did not
+    err = capsys.readouterr().err
+    assert "set 'cursor' as your default client" in err
+
+
+def test_first_run_announces_no_client_found(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app.config, "config_exists", _config_absent)
+    monkeypatch.setattr(
+        app,
+        "build_first_run_init",
+        lambda: _FakeFirstRun(FirstRunOutcome(found=[], chosen=None), []),
+    )
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    assert app.main(["jobs"]) == 0
+    assert "no supported client found on your PATH" in capsys.readouterr().err
+
+
+def test_first_run_is_silent_when_multi_client_unresolved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app.config, "config_exists", _config_absent)
+    monkeypatch.setattr(
+        app,
+        "build_first_run_init",
+        lambda: _FakeFirstRun(FirstRunOutcome(found=["claude", "cursor"], chosen=None), []),
+    )
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    assert app.main(["jobs"]) == 0
+    assert capsys.readouterr().err == ""  # nothing forced on a non-interactive run
+
+
+def test_build_first_run_init_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_first_run_init(), FirstRunInit)
 
 
 def test_creds_set_reads_stdin_and_stores_without_echoing(
