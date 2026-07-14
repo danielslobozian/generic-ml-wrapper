@@ -317,7 +317,10 @@ def test_statusline_command_reads_stdin_env_and_prints(
             seen["job"] = job
             return "Opus 4.8  ·  $0.43"
 
-    monkeypatch.setattr(app, "build_render_statusline", lambda: FakeUseCase())
+    def _build_statusline(*_: object) -> FakeUseCase:
+        return FakeUseCase()
+
+    monkeypatch.setattr(app, "build_render_statusline", _build_statusline)
     monkeypatch.setenv("GMLW_JOB", "JOB-1")
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"cost": {"total_cost_usd": 0.43}}'))
 
@@ -352,7 +355,10 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
         def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
             return ""
 
-    monkeypatch.setattr(app, "build_render_statusline", lambda: _Status())
+    def _build_status(*_: object) -> _Status:
+        return _Status()
+
+    monkeypatch.setattr(app, "build_render_statusline", _build_status)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO(""))
     assert app.main(["statusline"]) == 0
     assert calls == []

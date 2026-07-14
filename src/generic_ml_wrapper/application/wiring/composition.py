@@ -15,6 +15,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
     FilesystemCredentialsStore,
 )
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
+from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
     FilesystemTranscriptStore,
 )
@@ -38,6 +39,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
+from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
@@ -179,18 +181,33 @@ def build_export_usage() -> ExportUsage:
     )
 
 
-def build_render_statusline() -> RenderStatusline:
-    """Build the RenderStatusline use case (Claude Code only in v0.1.0).
+def build_render_statusline(client: str | None = None) -> RenderStatusline:
+    """Build the RenderStatusline use case, with the client's own status parser.
+
+    The status line renders for the clients that host one (claude, cursor); each
+    parses its own payload (both are Claude-Code-compatible for model/context, but
+    the allowance block differs -- claude's rate-limit quota vs cursor's plan pools).
+
+    Args:
+        client: The client whose payload is being parsed (from ``GMLW_CLIENT``);
+            selects the parser. Absent/unknown falls back to the Claude parser.
 
     Returns:
         A ready-to-run RenderStatusline.
     """
     return RenderStatuslineUseCase(
-        parser=ClaudeStatusParser(),
+        parser=_status_parser(client),
         usage=SqliteUsageStore(_ledger()),
         workspace=LocalGitWorkspaceInspector(),
         turns=SqlitePerTurnStore(_ledger()),
     )
+
+
+def _status_parser(client: str | None) -> ClientStatusParserPort:
+    """Select the status-payload parser for a client."""
+    if client == "cursor":
+        return CursorStatusParser()
+    return ClaudeStatusParser()
 
 
 def build_new_workflow() -> NewWorkflow:
