@@ -8,9 +8,11 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
     FilesystemWorkflowSource,
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 from generic_ml_wrapper.common import config
 
 
@@ -154,21 +156,64 @@ def test_me_user_excludes_learned_which_me_learned_reads(tmp_path: Path) -> None
     assert compiled.count("LEARNED FACT") == 1  # learned.md read once (me.learned), not by me.user
 
 
-def test_persona_is_composed_only_when_activated(tmp_path: Path) -> None:
-    persona = tmp_path / "persona"
-    persona.mkdir()
-    (persona / "butler.md").write_text("PERSONA TONE", encoding="utf-8")
+class _FakePersonas(PersonaSourcePort):
+    def __init__(self, personas: dict[str, Persona], floor: str = "FLOOR") -> None:
+        self._personas = personas
+        self._floor = floor
 
-    off = FilesystemWorkflowSource(tmp_path / "wf", persona_root=persona)
-    assert "PERSONA TONE" not in off.compile(CompileMode.DEFAULT)  # persona off by default
+    def seed(self) -> None:
+        pass
 
-    def startup(mode: str) -> dict[str, config.SourceSetting]:
-        settings = config.default_startup(mode)
-        settings["persona"] = config.SourceSetting(activated=True, compression=False)
-        return settings
+    def available(self) -> list[Persona]:
+        return list(self._personas.values())
 
-    on = FilesystemWorkflowSource(tmp_path / "wf", persona_root=persona, startup=startup)
-    assert "PERSONA TONE" in on.compile(CompileMode.DEFAULT)
+    def get(self, name: str) -> Persona | None:
+        return self._personas.get(name)
+
+    def floor(self) -> str:
+        return self._floor
+
+
+def _persona_on(mode: str) -> dict[str, config.SourceSetting]:
+    settings = config.default_startup(mode)
+    settings["persona"] = config.SourceSetting(activated=True, compression=False)
+    return settings
+
+
+def test_selected_persona_is_composed_with_the_floor_when_active(tmp_path: Path) -> None:
+    personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
+    source = FilesystemWorkflowSource(
+        tmp_path / "wf", personas=personas, startup=_persona_on, companion=lambda: "butler"
+    )
+    compiled = source.compile(CompileMode.DEFAULT)
+    assert "BUTLER TONE" in compiled
+    assert "FLOOR" in compiled  # the universal floor is composed beneath the persona
+
+
+def test_persona_is_invisible_when_none_selected(tmp_path: Path) -> None:
+    personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
+    source = FilesystemWorkflowSource(
+        tmp_path / "wf", personas=personas, startup=_persona_on, companion=lambda: None
+    )
+    compiled = source.compile(CompileMode.DEFAULT)
+    assert "BUTLER TONE" not in compiled
+    assert "FLOOR" not in compiled  # no selection -> not even the floor
+
+
+def test_unknown_persona_selection_is_invisible(tmp_path: Path) -> None:
+    personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
+    source = FilesystemWorkflowSource(
+        tmp_path / "wf", personas=personas, startup=_persona_on, companion=lambda: "ghost"
+    )
+    assert source.compile(CompileMode.DEFAULT) == ""  # unknown name -> nothing composed
+
+
+def test_persona_off_by_default_even_when_selected(tmp_path: Path) -> None:
+    personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
+    source = FilesystemWorkflowSource(
+        tmp_path / "wf", personas=personas, companion=lambda: "butler"
+    )  # default matrix has persona activated = False
+    assert "BUTLER TONE" not in source.compile(CompileMode.DEFAULT)
 
 
 class _RecordingCompressor(ContextCompressorPort):

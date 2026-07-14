@@ -186,6 +186,31 @@ def compress(path: Path | None = None) -> CompressSettings:
 
 
 @dataclass(frozen=True)
+class CompanionSettings:
+    """Resolved ``[companion]`` settings.
+
+    Attributes:
+        persona: The selected persona name, or ``None`` — the companion is invisible
+            (no injected persona, no host greeting) until one is chosen.
+    """
+
+    persona: str | None
+
+
+def companion(path: Path | None = None) -> CompanionSettings:
+    """Return the ``[companion]`` settings; the companion is off (invisible) by default.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The resolved settings; ``persona`` is ``None`` unless ``[companion] persona`` is set.
+    """
+    value = _table(_load(path), "companion").get("persona")
+    return CompanionSettings(persona=value if isinstance(value, str) and value else None)
+
+
+@dataclass(frozen=True)
 class SourceSetting:
     """Whether a context source is composed into a run, and whether it is compressed.
 

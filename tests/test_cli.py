@@ -10,6 +10,7 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
+from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
@@ -23,6 +24,7 @@ from generic_ml_wrapper.application.port.inbound.first_run_init import (
     FirstRunOutcome,
 )
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
+from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -547,6 +549,45 @@ def test_workflow_list_json_output(
 
 def test_build_list_workflows_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_list_workflows(), ListWorkflows)
+
+
+def test_format_personas_lists_name_and_description() -> None:
+    text = app.format_personas(
+        [Persona("butler", "A Jeeves.", "g", "b"), Persona("plain", "Neutral.", "g", "b")]
+    )
+    assert "2 persona(s)" in text
+    assert "butler" in text
+    assert "A Jeeves." in text
+
+
+def test_persona_list_prints_the_personas(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(ListPersonas):
+        def execute(self) -> list[Persona]:
+            return [Persona("butler", "A Jeeves.", "g", "b")]
+
+    monkeypatch.setattr(app, "build_list_personas", lambda: FakeUseCase())
+    assert app.main(["persona", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "butler" in out
+    assert "A Jeeves." in out
+
+
+def test_persona_list_json_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(ListPersonas):
+        def execute(self) -> list[Persona]:
+            return [Persona("butler", "A Jeeves.", "g", "b")]
+
+    monkeypatch.setattr(app, "build_list_personas", lambda: FakeUseCase())
+    assert app.main(["persona", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == [{"name": "butler", "description": "A Jeeves."}]
+
+
+def test_build_list_personas_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_list_personas(), ListPersonas)
 
 
 class _NoBootstrap(Bootstrap):

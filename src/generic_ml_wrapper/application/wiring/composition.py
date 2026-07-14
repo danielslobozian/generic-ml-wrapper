@@ -19,6 +19,9 @@ from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
 )
+from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
+    FilesystemPersonaSource,
+)
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
@@ -39,6 +42,7 @@ from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunInit
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
+from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
@@ -52,6 +56,7 @@ from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.first_run_init import FirstRunInitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
@@ -90,10 +95,29 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
         paths.PROFILE,
         paths.RULES,
         interceptors,
-        persona_root=paths.PERSONA,
+        personas=build_persona_source(),
         compressor=CacheBackedContextCompressor(),
         startup=config.startup,
+        companion=lambda: config.companion().persona,
     )
+
+
+def build_persona_source() -> FilesystemPersonaSource:
+    """Build the filesystem persona source rooted at ``~/.gmlw/personas``.
+
+    Returns:
+        A persona source that seeds and reads the packaged personas.
+    """
+    return FilesystemPersonaSource(paths.PERSONAS)
+
+
+def build_list_personas() -> ListPersonas:
+    """Build the ListPersonas use case wired to the persona source.
+
+    Returns:
+        A ready-to-run ListPersonas.
+    """
+    return ListPersonasUseCase(build_persona_source())
 
 
 def _interceptor_chain() -> InterceptorChain:

@@ -133,6 +133,15 @@ def test_startup_ignores_activation_for_intrinsic_base_and_steps(tmp_path: Path)
     assert settings["steps"].activated is True
 
 
+def test_companion_defaults_to_no_persona(tmp_path: Path) -> None:
+    assert config.companion(tmp_path / "missing.toml").persona is None  # invisible by default
+
+
+def test_companion_reads_the_selected_persona(tmp_path: Path) -> None:
+    path = _write(tmp_path, '[companion]\npersona = "butler"\n')
+    assert config.companion(path).persona == "butler"
+
+
 def test_transcript_defaults_off(tmp_path: Path) -> None:
     assert config.transcript(tmp_path / "none.toml").enabled is False
 
