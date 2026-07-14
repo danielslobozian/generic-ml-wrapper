@@ -308,7 +308,9 @@ _MAX_STATUSLINE_BYTES = 1_000_000  # a client's status payload is small JSON; ca
 
 def _statusline() -> int:
     payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
-    line = build_render_statusline().execute(
+    # The launching caller exports GMLW_CLIENT so the status line parses with the
+    # right client's parser (claude's quota vs cursor's plan block).
+    line = build_render_statusline(os.environ.get("GMLW_CLIENT")).execute(
         payload,
         os.environ.get("GMLW_JOB"),
         os.environ.get("GMLW_SESSION"),
