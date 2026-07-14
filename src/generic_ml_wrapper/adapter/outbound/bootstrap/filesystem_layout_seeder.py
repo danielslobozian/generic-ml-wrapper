@@ -33,7 +33,7 @@ _CONFIG_TEMPLATE = """\
 # Per-client caller overrides: map a client to an importable "module:Class" or
 # "/path/to/file.py:Class" spec, loaded at runtime in place of the built-in caller.
 # (This is how a private, uncommitted metering caller is plugged in.)
-# cursor = "/path/to/mitm_cursor.py:CursorCaller"
+# cursor = "/path/to/my_cursor_caller.py:CursorCaller"
 
 [logging]
 # Diagnostic verbosity on stderr: debug | info | warning | error.
