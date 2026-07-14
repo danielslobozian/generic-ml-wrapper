@@ -1,0 +1,28 @@
+# Publish to PyPI via Trusted Publishing (OIDC) when a GitHub Release is published.
+# No token or secret: PyPI trusts this exact repo + workflow + environment, and
+# GitHub mints a short-lived OIDC credential for the upload. Every build-time input
+# is pinned (Actions by commit SHA, uv by [tool.uv] required-version).
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  pypi-publish:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC token for Trusted Publishing
+      contents: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+      - name: Build sdist + wheel
+        run: uv build
+      - name: Publish to PyPI (Trusted Publishing)
+        run: uv publish --trusted-publishing always
