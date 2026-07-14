@@ -48,6 +48,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_sessions,
     build_list_workflows,
     build_new_workflow,
+    build_render_greeting,
     build_render_statusline,
     build_set_credential,
     build_start_job,
@@ -329,6 +330,11 @@ def _announce_first_run(outcome: FirstRunOutcome) -> None:
             "install one or set [client] default there.",
             file=sys.stderr,
         )
+    if outcome.persona is not None:
+        print(
+            f"gmlw: persona '{outcome.persona}' selected — it will greet you at launch.",
+            file=sys.stderr,
+        )
     # Several found but none chosen (non-interactive): stay silent; the built-in
     # 'claude' default applies and the seeded config records nothing to undo.
 
@@ -381,6 +387,11 @@ def _start(args: argparse.Namespace) -> int:
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
     )
+    # The free host greeting (when a companion persona is set), to stderr so it stays
+    # out of any piped stdout — printed before the client takes over the terminal.
+    greeting = build_render_greeting().execute()
+    if greeting:
+        print(greeting, file=sys.stderr)
     try:
         return build_start_job().execute(command)
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:

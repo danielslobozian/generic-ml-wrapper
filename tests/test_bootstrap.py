@@ -44,6 +44,14 @@ def test_seeder_bakes_in_the_chosen_default_client(tmp_path: Path) -> None:
     }
 
 
+def test_seeder_bakes_in_the_chosen_persona(tmp_path: Path) -> None:
+    FilesystemLayoutSeeder(tmp_path).ensure(persona="butler")
+    config = tmp_path / "config.toml"
+    parsed = tomllib.loads(config.read_text(encoding="utf-8"))
+    assert parsed["companion"] == {"persona": "butler"}  # active; everything else commented
+    assert parsed["client"] == {}
+
+
 def test_seeder_is_idempotent_and_preserves_an_edited_config(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
     (tmp_path / "rules").mkdir()
@@ -59,8 +67,8 @@ def test_use_case_delegates_to_the_seeder() -> None:
     calls: list[str] = []
 
     class FakeSeeder(LayoutSeederPort):
-        def ensure(self, default_client: str | None = None) -> None:
-            calls.append(f"ensure:{default_client}")
+        def ensure(self, default_client: str | None = None, persona: str | None = None) -> None:
+            calls.append(f"ensure:{default_client}:{persona}")
 
     BootstrapUseCase(FakeSeeder()).execute()
-    assert calls == ["ensure:None"]
+    assert calls == ["ensure:None:None"]

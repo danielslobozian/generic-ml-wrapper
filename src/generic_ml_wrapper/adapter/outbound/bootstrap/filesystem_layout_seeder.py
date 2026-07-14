@@ -32,6 +32,16 @@ def _client_default_line(default_client: str | None) -> str:
     )
 
 
+_COMPANION_PERSONA_PLACEHOLDER = "__COMPANION_PERSONA__"
+
+
+def _companion_persona_line(persona: str | None) -> str:
+    """Render the ``[companion] persona`` line: active when chosen, else commented."""
+    if not persona:
+        return '# persona = "companion"'
+    return f'# gmlw set this on first run.\npersona = "{persona}"'
+
+
 # Seeded once when no config exists. Every real setting but the first-run-chosen
 # ``[client] default`` is commented out, so the file parses to just that choice (or to
 # nothing, keeping the built-in defaults, when none was chosen).
@@ -100,11 +110,11 @@ __CLIENT_DEFAULT__
 # steps = { compression = true }
 
 [companion]
-# The persona gmlw adopts: its tone is injected as the `persona` context source (when that
-# source is activated above), and — coming soon — it voices a free host greeting at launch.
-# Off (invisible) until set. See the choices with: gmlw persona list. Author your own by
+# The persona gmlw adopts: it voices a free host greeting at launch, and its tone is
+# injected as the `persona` context source (when that source is activated above). Off
+# (invisible) until set. See the choices with: gmlw persona list. Author your own by
 # dropping a file in ~/.gmlw/personas/. Built-in: plain | companion | mentor | butler | terse.
-# persona = "companion"
+__COMPANION_PERSONA__
 
 [compress]
 # When a source has compression = true, gmlw compresses it through generic-ml-cache
@@ -135,12 +145,14 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         """
         self._home = home
 
-    def ensure(self, default_client: str | None = None) -> None:
+    def ensure(self, default_client: str | None = None, persona: str | None = None) -> None:
         """Create missing ``profile/me``, ``profile/company``, ``rules`` and config.
 
         Args:
             default_client: When seeding a new config, bake this in as the active
-                ``[client] default``. ``None`` seeds the all-commented template.
+                ``[client] default``. ``None`` seeds the commented placeholder.
+            persona: When seeding a new config, bake this in as the active
+                ``[companion] persona``. ``None`` seeds the commented placeholder.
         """
         self._home.mkdir(parents=True, exist_ok=True)
         # Owner-only: the home holds credentials, config (which names code to run), and state.
@@ -151,5 +163,5 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         if not config.exists():
             text = _CONFIG_TEMPLATE.replace(
                 _CLIENT_DEFAULT_PLACEHOLDER, _client_default_line(default_client)
-            )
+            ).replace(_COMPANION_PERSONA_PLACEHOLDER, _companion_persona_line(persona))
             config.write_text(text, encoding="utf-8")

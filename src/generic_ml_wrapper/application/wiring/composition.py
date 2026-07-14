@@ -4,7 +4,9 @@
 
 from __future__ import annotations
 
+import getpass
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
@@ -12,6 +14,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder impo
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_chooser import TtyClientChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
@@ -46,6 +49,7 @@ from generic_ml_wrapper.application.port.inbound.list_personas import ListPerson
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
+from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
@@ -60,6 +64,7 @@ from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUse
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
@@ -118,6 +123,21 @@ def build_list_personas() -> ListPersonas:
         A ready-to-run ListPersonas.
     """
     return ListPersonasUseCase(build_persona_source())
+
+
+def build_render_greeting() -> RenderGreeting:
+    """Build the RenderGreeting use case wired to the persona source and live facts.
+
+    Returns:
+        A ready-to-run RenderGreeting (free, local; no metering).
+    """
+    return RenderGreetingUseCase(
+        personas=build_persona_source(),
+        companion=config.companion,
+        workspace=LocalGitWorkspaceInspector(),
+        clock=lambda: datetime.now().astimezone(),
+        username=getpass.getuser,
+    )
 
 
 def _interceptor_chain() -> InterceptorChain:
@@ -218,6 +238,8 @@ def build_first_run_init() -> FirstRunInit:
         detector=PathClientDetector(),
         seeder=FilesystemLayoutSeeder(paths.HOME),
         chooser=TtyClientChooser(),
+        personas=build_persona_source(),
+        persona_chooser=TtyPersonaChooser(),
     )
 
 
