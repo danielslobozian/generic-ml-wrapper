@@ -20,13 +20,27 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
+import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from pathlib import Path
+from typing import cast
 
 from generic_ml_wrapper.common.log import log
 
-if TYPE_CHECKING:
-    from pathlib import Path
+
+def statusline_command() -> str:
+    """The command a client's ``statusLine`` hook invokes.
+
+    ``gmlw statusline`` when ``gmlw`` is on ``PATH`` (survives reinstalls); otherwise
+    the absolute path to the ``gmlw`` beside this interpreter -- so the hook still
+    resolves when the client is launched from an environment that lacks ``gmlw`` on
+    ``PATH`` (a dev checkout, a venv that isn't activated).
+    """
+    if shutil.which("gmlw"):
+        return "gmlw statusline"
+    candidate = Path(sys.executable).with_name("gmlw")
+    return f"{candidate} statusline" if candidate.exists() else "gmlw statusline"
 
 
 class SettingsUnreadableError(Exception):

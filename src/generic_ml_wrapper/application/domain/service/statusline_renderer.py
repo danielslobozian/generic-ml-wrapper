@@ -40,23 +40,24 @@ def render_statusline(status: ClientStatus, workspace: Workspace) -> str:
     return _SEPARATOR.join(block for block in blocks if block)
 
 
-def render_job_usage(job: str, turns: int, tokens: int, cost_usd: float) -> str:
-    """Render a job's cumulative usage as an indented status-line footer row.
+def render_usage_row(label: str, name: str, turns: int, tokens: int, cost_usd: float) -> str:
+    """Render one usage footer row -- ``<label> <name> · N turns · tok · $`` -- indented.
 
-    The turns/tokens are shown only when the job has been deep-metered (``turns``
-    > 0); the job's cost always shows. The leading indent sets it apart from the
-    live status line above it.
+    Used for both the current-session row (``label="session"``) and the whole-job
+    total (``label="job"``). Turns/tokens show only when deep-metered (``turns`` > 0);
+    the cost always shows. The leading indent sets the footer apart from the live line.
 
     Args:
-        job: The job identifier.
-        turns: The job's recorded turn count across sessions (``0`` if unmetered).
-        tokens: The job's total tokens across turns (input + output + cache).
-        cost_usd: The job's cumulative cost across its sessions.
+        label: The scope label, ``"session"`` or ``"job"``.
+        name: The session id or job id.
+        turns: The recorded turn count for this scope (``0`` if unmetered).
+        tokens: The total tokens across those turns (input + output + cache).
+        cost_usd: The scope's cumulative cost.
 
     Returns:
         The footer row (no trailing newline).
     """
-    parts = [f"job {job}"]
+    parts = [f"{label} {name}"]
     if turns:
         parts.append(f"{turns} turns")
         parts.append(f"{tokens} tok")

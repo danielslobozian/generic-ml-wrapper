@@ -18,7 +18,7 @@ BINARY = "cursor-agent"
 _CONFIG = Path.home() / ".cursor" / "cli-config.json"
 _STATUSLINE: dict[str, object] = {
     "type": "command",
-    "command": "gmlw statusline",
+    "command": status_line_config.statusline_command(),
     "updateIntervalMs": 2000,
     "timeoutMs": 5000,
 }
