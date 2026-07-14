@@ -14,8 +14,25 @@ if TYPE_CHECKING:
 _DIRS = ("profile/me", "profile/company", "rules")
 _CONFIG = "config.toml"
 
-# Seeded once when no config exists. Every real setting is commented out, so the
-# file parses to nothing and the wrapper keeps its built-in defaults until edited.
+# The seed for the ``[client] default`` line: the active choice picked on first run,
+# else a commented placeholder so the file parses to nothing and the built-in default
+# applies until edited. Substituted into ``_CONFIG_TEMPLATE`` at ``__CLIENT_DEFAULT__``.
+_CLIENT_DEFAULT_PLACEHOLDER = "__CLIENT_DEFAULT__"
+
+
+def _client_default_line(default_client: str | None) -> str:
+    """Render the ``[client] default`` line: active when chosen, else commented."""
+    if not default_client:
+        return '# default = "claude"'
+    return (
+        "# gmlw set this on first run from the client(s) found on your PATH.\n"
+        f'default = "{default_client}"'
+    )
+
+
+# Seeded once when no config exists. Every real setting but the first-run-chosen
+# ``[client] default`` is commented out, so the file parses to just that choice (or to
+# nothing, keeping the built-in defaults, when none was chosen).
 _CONFIG_TEMPLATE = """\
 # gmlw configuration. Every setting is optional; delete this file to fall back to
 # the built-in defaults. Uncomment and edit what you need.
@@ -23,7 +40,7 @@ _CONFIG_TEMPLATE = """\
 [client]
 # The client to wrap when --client is not given.
 # Built-in clients: claude | cursor | codex | vibe.
-# default = "claude"
+__CLIENT_DEFAULT__
 
 # SECURITY: the [callers] and [[interceptors]] specs below name Python code that gmlw
 # LOADS AND RUNS with your permissions on the next invocation. Only point them at code
@@ -92,8 +109,13 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         """
         self._home = home
 
-    def ensure(self) -> None:
-        """Create missing ``profile/me``, ``profile/company``, ``rules`` and config."""
+    def ensure(self, default_client: str | None = None) -> None:
+        """Create missing ``profile/me``, ``profile/company``, ``rules`` and config.
+
+        Args:
+            default_client: When seeding a new config, bake this in as the active
+                ``[client] default``. ``None`` seeds the all-commented template.
+        """
         self._home.mkdir(parents=True, exist_ok=True)
         # Owner-only: the home holds credentials, config (which names code to run), and state.
         self._home.chmod(0o700)
@@ -101,4 +123,7 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             (self._home / relative).mkdir(parents=True, exist_ok=True)
         config = self._home / _CONFIG
         if not config.exists():
-            config.write_text(_CONFIG_TEMPLATE, encoding="utf-8")
+            text = _CONFIG_TEMPLATE.replace(
+                _CLIENT_DEFAULT_PLACEHOLDER, _client_default_line(default_client)
+            )
+            config.write_text(text, encoding="utf-8")
