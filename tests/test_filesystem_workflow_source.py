@@ -7,8 +7,11 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.common import config
 
 
 def test_seed_copies_packaged_defaults(tmp_path: Path) -> None:
@@ -62,7 +65,7 @@ def test_compile_joins_base_and_steps(tmp_path: Path) -> None:
     source.seed()
     (tmp_path / "doc-review").mkdir()
     (tmp_path / "doc-review" / "workflow.md").write_text("# doc-review steps", encoding="utf-8")
-    compiled = source.compile("doc-review")
+    compiled = source.compile(CompileMode.WORKFLOW, "doc-review")
     assert "How to run a workflow" in compiled  # from base.md
     assert "# doc-review steps" in compiled
 
@@ -88,7 +91,7 @@ def test_compile_includes_profile_and_rules_in_order(tmp_path: Path) -> None:
     )
 
     source = FilesystemWorkflowSource(workflows, profile, rules)
-    compiled = source.compile("doc-review")
+    compiled = source.compile(CompileMode.WORKFLOW, "doc-review")
 
     assert "I work in French." in compiled
     assert "I prefer tests first." in compiled  # second file in profile/me/
@@ -109,8 +112,109 @@ def test_compile_skips_draft_rules(tmp_path: Path) -> None:
         "---\nname: d\nstatus: draft\n---\n\n**Rule:** not yet.", encoding="utf-8"
     )
     _add_workflow(workflows, "doc-review")
-    compiled = FilesystemWorkflowSource(workflows, None, rules).compile("doc-review")
+    compiled = FilesystemWorkflowSource(workflows, None, rules).compile(
+        CompileMode.WORKFLOW, "doc-review"
+    )
     assert "not yet" not in compiled
+
+
+def test_default_mode_composes_profile_only(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    rules = tmp_path / "rules"
+    (profile / "me").mkdir(parents=True)
+    (profile / "company").mkdir(parents=True)
+    rules.mkdir()
+    (profile / "me" / "bio.md").write_text("I like short answers.", encoding="utf-8")
+    (profile / "company" / "co.md").write_text("ACME Corp.", encoding="utf-8")
+    (rules / "r.rule.md").write_text("**Rule:** be careful.", encoding="utf-8")
+    workflows = tmp_path / "workflows"
+    (workflows / "_common").mkdir(parents=True)
+    (workflows / "_common" / "base.md").write_text("How to run a workflow", encoding="utf-8")
+
+    compiled = FilesystemWorkflowSource(workflows, profile, rules).compile(CompileMode.DEFAULT)
+
+    assert "I like short answers." in compiled  # me.user, on by default
+    assert "ACME Corp." in compiled  # company, on by default
+    assert "How to run a workflow" not in compiled  # base is workflow-only
+    assert "be careful" not in compiled  # global rules are off by default in default mode
+
+
+def test_me_user_excludes_learned_which_me_learned_reads(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "me").mkdir(parents=True)
+    (profile / "me" / "bio.md").write_text("USER FACT", encoding="utf-8")
+    (profile / "me" / "learned.md").write_text("LEARNED FACT", encoding="utf-8")
+    (profile / "me" / "learned").mkdir()
+    (profile / "me" / "learned" / "pref.md").write_text("LEARNED DIR FACT", encoding="utf-8")
+
+    compiled = FilesystemWorkflowSource(tmp_path / "wf", profile).compile(CompileMode.DEFAULT)
+
+    assert "USER FACT" in compiled
+    assert "LEARNED DIR FACT" in compiled  # me.learned reads the learned/ folder too
+    assert compiled.count("LEARNED FACT") == 1  # learned.md read once (me.learned), not by me.user
+
+
+def test_persona_is_composed_only_when_activated(tmp_path: Path) -> None:
+    persona = tmp_path / "persona"
+    persona.mkdir()
+    (persona / "butler.md").write_text("PERSONA TONE", encoding="utf-8")
+
+    off = FilesystemWorkflowSource(tmp_path / "wf", persona_root=persona)
+    assert "PERSONA TONE" not in off.compile(CompileMode.DEFAULT)  # persona off by default
+
+    def startup(mode: str) -> dict[str, config.SourceSetting]:
+        settings = config.default_startup(mode)
+        settings["persona"] = config.SourceSetting(activated=True, compression=False)
+        return settings
+
+    on = FilesystemWorkflowSource(tmp_path / "wf", persona_root=persona, startup=startup)
+    assert "PERSONA TONE" in on.compile(CompileMode.DEFAULT)
+
+
+class _RecordingCompressor(ContextCompressorPort):
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str | None]] = []
+
+    def compress(self, text: str, *, source_key: str, kind: str | None) -> str:
+        self.calls.append((source_key, kind))
+        return f"Z({source_key})"
+
+
+def test_typed_compression_applies_per_source_only_when_flagged(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "me").mkdir(parents=True)
+    (profile / "company").mkdir(parents=True)
+    (profile / "me" / "bio.md").write_text("ME", encoding="utf-8")
+    (profile / "company" / "co.md").write_text("CO", encoding="utf-8")
+    compressor = _RecordingCompressor()
+
+    def startup(mode: str) -> dict[str, config.SourceSetting]:
+        settings = config.default_startup(mode)
+        settings["me.user"] = config.SourceSetting(activated=True, compression=True)
+        settings["company"] = config.SourceSetting(activated=True, compression=False)
+        return settings
+
+    compiled = FilesystemWorkflowSource(
+        tmp_path / "wf", profile, compressor=compressor, startup=startup
+    ).compile(CompileMode.DEFAULT)
+
+    assert "Z(me.user)" in compiled  # me.user compressed with its human-touch kind
+    assert "CO" in compiled  # company left verbatim (compression off)
+    assert compressor.calls == [("me.user", "human-touch")]  # only the flagged source
+
+
+def test_config_can_deactivate_a_source(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "company").mkdir(parents=True)
+    (profile / "company" / "co.md").write_text("CO", encoding="utf-8")
+
+    def startup(mode: str) -> dict[str, config.SourceSetting]:
+        settings = config.default_startup(mode)
+        settings["company"] = config.SourceSetting(activated=False, compression=False)
+        return settings
+
+    source = FilesystemWorkflowSource(tmp_path / "wf", profile, startup=startup)
+    assert "CO" not in source.compile(CompileMode.DEFAULT)
 
 
 class _Marker(InterceptorPort):
@@ -129,7 +233,9 @@ def test_compile_runs_interceptors_per_target(tmp_path: Path) -> None:
     _add_workflow(workflows, "doc-review")
     chain = InterceptorChain([("rules", _Marker("RULES")), ("context", _Marker("CTX"))])
 
-    compiled = FilesystemWorkflowSource(workflows, None, rules, chain).compile("doc-review")
+    compiled = FilesystemWorkflowSource(workflows, None, rules, chain).compile(
+        CompileMode.WORKFLOW, "doc-review"
+    )
 
     assert "RULES(**Rule:** be careful.)" in compiled  # rules target ran on the rules blob
     assert compiled.startswith("CTX(")  # context target wrapped the whole compiled blob

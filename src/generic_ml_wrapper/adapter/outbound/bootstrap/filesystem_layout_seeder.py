@@ -11,7 +11,7 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSee
 if TYPE_CHECKING:
     from pathlib import Path
 
-_DIRS = ("profile/me", "profile/company", "rules")
+_DIRS = ("profile/me", "profile/company", "rules", "persona")
 _CONFIG = "config.toml"
 
 # The seed for the ``[client] default`` line: the active choice picked on first run,
@@ -77,24 +77,41 @@ __CLIENT_DEFAULT__
 # target = "response"
 # spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
 
-# The context compressor is one such interceptor. It compresses through generic-ml-cache
-# (record/replay), so compressing the same context replays for free and returns the same
-# result. It is OFF until [compress] prompt names a prompt file (the prompt is your IP —
-# the repo ships none). To enable it, add it as an interceptor on the "context" target:
-# [[interceptors]]
-# target = "context"
-# spec = "generic_ml_wrapper.adapter.outbound.interceptor.compressor:CompressorInterceptor"
+# Context packaging. On every run gmlw composes an operating context from a fixed set of
+# sources; [startup] decides, per mode, which are active and which are compressed. Modes:
+# default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`).
+# Sources: me.user (profile/me/*.md), me.learned (profile/me/learned*), company
+# (profile/company/*.md), rules (rules/*.md), persona (persona/*.md); a workflow run also
+# composes its base and steps. Omit all of this for the built-in per-mode defaults; the
+# default-mode defaults, shown explicitly:
+# [startup.default.context.me]
+# user    = { activated = true,  compression = false }
+# learned = { activated = true,  compression = false }
+# [startup.default.context]
+# company = { activated = true,  compression = false }
+# rules   = { activated = false, compression = false }
+# persona = { activated = false, compression = false }
+# In workflow/authoring modes base and steps are always active — only their compression
+# is configurable:
+# [startup.workflow.context]
+# base  = { compression = false }
+# steps = { compression = true }
 
 [compress]
-# The compression prompt file (NOT shipped — it is your IP). Compression stays off
-# until this points at a prompt.
-# prompt = "/path/to/compress-prompt.md"
-#
-# We tested gpt-5.4 at low effort via the cursor adapter as the best compressor; change
-# it to whatever you have (any generic-ml-cache client adapter / model / effort).
-# adapter = "cursor"
+# When a source has compression = true, gmlw compresses it through generic-ml-cache
+# (record/replay — the same source replays for free). The prompt is chosen by the source's
+# data type; each is your IP (the repo ships none), so a source stays verbatim until a
+# prompt resolves for it. Kinds: human-touch (me.user + me.learned), technical (workflow
+# base + steps), rules (rules); company/persona are verbatim.
+# adapter = "cursor"   # any generic-ml-cache client adapter / model / effort
 # model = "gpt-5.4"
 # effort = "low"
+# [compress.prompts]
+# A prompt file per kind, OR per specific source key (the key wins over the kind):
+# human-touch = "/path/to/human-touch.md"
+# technical = "/path/to/technical.md"
+# rules = "/path/to/rules.md"
+# "me.user" = "/path/to/just-me-user.md"   # override the kind for one source only
 """
 
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
@@ -63,8 +64,11 @@ class StartJobUseCase(StartJob):
                 caller cannot resume a session.
         """
         run, session = self._resolve(command)
-        if command.workflow is not None and not run.resume:
-            run = self._attach_workflow(run, command.workflow)
+        if not run.resume:
+            if command.workflow is not None:
+                run = self._attach_workflow(run, command.workflow)
+            else:
+                run = self._attach_baseline(run)
         caller = self._callers.for_run(run)
         if run.resume and not caller.can_resume():
             message = f"session resume not supported on {run.client}"
@@ -79,6 +83,16 @@ class StartJobUseCase(StartJob):
         finally:
             caller.end_metering()
 
+    def _attach_baseline(self, run: RunContext) -> RunContext:
+        """Inject the always-on baseline context (profile/learned/persona) on a plain run.
+
+        A plain ``gmlw start`` (no workflow) still composes the user's profile so every
+        session — on any client — inherits who the user is and how they work. Left
+        untouched when the baseline is empty, so nothing is written for a fresh install.
+        """
+        context = self._workflows.compile(CompileMode.DEFAULT)
+        return run if not context else replace(run, context=context)
+
     def _attach_workflow(self, run: RunContext, workflow: str) -> RunContext:
         self._workflows.seed()
         if not self._workflows.exists(workflow):
@@ -91,7 +105,7 @@ class StartJobUseCase(StartJob):
         )
         return replace(
             run,
-            context=self._workflows.compile(workflow),
+            context=self._workflows.compile(CompileMode.WORKFLOW, workflow),
             kickoff=kickoff,
             env=tuple(self._credentials.resolve(workflow).items()),
         )

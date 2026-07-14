@@ -13,6 +13,9 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder impo
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_chooser import TtyClientChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
+from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
+    CacheBackedContextCompressor,
+)
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
 )
@@ -82,7 +85,15 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
     Returns:
         A workflow source that compiles context from workflows, profile, and rules.
     """
-    return FilesystemWorkflowSource(paths.WORKFLOWS, paths.PROFILE, paths.RULES, interceptors)
+    return FilesystemWorkflowSource(
+        paths.WORKFLOWS,
+        paths.PROFILE,
+        paths.RULES,
+        interceptors,
+        persona_root=paths.PERSONA,
+        compressor=CacheBackedContextCompressor(),
+        startup=config.startup,
+    )
 
 
 def _interceptor_chain() -> InterceptorChain:

@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the ListWorkflows use case, driven by a fake source."""
 
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 
@@ -22,7 +23,7 @@ class FakeWorkflows(WorkflowSourcePort):
     def create(self, name: str) -> str:
         raise NotImplementedError
 
-    def compile(self, name: str) -> str:
+    def compile(self, mode: CompileMode, name: str | None = None) -> str:
         raise NotImplementedError
 
 

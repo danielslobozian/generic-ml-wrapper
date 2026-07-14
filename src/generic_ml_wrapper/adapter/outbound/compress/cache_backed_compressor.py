@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""A context compressor interceptor that compresses through generic-ml-cache."""
+"""A typed context compressor that compresses through generic-ml-cache."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from generic_ml_cache_core.application.usecase.select_adapter_for_execution_serv
     SelectAdapterForExecutionService,
 )
 
-from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.log import log
 
@@ -35,38 +35,41 @@ if TYPE_CHECKING:
     )
 
 
-class CompressorInterceptor(InterceptorPort):
-    """Compress a context section through the generic-ml-cache record/replay cache.
+class CacheBackedContextCompressor(ContextCompressorPort):
+    """Compress a source through the generic-ml-cache record/replay cache.
 
-    Runs the configured model (default gpt-5.4 at low effort via the cursor adapter)
-    with the user's compression prompt, keyed and cached by content — so compressing
-    the same context replays for free and returns an identical result. Off until
-    ``[compress] prompt`` names a prompt file; non-destructive — any failure leaves
-    the text uncompressed.
+    The prompt is chosen per source — a key-level override, else the source's kind
+    (see the config's ``[compress.prompts]``) — so each data shape gets its own
+    compressor. Runs the configured model (default gpt-5.4 at low effort via cursor),
+    keyed and cached by content, so compressing the same source replays for free.
+    Non-destructive: no prompt, an unreadable prompt, or any failure returns the text
+    unchanged.
     """
 
-    def intercept(self, text: str, target: str) -> str:  # noqa: ARG002  (target-agnostic)
-        """Return the compressed text, or the input unchanged when off or on failure.
+    def compress(self, text: str, *, source_key: str, kind: str | None) -> str:
+        """Return the compressed source text, or the input unchanged.
 
         Args:
-            text: The section text to compress.
-            target: The target it is running for (unused; a compressor is target-agnostic).
+            text: The source text to compress.
+            source_key: The source's config key, tried first for a prompt override.
+            kind: The source's default compressor kind, tried next, or ``None``.
 
         Returns:
             The compressed text, or ``text`` unchanged.
         """
         settings = config.compress()
-        if settings.prompt is None:
-            return text  # compression off until [compress] prompt is set
+        prompt_path = settings.prompt_for(source_key, kind)
+        if prompt_path is None:
+            return text  # no prompt resolves for this source -> leave it verbatim
         try:
-            prompt = Path(settings.prompt).read_text(encoding="utf-8")
+            prompt = Path(prompt_path).read_text(encoding="utf-8")
         except OSError as error:
-            log.warning(f"cannot read compress prompt {settings.prompt!r} ({error}); skipping")
+            log.warning(f"cannot read compress prompt {prompt_path!r} ({error}); skipping")
             return text
         try:
             execution = self._compress(text, prompt, settings)
         except Exception as error:  # noqa: BLE001  (a compile must never die on the cache/LLM)
-            log.warning(f"compression failed ({error}); leaving context uncompressed")
+            log.warning(f"compression failed for {source_key!r} ({error}); leaving it uncompressed")
             return text
         return _stdout(execution) or text
 

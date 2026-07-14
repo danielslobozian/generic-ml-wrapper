@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -93,7 +94,7 @@ class NewWorkflowUseCase(NewWorkflow):
             uuid=session.uuid,
             resume=False,
             cwd=folder,
-            context=self._workflows.compile(_META),
+            context=self._workflows.compile(CompileMode.AUTHORING, _META),
             kickoff=(
                 f"You are creating a new workflow named {name!r}. Your working "
                 f"directory is its folder ({folder}); write the new workflow.md there. "

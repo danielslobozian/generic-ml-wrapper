@@ -12,6 +12,7 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.common import paths
 
 if TYPE_CHECKING:
@@ -122,20 +123,39 @@ def interceptors(path: Path | None = None) -> list[tuple[str, str]]:
 
 @dataclass(frozen=True)
 class CompressSettings:
-    """Resolved ``[compress]`` settings for the context compressor.
+    """Resolved ``[compress]`` settings for the typed context compressor.
 
     Attributes:
-        prompt: Path to the compression prompt file, or ``None`` — compression is
-            off until this is set (the prompt is the user's IP; the repo ships none).
         adapter: The generic-ml-cache client adapter to compress through.
         model: The model to compress with.
         effort: The reasoning effort.
+        prompts: The override map from ``[compress.prompts]`` — each key is either a
+            compressor kind (``human-touch``/``technical``/``rules``) or a specific
+            source key (``me.user``, ``company``, …); the value is a prompt-file path.
+            The prompt is the user's IP; the repo ships none, so a source stays
+            verbatim until a prompt resolves for it.
     """
 
-    prompt: str | None
     adapter: str
     model: str
     effort: str
+    prompts: dict[str, str]
+
+    def prompt_for(self, source_key: str, kind: str | None) -> str | None:
+        """Resolve the compression prompt for a source: key override, then kind.
+
+        Args:
+            source_key: The specific source key (e.g. ``"me.user"``).
+            kind: The source's default compressor kind, or ``None``.
+
+        Returns:
+            The prompt-file path — the key-level override if present, else the
+            kind-level one, else ``None`` (leave the source verbatim).
+        """
+        direct = self.prompts.get(source_key)
+        if direct:
+            return direct
+        return self.prompts.get(kind) if kind else None
 
 
 def compress(path: Path | None = None) -> CompressSettings:
@@ -145,19 +165,123 @@ def compress(path: Path | None = None) -> CompressSettings:
         path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
 
     Returns:
-        The resolved settings; ``prompt`` is ``None`` (compression off) unless set.
+        The resolved settings; ``prompts`` is empty (every source verbatim) unless
+        ``[compress.prompts]`` names prompt files.
     """
     table = _table(_load(path), "compress")
-    prompt = table.get("prompt")
+    prompts = {
+        key: value
+        for key, value in _table(table, "prompts").items()
+        if isinstance(value, str) and value
+    }
     adapter = table.get("adapter")
     model = table.get("model")
     effort = table.get("effort")
     return CompressSettings(
-        prompt=prompt if isinstance(prompt, str) and prompt else None,
         adapter=adapter if isinstance(adapter, str) and adapter else "cursor",
         model=model if isinstance(model, str) and model else "gpt-5.4",
         effort=effort if isinstance(effort, str) and effort else "low",
+        prompts=prompts,
     )
+
+
+@dataclass(frozen=True)
+class SourceSetting:
+    """Whether a context source is composed into a run, and whether it is compressed.
+
+    Attributes:
+        activated: Include the source in the compiled context. Intrinsic workflow
+            sources (``base``/``steps``) are always active regardless of config.
+        compression: Attempt to compress the source through its kind's prompt. Only
+            takes effect when a prompt resolves (see :meth:`CompressSettings.prompt_for`).
+    """
+
+    activated: bool
+    compression: bool
+
+
+# Baked-in per-mode activation for the activatable (cross-cutting) sources. Compression
+# defaults off everywhere — it costs tokens and is a no-op until a prompt is configured.
+_STARTUP_ACTIVATION: dict[str, dict[str, bool]] = {
+    "default": {
+        "persona": False,
+        "me.user": True,
+        "me.learned": True,
+        "company": True,
+        "rules": False,
+    },
+    "workflow": {
+        "persona": False,
+        "me.user": True,
+        "me.learned": True,
+        "company": True,
+        "rules": True,
+    },
+    "authoring": {
+        "persona": False,
+        "me.user": True,
+        "me.learned": True,
+        "company": True,
+        "rules": True,
+    },
+}
+
+
+def default_startup(mode: str) -> dict[str, SourceSetting]:
+    """Return a mode's baked-in activation matrix, with no config file read.
+
+    Args:
+        mode: The compile mode (``default``/``workflow``/``authoring``).
+
+    Returns:
+        A setting per source key. Intrinsic ``base``/``steps`` are always active;
+        cross-cutting sources follow the built-in per-mode defaults; nothing is
+        compressed by default.
+    """
+    activation = _STARTUP_ACTIVATION.get(mode, _STARTUP_ACTIVATION["default"])
+    settings: dict[str, SourceSetting] = {}
+    for source in context_source.ALL_SOURCES:
+        activated = activation.get(source.key, False) if source.activatable else True
+        settings[source.key] = SourceSetting(activated=activated, compression=False)
+    return settings
+
+
+def startup(mode: str, path: Path | None = None) -> dict[str, SourceSetting]:
+    """Return a mode's activation matrix from ``[startup.<mode>.context]`` over defaults.
+
+    Args:
+        mode: The compile mode (``default``/``workflow``/``authoring``).
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        A setting per source key: the config value where given, else the baked-in
+        default. ``base``/``steps`` stay always-active (only their compression is read).
+    """
+    defaults = default_startup(mode)
+    context = _table(_table(_table(_load(path), "startup"), mode), "context")
+    resolved: dict[str, SourceSetting] = {}
+    for source in context_source.ALL_SOURCES:
+        table = _source_table(context, source.key)
+        default = defaults[source.key]
+        activated = default.activated
+        if source.activatable and isinstance(table.get("activated"), bool):
+            activated = cast("bool", table["activated"])
+        compression = default.compression
+        if isinstance(table.get("compression"), bool):
+            compression = cast("bool", table["compression"])
+        resolved[source.key] = SourceSetting(activated=activated, compression=compression)
+    return resolved
+
+
+def _source_table(context: dict[str, object], key: str) -> dict[str, object]:
+    """Return the inline table for a (possibly dotted) source key, or ``{}``."""
+    table = context
+    for part in key.split("."):
+        value = table.get(part)
+        if not isinstance(value, dict):
+            return {}
+        table = cast("dict[str, object]", value)
+    return table
 
 
 @dataclass(frozen=True)
