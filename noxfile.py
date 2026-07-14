@@ -32,7 +32,7 @@ nox.options.reuse_existing_virtualenvs = True
 nox.options.sessions = ["lint", "imports", "typecheck", "tests"]
 
 PACKAGE = "generic_ml_wrapper"
-PYTHON_VERSIONS: tuple[str, ...] = ("3.11", "3.12", "3.13")
+PYTHON_VERSIONS: tuple[str, ...] = ("3.11", "3.12", "3.13", "3.14")
 COVERAGE_FLOOR = 80
 
 
