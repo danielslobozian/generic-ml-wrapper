@@ -1,8 +1,8 @@
 # Security Policy
 
-`generic-ml-wrapper` is early, pre-1.0 software (`0.1.0.dev0`). It is published openly
-and takes security seriously regardless of maturity. Thank you for helping keep it and
-its users safe.
+`generic-ml-wrapper` is early software (`0.1.0`, its first public release). It is published
+openly and takes security seriously regardless of maturity. Thank you for helping keep it
+and its users safe.
 
 ## Supported versions
 
