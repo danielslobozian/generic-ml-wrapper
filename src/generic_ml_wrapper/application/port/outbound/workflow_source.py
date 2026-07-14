@@ -5,6 +5,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 
 
 class WorkflowSourcePort(ABC):
@@ -47,12 +51,19 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
-    def compile(self, name: str) -> str:
-        """Compile a workflow's operating context.
+    def compile(self, mode: CompileMode, name: str | None = None) -> str:
+        """Compile a run's operating context for a mode.
+
+        The activation matrix for the mode selects which cross-cutting sources
+        (persona, profile, learned, company, rules) are composed and whether each is
+        compressed. A workflow/authoring run additionally composes the workflow's
+        base, its steps, and its scoped rules.
 
         Args:
-            name: The workflow name.
+            mode: The compile mode (default/workflow/authoring).
+            name: The workflow whose base/steps/rules to compose, for the
+                workflow/authoring modes; ``None`` for a plain (default) run.
 
         Returns:
-            The shared base followed by the workflow's steps.
+            The composed context (active sources, joined by blank lines).
         """

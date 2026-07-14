@@ -4,6 +4,7 @@
 
 import pytest
 
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.port.inbound.start_job import (
@@ -41,9 +42,11 @@ class FakeStore(SessionStorePort):
 
 
 class FakeWorkflows(WorkflowSourcePort):
-    def __init__(self, *, present: str | None = None) -> None:
+    def __init__(self, *, present: str | None = None, baseline: str = "BASELINE") -> None:
         self.seeded = False
         self._present = present
+        self._baseline = baseline
+        self.compiled: list[tuple[CompileMode, str | None]] = []
 
     def seed(self) -> None:
         self.seeded = True
@@ -57,7 +60,10 @@ class FakeWorkflows(WorkflowSourcePort):
     def create(self, name: str) -> str:
         raise NotImplementedError
 
-    def compile(self, name: str) -> str:
+    def compile(self, mode: CompileMode, name: str | None = None) -> str:
+        self.compiled.append((mode, name))
+        if mode is CompileMode.DEFAULT:
+            return self._baseline
         return f"CONTEXT<{name}>"
 
 
@@ -121,7 +127,10 @@ def _use_case(
 def test_new_session_is_minted_recorded_and_run() -> None:
     store = FakeStore(ids=["JOB-1_001"])
     provider = FakeProvider()
-    exit_code = _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="claude"))
+    workflows = FakeWorkflows()
+    exit_code = _use_case(store, provider, workflows).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
 
     assert exit_code == 0
     assert provider.log == ["start_metering", "start_client", "end_metering"]
@@ -129,7 +138,18 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     assert minted.session_id == "JOB-1_002"
     assert provider.run is not None
     assert provider.run.resume is False
-    assert provider.run.context is None
+    # a plain start now composes the always-on baseline (default mode)
+    assert workflows.compiled == [(CompileMode.DEFAULT, None)]
+    assert provider.run.context == "BASELINE"
+
+
+def test_plain_start_with_empty_baseline_injects_no_context() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, FakeWorkflows(baseline="")).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.context is None  # nothing to inject on a fresh install
 
 
 def test_resume_latest_reuses_the_recorded_session() -> None:
@@ -167,6 +187,7 @@ def test_workflow_context_is_compiled_and_injected() -> None:
 
     assert workflows.seeded is True
     assert provider.run is not None
+    assert workflows.compiled == [(CompileMode.WORKFLOW, "doc-review")]
     assert provider.run.context == "CONTEXT<doc-review>"
     assert "doc-review" in (provider.run.kickoff or "")
 

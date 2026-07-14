@@ -4,6 +4,7 @@
 
 import pytest
 
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -36,8 +37,8 @@ class FakeWorkflows(WorkflowSourcePort):
         self.created = name
         return f"/workflows/{name}"
 
-    def compile(self, name: str) -> str:
-        return f"CONTEXT<{name}>"
+    def compile(self, mode: CompileMode, name: str | None = None) -> str:
+        return f"CONTEXT<{mode.value}:{name}>"
 
 
 class FakeStore(SessionStorePort):
@@ -96,7 +97,7 @@ def test_authors_a_new_workflow() -> None:
     assert store.recorded[0].job == "doc-review"
     assert provider.run is not None
     assert provider.run.cwd == "/workflows/doc-review"
-    assert provider.run.context == "CONTEXT<create-workflow>"
+    assert provider.run.context == "CONTEXT<authoring:create-workflow>"
     assert "doc-review" in (provider.run.kickoff or "")
 
 
