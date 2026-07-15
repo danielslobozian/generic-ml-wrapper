@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
+from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
@@ -266,7 +267,12 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         return "\n\n".join(text for text in texts if text)
 
     def _me_learned(self) -> str:
-        """Concatenate the learned notes — the AI about the user — file then folder."""
+        """Compose the learned section: the capture directive over the user's notebook.
+
+        The notebook (``learned.md`` and any ``learned/`` folder) is the AI-about-the-user
+        store; the directive (gmlw's voice) asks the client to keep mirroring into it. The
+        section is invisible when the notebook is absent, so a run without one stays clean.
+        """
         if self._profile_root is None:
             return ""
         directory = self._profile_root / "me"
@@ -277,7 +283,8 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         learned_dir = directory / _LEARNED_DIR
         if learned_dir.is_dir():
             parts += [self._read(path) for path in sorted(learned_dir.glob("*.md"))]
-        return "\n\n".join(text for text in parts if text)
+        notebook = "\n\n".join(text for text in parts if text)
+        return f"{CAPTURE_DIRECTIVE}\n\n{notebook}" if notebook else ""
 
     def _concat_dir(self, directory: Path | None) -> str:
         """Concatenate every ``*.md`` in a folder, sorted by filename."""
