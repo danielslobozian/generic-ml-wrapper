@@ -430,6 +430,24 @@ def _preflight_client(client: str) -> bool:
     return False
 
 
+def _preflight_cwd() -> bool:
+    """Return ``False`` (with guidance) when the working directory no longer exists.
+
+    A client launched from a deleted directory dies with a cryptic ``getcwd``/``uv_cwd``
+    error; catch it here and say so plainly instead.
+    """
+    try:
+        os.getcwd()  # noqa: PTH109  (a probe for a live cwd; Path.cwd() would be equivalent)
+    except OSError:
+        print(
+            "gmlw: your current directory no longer exists (it was moved or deleted).\n"
+            "  cd to a directory that exists — e.g. `cd ~` — and try again.",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 _MAX_STATUSLINE_BYTES = 1_000_000  # a client's status payload is small JSON; cap the read
 
 
@@ -466,6 +484,8 @@ def _start(args: argparse.Namespace) -> int:
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
     )
+    if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
+        return 2
     if not _preflight_client(client):  # client not installed — guide, don't launch
         return 2
     # The free host greeting (when a companion persona is set), to stderr so it stays

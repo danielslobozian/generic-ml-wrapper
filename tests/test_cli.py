@@ -646,6 +646,18 @@ def test_build_check_client_ready_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_check_client_ready(), CheckClientReady)
 
 
+def test_start_aborts_cleanly_when_the_cwd_is_deleted(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _dead_cwd() -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(app.os, "getcwd", _dead_cwd)
+    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
+    assert app.main(["start", "JOB-1"]) == 2
+    assert "current directory no longer exists" in capsys.readouterr().err
+
+
 def test_creds_set_reads_stdin_and_stores_without_echoing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
