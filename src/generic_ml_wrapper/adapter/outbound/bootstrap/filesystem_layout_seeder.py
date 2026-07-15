@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
+from generic_ml_wrapper.application.domain.model.rules import EXAMPLE_RULE
 from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
 
 if TYPE_CHECKING:
@@ -18,6 +19,8 @@ _DIRS = ("profile/me", "profile/company", "rules")
 _CONFIG = "config.toml"
 # The learned notebook, seeded empty (header + the two sections) for the client to fill.
 _LEARNED = "profile/me/learned.md"
+# A draft example rule (never injected) so the user has the rule format to copy.
+_EXAMPLE_RULE = "rules/example.rule.md"
 
 # The seed for the ``[client] default`` line: the active choice picked on first run,
 # else a commented placeholder so the file parses to nothing and the built-in default
@@ -165,6 +168,9 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         learned = self._home / _LEARNED
         if not learned.exists():
             learned.write_text(NOTEBOOK_TEMPLATE, encoding="utf-8")
+        example_rule = self._home / _EXAMPLE_RULE
+        if not example_rule.exists():
+            example_rule.write_text(EXAMPLE_RULE, encoding="utf-8")
         config = self._home / _CONFIG
         if not config.exists():
             text = _CONFIG_TEMPLATE.replace(
