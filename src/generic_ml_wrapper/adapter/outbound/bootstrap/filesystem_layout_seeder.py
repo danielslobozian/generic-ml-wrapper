@@ -65,10 +65,12 @@ __CLIENT_DEFAULT__
 # you wrote or trust -- this file is a trusted-code boundary.
 
 [callers]
-# Per-client caller overrides: map a client to an importable "module:Class" or
-# "/path/to/file.py:Class" spec, loaded at runtime in place of the built-in caller.
-# (This is how a private, uncommitted metering caller is plugged in.)
-# cursor = "/path/to/my_cursor_caller.py:CursorCaller"
+# Per-client caller overrides, loaded at runtime in place of the built-in caller.
+# The value is either an importable "module:Class" / "/path/to/file.py:Class" spec, OR
+# a plugin id -- a folder in ~/.gmlw/plugins/<id>/ with a plugin.toml (see: gmlw plugins
+# list). The plugin id is the tidy way to plug in a private metering caller.
+# cursor = "cursor-mitm"                                   # by plugin id
+# cursor = "/path/to/my_cursor_caller.py:CursorCaller"     # by explicit spec
 
 [logging]
 # Diagnostic verbosity on stderr: debug | info | warning | error.

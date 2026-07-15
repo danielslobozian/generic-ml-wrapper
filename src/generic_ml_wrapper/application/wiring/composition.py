@@ -25,6 +25,9 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
 from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
     FilesystemPersonaSource,
 )
+from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import (
+    FilesystemPluginSource,
+)
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
@@ -47,6 +50,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunInit
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
+from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
@@ -63,6 +67,7 @@ from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCa
 from generic_ml_wrapper.application.usecase.first_run_init import FirstRunInitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
+from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
@@ -127,6 +132,24 @@ def build_list_personas() -> ListPersonas:
     return ListPersonasUseCase(build_persona_source())
 
 
+def build_plugin_source() -> FilesystemPluginSource:
+    """Build the filesystem plugin source rooted at ``~/.gmlw/plugins``.
+
+    Returns:
+        A plugin source that lists plugins and resolves id references.
+    """
+    return FilesystemPluginSource(paths.PLUGINS)
+
+
+def build_list_plugins() -> ListPlugins:
+    """Build the ListPlugins use case wired to the plugin source.
+
+    Returns:
+        A ready-to-run ListPlugins.
+    """
+    return ListPluginsUseCase(build_plugin_source())
+
+
 def build_render_greeting() -> RenderGreeting:
     """Build the RenderGreeting use case wired to the persona source and live facts.
 
@@ -179,6 +202,7 @@ def build_start_job() -> StartJob:
             metering=SqlitePerTurnStore(_ledger()),
             transcript=_transcript(),
             interceptors=interceptors,
+            plugins=build_plugin_source(),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
@@ -313,6 +337,7 @@ def build_new_workflow() -> NewWorkflow:
             metering=SqlitePerTurnStore(_ledger()),
             transcript=_transcript(),
             interceptors=interceptors,
+            plugins=build_plugin_source(),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
     )

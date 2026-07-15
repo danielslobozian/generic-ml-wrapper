@@ -12,6 +12,7 @@ from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.persona import Persona
+from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     CheckClientReady,
@@ -30,6 +31,7 @@ from generic_ml_wrapper.application.port.inbound.first_run_init import (
 )
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
+from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -127,6 +129,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "statusline": ["statusline"],
         "workflow": ["workflow"],
         "persona": ["persona"],
+        "plugins": ["plugins"],
         "creds": ["creds"],
     }
     assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
@@ -786,6 +789,48 @@ def test_persona_list_json_output(
 
 def test_build_list_personas_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_list_personas(), ListPersonas)
+
+
+def test_plugins_list_prints_the_plugins(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(ListPlugins):
+        def execute(self) -> list[Plugin]:
+            return [Plugin("cursor-mitm", "Cursor via MITM proxy")]
+
+    monkeypatch.setattr(app, "build_list_plugins", lambda: FakeUseCase())
+    assert app.main(["plugins", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "cursor-mitm" in out
+    assert "Cursor via MITM proxy" in out
+
+
+def test_plugins_list_json_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(ListPlugins):
+        def execute(self) -> list[Plugin]:
+            return [Plugin("cursor-mitm", "MITM")]
+
+    monkeypatch.setattr(app, "build_list_plugins", lambda: FakeUseCase())
+    assert app.main(["plugins", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == [{"id": "cursor-mitm", "description": "MITM"}]
+
+
+def test_plugins_list_empty_hint(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(ListPlugins):
+        def execute(self) -> list[Plugin]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_plugins", lambda: FakeUseCase())
+    assert app.main(["plugins", "list"]) == 0
+    assert "~/.gmlw/plugins/" in capsys.readouterr().out
+
+
+def test_build_list_plugins_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_list_plugins(), ListPlugins)
 
 
 class _NoBootstrap(Bootstrap):
