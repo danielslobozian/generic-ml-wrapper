@@ -22,6 +22,9 @@ PERSONAS = HOME / "personas"
 # Trusted plugins: one folder per plugin (id = folder name) with a plugin.toml manifest.
 # The [callers] override may name a plugin by id instead of a "path.py:Class" spec.
 PLUGINS = HOME / "plugins"
+# Optional cursor allowance cache ({auto_pct, api_pct}), written by whatever can fetch it
+# (cursor doesn't pipe its plan to the status line); merged into the cursor status payload.
+CURSOR_PLAN = HOME / "cursor-plan.json"
 CREDENTIALS = HOME / "credentials.toml"
 # Authoring sessions (gmlw workflow new) live apart from real work jobs, so they
 # never appear in `gmlw jobs` and their spend is its own bucket.

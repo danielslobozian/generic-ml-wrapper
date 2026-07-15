@@ -441,6 +441,39 @@ def test_build_render_statusline_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_render_statusline(), RenderStatusline)
 
 
+def test_cursor_plan_cache_is_merged_into_the_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cache = tmp_path / "cursor-plan.json"
+    cache.write_text('{"auto_pct": 6.2, "api_pct": 3.4}', encoding="utf-8")
+    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    merged = app._with_cursor_plan('{"model": {"display_name": "Composer"}}', "cursor")
+    assert json.loads(merged)["plan"] == {"auto_pct": 6.2, "api_pct": 3.4}
+
+
+def test_cursor_plan_untouched_for_other_clients_or_when_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    cache = tmp_path / "cursor-plan.json"
+    cache.write_text('{"auto_pct": 1}', encoding="utf-8")
+    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    assert app._with_cursor_plan("{}", "claude") == "{}"  # not cursor
+    kept = '{"plan": {"auto_pct": 9}}'
+    assert app._with_cursor_plan(kept, "cursor") == kept  # payload already carries a plan
+
+
+def test_statusline_renders_the_cursor_plan_block_end_to_end(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    cache = tmp_path / "cursor-plan.json"
+    cache.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
+    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    monkeypatch.setenv("GMLW_CLIENT", "cursor")
+    monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"model": {"display_name": "Composer"}}'))
+    assert app.main(["statusline"]) == 0  # real cursor parser + renderer
+    assert "plan auto 6% · api 3%" in capsys.readouterr().out
+
+
 def test_main_self_initializes_on_a_real_command(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))

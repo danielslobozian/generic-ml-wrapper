@@ -12,6 +12,7 @@ import os
 import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
+from typing import cast
 
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
@@ -59,7 +60,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_set_credential,
     build_start_job,
 )
-from generic_ml_wrapper.common import config
+from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.log import configure as configure_logging
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
 
@@ -512,13 +513,49 @@ def _statusline() -> int:
     payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
     # The launching caller exports GMLW_CLIENT so the status line parses with the
     # right client's parser (claude's quota vs cursor's plan block).
-    line = build_render_statusline(os.environ.get("GMLW_CLIENT")).execute(
+    client = os.environ.get("GMLW_CLIENT")
+    payload = _with_cursor_plan(payload, client)
+    line = build_render_statusline(client).execute(
         payload,
         os.environ.get("GMLW_JOB"),
         os.environ.get("GMLW_SESSION"),
     )
     print(line)
     return 0
+
+
+def _with_cursor_plan(payload_json: str, client: str | None) -> str:  # noqa: PLR0911  (guards)
+    """Merge the cached cursor allowance (``~/.gmlw/cursor-plan.json``) into the payload.
+
+    Cursor does not pipe its plan pools to the status line, so an external fetcher caches
+    them; when the payload lacks a ``plan`` and a cache exists, fold it in for the parser.
+
+    Args:
+        payload_json: The raw status payload from the client.
+        client: The launching client (``GMLW_CLIENT``); only ``cursor`` has a plan block.
+
+    Returns:
+        The payload JSON, with a ``plan`` merged in when applicable, else unchanged.
+    """
+    if client != "cursor":
+        return payload_json
+    try:
+        loaded: object = json.loads(payload_json) if payload_json.strip() else {}
+    except json.JSONDecodeError:
+        return payload_json
+    if not isinstance(loaded, dict):
+        return payload_json
+    payload = cast("dict[str, object]", loaded)
+    if payload.get("plan"):  # cursor already carried a plan
+        return payload_json
+    try:
+        plan = json.loads(paths.CURSOR_PLAN.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return payload_json
+    if not isinstance(plan, dict):
+        return payload_json
+    payload["plan"] = cast("dict[str, object]", plan)
+    return json.dumps(payload)
 
 
 _START_NEEDS_JOB = (
