@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
 import json
 import os
@@ -25,6 +26,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     WorkflowName,
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
+from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunOutcome
@@ -48,6 +50,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_first_run_init,
     build_list_jobs,
     build_list_personas,
+    build_list_plugins,
     build_list_sessions,
     build_list_workflows,
     build_new_workflow,
@@ -70,8 +73,36 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
 # is treated as a job name — `gmlw <job>` is shorthand for `gmlw start <job>`. Kept in
 # sync with build_parser by a test.
 _COMMANDS = frozenset(
-    {"start", "jobs", "sessions", "export", "statusline", "workflow", "persona", "creds"}
+    {"start", "jobs", "sessions", "export", "statusline", "workflow", "persona", "plugins", "creds"}
 )
+
+
+# Commands whose real work lives in a sub-action; invoked without one, they show help.
+_SUBACTIONS = {
+    "workflow": "workflow_command",
+    "persona": "persona_command",
+    "plugins": "plugins_command",
+    "creds": "creds_command",
+}
+
+
+def _incomplete_command_help(parser: argparse.ArgumentParser, args: argparse.Namespace) -> bool:
+    """Print a sub-command's help when it was invoked without its action.
+
+    Args:
+        parser: The top-level parser.
+        args: The parsed arguments.
+
+    Returns:
+        ``True`` when the command was incomplete and its help was printed.
+    """
+    dest = _SUBACTIONS.get(args.command)
+    if dest is None or getattr(args, dest) is not None:
+        return False
+    # Re-parse as `<command> -h`; argparse prints that command's help and exits.
+    with contextlib.suppress(SystemExit):
+        parser.parse_args([args.command, "-h"])
+    return True
 
 
 def _implicit_start(argv: list[str]) -> list[str]:
@@ -155,6 +186,11 @@ def build_parser() -> argparse.ArgumentParser:
     persona_sub = persona.add_subparsers(dest="persona_command", metavar="<action>")
     persona_list = persona_sub.add_parser("list", help="list the selectable personas")
     _add_json_flag(persona_list)
+
+    plugins = sub.add_parser("plugins", help="list the installed plugins")
+    plugins_sub = plugins.add_subparsers(dest="plugins_command", metavar="<action>")
+    plugins_list = plugins_sub.add_parser("list", help="list the installed plugins")
+    _add_json_flag(plugins_list)
 
     creds = sub.add_parser("creds", help="manage per-workflow credentials")
     creds_sub = creds.add_subparsers(dest="creds_command", metavar="<action>")
@@ -292,7 +328,24 @@ def format_personas(personas: list[Persona]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command dispatcher)
+def format_plugins(plugins: list[Plugin]) -> str:
+    """Render the installed plugins as human-readable lines.
+
+    Args:
+        plugins: The plugins to render.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    if not plugins:
+        return "No plugins installed. Add one at ~/.gmlw/plugins/<id>/ (with a plugin.toml)."
+    lines = [f'{len(plugins)} plugin(s)  (use with: [callers] <client> = "<id>")', ""]
+    width = max(len(plugin.plugin_id) for plugin in plugins)
+    lines += [f"  {plugin.plugin_id:<{width}}  {plugin.description}" for plugin in plugins]
+    return "\n".join(lines)
+
+
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912  (a per-command dispatcher)
     """Run the CLI.
 
     Args:
@@ -305,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command
     parser = build_parser()
     args = parser.parse_args(_implicit_start(resolved))
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
+    if _incomplete_command_help(parser, args):  # e.g. `gmlw workflow` -> show its help
+        return 0
     # Self-initialize on a real command; skip the statusline hot path and bare help.
     if args.command not in (None, "statusline"):
         if config.config_exists():
@@ -320,6 +375,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command
             return _workflow(args)
         if args.command == "persona":
             return _persona(args)
+        if args.command == "plugins":
+            return _plugins(args)
         if args.command == "creds":
             return _creds(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
@@ -546,5 +603,17 @@ def _persona(args: argparse.Namespace) -> int:
             print(_as_json(payload))
         else:
             print(format_personas(personas))
+        return 0
+    return 0
+
+
+def _plugins(args: argparse.Namespace) -> int:
+    if args.plugins_command == "list":
+        plugins = build_list_plugins().execute()
+        if bool(args.json):
+            payload = [{"id": p.plugin_id, "description": p.description} for p in plugins]
+            print(_as_json(payload))
+        else:
+            print(format_plugins(plugins))
         return 0
     return 0

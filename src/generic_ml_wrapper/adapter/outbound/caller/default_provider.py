@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
     from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+    from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 
@@ -34,21 +35,25 @@ class DefaultCliCallerProvider(CliCallerProvider):
         metering: PerTurnMeteringPort,
         transcript: TranscriptPort | None = None,
         interceptors: InterceptorChain | None = None,
+        plugins: PluginSourcePort | None = None,
     ) -> None:
         """Bind the provider to its overrides, metering store, and interceptor chain.
 
         Args:
-            overrides: A client-to-spec mapping (``"module:Class"``) from config; an
-                override is loaded in place of the built-in caller for that client.
+            overrides: A client-to-spec mapping from config; each value is a caller
+                spec (``"module:Class"`` / ``"/path.py:Class"``) or a plugin id.
             metering: The per-turn store the built-in gateway callers record to. Every
                 built-in client except cursor routes through a relay that records here.
             transcript: Where the relay records each call's transcript, or ``None``.
             interceptors: The interceptor chain the relay applies to wire traffic.
+            plugins: Resolves a plugin-id override to a loadable spec; ``None`` means
+                overrides are used verbatim (only ``"path.py:Class"`` specs work).
         """
         self._overrides = overrides or {}
         self._metering = metering
         self._transcript = transcript
         self._interceptors = interceptors
+        self._plugins = plugins
 
     def for_run(self, run: RunContext) -> CliCaller:
         """Return the caller for the run's client.
@@ -66,6 +71,9 @@ class DefaultCliCallerProvider(CliCallerProvider):
         """
         spec = self._overrides.get(run.client)
         if spec is not None:
+            # A plugin-id override resolves via its manifest; a "path:Class" spec passes through.
+            if self._plugins is not None:
+                spec = self._plugins.resolve_caller(spec)
             return load_caller_class(spec)(run)
         if run.client == "claude":
             return ClaudeCliCaller(run, self._metering, self._interceptors, self._transcript)

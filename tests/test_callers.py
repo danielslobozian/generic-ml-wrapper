@@ -22,10 +22,12 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     UnsupportedClientError,
 )
 from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
 
 
 class _BareCaller(CliCaller):
@@ -271,6 +273,24 @@ def test_provider_uses_a_config_override() -> None:
     # An override target is an external caller constructed with just the run.
     spec = "generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller:CursorCliCaller"
     provider = DefaultCliCallerProvider({"gemini": spec}, metering=_FakeMetering())
+    run = RunContext("JOB-1", "JOB-1_001", "gemini", None, False)
+    assert isinstance(provider.for_run(run), CursorCliCaller)
+
+
+def test_provider_resolves_a_plugin_id_override() -> None:
+    # A bare override value is a plugin id, resolved to a loadable spec by the source.
+    spec = "generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller:CursorCliCaller"
+
+    class _Plugins(PluginSourcePort):
+        def available(self) -> list[Plugin]:
+            return []
+
+        def resolve_caller(self, reference: str) -> str:
+            return spec if reference == "my-cursor" else reference
+
+    provider = DefaultCliCallerProvider(
+        {"gemini": "my-cursor"}, metering=_FakeMetering(), plugins=_Plugins()
+    )
     run = RunContext("JOB-1", "JOB-1_001", "gemini", None, False)
     assert isinstance(provider.for_run(run), CursorCliCaller)
 

@@ -19,6 +19,9 @@ PROFILE = HOME / "profile"
 RULES = HOME / "rules"
 # The personas folder: one persona per file; the selected one is injected as a source.
 PERSONAS = HOME / "personas"
+# Trusted plugins: one folder per plugin (id = folder name) with a plugin.toml manifest.
+# The [callers] override may name a plugin by id instead of a "path.py:Class" spec.
+PLUGINS = HOME / "plugins"
 CREDENTIALS = HOME / "credentials.toml"
 # Authoring sessions (gmlw workflow new) live apart from real work jobs, so they
 # never appear in `gmlw jobs` and their spend is its own bucket.
