@@ -10,8 +10,13 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
+from generic_ml_wrapper.application.port.inbound.check_client_ready import (
+    CheckClientReady,
+    ClientReadiness,
+)
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
@@ -71,6 +76,16 @@ class _Greeting(RenderGreeting):
         return self._text
 
 
+class _CheckClient(CheckClientReady):
+    def __init__(self, readiness: ClientReadiness | None = None) -> None:
+        self._readiness = readiness
+
+    def execute(self, client: str) -> ClientReadiness:
+        if self._readiness is not None:
+            return self._readiness
+        return ClientReadiness(client=client, ready=True, missing=None, installed=(client,))
+
+
 @pytest.fixture(autouse=True)
 def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep ``main``'s self-init from touching the real ~/.gmlw during CLI tests.
@@ -82,6 +97,65 @@ def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
     monkeypatch.setattr(app.config, "config_exists", _config_present)
     monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting(None))
+    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient())
+
+
+def test_implicit_start_rewrites_a_bare_job() -> None:
+    assert app._implicit_start(["my-proj"]) == ["start", "my-proj"]
+    assert app._implicit_start(["my-proj", "--client", "cursor"]) == [
+        "start",
+        "my-proj",
+        "--client",
+        "cursor",
+    ]
+
+
+def test_implicit_start_leaves_commands_flags_and_empty_untouched() -> None:
+    assert app._implicit_start(["jobs"]) == ["jobs"]  # a real subcommand
+    assert app._implicit_start(["start", "JOB-1"]) == ["start", "JOB-1"]  # explicit start
+    assert app._implicit_start(["-h"]) == ["-h"]  # a flag
+    assert app._implicit_start([]) == []  # bare gmlw -> help
+
+
+def test_command_set_entries_are_real_parseable_commands() -> None:
+    parser = app.build_parser()
+    samples = {
+        "start": ["start"],
+        "jobs": ["jobs"],
+        "sessions": ["sessions", "J"],
+        "export": ["export", "J"],
+        "statusline": ["statusline"],
+        "workflow": ["workflow"],
+        "persona": ["persona"],
+        "creds": ["creds"],
+    }
+    assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
+    for command, argv in samples.items():
+        assert parser.parse_args(argv).command == command  # each really parses
+        assert app._implicit_start(argv) == argv  # and is never mistaken for a job
+
+
+def test_bare_job_dispatches_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, StartJobCommand] = {}
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> int:
+            seen["command"] = command
+            return 0
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["my-proj"]) == 0  # `gmlw my-proj`
+    assert seen["command"].job == "my-proj"
+
+
+def test_start_without_a_job_prints_a_friendly_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
+    assert app.main(["start"]) == 2
+    err = capsys.readouterr().err
+    assert "start needs a job" in err
+    assert "gmlw jobs" in err  # points at how to see jobs
 
 
 def test_parser_parses_start_with_flags() -> None:
@@ -505,6 +579,83 @@ def test_start_prints_the_host_greeting_to_stderr(
 
 def test_build_render_greeting_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_render_greeting(), RenderGreeting)
+
+
+def test_start_aborts_with_guidance_when_client_missing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    launched: list[str] = []
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> int:
+            launched.append(command.job)
+            return 0
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    readiness = ClientReadiness(
+        client="cursor", ready=False, missing=client_catalog.CURSOR, installed=()
+    )
+    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
+
+    assert app.main(["start", "JOB-1", "--client", "cursor"]) == 2
+    err = capsys.readouterr().err
+    assert "cursor.com/install" in err  # the install command
+    assert "cursor-agent login" in err  # the login hint
+    assert launched == []  # never launched
+
+
+def test_start_missing_client_suggests_an_installed_alternative(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_start_job", lambda: None)
+    readiness = ClientReadiness(
+        client="claude", ready=False, missing=client_catalog.CLAUDE, installed=("codex",)
+    )
+    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
+    assert app.main(["start", "JOB-1"]) == 2
+    assert "--client codex" in capsys.readouterr().err  # suggest the one they have
+
+
+def test_start_lists_all_when_no_client_installed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_start_job", lambda: None)
+    readiness = ClientReadiness(
+        client="claude", ready=False, missing=client_catalog.CLAUDE, installed=()
+    )
+    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
+    assert app.main(["start", "JOB-1"]) == 2
+    err = capsys.readouterr().err
+    for info in client_catalog.SUPPORTED:  # every supported client's install is offered
+        assert info.install in err
+
+
+def test_workflow_new_aborts_when_client_missing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_new_workflow", lambda: None)
+    readiness = ClientReadiness(
+        client="codex", ready=False, missing=client_catalog.CODEX, installed=()
+    )
+    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
+    assert app.main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
+    assert "openai/codex" in capsys.readouterr().err
+
+
+def test_build_check_client_ready_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_check_client_ready(), CheckClientReady)
+
+
+def test_start_aborts_cleanly_when_the_cwd_is_deleted(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _dead_cwd() -> str:
+        raise FileNotFoundError
+
+    monkeypatch.setattr(app.os, "getcwd", _dead_cwd)
+    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
+    assert app.main(["start", "JOB-1"]) == 2
+    assert "current directory no longer exists" in capsys.readouterr().err
 
 
 def test_creds_set_reads_stdin_and_stores_without_echoing(
