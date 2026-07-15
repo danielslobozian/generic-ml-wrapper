@@ -30,6 +30,25 @@ def test_no_sections_only_drops_frontmatter() -> None:
     assert clean_rule(raw, ()) == "**Rule:** x.\n\n**Origin:** keep me."
 
 
+def test_domain_neutral_fields_survive_cleaning_but_origin_is_dropped() -> None:
+    raw = (
+        "---\nname: r\nstatus: active\n---\n\n"
+        "**Rule:** never force-push a shared branch.\n\n"
+        "**When:** the branch has other authors.\n\n"
+        "**Signals:** upstream commits you did not write.\n\n"
+        "**Strength:** hard\n\n"
+        "**Precedence:** 10\n\n"
+        "**Origin:** JOB-1, got burned once."
+    )
+    cleaned = clean_rule(raw, ("Origin", "Notes"))
+    # the model-facing fields stay
+    for field in ("**Rule:**", "**When:**", "**Signals:**", "**Strength:**", "**Precedence:**"):
+        assert field in cleaned
+    # provenance and frontmatter are stripped
+    assert "**Origin:**" not in cleaned
+    assert "status:" not in cleaned
+
+
 def test_is_idempotent() -> None:
     raw = "---\nname: r\n---\n\n**Rule:** x.\n\n**Origin:** note."
     once = clean_rule(raw, _SECTIONS)

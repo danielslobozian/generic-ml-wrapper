@@ -69,6 +69,7 @@ def test_compile_joins_base_and_steps(tmp_path: Path) -> None:
     (tmp_path / "doc-review" / "workflow.md").write_text("# doc-review steps", encoding="utf-8")
     compiled = source.compile(CompileMode.WORKFLOW, "doc-review")
     assert "How to run a workflow" in compiled  # from base.md
+    assert "## Capturing a rule" in compiled  # the in-session rule-capture directive (base.md)
     assert "# doc-review steps" in compiled
 
 

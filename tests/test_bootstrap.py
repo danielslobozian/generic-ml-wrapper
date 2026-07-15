@@ -53,6 +53,16 @@ def test_seeder_seeds_the_learned_notebook(tmp_path: Path) -> None:
     assert "## What to avoid" in text  # the negative section (first-class)
 
 
+def test_seeder_seeds_the_example_rule_as_a_draft(tmp_path: Path) -> None:
+    FilesystemLayoutSeeder(tmp_path).ensure()
+    example = tmp_path / "rules" / "example.rule.md"
+    assert example.is_file()
+    text = example.read_text(encoding="utf-8")
+    assert "status: draft" in text  # never injected; a template to copy
+    for field in ("**Rule:**", "**When:**", "**Signals:**", "**Strength:**", "**Origin:**"):
+        assert field in text
+
+
 def test_seeder_never_overwrites_an_edited_notebook(tmp_path: Path) -> None:
     (tmp_path / "profile" / "me").mkdir(parents=True)
     notebook = tmp_path / "profile" / "me" / "learned.md"
