@@ -66,6 +66,29 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="output as JSON instead of text")
 
 
+# The top-level subcommands. A first argv token that is none of these (and not a flag)
+# is treated as a job name — `gmlw <job>` is shorthand for `gmlw start <job>`. Kept in
+# sync with build_parser by a test.
+_COMMANDS = frozenset(
+    {"start", "jobs", "sessions", "export", "statusline", "workflow", "persona", "creds"}
+)
+
+
+def _implicit_start(argv: list[str]) -> list[str]:
+    """Rewrite a bare ``gmlw <job> ...`` into ``gmlw start <job> ...`` (git-style).
+
+    Args:
+        argv: The raw arguments.
+
+    Returns:
+        ``argv`` unchanged for a known subcommand, a flag, or no args; otherwise the
+        same arguments with ``start`` prepended.
+    """
+    if argv and argv[0] not in _COMMANDS and not argv[0].startswith("-"):
+        return ["start", *argv]
+    return argv
+
+
 def _as_json(payload: object) -> str:
     """Render a payload as pretty-printed JSON (no trailing newline)."""
     return json.dumps(payload, indent=2)
@@ -85,7 +108,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     start = sub.add_parser("start", help="start or resume a session on a job")
-    start.add_argument("job", help="the job identifier")
+    start.add_argument("job", nargs="?", default=None, help="the job identifier")
     start.add_argument(
         "--client",
         default=None,
@@ -278,8 +301,9 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command
     Returns:
         The process exit code.
     """
+    resolved = sys.argv[1:] if argv is None else argv
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(_implicit_start(resolved))
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
     # Self-initialize on a real command; skip the statusline hot path and bare help.
     if args.command not in (None, "statusline"):
@@ -422,7 +446,18 @@ def _statusline() -> int:
     return 0
 
 
+_START_NEEDS_JOB = (
+    "gmlw: start needs a job to work on.\n"
+    "  gmlw <job>          start (or resume) a session on <job>\n"
+    "  gmlw start <job>    the same, spelled out\n"
+    "A job groups related sessions; list yours with:  gmlw jobs"
+)
+
+
 def _start(args: argparse.Namespace) -> int:
+    if args.job is None:  # `gmlw start` with no job — guide instead of an argparse dump
+        print(_START_NEEDS_JOB, file=sys.stderr)
+        return 2
     workflow = None if args.workflow is None else str(args.workflow)
     client = _client(args.client)
     command = StartJobCommand(
