@@ -310,7 +310,40 @@ src/generic_ml_wrapper/
 └── common/                config · paths · log · spec_loader
 ```
 
-## 14. Design invariants — do not re-litigate
+## 14. Extension points — transforms vs actions
+
+gmlw is extended at named points, all sharing one plumbing — a config entry naming a
+`spec` (trusted code loaded at runtime, `"module:Class"` / `"/path.py:Class"` / a
+plugin id), the same trusted-code boundary, best-effort execution. But the extension
+points come in **two shapes**, and the shape is not cosmetic — it is a difference in
+kind. Do not conflate them.
+
+**Transforms — `InterceptorPort` (built).** A *filter in a pipe*: `intercept(text,
+target) -> text`. Bound to a **data channel** (a `target` that exists *in the flow* —
+the compile sections `profile`/`rules`/`workflow`/`context`, the wire bodies
+`request`/`response`). Content passes *through* it and comes out changed; **its value
+is its return**, and matching interceptors **compose in a chain** (B sees A's output).
+A transform that does nothing returns its input (identity). Anonymising a `request`
+body or compressing a context section is a transform.
+
+**Actions — hooks (planned, 0.3.0).** A *listener on an event*: `run(run) -> None`.
+Bound to a **lifecycle moment** (a `phase` in *time* — `pre-launch`, `post-session`),
+not a data channel. Nothing flows through it; it observes the `RunContext` and *does*
+something; **its value is its side-effect** (files written, a notice sent), not a
+returned value. Deploying skills into a client's native folder before launch, or
+notifying/archiving after a session, is an action.
+
+**Neither subsumes the other.** A hook is not a `str→str` transform — at
+`post-session` there is no content flowing, only an exit code and the run; the
+interceptor contract is meaningless there. An interceptor is not fire-and-forget — its
+whole job is to *return* the content the next stage uses. They cover disjoint points:
+some data channels (every wire `request`) are not tied to a lifecycle moment, and some
+moments (teardown) have no data channel.
+
+(A **caller override** / plugin is a third, coarser thing: it *replaces* the launch
+mechanism for a client, rather than extending one point of it.)
+
+## 15. Design invariants — do not re-litigate
 
 1. **Public-clean by construction.** No personal data, employer, job prefixes, or
    internal hosts in the repo. Real content lives only in `~/.gmlw`. Commits use a
