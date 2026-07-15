@@ -141,6 +141,27 @@ def test_default_mode_composes_profile_only(tmp_path: Path) -> None:
     assert "be careful" not in compiled  # global rules are off by default in default mode
 
 
+def test_learned_notebook_injects_the_capture_directive_and_notes(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "me").mkdir(parents=True)
+    (profile / "me" / "learned.md").write_text(
+        "## What follows you\n\n- Prefers tests first.\n", encoding="utf-8"
+    )
+    compiled = FilesystemWorkflowSource(tmp_path / "wf", profile).compile(CompileMode.DEFAULT)
+    assert "~/.gmlw/profile/me/learned.md" in compiled  # the directive names the notebook
+    assert "as valuable as the positives" in compiled  # negatives-first-class directive
+    assert "Prefers tests first." in compiled  # the user's own note
+
+
+def test_learned_section_is_invisible_without_a_notebook(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "company").mkdir(parents=True)
+    (profile / "company" / "co.md").write_text("ACME.", encoding="utf-8")
+    compiled = FilesystemWorkflowSource(tmp_path / "wf", profile).compile(CompileMode.DEFAULT)
+    assert "learned.md" not in compiled  # no notebook -> no directive
+    assert "ACME." in compiled  # other sources unaffected
+
+
 def test_me_user_excludes_learned_which_me_learned_reads(tmp_path: Path) -> None:
     profile = tmp_path / "profile"
     (profile / "me").mkdir(parents=True)

@@ -44,6 +44,23 @@ def test_seeder_bakes_in_the_chosen_default_client(tmp_path: Path) -> None:
     }
 
 
+def test_seeder_seeds_the_learned_notebook(tmp_path: Path) -> None:
+    FilesystemLayoutSeeder(tmp_path).ensure()
+    notebook = tmp_path / "profile" / "me" / "learned.md"
+    assert notebook.is_file()
+    text = notebook.read_text(encoding="utf-8")
+    assert "## What follows you" in text  # the positive section
+    assert "## What to avoid" in text  # the negative section (first-class)
+
+
+def test_seeder_never_overwrites_an_edited_notebook(tmp_path: Path) -> None:
+    (tmp_path / "profile" / "me").mkdir(parents=True)
+    notebook = tmp_path / "profile" / "me" / "learned.md"
+    notebook.write_text("MY NOTES", encoding="utf-8")
+    FilesystemLayoutSeeder(tmp_path).ensure()
+    assert notebook.read_text(encoding="utf-8") == "MY NOTES"
+
+
 def test_seeder_bakes_in_the_chosen_persona(tmp_path: Path) -> None:
     FilesystemLayoutSeeder(tmp_path).ensure(persona="butler")
     config = tmp_path / "config.toml"

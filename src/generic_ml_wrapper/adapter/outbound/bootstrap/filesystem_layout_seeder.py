@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
 
 if TYPE_CHECKING:
@@ -15,6 +16,8 @@ if TYPE_CHECKING:
 # so it is not created here.
 _DIRS = ("profile/me", "profile/company", "rules")
 _CONFIG = "config.toml"
+# The learned notebook, seeded empty (header + the two sections) for the client to fill.
+_LEARNED = "profile/me/learned.md"
 
 # The seed for the ``[client] default`` line: the active choice picked on first run,
 # else a commented placeholder so the file parses to nothing and the built-in default
@@ -159,6 +162,9 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         self._home.chmod(0o700)
         for relative in _DIRS:
             (self._home / relative).mkdir(parents=True, exist_ok=True)
+        learned = self._home / _LEARNED
+        if not learned.exists():
+            learned.write_text(NOTEBOOK_TEMPLATE, encoding="utf-8")
         config = self._home / _CONFIG
         if not config.exists():
             text = _CONFIG_TEMPLATE.replace(
