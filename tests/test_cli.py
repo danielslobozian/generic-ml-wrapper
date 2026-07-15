@@ -684,6 +684,33 @@ def test_build_set_credential_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_set_credential(), SetCredential)
 
 
+def test_incomplete_subcommand_prints_its_help(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["workflow"]) == 0  # no action -> auto help
+    out = capsys.readouterr().out
+    assert "usage: gmlw workflow" in out
+    assert "new" in out
+    assert "list" in out
+
+
+def test_incomplete_persona_and_plugins_print_help(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["persona"]) == 0
+    assert "usage: gmlw persona" in capsys.readouterr().out
+    assert app.main(["plugins"]) == 0
+    assert "usage: gmlw plugins" in capsys.readouterr().out
+
+
+def test_complete_subcommand_does_not_print_help(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class _Workflows(ListWorkflows):
+        def execute(self) -> list[str]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_workflows", lambda: _Workflows())
+    assert app.main(["workflow", "list"]) == 0
+    assert "usage: gmlw workflow" not in capsys.readouterr().out  # it ran, not helped
+
+
 def test_workflow_new_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, NewWorkflowCommand] = {}
 

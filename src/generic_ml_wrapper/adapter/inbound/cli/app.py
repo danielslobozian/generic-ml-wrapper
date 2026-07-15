@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import getpass
 import json
 import os
@@ -74,6 +75,34 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
 _COMMANDS = frozenset(
     {"start", "jobs", "sessions", "export", "statusline", "workflow", "persona", "plugins", "creds"}
 )
+
+
+# Commands whose real work lives in a sub-action; invoked without one, they show help.
+_SUBACTIONS = {
+    "workflow": "workflow_command",
+    "persona": "persona_command",
+    "plugins": "plugins_command",
+    "creds": "creds_command",
+}
+
+
+def _incomplete_command_help(parser: argparse.ArgumentParser, args: argparse.Namespace) -> bool:
+    """Print a sub-command's help when it was invoked without its action.
+
+    Args:
+        parser: The top-level parser.
+        args: The parsed arguments.
+
+    Returns:
+        ``True`` when the command was incomplete and its help was printed.
+    """
+    dest = _SUBACTIONS.get(args.command)
+    if dest is None or getattr(args, dest) is not None:
+        return False
+    # Re-parse as `<command> -h`; argparse prints that command's help and exits.
+    with contextlib.suppress(SystemExit):
+        parser.parse_args([args.command, "-h"])
+    return True
 
 
 def _implicit_start(argv: list[str]) -> list[str]:
@@ -316,7 +345,7 @@ def format_plugins(plugins: list[Plugin]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command dispatcher)
+def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912  (a per-command dispatcher)
     """Run the CLI.
 
     Args:
@@ -329,6 +358,8 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911  (a per-command
     parser = build_parser()
     args = parser.parse_args(_implicit_start(resolved))
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
+    if _incomplete_command_help(parser, args):  # e.g. `gmlw workflow` -> show its help
+        return 0
     # Self-initialize on a real command; skip the statusline hot path and bare help.
     if args.command not in (None, "statusline"):
         if config.config_exists():
