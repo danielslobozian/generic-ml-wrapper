@@ -17,6 +17,7 @@ from generic_ml_wrapper.adapter.outbound.caller.status_line_config import Settin
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
 )
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
     IdentifierError,
@@ -24,6 +25,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     WorkflowName,
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
+from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -41,6 +43,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 )
 from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
+    build_check_client_ready,
     build_export_usage,
     build_first_run_init,
     build_list_jobs,
@@ -363,6 +366,46 @@ def _client(raw: str | None) -> str:
     return raw if raw else config.default_client()
 
 
+def format_client_guidance(readiness: ClientReadiness) -> str:
+    """Render install/login guidance for a client that cannot launch.
+
+    Args:
+        readiness: The not-ready verdict from the client check.
+
+    Returns:
+        The guidance text to print (no trailing newline).
+    """
+    if readiness.missing is not None:
+        info = readiness.missing
+        lines = [
+            f"gmlw: client {readiness.client!r} ({info.display}) isn't on your PATH yet.",
+            f"  install:     {info.install}",
+            f"  then log in: {info.login}",
+        ]
+        others = [name for name in readiness.installed if name != readiness.client]
+        if others:
+            lines.append(f"  or use one you already have:  --client {others[0]}")
+    else:
+        supported = ", ".join(info.name for info in client_catalog.SUPPORTED)
+        lines = [f"gmlw: {readiness.client!r} is not a supported client. Supported: {supported}."]
+    if not readiness.installed:
+        lines += ["", "No supported client is installed yet — any of these works:"]
+        width = max(len(info.name) for info in client_catalog.SUPPORTED)
+        for info in client_catalog.SUPPORTED:
+            lines.append(f"  {info.name:<{width}}  {info.install}")
+        lines.append("...then log in (see each tool's docs) before running gmlw again.")
+    return "\n".join(lines)
+
+
+def _preflight_client(client: str) -> bool:
+    """Print guidance and return ``False`` when the resolved client cannot launch."""
+    readiness = build_check_client_ready().execute(client)
+    if readiness.ready:
+        return True
+    print(format_client_guidance(readiness), file=sys.stderr)
+    return False
+
+
 _MAX_STATUSLINE_BYTES = 1_000_000  # a client's status payload is small JSON; cap the read
 
 
@@ -381,12 +424,15 @@ def _statusline() -> int:
 
 def _start(args: argparse.Namespace) -> int:
     workflow = None if args.workflow is None else str(args.workflow)
+    client = _client(args.client)
     command = StartJobCommand(
         job=JobId(args.job),
-        client=_client(args.client),
+        client=client,
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
     )
+    if not _preflight_client(client):  # client not installed — guide, don't launch
+        return 2
     # The free host greeting (when a companion persona is set), to stderr so it stays
     # out of any piped stdout — printed before the client takes over the terminal.
     greeting = build_render_greeting().execute()
@@ -420,9 +466,12 @@ def _creds(args: argparse.Namespace) -> int:
 
 def _workflow(args: argparse.Namespace) -> int:
     if args.workflow_command == "new":
+        client = _client(args.client)
+        if not _preflight_client(client):  # client not installed — guide, don't launch
+            return 2
         try:
             return build_new_workflow().execute(
-                NewWorkflowCommand(name=str(args.name), client=_client(args.client))
+                NewWorkflowCommand(name=str(args.name), client=client)
             )
         except (WorkflowNameError, WorkflowExistsError) as error:
             print(f"error: {error}")

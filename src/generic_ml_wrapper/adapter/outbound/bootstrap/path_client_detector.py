@@ -6,17 +6,8 @@ from __future__ import annotations
 
 import shutil
 
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
-
-# Client -> the command it launches, in canonical order (claude first, matching the
-# built-in default). Mirrors each caller's BINARY; kept explicit to avoid importing
-# the whole caller family just to detect installs.
-_COMMANDS: tuple[tuple[str, str], ...] = (
-    ("claude", "claude"),
-    ("cursor", "cursor-agent"),
-    ("codex", "codex"),
-    ("vibe", "vibe"),
-)
 
 
 class PathClientDetector(ClientDetectorPort):
@@ -28,4 +19,6 @@ class PathClientDetector(ClientDetectorPort):
         Returns:
             The installed client names in canonical order (empty when none are).
         """
-        return [name for name, command in _COMMANDS if shutil.which(command) is not None]
+        return [
+            info.name for info in client_catalog.SUPPORTED if shutil.which(info.binary) is not None
+        ]

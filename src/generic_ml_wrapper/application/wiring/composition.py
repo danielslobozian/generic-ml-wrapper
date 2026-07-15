@@ -42,6 +42,7 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
 )
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
+from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunInit
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
@@ -57,6 +58,7 @@ from generic_ml_wrapper.application.port.outbound.client_status import ClientSta
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
+from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.first_run_init import FirstRunInitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -240,6 +242,18 @@ def build_first_run_init() -> FirstRunInit:
         chooser=TtyClientChooser(),
         personas=build_persona_source(),
         persona_chooser=TtyPersonaChooser(),
+    )
+
+
+def build_check_client_ready() -> CheckClientReady:
+    """Build the CheckClientReady use case wired to config overrides and PATH detection.
+
+    Returns:
+        A ready-to-run CheckClientReady.
+    """
+    return CheckClientReadyUseCase(
+        overrides=config.caller_overrides(),
+        detector=PathClientDetector(),
     )
 
 
