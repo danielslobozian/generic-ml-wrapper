@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Docs: removed a stray tool artifact from `docs/CLIENTS.md`; corrected the workflow
+  compression default in `docs/CONFIGURATION.md` (every source defaults to
+  `compression = false`); documented `[companion] name`. Added a doc-consistency guard
+  against leaked tool-artifact tags.
+
 ## [0.2.0] - 2026-07-16
 
 The companion release — everything a session inherits, and the ergonomics around it.
