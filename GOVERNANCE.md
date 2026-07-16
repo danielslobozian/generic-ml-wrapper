@@ -35,7 +35,7 @@ project's scope, it lands; if a maintainer raises a concern, it is discussed unt
 resolved rather than forced through.
 
 For larger or contested decisions — anything that changes the public CLI, the
-cassette format, the checksum behavior, or the project's scope — the maintainers
+ledger schema, the metering behaviour, or the project's scope — the maintainers
 decide together, and the reasoning is recorded in the relevant issue or pull
 request so it can be revisited later. Where maintainers disagree and cannot reach
 consensus, the original author has the final say. This is a practical arrangement
@@ -47,25 +47,28 @@ to a more shared model as the maintainer team grows.
 Some decisions are effectively already made, and proposals that cut against them
 will usually be declined — not out of inflexibility, but because they are the
 point of the project. These are documented in [`docs/DESIGN.md`](docs/DESIGN.md)
-and [`docs/ROADMAP.md`](docs/ROADMAP.md); the load-bearing ones are:
+and [`ROADMAP.md`](ROADMAP.md); the load-bearing ones are:
 
-- **The REPL is the product; the core is surface-agnostic.** There is no
-  argument-driven human usage model, and no capability may exist only as REPL
-  code. The core/repl wall is enforced by the test gate.
-- **The engine executes no model call and carries no client knowledge.**
-  Capabilities about *calling models* sink to
-  [`generic-ml-cache`](https://github.com/danielslobozian/generic-ml-cache);
-  proposals to add client adapters, client-output parsing, or a call cache here
+- **gmlw wraps a client; it never reimplements one.** The judgment stays in the
+  client. gmlw adds only the deterministic parts an *application* needs — session
+  identity, launch, context compilation, persistence, metering. The four client
+  adapters (claude / cursor / codex / vibe) are the core, and adding or improving
+  client support is *in* scope, not declined.
+- **Model calls sink to [`generic-ml-cache`](https://github.com/danielslobozian/generic-ml-cache).**
+  The wrapper implements no record/replay cache or model-call layer of its own; the
+  optional context compressor talks to that sibling. Proposals to reinvent it here
   will be declined.
-- **The verb set is closed.** Natural-language surfaces are routers onto the
-  verbs, never actors with free-form execution.
-- **Events are decisions; payloads hold pointers, never blobs.** The event log is
-  append-only.
-- **A workflow declares tiers, never vendors**, and the currency is tokens and
-  usage — no pricing scraper, ever.
+- **The workflow is optional.** `gmlw start <job>` with no workflow is already the
+  whole wrapper; the workflow is an enrichment, never the identity of the product.
+- **Metering is not a toggle for a metered client.** A metered client always runs
+  through the local relay; there is no plain, un-metered caller path.
+- **Public-clean by construction.** No personal data, employer, job prefixes, or
+  internal hosts in the repo — real content lives only under `~/.gmlw`, and
+  `secret-audit.sh` gates every publish.
+- **Dependencies point inward.** The hexagon (domain ← usecase ← ports; adapters
+  depend on ports) is enforced by import-linter, not just convention.
 
-The full set is `docs/DESIGN.md` §16 ("Design invariants — do not re-litigate"),
-plus the roadmap's graveyard of ideas already considered and declined.
+The full set is `docs/DESIGN.md` §15 ("Design invariants — do not re-litigate").
 
 A maintainer may still decide that a stance should change — but doing so is a
 deliberate, recorded decision, not an incidental side effect of another change.
@@ -73,7 +76,7 @@ deliberate, recorded decision, not an incidental side effect of another change.
 ## Proposing a change
 
 Anyone may propose a change by opening an issue. For features, check
-[`docs/ROADMAP.md`](docs/ROADMAP.md) first — your idea may already be planned, or
+[`ROADMAP.md`](ROADMAP.md) first — your idea may already be planned, or
 deliberately out of scope. The roadmap is a living document: it reflects current
 intent, not a binding contract, and the maintainers decide what lands in which
 version. For how to actually submit work, see [`CONTRIBUTING.md`](CONTRIBUTING.md).

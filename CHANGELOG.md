@@ -6,6 +6,40 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-16
+
+The companion release — everything a session inherits, and the ergonomics around it.
+
+### Added
+- **Mode-aware context packaging.** A `[startup.<mode>]` matrix picks which sources
+  compose (persona · profile · learned · company · rules · workflow base/steps) for
+  each mode (default / workflow / authoring), with typed per-source compression
+  (`[compress.prompts]`).
+- **Personas.** Selectable tone with a universal floor (`gmlw persona list`), a free
+  local host greeting at launch, and a first-run persona choice — configured under
+  `[companion]`.
+- **Learned notebook.** A portable, user-owned notebook (`profile/me/learned.md`) the
+  client mirrors into, read into every client so what one learns they all inherit;
+  negatives are first-class.
+- **Rule format.** A domain-neutral `Rule / When / Signals / Strength / Origin`
+  (+ optional `Precedence`), captured as a draft during a workflow.
+- **Formal plugins folder.** Reference a caller by id (`~/.gmlw/plugins/<id>/` with a
+  `plugin.toml`); `gmlw plugins list`.
+- **Cursor allowance block.** The status line renders cursor's plan pools from an
+  optional local cache when the client does not pipe them.
+- **First-run init.** Detect installed clients and seed a filled config with a default.
+- **JSON output** for the listing/reporting commands (`--json`).
+- **Ergonomics.** Client and working-directory preflight, implicit `gmlw <job>`
+  (shorthand for `start`), a friendly no-job message, and auto-help for an incomplete
+  sub-command.
+
+### Changed
+- Documentation overhaul: task-oriented guides (`docs/USER_GUIDE.md`, `docs/CLI.md`,
+  `docs/CONFIGURATION.md`, `docs/CLIENTS.md`, `docs/WORKFLOWS.md`,
+  `docs/TROUBLESHOOTING.md`), a client capability matrix in the README, and `DESIGN.md`
+  synchronised with the code; `GOVERNANCE.md` corrected. Supported Python stated as
+  3.11–3.14 to match CI.
+
 ## [0.1.0] - 2026-07-14
 
 First public release — a metering wrapper around ML coding CLIs.
@@ -41,5 +75,6 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/danielslobozian/generic-ml-wrapper/releases/tag/v0.1.0

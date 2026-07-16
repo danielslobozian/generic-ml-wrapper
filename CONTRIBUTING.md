@@ -18,7 +18,7 @@ By participating you agree to abide by the [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ## Development setup
 
-You need Python 3.11–3.13 and [`uv`](https://docs.astral.sh/uv/). The gates run through
+You need Python 3.11–3.14 and [`uv`](https://docs.astral.sh/uv/). The gates run through
 [`nox`](https://nox.thea.codes/) with the `uv` backend, from the committed `uv.lock`.
 
 ```bash
@@ -41,7 +41,7 @@ The gates are defined once in [`noxfile.py`](noxfile.py); CI is a thin caller of
 so what runs locally is byte-for-byte what runs in CI.
 
 ```bash
-nox                # the default gate: lint · imports · typecheck · tests (3.11–3.13)
+nox                # the default gate: lint · imports · typecheck · tests (3.11–3.14)
 nox -s green       # the whole gate in one env: lint · format · imports · pyright · coverage
 nox -s tests       # just the test matrix
 nox -s coverage    # tests with the 80% coverage floor
@@ -56,7 +56,7 @@ nox -s coverage    # tests with the 80% coverage floor
 The suite is **offline and token-free**: no real client is launched, no network call is
 made, and no model is invoked — external boundaries are faked, and `~/.gmlw` is
 redirected to a temp dir for every test. CI runs it on Linux, macOS, and Windows across
-Python 3.11–3.13; make sure it passes locally before opening a PR.
+Python 3.11–3.14; make sure it passes locally before opening a PR.
 
 ## Coding guidelines
 
