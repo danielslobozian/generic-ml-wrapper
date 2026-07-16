@@ -63,6 +63,23 @@ best-effort and never break a launch. The first example hook: a **cross-client
 skills/rules deployer** that consumes a git repo of skills and installs them, per
 client, as faithfully as each client's format allows.
 
+#### Rule lifecycle
+0.2.0 ships rule *capture*, but only inside a workflow (the directive lives in the
+workflow base) and without dedup or a path to code. 0.3.0 rounds out the rule loop:
+
+- **Rule proposal in normal usage** — today frustration only triggers a rule offer
+  during a workflow; in a plain session it reaches the learned notebook (a negative)
+  but never a rule. Make the "offer to record a rule" directive always-on, so a
+  demanded correction becomes a draft rule wherever it happens.
+- **Existing-rule check (dedup / update-not-duplicate)** — before proposing, look at
+  the active rules and update or supersede a matching one instead of stacking a
+  near-duplicate, mirroring the learned notebook's supersede-on-contradiction.
+- **Rule → code feasibility** — assess whether a captured rule is *mechanically
+  enforceable* and, if so, offer to realise it as a script/check rather than a
+  reminder. This is the step-codeability logic (create-workflow) generalised from
+  workflow steps to rules — and a mechanically-enforced rule is itself a natural
+  `pre-launch` hook consumer.
+
 ## Parked
 
 - Relay extraction to a standalone project (shelved — no second consumer yet).

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "generic-ml-wrapper"
-version = "0.1.0"
+version = "0.2.0"
 description = "A wrapper around an ML coding CLI: enter at a job, get a named resumable session, optionally driven by a workflow."
 readme = "README.md"
 requires-python = ">=3.11"

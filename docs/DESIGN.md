@@ -116,6 +116,11 @@ nothing about the filesystem, the client, or HTTP.
 | `ListWorkflows` | the runnable workflows |
 | `SetCredential` | store a per-workflow credential (0600) |
 | `Bootstrap` | first-run self-init of `~/.gmlw` (idempotent) |
+| `FirstRunInit` | first-run flow: detect installed clients, seed a filled config, choose a default (and persona) |
+| `CheckClientReady` | preflight a client — installed and logged in — returning install/login guidance |
+| `ListPersonas` | the selectable personas (built-in + user-authored) |
+| `ListPlugins` | the installed plugins under `~/.gmlw/plugins/<id>/` |
+| `RenderGreeting` | the free, local host greeting voiced at launch |
 
 `StartJob` **validates before it persists** — a rejected start (unknown workflow,
 resume unsupported) records no session, so there are no ghost sessions.
@@ -135,6 +140,11 @@ resume unsupported) records no session, so there are no ghost sessions.
 | `InterceptorPort` | transform a named target (`profile`/`rules`/`workflow`/`context` at compile time; `request`/`response` on the wire) |
 | `WorkspaceInspectorPort` | report the run's folder + git state |
 | `LayoutSeederPort` | create the runtime dirs + a default config, missing-only |
+| `ContextCompressorPort` | compress one context source through its typed prompt (via `generic-ml-cache`) |
+| `PersonaSourcePort` | read the selectable personas (packaged built-ins + `~/.gmlw/personas`) |
+| `PluginSourcePort` | read installed plugins from `~/.gmlw/plugins/<id>/plugin.toml` |
+| `ClientDetectorPort` | detect which client binaries are installed |
+| `ClientChooserPort` / `PersonaChooserPort` | first-run interactive pickers (TTY) |
 
 ## 7. The `CliCaller` seam — the four clients
 
@@ -160,8 +170,9 @@ teardown always runs in `finally`. Capability flags let the use case adapt per c
 | **codex** | `codex` | ✅ (OpenAI Responses) | ❌ | ❌ | relay to `chatgpt.com/backend-api/codex` |
 | **vibe** | `vibe` | ✅ (Mistral / Chat Completions) | ❌ | ❌ | throwaway `VIBE_HOME` repointed at the relay |
 
-Status-line **rendering** currently parses Claude's payload format only
-(`ClaudeStatusParser`); the seam is client-agnostic and other parsers can be added.
+Status-line **rendering** parses both Claude's and Cursor's native payload formats
+(`ClaudeStatusParser`, `CursorStatusParser`); the seam is client-agnostic and further
+parsers can be added.
 
 ## 8. The metering relay
 
@@ -231,10 +242,11 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
 
 - **Rule cleaning (always, lossless):** drop each rule's YAML frontmatter and the
   human-only `Origin` / `Notes` sections; skip rules marked `status: draft`.
-- **Compression (optional, off):** the `CompressorInterceptor` sends a context section
-  through `generic-ml-cache` record/replay — the lossy lever for large contexts,
-  config-gated (`[compress] prompt`), non-destructive on failure. The repo ships no
-  prompt, so it is inert until configured.
+- **Compression (optional, off):** each source can be compressed through its *typed*
+  prompt by the `CacheBackedContextCompressor` (the `ContextCompressorPort`), which
+  records through `generic-ml-cache` so the same source replays for free — the lossy
+  lever for large contexts, gated by `[compress]` + a source's `compression = true`,
+  non-destructive on failure. The repo ships no prompt, so it is inert until configured.
 - **Authoring** (`gmlw workflow new`) runs the shipped **create-workflow** meta-workflow
   as a normal (metered) authoring session, kept out of `gmlw jobs`.
 
@@ -248,9 +260,11 @@ Seeded on first run, fully commented, every section optional:
 | Section | Purpose | Default |
 |---|---|---|
 | `[client] default` | the client used when `--client` is absent | `claude` |
-| `[callers]` | override a client with a `module:Class` / `/path.py:Class` spec | none |
+| `[callers]` | override a client with a `module:Class` / `/path.py:Class` spec or plugin id | none |
 | `[[interceptors]]` | bind an interceptor spec to a `target` | none |
-| `[compress]` | the compressor prompt / adapter / model / effort | off |
+| `[startup.<mode>]` | per-mode (default / workflow / authoring) source activation + compression matrix | built-in |
+| `[companion]` | the persona gmlw adopts (host greeting + the `persona` source) | off |
+| `[compress]` | compressor adapter / model / effort + `[compress.prompts]` (typed per-source prompts) | off |
 | `[transcript]` | enable the opt-in transcript + its root | off |
 | `[logging] level` | log verbosity (also `GMLW_LOG_LEVEL`) | `warning` |
 
@@ -270,7 +284,9 @@ Created owner-only (`0700`) on first run:
   contexts/<job>/<session>.context.md   the context a session launched with
   transcripts/<job>/<session>/    opt-in per-call in/out/usage trio
   workflows/  _common/ · create-workflow/ · <name>/
-  profile/    me/*.md · company/*.md
+  profile/    me/*.md (incl. learned.md) · company/*.md
+  personas/   *.md                user-authored personas (built-ins are packaged)
+  plugins/    <id>/plugin.toml     caller plugins referenced by id
   rules/      *.md
   compress-cache/                 the generic-ml-cache store the compressor uses
 ```
@@ -281,29 +297,39 @@ Created owner-only (`0700`) on first run:
 src/generic_ml_wrapper/
 ├── application/
 │   ├── domain/
-│   │   ├── model/         run · session · turn_usage · client_status · workspace · identifiers
-│   │   └── service/       interceptor · interceptor_chain · rule_cleaner
-│   │                      · session_naming · statusline_renderer
+│   │   ├── model/         run · session · turn_usage · client_status · workspace
+│   │   │                  · identifiers · client_catalog · context_source · persona
+│   │   │                  · plugin · rules · learned
+│   │   └── service/       interceptor · interceptor_chain · rule_cleaner · greeting
+│   │                      · persona_parser · session_naming · statusline_renderer
 │   ├── port/
 │   │   ├── inbound/       start_job · list_jobs · list_sessions · export_usage
 │   │   │                  · render_statusline · new_workflow · list_workflows
-│   │   │                  · set_credential · bootstrap
+│   │   │                  · set_credential · bootstrap · first_run_init
+│   │   │                  · check_client_ready · list_personas · list_plugins
+│   │   │                  · render_greeting
 │   │   └── outbound/      cli_caller · session_store · per_turn_metering · usage_store
 │   │                      · transcript · workflow_source · credentials_store
 │   │                      · client_status · interceptor · workspace · layout_seeder
+│   │                      · context_compressor · persona_source · plugin_source
+│   │                      · client_detector · client_chooser · persona_chooser
 │   ├── usecase/           one class per inbound port (ports only)
 │   └── wiring/            composition.py — the build_* factories
 ├── adapter/
 │   ├── inbound/cli/       app.py (argparse) · banner.py
 │   └── outbound/
-│       ├── caller/        claude · cursor · codex · vibe callers + provider, loader,
-│       │                  context_file, status_line_config, vibe_config
+│       ├── caller/        claude · cursor · codex · vibe callers + default_provider,
+│       │                  loader, context_file, context_opening, status_line_config,
+│       │                  vibe_config
 │       ├── gateway/       relay.py + anthropic_sse · openai_chat · openai_responses
 │       ├── store/         ledger.py · sqlite_{session,per_turn,usage}_store
 │       │                  · filesystem_transcript_store
 │       ├── credentials/   filesystem_credentials_store
-│       ├── interceptor/   compressor · size_logger
-│       ├── status/        claude_status_parser
+│       ├── compress/      cache_backed_compressor  (the ContextCompressorPort)
+│       ├── interceptor/   size_logger
+│       ├── status/        claude_status_parser · cursor_status_parser
+│       ├── persona/       filesystem_persona_source
+│       ├── plugin/        filesystem_plugin_source
 │       ├── workflow/      filesystem_workflow_source
 │       ├── workspace/     local_workspace_inspector
 │       └── bootstrap/     filesystem_layout_seeder

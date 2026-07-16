@@ -16,7 +16,7 @@ Run **claude**, **cursor**, **codex**, or **vibe** exactly as you know them — 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-185FA5?style=for-the-badge&labelColor=403E3A)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/danielslobozian/generic-ml-wrapper/ci.yml?branch=main&style=for-the-badge&labelColor=403E3A&label=ci)](https://github.com/danielslobozian/generic-ml-wrapper/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/sonar/coverage/danielslobozian_generic-ml-wrapper?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&labelColor=403E3A)](https://sonarcloud.io/summary/overall?id=danielslobozian_generic-ml-wrapper)
-[![Python](https://img.shields.io/badge/python-3.11%E2%80%933.13-185FA5?style=for-the-badge&labelColor=403E3A)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.11%E2%80%933.14-185FA5?style=for-the-badge&labelColor=403E3A)](pyproject.toml)
 
 [![client: claude](https://img.shields.io/badge/client-claude-534AB7?style=for-the-badge&labelColor=3C3489)](src/generic_ml_wrapper/adapter/outbound/caller/claude_cli_caller.py)
 [![client: cursor](https://img.shields.io/badge/client-cursor-534AB7?style=for-the-badge&labelColor=3C3489)](src/generic_ml_wrapper/adapter/outbound/caller/cursor_cli_caller.py)
@@ -25,7 +25,7 @@ Run **claude**, **cursor**, **codex**, or **vibe** exactly as you know them — 
 
 <br>
 
-[Why a wrapper](#why-a-wrapper) &nbsp;•&nbsp; [The job](#the-job) &nbsp;•&nbsp; [Install](#install) &nbsp;•&nbsp; [Workflows](#workflows) &nbsp;•&nbsp; [What it records](#what-it-records) &nbsp;•&nbsp; [Design](docs/DESIGN.md)
+[Why a wrapper](#why-a-wrapper) &nbsp;•&nbsp; [Clients](#clients-at-a-glance) &nbsp;•&nbsp; [The job](#the-job) &nbsp;•&nbsp; [Install](#install) &nbsp;•&nbsp; [Workflows](#workflows) &nbsp;•&nbsp; [What it records](#what-it-records) &nbsp;•&nbsp; [Guides](#guides) &nbsp;•&nbsp; [Design](docs/DESIGN.md)
 
 </div>
 
@@ -49,6 +49,19 @@ The judgment stays in the client. The deterministic parts — session identity, 
 <div align="center">
 <img src="docs/images/gmlw-usage.gif" alt="gmlw export — per-turn tokens and cost for a job" width="760">
 </div>
+
+## Clients at a glance
+
+Four clients, one surface — but they are **not** identical. What each supports today:
+
+| Client | Metering | Resume | Status line | Context delivery |
+|---|:---:|:---:|:---:|---|
+| **claude** (`claude`) | ✅ | ✅ | ✅ | native `--append-system-prompt-file` |
+| **cursor** (`cursor-agent`) | ❌ | ✅ | ✅ | context-file instruction |
+| **codex** (`codex`) | ✅ | ❌ | ❌ | initial instruction |
+| **vibe** (`vibe`) | ✅ | ❌ | ❌ | initial instruction |
+
+Cursor isn't metered by the open-source wrapper (its usage isn't on an interceptable API); Codex and Vibe don't resume. See [`docs/CLIENTS.md`](docs/CLIENTS.md) for the per-client detail and setup.
 
 ## The job
 
@@ -74,7 +87,7 @@ Nothing about the client changes — you get its full TUI. The wrapper owns the 
 
 ## Install
 
-Requires Python 3.11–3.13 and [`uv`](https://docs.astral.sh/uv/). The console script is `gmlw`.
+Requires Python 3.11–3.14 and [`uv`](https://docs.astral.sh/uv/), plus **one supported coding CLI already installed and logged in** (`claude`, `cursor-agent`, `codex`, or `vibe`). The console script is `gmlw`.
 
 ```sh
 uv tool install generic-ml-wrapper     # or: uv sync --extra dev  (from a clone)
@@ -105,11 +118,41 @@ Everything lives under `~/.gmlw/`, owner-only, on your machine:
 | **Context** | `contexts/<job>/<session>.context.md` | the exact compiled context the session launched with |
 | **Transcript** *(opt-in)* | `transcripts/<job>/<session>/call_NNN.{in.json,out.sse,usage.json}` | every call's request, response, and usage — a portable, self-contained folder |
 
-For **Claude Code**, the wrapper renders a rich status line straight into the client's own status bar — the git branch, folder, model, context %, and live cost, plus the job's running total. (The status-line seam is client-agnostic; Claude is the one wired today.)
+For **Claude Code** and **Cursor**, the wrapper renders a rich status line straight into the client's own status bar — the git branch, folder, model, context %, and live cost, plus the job's running total. (The status-line seam is client-agnostic; Claude and Cursor are wired today, and other parsers can be added.)
 
 <div align="center">
 <img src="docs/images/gmlw-statusline.gif" alt="the gmlw status line rendered for claude and cursor" width="760">
 </div>
+
+## Your operating context, carried across clients
+
+Beyond metering, `gmlw` builds a portable operating context that follows you from one client to the next — none of it locked inside a single tool:
+
+- **Profile & company** — who you are and your project's conventions (`profile/me`, `profile/company`), composed into every session.
+- **Learned notebook** — what your tools notice about how you work, in one file they all mirror into; negatives ("what to avoid") are first-class.
+- **Personas** — a selectable tone with a free, local greeting at launch (`gmlw persona list`).
+- **Rules** — corrections you've demanded, captured as reusable reflexes (`~/.gmlw/rules/*.rule.md`).
+- **Mode-aware packaging** — a `[startup.<mode>]` matrix decides which sources compose for a plain session, a workflow, or authoring, with optional typed compression.
+- **Plugins & overrides** — swap a client's caller by id (`gmlw plugins list`, `[callers]`).
+
+Workflows (above) are *optional* and separate from this personal layer. Every listing/reporting command also speaks `--json` for automation.
+
+## What gmlw does not do
+
+- It is **not a sandbox** — it launches the real client with your credentials (see [`SECURITY.md`](SECURITY.md)).
+- It does **not** meter Cursor, and does **not** resume Codex or Vibe (see the [matrix](#clients-at-a-glance)).
+- It does **not** call models itself — the optional context compressor records through [`generic-ml-cache`](https://github.com/danielslobozian/generic-ml-cache).
+- It ships **no** compression prompts — the compressor stays inert until you configure one.
+
+## Guides
+
+- [User guide](docs/USER_GUIDE.md) — task-oriented, first launch through daily work.
+- [CLI reference](docs/CLI.md) — every command, flag, and `--json` option.
+- [Configuration](docs/CONFIGURATION.md) — every `config.toml` section, with examples.
+- [Clients](docs/CLIENTS.md) — per-client behaviour, setup, and limitations.
+- [Workflows](docs/WORKFLOWS.md) — authoring, layout, scripts, rules, credentials.
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — failures, diagnostics, reset/recovery.
+- [Design](docs/DESIGN.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ## Develop
 
@@ -117,7 +160,7 @@ The gates are defined once in [`noxfile.py`](noxfile.py); CI is a thin caller of
 
 ```sh
 uv sync --extra dev          # or: nox -s dev   (builds the IDE .venv)
-nox                          # lint · imports · typecheck · tests (3.11–3.13)
+nox                          # lint · imports · typecheck · tests (3.11–3.14)
 nox -s green                 # the whole gate in one env (lint · format · imports · pyright · coverage)
 ```
 
