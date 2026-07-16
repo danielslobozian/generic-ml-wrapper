@@ -54,3 +54,17 @@ def test_cli_reference_documents_every_command() -> None:
     cli_doc = (_ROOT / "docs" / "CLI.md").read_text(encoding="utf-8")
     missing = [cmd for cmd in sorted(_COMMANDS) if f"gmlw {cmd}" not in cli_doc]
     assert not missing, f"docs/CLI.md does not document: {missing}"
+
+
+# Harness tool-call markers that must never leak into a doc (a generation slip once
+# shipped `</content></invoke>`). Deliberately specific — real docs use HTML like <img>.
+# The namespaced marker is assembled at runtime so this file does not itself contain it.
+_FORBIDDEN_TAGS = ("</content>", "<invoke", "</invoke>", "<function_calls", "<" + "antml:")
+
+
+def test_docs_have_no_stray_tool_tags() -> None:
+    offenders: list[str] = []
+    for md in _markdown_files():
+        text = md.read_text(encoding="utf-8")
+        offenders += [f"{md.relative_to(_ROOT)}: {tag}" for tag in _FORBIDDEN_TAGS if tag in text]
+    assert not offenders, "stray tool-artifact tags in docs:\n" + "\n".join(offenders)

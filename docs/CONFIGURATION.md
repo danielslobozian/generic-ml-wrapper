@@ -137,12 +137,14 @@ rules   = { activated = false, compression = false }
 persona = { activated = false, compression = false }
 ```
 
-Workflow mode ships `base` verbatim and compresses `steps`:
+Every source defaults to `compression = false` — nothing is compressed unless you turn
+it on *and* a prompt resolves (see [`[compress]`](#compress)). For a workflow run you
+might, for example, opt to compress the longer `steps` while leaving `base` verbatim:
 
 ```toml
 [startup.workflow.context]
 base  = { compression = false }
-steps = { compression = true }
+steps = { compression = true }   # opt-in; the default is false
 ```
 
 See [WORKFLOWS.md](WORKFLOWS.md) for how base and steps are compiled.
@@ -157,6 +159,7 @@ source is `activated` in the relevant `[startup.<mode>]` block above). Off — i
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `persona` | Built-in persona or a custom file name | unset (invisible) |
+| `name` | The name the host greeting addresses you by | unset (falls back to the OS user) |
 
 Built-in personas: `plain` \| `companion` \| `mentor` \| `butler` \| `terse`. List
 them with `gmlw persona list`. Author your own by dropping a file into

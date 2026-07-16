@@ -133,5 +133,3 @@ same throwaway-`VIBE_HOME` relay path used for metering.
 - [CLI.md](CLI.md) — every `gmlw` command.
 - [DESIGN.md](DESIGN.md) — the caller model and metering relay in depth.
 - [../SECURITY.md](../SECURITY.md) — the trust and credential boundary.
-</content>
-</invoke>
