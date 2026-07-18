@@ -10,6 +10,7 @@ import getpass
 import importlib
 import json
 import os
+import signal
 import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -367,8 +368,8 @@ def format_plugins(plugins: list[Plugin]) -> str:
     return "\n".join(lines)
 
 
-def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912  (a per-command dispatcher)
-    """Run the CLI.
+def main(argv: list[str] | None = None) -> int:
+    """Run the CLI, returning a clean exit code instead of dumping a traceback.
 
     Args:
         argv: Arguments to parse; defaults to ``sys.argv[1:]``.
@@ -376,7 +377,17 @@ def main(argv: list[str] | None = None) -> int:  # noqa: PLR0911, PLR0912  (a pe
     Returns:
         The process exit code.
     """
-    resolved = sys.argv[1:] if argv is None else argv
+    try:
+        return _dispatch(sys.argv[1:] if argv is None else argv)
+    except KeyboardInterrupt:
+        print(file=sys.stderr)  # a tidy newline after ^C, never a traceback
+        return 130
+    except Exception as error:  # noqa: BLE001  last resort: no traceback reaches the user
+        print(f"gmlw: unexpected error: {error}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-command dispatcher)
     parser = build_parser()
     args = parser.parse_args(_implicit_start(resolved))
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
@@ -587,6 +598,30 @@ _START_NEEDS_JOB = (
 )
 
 
+def _ignore_sigint(_signum: int, _frame: object) -> None:
+    """Swallow Ctrl+C while the client owns the terminal.
+
+    The interactive client handles its own interrupt; gmlw only supervises, so it must
+    not die on SIGINT or let a second Ctrl+C abort teardown. Custom handlers reset to the
+    default in the child on exec, so the client still receives Ctrl+C normally.
+    """
+
+
+def _farewell() -> str | None:
+    """Return a parting line when a companion persona is set, else ``None``.
+
+    Mirrors the host greeting's gating and name, printed on the return once the client
+    has exited -- the first, visible seed of the session's exit summary.
+
+    Returns:
+        ``"Bye, <name>."``, or ``None`` when the companion is off.
+    """
+    settings = config.companion()
+    if settings.persona is None:
+        return None
+    return f"Bye, {settings.name or getpass.getuser()}."
+
+
 def _start(args: argparse.Namespace) -> int:
     if args.job is None:  # `gmlw start` with no job — guide instead of an argparse dump
         print(_START_NEEDS_JOB, file=sys.stderr)
@@ -608,11 +643,21 @@ def _start(args: argparse.Namespace) -> int:
     greeting = build_render_greeting().execute()
     if greeting:
         print(greeting, file=sys.stderr)
+    # While the client owns the terminal it handles Ctrl+C itself; gmlw must neither crash
+    # on the interrupt nor let a second one abort teardown (relay stop + status-line
+    # restore). Swallow SIGINT for the run so end_metering always completes, then restore.
+    previous_sigint = signal.signal(signal.SIGINT, _ignore_sigint)
     try:
-        return build_start_job().execute(command)
+        code = build_start_job().execute(command)
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:
         print(f"error: {error}")
         return 2
+    finally:
+        signal.signal(signal.SIGINT, previous_sigint)
+    farewell = _farewell()
+    if farewell:
+        print(farewell, file=sys.stderr)
+    return code
 
 
 def _read_secret() -> str:

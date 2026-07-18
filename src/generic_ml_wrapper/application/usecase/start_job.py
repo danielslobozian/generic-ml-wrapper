@@ -21,6 +21,7 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPro
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.common.log import log
 
 
 class StartJobUseCase(StartJob):
@@ -81,7 +82,10 @@ class StartJobUseCase(StartJob):
         try:
             return caller.start_client()
         finally:
-            caller.end_metering()
+            try:
+                caller.end_metering()
+            except Exception as error:  # noqa: BLE001  teardown must never crash the run
+                log.warning(f"metering teardown failed: {error}")
 
     def _attach_baseline(self, run: RunContext) -> RunContext:
         """Inject the always-on baseline context (profile/learned/persona) on a plain run.
