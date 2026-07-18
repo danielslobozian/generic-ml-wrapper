@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for clean exit handling (no tracebacks) and the farewell line."""
 
+import argparse
+import signal
+
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
@@ -46,3 +49,50 @@ def test_farewell_greets_the_configured_name(monkeypatch: pytest.MonkeyPatch) ->
         app.config, "companion", lambda: CompanionSettings(persona="butler", name="Ada")
     )
     assert app._farewell() == "Bye, Ada."
+
+
+def _noop_signal(*_args: object) -> None:
+    return None
+
+
+def _true() -> bool:
+    return True
+
+
+def _true_for_client(_client: object) -> bool:
+    return True
+
+
+class _SilentGreeting:
+    def execute(self) -> None:
+        return None
+
+
+class _TerminatingStartJob:
+    def execute(self, _command: object) -> int:
+        raise app._Terminated
+
+
+def test_on_termination_raises_terminated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app.signal, "signal", _noop_signal)  # don't touch real dispositions
+    with pytest.raises(app._Terminated):
+        app._on_termination(signal.SIGTERM, None)
+
+
+def test_client_owns_interrupts_installs_and_restores() -> None:
+    before_int = signal.getsignal(signal.SIGINT)
+    before_term = signal.getsignal(signal.SIGTERM)
+    with app._client_owns_interrupts():
+        assert signal.getsignal(signal.SIGINT) is app._ignore_sigint
+        assert signal.getsignal(signal.SIGTERM) is app._on_termination
+    assert signal.getsignal(signal.SIGINT) is before_int
+    assert signal.getsignal(signal.SIGTERM) is before_term
+
+
+def test_start_returns_143_when_terminated(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app, "_preflight_cwd", _true)
+    monkeypatch.setattr(app, "_preflight_client", _true_for_client)
+    monkeypatch.setattr(app, "build_render_greeting", _SilentGreeting)
+    monkeypatch.setattr(app, "build_start_job", _TerminatingStartJob)
+    args = argparse.Namespace(job="test", client="claude", workflow=None, resume_latest=False)
+    assert app._start(args) == 143

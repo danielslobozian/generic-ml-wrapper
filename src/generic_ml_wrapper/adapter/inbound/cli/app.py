@@ -12,6 +12,7 @@ import json
 import os
 import signal
 import sys
+from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import cast
@@ -598,6 +599,10 @@ _START_NEEDS_JOB = (
 )
 
 
+class _Terminated(Exception):  # noqa: N818  (a control-flow signal, not an *Error)
+    """Raised by the SIGTERM/SIGHUP handler to unwind session teardown before exit."""
+
+
 def _ignore_sigint(_signum: int, _frame: object) -> None:
     """Swallow Ctrl+C while the client owns the terminal.
 
@@ -605,6 +610,41 @@ def _ignore_sigint(_signum: int, _frame: object) -> None:
     not die on SIGINT or let a second Ctrl+C abort teardown. Custom handlers reset to the
     default in the child on exec, so the client still receives Ctrl+C normally.
     """
+
+
+def _on_termination(signum: int, _frame: object) -> None:
+    """Convert a kill/hangup into a clean unwind so session teardown runs before exit.
+
+    Raising here propagates out of the blocked client run and triggers the ``finally``
+    that stops the relay and restores the client's status-line hook -- so a killed or
+    hung-up session never leaves gmlw's hook behind in the user's settings. The handler
+    resets itself first, so a repeat signal terminates immediately and cleanup can't
+    itself wedge the exit.
+    """
+    signal.signal(signum, signal.SIG_DFL)
+    raise _Terminated
+
+
+# SIGTERM everywhere; SIGHUP (terminal hangup) only where the platform has it (not Windows).
+_TERMINATION_SIGNALS = (
+    (signal.SIGTERM, signal.SIGHUP) if hasattr(signal, "SIGHUP") else (signal.SIGTERM,)
+)
+
+
+@contextlib.contextmanager
+def _client_owns_interrupts() -> Generator[None, None, None]:
+    """Make the client own interrupts for the duration of a session.
+
+    gmlw ignores Ctrl+C (the client handles it) and turns a kill/hangup into a clean
+    unwind so teardown runs, then restores every prior handler on the way out.
+    """
+    previous = [(signal.SIGINT, signal.signal(signal.SIGINT, _ignore_sigint))]
+    previous += [(sig, signal.signal(sig, _on_termination)) for sig in _TERMINATION_SIGNALS]
+    try:
+        yield
+    finally:
+        for sig, handler in previous:
+            signal.signal(sig, handler)
 
 
 def _farewell() -> str | None:
@@ -643,17 +683,17 @@ def _start(args: argparse.Namespace) -> int:
     greeting = build_render_greeting().execute()
     if greeting:
         print(greeting, file=sys.stderr)
-    # While the client owns the terminal it handles Ctrl+C itself; gmlw must neither crash
-    # on the interrupt nor let a second one abort teardown (relay stop + status-line
-    # restore). Swallow SIGINT for the run so end_metering always completes, then restore.
-    previous_sigint = signal.signal(signal.SIGINT, _ignore_sigint)
-    try:
-        code = build_start_job().execute(command)
-    except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-        print(f"error: {error}")
-        return 2
-    finally:
-        signal.signal(signal.SIGINT, previous_sigint)
+    # The client owns the terminal for the session: it handles Ctrl+C itself, and a
+    # kill/hangup is turned into a clean unwind so teardown (relay stop + status-line
+    # restore) always runs -- gmlw never leaves its hook behind in the user's settings.
+    with _client_owns_interrupts():
+        try:
+            code = build_start_job().execute(command)
+        except _Terminated:
+            return 143  # 128 + SIGTERM: terminated, but teardown ran
+        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+            print(f"error: {error}")
+            return 2
     farewell = _farewell()
     if farewell:
         print(farewell, file=sys.stderr)
