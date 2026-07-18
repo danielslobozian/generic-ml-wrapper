@@ -131,6 +131,7 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
         companion=lambda: config.companion().persona,
         environments_root=paths.ENVIRONMENTS,
         default_environment=config.default_environment,
+        default_role=config.default_role,
     )
 
 

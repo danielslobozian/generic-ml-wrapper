@@ -29,6 +29,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   forced-init and the normal bootstrap paths, so an install initialised before the
   migration existed is caught too. The `company` context source is unchanged as a config
   key; only its on-disk home moved to `environments/<env>/`.
+- **Role-scoped rules & learned.** The role chosen at init (`[profile] default_role`, a lens
+  over `me`) now shapes context: rules under `profile/roles/<role>/rules/*.md` and a
+  `profile/roles/<role>/learned.md` compose into the `rules` and `me.learned` sources **only
+  when that role is active** — layered after the global rules/learned (general → specific).
+  `gmlw init` seeds the chosen role's folder with an empty `rules/` drop-zone. Capture stays
+  global for now (new reflexes are still written to `rules/` and `profile/me/learned.md`);
+  role-aware capture is a later step.
 
 ## [0.3.0] - 2026-07-18
 

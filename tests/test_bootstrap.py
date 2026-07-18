@@ -113,6 +113,7 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
     )
     assert fresh is True  # a brand-new install got the full write
     assert (tmp_path / "environments" / "work").is_dir()  # the chosen environment's folder
+    assert (tmp_path / "profile" / "roles" / "engineer" / "rules").is_dir()  # the role's drop-zone
     parsed = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
     assert parsed["init"] == {"version": "0.4.0"}  # the gate marker
     assert parsed["language"] == {"code": "fr"}

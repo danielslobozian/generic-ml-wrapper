@@ -150,6 +150,66 @@ def test_default_mode_composes_profile_and_rules_not_the_workflow(tmp_path: Path
     assert "Rules — the user's demanded reflexes" in compiled
 
 
+def _write_role_content(profile: Path, role: str) -> None:
+    """Seed a role's scoped rule and learned notebook under profile/roles/<role>/."""
+    role_rules = profile / "roles" / role / "rules"
+    role_rules.mkdir(parents=True)
+    (role_rules / "review.rule.md").write_text(
+        "---\nname: role-review\nstatus: active\n---\n\n**Rule:** engineer reviews diffs.",
+        encoding="utf-8",
+    )
+    (profile / "roles" / role / "learned.md").write_text(
+        "This engineer prefers property tests.", encoding="utf-8"
+    )
+
+
+def test_active_role_scopes_rules_and_learned_into_the_context(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "me").mkdir(parents=True)
+    (profile / "me" / "learned.md").write_text("Global note.", encoding="utf-8")
+    (tmp_path / "rules").mkdir()
+    (tmp_path / "rules" / "g.rule.md").write_text("**Rule:** global reflex.", encoding="utf-8")
+    _write_role_content(profile, "engineer")
+
+    compiled = FilesystemWorkflowSource(
+        tmp_path / "wf", profile, tmp_path / "rules", default_role=lambda: "engineer"
+    ).compile(CompileMode.DEFAULT)
+
+    assert "global reflex." in compiled  # global rules still compose
+    assert "engineer reviews diffs." in compiled  # the active role's scoped rule
+    assert "Global note." in compiled  # the shared learned notebook
+    assert "prefers property tests." in compiled  # the active role's learned notebook
+    # role rules sit after the global ones (general -> specific)
+    assert compiled.index("global reflex.") < compiled.index("engineer reviews diffs.")
+
+
+def test_inactive_role_content_is_not_composed(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    (profile / "me").mkdir(parents=True)
+    _write_role_content(profile, "qa")  # content exists under roles/qa/ ...
+
+    # ... but the active role is "default", so none of qa's scoped content is pulled in.
+    compiled = FilesystemWorkflowSource(
+        tmp_path / "wf", profile, default_role=lambda: "default"
+    ).compile(CompileMode.DEFAULT)
+
+    assert "engineer reviews diffs." not in compiled
+    assert "prefers property tests." not in compiled
+
+
+def test_role_rules_skip_drafts_like_global_rules(tmp_path: Path) -> None:
+    profile = tmp_path / "profile"
+    role_rules = profile / "roles" / "engineer" / "rules"
+    role_rules.mkdir(parents=True)
+    (role_rules / "draft.rule.md").write_text(
+        "---\nname: d\nstatus: draft\n---\n\n**Rule:** not yet.", encoding="utf-8"
+    )
+    compiled = FilesystemWorkflowSource(
+        tmp_path / "wf", profile, default_role=lambda: "engineer"
+    ).compile(CompileMode.DEFAULT)
+    assert "not yet" not in compiled  # a draft role rule is not injected
+
+
 def test_rule_capture_directive_is_present_with_no_rules_yet(tmp_path: Path) -> None:
     # The whole point of always-on capture: offer to record the *first* rule, so the
     # directive must show even when the rules directory is empty.

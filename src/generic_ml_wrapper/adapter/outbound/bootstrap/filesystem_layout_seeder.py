@@ -21,6 +21,9 @@ if TYPE_CHECKING:
 # (created by `initialize` for the chosen env); the old profile/company is migrated into it.
 _DIRS = ("profile/me", "rules")
 _ENVIRONMENTS = "environments"
+# Role-scoped rules/learned live per role; init seeds the chosen role's folder (with an
+# empty rules/ drop-zone mirroring the global rules/). The role is a lens over `me`.
+_ROLES = "profile/roles"
 _CONFIG = "config.toml"
 # The learned notebook, seeded empty (header + the two sections) for the client to fill.
 _LEARNED = "profile/me/learned.md"
@@ -310,6 +313,8 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         self._ensure_dirs()
         # The chosen environment's folder — the movie set the migration wraps company into.
         (self._home / _ENVIRONMENTS / selections.environment).mkdir(parents=True, exist_ok=True)
+        # The chosen role's folder, with an empty rules/ drop-zone (role-scoped reflexes).
+        (self._home / _ROLES / selections.role / "rules").mkdir(parents=True, exist_ok=True)
         config = self._home / _CONFIG
         if config.exists():
             self._append_marker(config, selections.version)

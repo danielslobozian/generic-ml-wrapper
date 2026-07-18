@@ -69,6 +69,16 @@ $EDITOR ~/.gmlw/profile/me/about.md
 $EDITOR ~/.gmlw/environments/work/overview.md
 ```
 
+Rules and learnings can also be **role-scoped**: drop them under
+`~/.gmlw/profile/roles/<role>/rules/` and `~/.gmlw/profile/roles/<role>/learned.md`, and they
+compose only when `<role>` is your active `[profile] default_role` (the functional hat you
+picked at `gmlw init` — a lens over `me`, not a separate you). Global `rules/` and
+`profile/me/learned.md` always apply; the role's add on top.
+
+```
+$EDITOR ~/.gmlw/profile/roles/engineer/rules/review.rule.md
+```
+
 Which sources are activated (and compressed) per mode is controlled by the `[startup.<mode>]`
 matrix in [CONFIGURATION.md](CONFIGURATION.md); `me.user` and `company` (the environment source)
 are active by default. If you upgraded from an older layout, `gmlw` migrates your old
