@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import getpass
+import importlib
 import json
 import os
 import sys
@@ -14,6 +15,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import cast
 
+from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
@@ -126,6 +128,24 @@ def _as_json(payload: object) -> str:
     return json.dumps(payload, indent=2)
 
 
+def _version_string() -> str:
+    """Return ``gmlw <version> (build <id>, git <sha>)``; a plain fallback if unbuilt.
+
+    ``_build_info`` is stamped into the wheel at build time; a source checkout that was
+    never built lacks it and reports ``(source, unbuilt)`` instead.
+
+    Returns:
+        The version line for ``gmlw --version``.
+    """
+    try:
+        build_info = importlib.import_module("generic_ml_wrapper._build_info")
+    except ModuleNotFoundError:
+        return f"gmlw {__version__} (source, unbuilt)"
+    build_id = getattr(build_info, "BUILD_ID", "unknown")
+    git_sha = getattr(build_info, "GIT_SHA", "unknown")
+    return f"gmlw {__version__} (build {build_id}, git {git_sha})"
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser.
 
@@ -137,6 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
         description=banner(),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=_version_string())
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
     start = sub.add_parser("start", help="start or resume a session on a job")
