@@ -43,10 +43,10 @@ Everything a session inherits, and the ergonomics around it.
 
 ## Planned
 
-### 0.3.0 — lifecycle action hooks
+### 0.3.0 — lifecycle action hooks — done (Unreleased)
 gmlw already hooks **content**: the interceptor chain transforms context sections at
-compile time and wire traffic at relay time (e.g. anonymisation on `request`). 0.3.0
-adds **action** hooks — "after this phase, run something" — at two lifecycle seams
+compile time and wire traffic at relay time (e.g. anonymisation on `request`). It now
+also hooks **actions** — "after this phase, run something" — at two lifecycle seams
 that bracket the client run:
 
 - **`pre-launch`** — after the context is compiled and the caller resolved, before the
@@ -59,9 +59,14 @@ that bracket the client run:
 Config mirrors the existing extension points — a `[[hooks]]` entry with a `phase`, a
 `spec` (a plugin id or `path.py:Class`), and an optional `client` scope — under the
 same trusted-code boundary as `[[interceptors]]`, `[callers]`, and plugins. Hooks are
-best-effort and never break a launch. The first example hook: a **cross-client
-skills/rules deployer** that consumes a git repo of skills and installs them, per
-client, as faithfully as each client's format allows.
+best-effort and never break a launch. Both launch paths (`start`, `workflow new`) route
+through one shared launch sequence, so the seams bracket every run. Shipped with a
+built-in `SessionLogger` reference hook.
+
+**Still open — the flagship example hook:** a **cross-client skills/rules deployer** that
+consumes a git repo of skills and installs them, per client, as faithfully as each
+client's format allows. It is its own initiative (per-client format knowledge), built on
+the seam above; the infrastructure is done and waiting for it.
 
 #### Rule lifecycle — done (Unreleased)
 0.2.0 shipped rule *capture*, but only inside a workflow (the directive lived in the

@@ -288,6 +288,9 @@ def test_provider_resolves_a_plugin_id_override() -> None:
         def resolve_caller(self, reference: str) -> str:
             return spec if reference == "my-cursor" else reference
 
+        def resolve_hook(self, reference: str) -> str:
+            return reference
+
     provider = DefaultCliCallerProvider(
         {"gemini": "my-cursor"}, metering=_FakeMetering(), plugins=_Plugins()
     )

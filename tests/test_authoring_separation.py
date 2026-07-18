@@ -10,6 +10,7 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
     FilesystemWorkflowSource,
 )
 from generic_ml_wrapper.application.domain.model.run import RunContext
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -33,6 +34,7 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
         store=SqliteSessionStore(ledger, kind="authoring"),
         callers=_NoLaunchProvider(),
         uuid_factory=lambda: "u",
+        hooks=HookRunner(()),
     )
     new_workflow.execute(NewWorkflowCommand(name="doc-review", client="claude"))
 

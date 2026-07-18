@@ -43,6 +43,8 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspector,
 )
+from generic_ml_wrapper.application.domain.service.hook import HookPhase
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
@@ -59,6 +61,7 @@ from generic_ml_wrapper.application.port.inbound.render_statusline import Render
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
+from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
@@ -187,6 +190,28 @@ def _interceptor_chain() -> InterceptorChain:
     return InterceptorChain(loaded)
 
 
+def _hook_runner() -> HookRunner:
+    """Build the lifecycle hook runner from ``[[hooks]]`` config.
+
+    Each entry's ``spec`` may be a plugin id (resolved through the plugin source, the same
+    as a ``[callers]`` reference) or a direct ``"module:Class"`` / ``"/path.py:Class"``
+    spec. A configured-but-unloadable hook raises (``PluginError``/``SpecLoadError``, which
+    the CLI surfaces) rather than being silently skipped — a config typo should not quietly
+    disable a hook the user asked for. The phase is pre-validated by :func:`config.hooks`.
+
+    Returns:
+        The configured runner (empty — a no-op — when none are configured).
+    """
+    plugins = build_plugin_source()
+    loaded: list[tuple[HookPhase, str | None, HookPort]] = []
+    for phase, spec, client in config.hooks():
+        hook_class = load_class(plugins.resolve_hook(spec), HookPort)
+        # load_class guarantees a concrete subclass; the abstract-usage flag is a
+        # false positive (the generic loader resolves the exact base type).
+        loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]
+    return HookRunner(loaded)
+
+
 def build_start_job() -> StartJob:
     """Build the StartJob use case wired to the filesystem store and default callers.
 
@@ -206,6 +231,7 @@ def build_start_job() -> StartJob:
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
+        hooks=_hook_runner(),
     )
 
 
@@ -340,4 +366,5 @@ def build_new_workflow() -> NewWorkflow:
             plugins=build_plugin_source(),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
+        hooks=_hook_runner(),
     )

@@ -97,6 +97,22 @@ __CLIENT_DEFAULT__
 # target = "response"
 # spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
 
+# Hooks (0..N, ordered), each an action (HookPort) run at a lifecycle seam bracketing the
+# client run — not a content transform (that is an interceptor) but a side effect. Phases:
+# "pre-launch" (after the context is compiled and the caller resolved, before the client
+# starts — for per-client setup: deploy skills/rules, write MCP config, warm a cache) and
+# "post-session" (after the client exits, with its exit code — for cleanup, notification,
+# archival). Each spec is a "module:Class" / "/path.py:Class" or a plugin id; an optional
+# client scopes the hook to one client. Best-effort: a failing hook never breaks a launch.
+# The built-in SessionLogger appends a line at each seam — a template for your own hooks:
+# [[hooks]]
+# phase = "pre-launch"
+# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+# [[hooks]]
+# phase = "post-session"
+# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+# client = "claude"   # optional; omit to run for every client
+
 # Context packaging. On every run gmlw composes an operating context from a fixed set of
 # sources; [startup] decides, per mode, which are active and which are compressed. Modes:
 # default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`).

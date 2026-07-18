@@ -12,9 +12,9 @@ Related guides: [WORKFLOWS.md](WORKFLOWS.md), [CLIENTS.md](CLIENTS.md),
 
 ## Trusted-code boundary
 
-The `[callers]` and `[[interceptors]]` sections name Python code that gmlw **loads and
-runs with your permissions** on the next invocation — this file is a trusted-code
-boundary. Point them only at code you wrote or trust. A configured-but-unloadable spec
+The `[callers]`, `[[interceptors]]`, and `[[hooks]]` sections name Python code that gmlw
+**loads and runs with your permissions** on the next invocation — this file is a
+trusted-code boundary. Point them only at code you wrote or trust. A configured-but-unloadable spec
 fails **loudly** (it does not silently degrade); an absent one is a silent no-op. See
 [SECURITY.md](../SECURITY.md).
 
@@ -91,6 +91,45 @@ spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeL
 [[interceptors]]
 target = "response"
 spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
+```
+
+## `[[hooks]]`
+
+Zero or more ordered *actions* (`HookPort`) run at a lifecycle seam bracketing the
+client run — where an interceptor transforms content, a hook performs a side effect and
+returns nothing. Declare each as its own `[[hooks]]` array-of-tables entry.
+
+| Key | Meaning |
+| --- | --- |
+| `phase` | The lifecycle seam: `pre-launch` \| `post-session` |
+| `spec` | The `"module:Class"` / `"/path.py:Class"` to load, or a plugin id |
+| `client` | *(optional)* scope the hook to one client; omit to run for every client |
+
+**`pre-launch`** runs after the context is compiled and the caller resolved, before the
+client starts — it knows the client, working directory, and session. For per-client setup:
+deploying skills/rules into a client's native mechanism, writing MCP config, warming a
+cache. **`post-session`** runs after the client exits — it knows the exit code and the
+session. For cleanup, notification, archival, or roll-up.
+
+Hooks are **best-effort**: a failing hook is logged and skipped, never breaking a launch
+or its teardown. A `spec` may be a plugin id (resolved through `~/.gmlw/plugins/<id>/`,
+the same as a `[callers]` reference) or a direct spec. The built-in `SessionLogger`
+appends a line to `~/.gmlw/sessions.log` at each seam — a template to copy for your own.
+
+Default: no hooks.
+
+> **Trusted code.** Hook specs are loaded and run as you — see the
+> [trusted-code boundary](#trusted-code-boundary).
+
+```toml
+[[hooks]]
+phase = "pre-launch"
+spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+
+[[hooks]]
+phase = "post-session"
+spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+client = "claude"   # optional; omit to run for every client
 ```
 
 ## `[startup.<mode>]`

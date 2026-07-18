@@ -57,3 +57,22 @@ def test_resolve_bad_manifest_caller_raises(tmp_path: Path) -> None:
     _install(root, "broken", manifest='[plugin]\ncaller = "no-colon-here"\n')
     with pytest.raises(PluginError, match="caller must be"):
         FilesystemPluginSource(root).resolve_caller("broken")
+
+
+def test_resolve_hook_id_returns_an_absolute_spec(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _install(root, "deployer", manifest='[plugin]\nhook = "deployer.py:SkillsDeployer"\n')
+    resolved = FilesystemPluginSource(root).resolve_hook("deployer")
+    assert resolved == f"{root / 'deployer' / 'deployer.py'}:SkillsDeployer"
+
+
+def test_resolve_hook_passes_a_spec_through_unchanged(tmp_path: Path) -> None:
+    source = FilesystemPluginSource(tmp_path / "plugins")
+    assert source.resolve_hook("pkg.mod:Hook") == "pkg.mod:Hook"
+
+
+def test_resolve_hook_bad_manifest_raises(tmp_path: Path) -> None:
+    root = tmp_path / "plugins"
+    _install(root, "broken", manifest='[plugin]\nhook = "no-colon-here"\n')
+    with pytest.raises(PluginError, match="hook must be"):
+        FilesystemPluginSource(root).resolve_hook("broken")

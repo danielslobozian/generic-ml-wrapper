@@ -4,6 +4,7 @@
 
 from pathlib import Path
 
+from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.common import config
 
 
@@ -51,6 +52,31 @@ def test_interceptors_are_read_in_order(tmp_path: Path) -> None:
 
 def test_no_interceptors_section_is_empty(tmp_path: Path) -> None:
     assert config.interceptors(tmp_path / "missing.toml") == []
+
+
+def test_hooks_are_read_in_order_with_optional_client(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        '[[hooks]]\nphase = "pre-launch"\nspec = "deployer"\nclient = "claude"\n\n'
+        '[[hooks]]\nphase = "post-session"\nspec = "pkg:Cleanup"\n\n'
+        '[[hooks]]\nphase = "midflight"\nspec = "pkg:Bogus"\n\n'  # unknown phase: dropped
+        '[[hooks]]\nphase = "pre-launch"\n',  # missing spec: dropped
+    )
+    assert config.hooks(path) == [
+        ("pre-launch", "deployer", "claude"),
+        ("post-session", "pkg:Cleanup", None),  # no client -> every client
+    ]
+
+
+def test_no_hooks_section_is_empty(tmp_path: Path) -> None:
+    assert config.hooks(tmp_path / "missing.toml") == []
+
+
+def test_hook_phase_values_agree_with_the_domain_enum() -> None:
+    # config keeps its own literal phase vocabulary; this guards it against drift from
+    # the domain HookPhase (a new phase must be added in both places).
+    domain_phases = {phase.value for phase in HookPhase}
+    assert domain_phases == config._HOOK_PHASES
 
 
 def test_log_level_reads_config_and_defaults_to_warning(tmp_path: Path) -> None:

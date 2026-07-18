@@ -55,14 +55,27 @@ class FilesystemPluginSource(PluginSourcePort):
 
     def resolve_caller(self, reference: str) -> str:
         """Resolve a caller reference: a spec passes through, an id via its manifest."""
+        return self._resolve(reference, "caller")
+
+    def resolve_hook(self, reference: str) -> str:
+        """Resolve a hook reference: a spec passes through, an id via its manifest."""
+        return self._resolve(reference, "hook")
+
+    def _resolve(self, reference: str, key: str) -> str:
+        """Resolve a plugin reference through the ``[plugin] <key>`` entry of its manifest.
+
+        A value already carrying ``":"`` is a module/path spec and passes through; a bare
+        value is a plugin id whose manifest's ``key`` (``caller`` / ``hook``) names a
+        ``file.py:Class`` relative to the plugin folder, resolved to an absolute spec.
+        """
         if ":" in reference:  # already a module/path spec
             return reference
         manifest = self._manifest(reference)
-        caller = manifest.get("caller")
-        if not isinstance(caller, str) or ":" not in caller:
-            message = f'plugin {reference!r}: [plugin] caller must be "file.py:Class"'
+        value = manifest.get(key)
+        if not isinstance(value, str) or ":" not in value:
+            message = f'plugin {reference!r}: [plugin] {key} must be "file.py:Class"'
             raise PluginError(message)
-        relative, _, class_name = caller.partition(":")
+        relative, _, class_name = value.partition(":")
         path = (self._root / reference / relative).resolve()
         return f"{path}:{class_name}"
 
