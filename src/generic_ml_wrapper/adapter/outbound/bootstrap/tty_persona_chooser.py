@@ -29,21 +29,23 @@ class TtyPersonaChooser(PersonaChooserPort):
         """
         self._i18n = i18n
 
-    def choose(self, personas: list[Persona]) -> str | None:
+    def choose(self, personas: list[Persona], i18n: Localizer | None = None) -> str | None:
         """Offer the personas and return the chosen name, or ``None`` to decline.
 
         Args:
             personas: The selectable personas to offer.
+            i18n: The localiser for the prompt; ``None`` uses the construction-time one.
 
         Returns:
             The chosen persona name, or ``None`` when declined or there is no terminal.
         """
+        loc = i18n or self._i18n
         return choose_number(
-            self._i18n.t("init.persona.header"),
+            loc.t("init.persona.header"),
             [
                 Choice(value=persona.name, label=persona.name, description=persona.description)
                 for persona in personas
             ],
-            self._i18n,
+            loc,
             skippable=True,
         )

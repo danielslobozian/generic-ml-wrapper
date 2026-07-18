@@ -29,18 +29,20 @@ class TtyClientChooser(ClientChooserPort):
         """
         self._i18n = i18n
 
-    def choose(self, candidates: list[str]) -> str | None:
+    def choose(self, candidates: list[str], i18n: Localizer | None = None) -> str | None:
         """Prompt for a default client, defaulting to the first on an empty line.
 
         Args:
             candidates: The installed clients to choose among (two or more).
+            i18n: The localiser for the prompt; ``None`` uses the construction-time one.
 
         Returns:
             The chosen client, or ``None`` when there is no terminal to prompt on.
         """
+        loc = i18n or self._i18n
         return choose_number(
-            self._i18n.t("init.client.header"),
+            loc.t("init.client.header"),
             [Choice(value=name, label=name) for name in candidates],
-            self._i18n,
+            loc,
             default=0,
         )

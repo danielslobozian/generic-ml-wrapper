@@ -25,10 +25,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     TurnRow,
     UsageReport,
 )
-from generic_ml_wrapper.application.port.inbound.first_run_init import (
-    FirstRunInit,
-    FirstRunOutcome,
-)
+from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -70,6 +67,14 @@ def _config_absent(*_: object, **__: object) -> bool:
     return False
 
 
+def _init_done(*_: object, **__: object) -> str | None:
+    return "0.4.0"  # the gate sees an initialised install
+
+
+def _init_absent(*_: object, **__: object) -> str | None:
+    return None  # the gate sees an un-initialised (or legacy) install
+
+
 class _Greeting(RenderGreeting):
     def __init__(self, text: str | None = None) -> None:
         self._text = text
@@ -92,12 +97,12 @@ class _CheckClient(CheckClientReady):
 def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep ``main``'s self-init from touching the real ~/.gmlw during CLI tests.
 
-    Also pin ``config_exists`` to ``True`` so ``main`` takes the (stubbed) bootstrap
-    branch, not the first-run branch — first-run wiring is exercised on its own below —
+    Also pin ``init_version`` to a value so the gate takes the (stubbed) bootstrap
+    branch, not the forced-init branch — init wiring is exercised on its own below —
     and stub the host greeting off so ``start`` tests don't read the real config.
     """
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
-    monkeypatch.setattr(app.config, "config_exists", _config_present)
+    monkeypatch.setattr(app.config, "init_version", _init_done)
     monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting(None))
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient())
 
@@ -122,6 +127,7 @@ def test_implicit_start_leaves_commands_flags_and_empty_untouched() -> None:
 def test_command_set_entries_are_real_parseable_commands() -> None:
     parser = app.build_parser()
     samples = {
+        "init": ["init"],
         "start": ["start"],
         "jobs": ["jobs"],
         "sessions": ["sessions", "J"],
@@ -504,95 +510,129 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     assert calls == []
 
 
-class _FakeFirstRun(FirstRunInit):
-    def __init__(self, outcome: FirstRunOutcome, calls: list[str]) -> None:
+class _FakeInit(Init):
+    def __init__(self, outcome: InitOutcome, calls: list[str]) -> None:
         self._outcome = outcome
         self._calls = calls
 
-    def execute(self) -> FirstRunOutcome:
-        self._calls.append("first-run")
+    def execute(self) -> InitOutcome:
+        self._calls.append("init")
         return self._outcome
 
 
-def test_main_runs_first_run_init_when_config_absent(
+def _fresh_outcome(
+    *,
+    client: str | None = "cursor",
+    found: list[str] | None = None,
+    persona: str | None = None,
+    fresh: bool = True,
+) -> InitOutcome:
+    return InitOutcome(
+        language="en",
+        name="Ada",
+        role="default",
+        environment="work",
+        persona=persona,
+        client=client,
+        found=found if found is not None else (["cursor"] if client else []),
+        fresh=fresh,
+    )
+
+
+def _stub_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+
+
+def test_gate_forces_init_when_uninitialised(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     boot: list[str] = []
-    first: list[str] = []
+    ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
-    monkeypatch.setattr(app.config, "config_exists", _config_absent)
-    monkeypatch.setattr(
-        app,
-        "build_first_run_init",
-        lambda: _FakeFirstRun(FirstRunOutcome(found=["cursor"], chosen="cursor"), first),
-    )
-
-    class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
-            return []
-
-    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
+    _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
-    assert first == ["first-run"]  # first-run ran
-    assert boot == []  # bootstrap did not
+    assert ran == ["init"]  # forced init ran before the requested command
+    assert boot == []  # bootstrap did not (init seeds the layout)
     err = capsys.readouterr().err
-    assert "set 'cursor' as your default client" in err
+    assert "speaking en, calling you Ada" in err
+    assert "default client 'cursor'" in err
 
 
-def test_first_run_announces_no_client_found(
+def test_gate_skips_init_when_initialised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    boot: list[str] = []
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
+    monkeypatch.setattr(app.config, "init_version", _init_done)
+    monkeypatch.setattr(app, "build_init", lambda: pytest.fail("init must not run"))
+    _stub_jobs(monkeypatch)
+    assert app.main(["jobs"]) == 0
+    assert boot == ["init"]  # only bootstrap ran
+
+
+def test_init_command_runs_the_use_case(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "config_exists", _config_absent)
+    ran: list[str] = []
+    monkeypatch.setattr(app.config, "init_version", _init_done)  # even when already done
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
+    assert app.main(["init"]) == 0
+    assert ran == ["init"]
+
+
+def test_init_command_on_a_fresh_install_never_bootstraps_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `gmlw init` on an un-initialised install must NOT run bootstrap ahead of itself —
+    # a pre-seeded config would make init take the legacy (marker-only) path by mistake.
+    boot: list[str] = []
+    ran: list[str] = []
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
+    monkeypatch.setattr(app.config, "init_version", _init_absent)  # fresh
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
+    assert app.main(["init"]) == 0
+    assert ran == ["init"]  # init ran exactly once
+    assert boot == []  # bootstrap never ran
+
+
+def test_init_announces_no_client_found(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
     monkeypatch.setattr(
-        app,
-        "build_first_run_init",
-        lambda: _FakeFirstRun(FirstRunOutcome(found=[], chosen=None), []),
+        app, "build_init", lambda: _FakeInit(_fresh_outcome(client=None, found=[]), [])
     )
-
-    class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
-            return []
-
-    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     assert "no supported client found on your PATH" in capsys.readouterr().err
 
 
-def test_first_run_is_silent_when_multi_client_unresolved(
+def test_init_on_legacy_reports_marker_only(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "config_exists", _config_absent)
-    monkeypatch.setattr(
-        app,
-        "build_first_run_init",
-        lambda: _FakeFirstRun(FirstRunOutcome(found=["claude", "cursor"], chosen=None), []),
-    )
-
-    class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
-            return []
-
-    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(fresh=False), []))
+    _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
-    assert capsys.readouterr().err == ""  # nothing forced on a non-interactive run
+    assert "existing setup marked initialised" in capsys.readouterr().err
 
 
-def test_build_first_run_init_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_first_run_init(), FirstRunInit)
+def test_build_init_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_init(), Init)
 
 
-def test_first_run_announces_the_chosen_persona(
+def test_init_announces_the_chosen_persona(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "config_exists", _config_absent)
-    outcome = FirstRunOutcome(found=["cursor"], chosen="cursor", persona="butler")
-    monkeypatch.setattr(app, "build_first_run_init", lambda: _FakeFirstRun(outcome, []))
-
-    class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
-            return []
-
-    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(persona="butler"), []))
+    _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     assert "persona 'butler' selected" in capsys.readouterr().err
 

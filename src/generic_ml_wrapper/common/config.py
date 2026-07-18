@@ -19,6 +19,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _DEFAULT_CLIENT = "claude"
+# The init-seeded defaults for the movie-set axes: one plays a "default" role on the
+# "work" set until the config commands (0.5.0) let either be changed.
+_DEFAULT_ROLE = "default"
+_DEFAULT_ENVIRONMENT = "work"
 
 # The valid ``[[hooks]]`` phases, as literal strings (config keeps its own vocabulary of
 # string keys rather than importing domain enums, mirroring ``_STARTUP_ACTIVATION``). Kept
@@ -68,6 +72,65 @@ def default_client(path: Path | None = None) -> str:
     """
     value = _table(_load(path), "client").get("default")
     return value if isinstance(value, str) and value else _DEFAULT_CLIENT
+
+
+def init_version(path: Path | None = None) -> str | None:
+    """Return the gmlw version that ran ``init``, or ``None`` when it never has.
+
+    This is the first-class init gate signal: ``None`` means the install is fresh (no
+    config) or legacy (a pre-init ``config.toml``), so bare ``gmlw`` must funnel it
+    through init before anything else runs.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[init] version`` string, or ``None`` when the marker is absent.
+    """
+    value = _table(_load(path), "init").get("version")
+    return value if isinstance(value, str) and value else None
+
+
+def language(path: Path | None = None) -> str | None:
+    """Return the language gmlw speaks to the user (``[language] code``), or ``None``.
+
+    ``None`` leaves the caller to fall back (to ``$LANG``, then English). This fixes
+    gmlw's *own* voice only; it does not force the companion's language.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The configured language code, or ``None`` when unset.
+    """
+    value = _table(_load(path), "language").get("code")
+    return value if isinstance(value, str) and value else None
+
+
+def default_role(path: Path | None = None) -> str:
+    """Return the default role — the functional hat worn — from ``[profile] default_role``.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[profile] default_role`` value, or ``"default"`` when unset.
+    """
+    value = _table(_load(path), "profile").get("default_role")
+    return value if isinstance(value, str) and value else _DEFAULT_ROLE
+
+
+def default_environment(path: Path | None = None) -> str:
+    """Return the default environment — the place work happens — from ``[profile]``.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[profile] default_environment`` value, or ``"work"`` when unset.
+    """
+    value = _table(_load(path), "profile").get("default_environment")
+    return value if isinstance(value, str) and value else _DEFAULT_ENVIRONMENT
 
 
 def caller_overrides(path: Path | None = None) -> dict[str, str]:

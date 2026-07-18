@@ -10,12 +10,15 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_chooser import TtyClientChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
@@ -50,7 +53,7 @@ from generic_ml_wrapper.application.domain.service.interceptor_chain import Inte
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
-from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunInit
+from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -68,7 +71,7 @@ from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPo
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
-from generic_ml_wrapper.application.usecase.first_run_init import FirstRunInitUseCase
+from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
@@ -80,7 +83,12 @@ from generic_ml_wrapper.application.usecase.render_statusline import RenderStatu
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.common import config, paths
-from generic_ml_wrapper.common.i18n import Localizer, load_localizer, resolve_language
+from generic_ml_wrapper.common.i18n import (
+    SUPPORTED_LANGUAGES,
+    Localizer,
+    load_localizer,
+    resolve_language,
+)
 from generic_ml_wrapper.common.spec_loader import load_class
 
 
@@ -282,32 +290,44 @@ def build_bootstrap() -> Bootstrap:
     return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
 
 
-def build_first_run_init() -> FirstRunInit:
-    """Build the FirstRunInit use case wired to PATH detection and a TTY chooser.
+def build_init() -> Init:
+    """Build the Init use case wired to the ordered-setup ports and step defaults.
+
+    The seed localiser (for the language step and as every chooser's fallback) resolves
+    from ``[language] code`` if a prior run set it, else ``$LANG``; the use case rebuilds
+    it in the chosen language once step one completes.
 
     Returns:
-        A ready-to-run FirstRunInit that seeds ``~/.gmlw`` with a detected default.
+        A ready-to-run Init that runs the forced setup and persists it.
     """
-    i18n = build_localizer()
-    return FirstRunInitUseCase(
+    seed_language = resolve_language(config.language() or os.environ.get("LANG"))
+    seed_i18n = load_localizer(seed_language)
+    return InitUseCase(
         detector=PathClientDetector(),
         seeder=FilesystemLayoutSeeder(paths.HOME),
-        chooser=TtyClientChooser(i18n),
+        language_chooser=TtyLanguageChooser(seed_i18n),
+        text_prompt=TtyTextPrompt(seed_i18n),
         personas=build_persona_source(),
-        persona_chooser=TtyPersonaChooser(i18n),
+        persona_chooser=TtyPersonaChooser(seed_i18n),
+        client_chooser=TtyClientChooser(seed_i18n),
+        localizer_factory=load_localizer,
+        languages=list(SUPPORTED_LANGUAGES),
+        default_language=seed_language,
+        default_name=getpass.getuser(),
+        version=__version__,
     )
 
 
 def build_localizer() -> Localizer:
     """Build the localiser for the language the wrapper speaks to the user.
 
-    Seeded from ``$LANG`` for now (English when unset or unsupported); the first-run
-    language step will supply the chosen language once it lands.
+    Prefers the init-chosen ``[language] code``; falls back to ``$LANG`` (English when
+    unset or unsupported) until init has run.
 
     Returns:
         A ready-to-use localiser.
     """
-    return load_localizer(resolve_language(os.environ.get("LANG")))
+    return load_localizer(resolve_language(config.language() or os.environ.get("LANG")))
 
 
 def build_check_client_ready() -> CheckClientReady:

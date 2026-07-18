@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Forced init + the gate.** A mandatory first-run setup, `gmlw init`, is now both a
+  command and a first-class gate: `[init] version` in `config.toml` records that it ran,
+  and any command on an un-initialised or pre-0.4.0 install is funnelled through init
+  before it runs (`statusline` and bare `--help` are exempt). The interview captures, in
+  order — each with a sensible default so a non-interactive run never blocks — **language
+  → name → role → environment → persona → client**: language sets the voice the rest of
+  the interview speaks (chosen language re-localises every later prompt), name is what the
+  companion calls you, role and environment seed the movie-set axes (`[profile]
+  default_role` / `default_environment`), persona and client reuse the existing choosers.
+  A fresh install gets a full seeded `config.toml`; a legacy install has only the `[init]`
+  marker appended, its existing file left verbatim (settings migration comes next). Retires
+  the thinner 0.2.0 `FirstRunInit`.
+
 ## [0.3.0] - 2026-07-18
 
 The lifecycle release — hooks that act at the seams around a run, and rule capture that

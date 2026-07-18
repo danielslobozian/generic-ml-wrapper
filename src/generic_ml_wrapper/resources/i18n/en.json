@@ -3,6 +3,11 @@
   "prompt.pick_skippable": "Pick a number [{range}, Enter to skip]: ",
   "prompt.pick_plain": "Pick a number [{range}]: ",
   "prompt.not_in_range": "'{reply}' is not one of {range}.",
+  "prompt.ask_text": "[default {default}]: ",
+  "init.language.header": "gmlw: first run — which language should I speak to you?",
+  "init.name.header": "gmlw: what should I call you?",
+  "init.role.header": "gmlw: which role are you working as? (your functional hat)",
+  "init.environment.header": "gmlw: where does this work happen? (your environment)",
   "init.client.header": "gmlw: first run — which client should I wrap by default?",
   "init.persona.header": "gmlw: pick a persona (its voice greets you and can shape tone)?"
 }
