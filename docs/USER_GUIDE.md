@@ -98,8 +98,9 @@ $EDITOR ~/.gmlw/rules/no-force-push.rule.md   # write Rule / When / Signals / St
 # edit the front matter: status: draft  ->  status: active
 ```
 
-During a workflow, when you're dissatisfied and want something to never recur, the client offers
-to record it as a draft rule for you. See [WORKFLOWS.md](WORKFLOWS.md).
+In any session, when you're dissatisfied and want something to never recur, the client offers to
+record it as a draft rule for you — updating an existing rule instead of duplicating it, and
+offering to turn a mechanically enforceable one into a script. See [WORKFLOWS.md](WORKFLOWS.md).
 
 ## 8. Enable transcripts safely
 

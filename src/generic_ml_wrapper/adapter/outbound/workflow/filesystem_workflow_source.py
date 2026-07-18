@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
+from generic_ml_wrapper.application.domain.model.rules import RULE_CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
@@ -173,15 +174,22 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
     def _rules_group(
         self, mode: CompileMode, name: str | None, settings: dict[str, config.SourceSetting]
     ) -> str:
-        """Compose the global rules (when active) and, for a workflow, its scoped rules."""
+        """Compose the rule-capture directive, the global rules, and any scoped rules.
+
+        When the ``rules`` source is active for this mode, the section leads with the
+        always-on capture directive (gmlw's voice) so a demanded correction becomes a
+        draft rule in any session — even one with no rules yet. The directive stays
+        verbatim; only the user's rule content is subject to compression.
+        """
         setting = settings[context_source.RULES.key]
-        parts: list[str] = []
-        if setting.activated:
-            global_rules = self._maybe_compress(
-                self._rules(self._rules_root), context_source.RULES, setting
-            )
-            if global_rules:
-                parts.append(global_rules)
+        if not setting.activated:
+            return ""
+        parts: list[str] = [RULE_CAPTURE_DIRECTIVE]
+        global_rules = self._maybe_compress(
+            self._rules(self._rules_root), context_source.RULES, setting
+        )
+        if global_rules:
+            parts.append(global_rules)
         if context_source.includes_workflow(mode) and name:
             scoped = self._maybe_compress(
                 self._rules(self._root / name / "rules"), context_source.RULES, setting

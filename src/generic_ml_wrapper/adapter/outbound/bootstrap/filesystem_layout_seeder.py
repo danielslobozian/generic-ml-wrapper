@@ -109,7 +109,7 @@ __CLIENT_DEFAULT__
 # learned = { activated = true,  compression = false }
 # [startup.default.context]
 # company = { activated = true,  compression = false }
-# rules   = { activated = false, compression = false }
+# rules   = { activated = true,  compression = false }
 # persona = { activated = false, compression = false }
 # In workflow/authoring modes base and steps are always active — only their compression
 # is configurable:

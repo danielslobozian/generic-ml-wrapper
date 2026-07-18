@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Always-on rule lifecycle.** Rule capture is no longer workflow-only: the `rules`
+  context source (now active by default in a plain start, config-overridable) leads with
+  a capture directive so a demanded correction becomes a draft rule in **any** session.
+  The directive carries the full loop — offer to record a durable, reusable reflex;
+  **dedup** against the existing rules and update/supersede a match instead of stacking a
+  near-duplicate; and, when a rule is **mechanically enforceable**, offer to realise it as
+  a script or check rather than a standing reminder.
+
 ### Fixed
 - Docs: removed a stray tool artifact from `docs/CLIENTS.md`; corrected the workflow
   compression default in `docs/CONFIGURATION.md` (every source defaults to

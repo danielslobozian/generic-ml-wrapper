@@ -102,13 +102,12 @@ Fields: `Rule`, `When`, `Signals`, `Strength` (`soft` | `hard`), `Origin`
 wins) added only when a rule may conflict with another.
 
 A rule with `status: draft` is **not injected** until you promote it to `active` by
-editing that field. Rules are captured during a workflow: when you are dissatisfied
-with something and want it to never happen again, the client offers to record it as a
-draft for your approval.
-
-> Forward note: proposing rules during normal, non-workflow usage is on the 0.3.0
-> roadmap — see [../ROADMAP.md](../ROADMAP.md). Today only workflow sessions offer
-> them.
+editing that field. Rule capture is **always-on**, in any session (not only a
+workflow): when you are dissatisfied with something and want it to never happen again,
+the client offers to record it as a draft for your approval. Before proposing, it reads
+your existing rules and updates or supersedes a match rather than stacking a
+near-duplicate; and if the rule is mechanically enforceable, it offers to realise it as
+a small script or check rather than a standing reminder.
 
 ## Scripts
 
