@@ -75,7 +75,7 @@ class ClaudeCliCaller(CliCaller):
     def start_metering(self) -> None:
         """Install the status line and start the metering relay for this session."""
         if self.can_deliver_statusline():
-            self._snapshot = status_line_config.install(_SETTINGS, _STATUSLINE)
+            self._snapshot = status_line_config.install_best_effort(_SETTINGS, _STATUSLINE)
         relay = MeteringRelay(
             job=self.run.job,
             session=self.run.session_id,

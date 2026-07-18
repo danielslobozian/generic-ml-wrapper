@@ -66,3 +66,19 @@ def test_concurrent_runs_never_leave_gmlw_installed(tmp_path: Path) -> None:
     status_line_config.restore(path, snapshot_a)
     status_line_config.restore(path, snapshot_b)
     assert json.loads(path.read_text(encoding="utf-8"))["statusLine"] == "USER"
+
+
+def test_install_best_effort_skips_when_the_file_cannot_be_written(tmp_path: Path) -> None:
+    blocker = tmp_path / "blocker"
+    blocker.write_text("a file, not a directory", encoding="utf-8")
+    path = blocker / "cli-config.json"  # parent is a file -> the write fails with OSError
+    assert status_line_config.install_best_effort(path, _STATUS) is None
+
+
+def test_install_best_effort_still_aborts_on_unparseable_settings(tmp_path: Path) -> None:
+    path = tmp_path / "settings.json"
+    path.write_text("{ not json", encoding="utf-8")  # unreadable settings stay fatal
+    before = path.read_bytes()
+    with pytest.raises(SettingsUnreadableError):
+        status_line_config.install_best_effort(path, _STATUS)
+    assert path.read_bytes() == before  # never overwritten

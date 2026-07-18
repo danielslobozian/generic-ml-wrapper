@@ -96,6 +96,27 @@ def install(path: Path, status_line: dict[str, object]) -> StatusLineSnapshot:
     return snapshot
 
 
+def install_best_effort(path: Path, status_line: dict[str, object]) -> StatusLineSnapshot | None:
+    """Install the status line, or skip it (with a warning) if the file can't be written.
+
+    A :class:`SettingsUnreadableError` still propagates -- the wrapper never overwrites
+    settings it cannot parse. An ``OSError`` (an unwritable directory or file) is not
+    destructive, so the session simply runs without a status line rather than aborting.
+
+    Args:
+        path: The client's JSON settings file.
+        status_line: The ``statusLine`` value to install.
+
+    Returns:
+        The snapshot for :func:`restore`, or ``None`` when the write failed.
+    """
+    try:
+        return install(path, status_line)
+    except OSError as error:
+        log.warning(f"could not install the status line at {path} ({error}); running without it")
+        return None
+
+
 def restore(path: Path, snapshot: StatusLineSnapshot) -> None:
     """Restore the ``statusLine`` captured in ``snapshot`` -- if this run still owns it.
 
