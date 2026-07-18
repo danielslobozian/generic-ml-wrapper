@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import getpass
+import os
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -79,6 +80,7 @@ from generic_ml_wrapper.application.usecase.render_statusline import RenderStatu
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common.i18n import Localizer, load_localizer, resolve_language
 from generic_ml_wrapper.common.spec_loader import load_class
 
 
@@ -286,13 +288,26 @@ def build_first_run_init() -> FirstRunInit:
     Returns:
         A ready-to-run FirstRunInit that seeds ``~/.gmlw`` with a detected default.
     """
+    i18n = build_localizer()
     return FirstRunInitUseCase(
         detector=PathClientDetector(),
         seeder=FilesystemLayoutSeeder(paths.HOME),
-        chooser=TtyClientChooser(),
+        chooser=TtyClientChooser(i18n),
         personas=build_persona_source(),
-        persona_chooser=TtyPersonaChooser(),
+        persona_chooser=TtyPersonaChooser(i18n),
     )
+
+
+def build_localizer() -> Localizer:
+    """Build the localiser for the language the wrapper speaks to the user.
+
+    Seeded from ``$LANG`` for now (English when unset or unsupported); the first-run
+    language step will supply the chosen language once it lands.
+
+    Returns:
+        A ready-to-use localiser.
+    """
+    return load_localizer(resolve_language(os.environ.get("LANG")))
 
 
 def build_check_client_ready() -> CheckClientReady:

@@ -1,0 +1,8 @@
+{
+  "prompt.pick_default": "Pick a number [{range}, default {default}]: ",
+  "prompt.pick_skippable": "Pick a number [{range}, Enter to skip]: ",
+  "prompt.pick_plain": "Pick a number [{range}]: ",
+  "prompt.not_in_range": "'{reply}' is not one of {range}.",
+  "init.client.header": "gmlw: first run — which client should I wrap by default?",
+  "init.persona.header": "gmlw: pick a persona (its voice greets you and can shape tone)?"
+}
