@@ -241,7 +241,7 @@ _STARTUP_ACTIVATION: dict[str, dict[str, bool]] = {
         "me.user": True,
         "me.learned": True,
         "company": True,
-        "rules": False,
+        "rules": True,
     },
     "workflow": {
         "persona": False,

@@ -63,22 +63,23 @@ best-effort and never break a launch. The first example hook: a **cross-client
 skills/rules deployer** that consumes a git repo of skills and installs them, per
 client, as faithfully as each client's format allows.
 
-#### Rule lifecycle
-0.2.0 ships rule *capture*, but only inside a workflow (the directive lives in the
-workflow base) and without dedup or a path to code. 0.3.0 rounds out the rule loop:
+#### Rule lifecycle — done (Unreleased)
+0.2.0 shipped rule *capture*, but only inside a workflow (the directive lived in the
+workflow base) and without dedup or a path to code. The rule loop is now rounded out —
+the directive moved out of the workflow base to the head of the always-on `rules`
+context source (verbatim, gmlw's voice), and the source is active by default in a plain
+start:
 
-- **Rule proposal in normal usage** — today frustration only triggers a rule offer
-  during a workflow; in a plain session it reaches the learned notebook (a negative)
-  but never a rule. Make the "offer to record a rule" directive always-on, so a
-  demanded correction becomes a draft rule wherever it happens.
-- **Existing-rule check (dedup / update-not-duplicate)** — before proposing, look at
-  the active rules and update or supersede a matching one instead of stacking a
+- **Rule proposal in normal usage** — the "offer to record a rule" directive is
+  always-on, so a demanded correction becomes a draft rule wherever it happens, not only
+  inside a workflow.
+- **Existing-rule check (dedup / update-not-duplicate)** — before proposing, the client
+  reads the existing rules and updates or supersedes a matching one instead of stacking a
   near-duplicate, mirroring the learned notebook's supersede-on-contradiction.
-- **Rule → code feasibility** — assess whether a captured rule is *mechanically
-  enforceable* and, if so, offer to realise it as a script/check rather than a
-  reminder. This is the step-codeability logic (create-workflow) generalised from
-  workflow steps to rules — and a mechanically-enforced rule is itself a natural
-  `pre-launch` hook consumer.
+- **Rule → code feasibility** — a captured rule is judged for *mechanical
+  enforceability* and, if so, offered as a script/check rather than a reminder — the
+  step-codeability logic (create-workflow) generalised from workflow steps to rules, and
+  a natural future `pre-launch` hook consumer.
 
 ### 0.4.0 — discoverability & first-run: getting captivated fast
 Reframed around the real metric for a new user: **time to a first live session.**

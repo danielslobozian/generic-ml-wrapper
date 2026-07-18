@@ -95,7 +95,7 @@ def test_compress_prompt_for_prefers_key_over_kind(tmp_path: Path) -> None:
 def test_default_startup_matrix_per_mode() -> None:
     default = config.default_startup("default")
     assert default["me.user"].activated is True
-    assert default["rules"].activated is False  # global rules off in a plain start
+    assert default["rules"].activated is True  # rules (+ capture directive) on in a plain start
     assert default["persona"].activated is False
     assert all(setting.compression is False for setting in default.values())
     workflow = config.default_startup("workflow")

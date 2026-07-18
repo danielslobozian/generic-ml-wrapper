@@ -69,7 +69,8 @@ def test_compile_joins_base_and_steps(tmp_path: Path) -> None:
     (tmp_path / "doc-review" / "workflow.md").write_text("# doc-review steps", encoding="utf-8")
     compiled = source.compile(CompileMode.WORKFLOW, "doc-review")
     assert "How to run a workflow" in compiled  # from base.md
-    assert "## Capturing a rule" in compiled  # the in-session rule-capture directive (base.md)
+    # the rule-capture directive now rides the always-on rules group, not base.md
+    assert "Rules — the user's demanded reflexes" in compiled
     assert "# doc-review steps" in compiled
 
 
@@ -100,7 +101,7 @@ def test_compile_includes_profile_and_rules_in_order(tmp_path: Path) -> None:
     assert "I prefer tests first." in compiled  # second file in profile/me/
     assert "Use hexagonal." in compiled
     assert "**Rule:** test first." in compiled
-    assert "**Origin:**" not in compiled  # cleaned
+    assert "learned the hard way." not in compiled  # the rule's Origin content is cleaned
     assert "status: active" not in compiled  # frontmatter cleaned
     assert "**Rule:** doc-review only." in compiled
     # order: profile before the workflow's own steps
@@ -121,7 +122,7 @@ def test_compile_skips_draft_rules(tmp_path: Path) -> None:
     assert "not yet" not in compiled
 
 
-def test_default_mode_composes_profile_only(tmp_path: Path) -> None:
+def test_default_mode_composes_profile_and_rules_not_the_workflow(tmp_path: Path) -> None:
     profile = tmp_path / "profile"
     rules = tmp_path / "rules"
     (profile / "me").mkdir(parents=True)
@@ -139,7 +140,36 @@ def test_default_mode_composes_profile_only(tmp_path: Path) -> None:
     assert "I like short answers." in compiled  # me.user, on by default
     assert "ACME Corp." in compiled  # company, on by default
     assert "How to run a workflow" not in compiled  # base is workflow-only
-    assert "be careful" not in compiled  # global rules are off by default in default mode
+    # rules — and the always-on capture directive — are now on by default in a plain session
+    assert "be careful" in compiled
+    assert "Rules — the user's demanded reflexes" in compiled
+
+
+def test_rule_capture_directive_is_present_with_no_rules_yet(tmp_path: Path) -> None:
+    # The whole point of always-on capture: offer to record the *first* rule, so the
+    # directive must show even when the rules directory is empty.
+    workflows = tmp_path / "workflows"
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    compiled = FilesystemWorkflowSource(workflows, None, rules).compile(CompileMode.DEFAULT)
+    assert "Rules — the user's demanded reflexes" in compiled
+
+
+def test_rule_capture_directive_is_absent_when_rules_deactivated(tmp_path: Path) -> None:
+    rules = tmp_path / "rules"
+    rules.mkdir()
+    (rules / "r.rule.md").write_text("**Rule:** be careful.", encoding="utf-8")
+
+    def _off(mode: str) -> dict[str, config.SourceSetting]:
+        settings = config.default_startup(mode)
+        settings["rules"] = config.SourceSetting(activated=False, compression=False)
+        return settings
+
+    compiled = FilesystemWorkflowSource(tmp_path / "wf", None, rules, startup=_off).compile(
+        CompileMode.DEFAULT
+    )
+    assert "Rules — the user's demanded reflexes" not in compiled
+    assert "be careful" not in compiled  # deactivating rules drops content and directive both
 
 
 def test_learned_notebook_injects_the_capture_directive_and_notes(tmp_path: Path) -> None:
@@ -197,8 +227,11 @@ class _FakePersonas(PersonaSourcePort):
 
 
 def _persona_on(mode: str) -> dict[str, config.SourceSetting]:
+    # Persona on, rules off — these tests isolate persona composition, so the always-on
+    # rule-capture directive (default in every mode) is switched off to keep them focused.
     settings = config.default_startup(mode)
     settings["persona"] = config.SourceSetting(activated=True, compression=False)
+    settings["rules"] = config.SourceSetting(activated=False, compression=False)
     return settings
 
 
@@ -304,5 +337,7 @@ def test_compile_runs_interceptors_per_target(tmp_path: Path) -> None:
         CompileMode.WORKFLOW, "doc-review"
     )
 
-    assert "RULES(**Rule:** be careful.)" in compiled  # rules target ran on the rules blob
+    # the rules target wraps the whole rules group: the capture directive, then the rule
+    assert "RULES(## Rules — the user's demanded reflexes" in compiled
+    assert "**Rule:** be careful.)" in compiled  # rule is the tail of the wrapped group
     assert compiled.startswith("CTX(")  # context target wrapped the whole compiled blob
