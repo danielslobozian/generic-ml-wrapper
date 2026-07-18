@@ -50,7 +50,7 @@ class CursorCliCaller(CliCaller):
     def start_metering(self) -> None:
         """Point cursor-agent's status line at ``gmlw statusline`` for this session."""
         if self.can_deliver_statusline():
-            self._snapshot = status_line_config.install(_CONFIG, _STATUSLINE)
+            self._snapshot = status_line_config.install_best_effort(_CONFIG, _STATUSLINE)
 
     def end_metering(self) -> None:
         """Restore cursor-agent's previous status-line setting."""

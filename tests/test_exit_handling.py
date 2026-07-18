@@ -3,6 +3,7 @@
 """Tests for clean exit handling (no tracebacks) and the farewell line."""
 
 import argparse
+import io
 import signal
 
 import pytest
@@ -96,3 +97,22 @@ def test_start_returns_143_when_terminated(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(app, "build_start_job", _TerminatingStartJob)
     args = argparse.Namespace(job="test", client="claude", workflow=None, resume_latest=False)
     assert app._start(args) == 143
+
+
+class _BoomStatusline:
+    def execute(self, *_args: object) -> str:
+        raise RuntimeError("render blew up")
+
+
+def _boom_statusline_builder(_client: object) -> _BoomStatusline:
+    return _BoomStatusline()
+
+
+def test_statusline_degrades_to_an_empty_line_on_error(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    monkeypatch.setattr(app, "build_render_statusline", _boom_statusline_builder)
+    assert app._statusline() == 0
+    out = capsys.readouterr().out
+    assert out == "\n"  # one empty line, never a traceback

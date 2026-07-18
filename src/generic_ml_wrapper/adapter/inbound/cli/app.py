@@ -66,6 +66,7 @@ from generic_ml_wrapper.application.wiring.composition import (
 )
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.log import configure as configure_logging
+from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
 
 
@@ -543,16 +544,23 @@ _MAX_STATUSLINE_BYTES = 1_000_000  # a client's status payload is small JSON; ca
 
 
 def _statusline() -> int:
-    payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
-    # The launching caller exports GMLW_CLIENT so the status line parses with the
-    # right client's parser (claude's quota vs cursor's plan block).
-    client = os.environ.get("GMLW_CLIENT")
-    payload = _with_cursor_plan(payload, client)
-    line = build_render_statusline(client).execute(
-        payload,
-        os.environ.get("GMLW_JOB"),
-        os.environ.get("GMLW_SESSION"),
-    )
+    # A status line must always degrade to a printable line, never raise: the client
+    # renders this output in place of its own status, so a traceback would land on screen.
+    try:
+        payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
+        # The launching caller exports GMLW_CLIENT so the status line parses with the
+        # right client's parser (claude's quota vs cursor's plan block).
+        client = os.environ.get("GMLW_CLIENT")
+        payload = _with_cursor_plan(payload, client)
+        line = build_render_statusline(client).execute(
+            payload,
+            os.environ.get("GMLW_JOB"),
+            os.environ.get("GMLW_SESSION"),
+        )
+    except Exception as error:  # noqa: BLE001  degrade to an empty line, never error at the client
+        log.warning(f"status line render failed: {error}")
+        print()
+        return 0
     print(line)
     return 0
 
