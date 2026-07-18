@@ -13,6 +13,15 @@ not a bug and nothing is missing from your ledger. Cursor still gets a status li
 resume support; it just never contributes a cost. See [CLIENTS.md](CLIENTS.md) for the
 per-client capability matrix.
 
+## Why does Cursor's status line vanish when I paste a file path?
+
+Upstream Cursor behaviour, not a `gmlw` bug. `cursor-agent` treats `/` as a
+slash-command trigger **even mid-input**, so a pasted file path (which contains `/`)
+makes Cursor's slash UI take over the status-line row — and it stays hidden until you
+delete the text containing the `/`. It is independent of what `gmlw` renders into the
+status line, and the wrapper has no hook into Cursor's input mode to prevent it. Remove
+the `/` (or send/clear the input) and the status line comes back.
+
 ## Why can't Codex or Vibe resume?
 
 Codex and Vibe don't expose a stable client-side session id, so the wrapper has nothing
