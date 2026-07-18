@@ -11,6 +11,9 @@ from datetime import datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator import (
+    FilesystemLayoutMigrator,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
@@ -59,6 +62,7 @@ from generic_ml_wrapper.application.port.inbound.list_personas import ListPerson
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
+from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
@@ -77,6 +81,7 @@ from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUse
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
+from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
@@ -124,6 +129,8 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
         compressor=CacheBackedContextCompressor(),
         startup=config.startup,
         companion=lambda: config.companion().persona,
+        environments_root=paths.ENVIRONMENTS,
+        default_environment=config.default_environment,
     )
 
 
@@ -288,6 +295,21 @@ def build_bootstrap() -> Bootstrap:
         A ready-to-run Bootstrap.
     """
     return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+
+
+def build_migrate_layout() -> MigrateLayout:
+    """Build the MigrateLayout use case: wrap the old layout into the active environment.
+
+    Reads the persisted ``default_environment`` at call time, so it runs correctly after
+    init has written it (and idempotently on every later run).
+
+    Returns:
+        A ready-to-run MigrateLayout.
+    """
+    return MigrateLayoutUseCase(
+        FilesystemLayoutMigrator(paths.HOME),
+        environment=config.default_environment,
+    )
 
 
 def build_init() -> Init:

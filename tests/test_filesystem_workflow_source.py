@@ -77,12 +77,14 @@ def test_compile_joins_base_and_steps(tmp_path: Path) -> None:
 def test_compile_includes_profile_and_rules_in_order(tmp_path: Path) -> None:
     workflows = tmp_path / "workflows"
     profile = tmp_path / "profile"
+    environments = tmp_path / "environments"
     rules = tmp_path / "rules"
-    for folder in (profile / "me", profile / "company", rules):
+    for folder in (profile / "me", environments / "work", rules):
         folder.mkdir(parents=True)
     (profile / "me" / "bio.md").write_text("# Me\nI work in French.", encoding="utf-8")
     (profile / "me" / "prefs.md").write_text("I prefer tests first.", encoding="utf-8")
-    (profile / "company" / "stack.md").write_text("# Company\nUse hexagonal.", encoding="utf-8")
+    # Place-specific context now lives under the active environment (defaults to "work").
+    (environments / "work" / "stack.md").write_text("# Company\nUse hexagonal.", encoding="utf-8")
     (rules / "test-first.rule.md").write_text(
         "---\nname: test-first\nstatus: active\n---\n\n**Rule:** test first.\n\n"
         "**Origin:** learned the hard way.",
@@ -94,7 +96,7 @@ def test_compile_includes_profile_and_rules_in_order(tmp_path: Path) -> None:
         "**Rule:** doc-review only.", encoding="utf-8"
     )
 
-    source = FilesystemWorkflowSource(workflows, profile, rules)
+    source = FilesystemWorkflowSource(workflows, profile, rules, environments_root=environments)
     compiled = source.compile(CompileMode.WORKFLOW, "doc-review")
 
     assert "I work in French." in compiled
@@ -124,18 +126,21 @@ def test_compile_skips_draft_rules(tmp_path: Path) -> None:
 
 def test_default_mode_composes_profile_and_rules_not_the_workflow(tmp_path: Path) -> None:
     profile = tmp_path / "profile"
+    environments = tmp_path / "environments"
     rules = tmp_path / "rules"
     (profile / "me").mkdir(parents=True)
-    (profile / "company").mkdir(parents=True)
+    (environments / "work").mkdir(parents=True)
     rules.mkdir()
     (profile / "me" / "bio.md").write_text("I like short answers.", encoding="utf-8")
-    (profile / "company" / "co.md").write_text("ACME Corp.", encoding="utf-8")
+    (environments / "work" / "co.md").write_text("ACME Corp.", encoding="utf-8")
     (rules / "r.rule.md").write_text("**Rule:** be careful.", encoding="utf-8")
     workflows = tmp_path / "workflows"
     (workflows / "_common").mkdir(parents=True)
     (workflows / "_common" / "base.md").write_text("How to run a workflow", encoding="utf-8")
 
-    compiled = FilesystemWorkflowSource(workflows, profile, rules).compile(CompileMode.DEFAULT)
+    compiled = FilesystemWorkflowSource(
+        workflows, profile, rules, environments_root=environments
+    ).compile(CompileMode.DEFAULT)
 
     assert "I like short answers." in compiled  # me.user, on by default
     assert "ACME Corp." in compiled  # company, on by default
@@ -186,9 +191,12 @@ def test_learned_notebook_injects_the_capture_directive_and_notes(tmp_path: Path
 
 def test_learned_section_is_invisible_without_a_notebook(tmp_path: Path) -> None:
     profile = tmp_path / "profile"
-    (profile / "company").mkdir(parents=True)
-    (profile / "company" / "co.md").write_text("ACME.", encoding="utf-8")
-    compiled = FilesystemWorkflowSource(tmp_path / "wf", profile).compile(CompileMode.DEFAULT)
+    environments = tmp_path / "environments"
+    (environments / "work").mkdir(parents=True)
+    (environments / "work" / "co.md").write_text("ACME.", encoding="utf-8")
+    compiled = FilesystemWorkflowSource(
+        tmp_path / "wf", profile, environments_root=environments
+    ).compile(CompileMode.DEFAULT)
     assert "learned.md" not in compiled  # no notebook -> no directive
     assert "ACME." in compiled  # other sources unaffected
 
@@ -282,10 +290,11 @@ class _RecordingCompressor(ContextCompressorPort):
 
 def test_typed_compression_applies_per_source_only_when_flagged(tmp_path: Path) -> None:
     profile = tmp_path / "profile"
+    environments = tmp_path / "environments"
     (profile / "me").mkdir(parents=True)
-    (profile / "company").mkdir(parents=True)
+    (environments / "work").mkdir(parents=True)
     (profile / "me" / "bio.md").write_text("ME", encoding="utf-8")
-    (profile / "company" / "co.md").write_text("CO", encoding="utf-8")
+    (environments / "work" / "co.md").write_text("CO", encoding="utf-8")
     compressor = _RecordingCompressor()
 
     def startup(mode: str) -> dict[str, config.SourceSetting]:
@@ -295,7 +304,11 @@ def test_typed_compression_applies_per_source_only_when_flagged(tmp_path: Path) 
         return settings
 
     compiled = FilesystemWorkflowSource(
-        tmp_path / "wf", profile, compressor=compressor, startup=startup
+        tmp_path / "wf",
+        profile,
+        compressor=compressor,
+        startup=startup,
+        environments_root=environments,
     ).compile(CompileMode.DEFAULT)
 
     assert "Z(me.user)" in compiled  # me.user compressed with its human-touch kind

@@ -18,7 +18,7 @@ from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 def test_seeder_creates_the_layout_and_config(tmp_path: Path) -> None:
     FilesystemLayoutSeeder(tmp_path).ensure()
     assert (tmp_path / "profile" / "me").is_dir()
-    assert (tmp_path / "profile" / "company").is_dir()
+    assert not (tmp_path / "profile" / "company").exists()  # retired; env folders replace it
     assert (tmp_path / "rules").is_dir()
     config = tmp_path / "config.toml"
     assert config.is_file()
@@ -112,6 +112,7 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
         )
     )
     assert fresh is True  # a brand-new install got the full write
+    assert (tmp_path / "environments" / "work").is_dir()  # the chosen environment's folder
     parsed = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
     assert parsed["init"] == {"version": "0.4.0"}  # the gate marker
     assert parsed["language"] == {"code": "fr"}

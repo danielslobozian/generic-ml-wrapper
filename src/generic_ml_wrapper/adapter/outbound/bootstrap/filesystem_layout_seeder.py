@@ -17,8 +17,10 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 # The personas/ folder is seeded on demand by the persona source (packaged defaults),
-# so it is not created here.
-_DIRS = ("profile/me", "profile/company", "rules")
+# so it is not created here. Place-specific context lives under environments/<env>/ now
+# (created by `initialize` for the chosen env); the old profile/company is migrated into it.
+_DIRS = ("profile/me", "rules")
+_ENVIRONMENTS = "environments"
 _CONFIG = "config.toml"
 # The learned notebook, seeded empty (header + the two sections) for the client to fill.
 _LEARNED = "profile/me/learned.md"
@@ -190,7 +192,8 @@ __CLIENT_DEFAULT__
 # sources; [startup] decides, per mode, which are active and which are compressed. Modes:
 # default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`).
 # Sources: me.user (profile/me/*.md), me.learned (profile/me/learned*), company
-# (profile/company/*.md), rules (rules/*.md), persona (the selected persona + shared floor,
+# (environments/<env>/*.md — the active [profile] default_environment), rules (rules/*.md),
+# persona (the selected persona + shared floor,
 # see [companion]); a workflow run also composes its base and steps. Omit all of this for the
 # built-in per-mode defaults; the default-mode defaults, shown explicitly:
 # [startup.default.context.me]
@@ -305,6 +308,8 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             ``True`` on a fresh full write, ``False`` when only the marker was appended.
         """
         self._ensure_dirs()
+        # The chosen environment's folder — the movie set the migration wraps company into.
+        (self._home / _ENVIRONMENTS / selections.environment).mkdir(parents=True, exist_ok=True)
         config = self._home / _CONFIG
         if config.exists():
             self._append_marker(config, selections.version)

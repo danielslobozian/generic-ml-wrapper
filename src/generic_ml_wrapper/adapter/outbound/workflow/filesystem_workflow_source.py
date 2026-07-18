@@ -54,6 +54,8 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         compressor: ContextCompressorPort | None = None,
         startup: Callable[[str], dict[str, config.SourceSetting]] | None = None,
         companion: Callable[[], str | None] | None = None,
+        environments_root: Path | None = None,
+        default_environment: Callable[[], str] | None = None,
     ) -> None:
         """Bind the source to its roots and context policy.
 
@@ -72,6 +74,12 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             companion: Resolves the selected persona name; defaults to none selected
                 (the persona section stays invisible until the composition root injects
                 :func:`config.companion`).
+            environments_root: The environments directory holding one folder per
+                environment; the ``company`` source reads the active one. ``None`` omits
+                the source (place-specific context is off).
+            default_environment: Resolves the active environment's name; defaults to
+                ``"work"`` until the composition root injects
+                :func:`config.default_environment`.
         """
         self._root = root
         self._profile_root = profile_root
@@ -81,6 +89,8 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self._compressor = compressor
         self._startup = startup or config.default_startup
         self._companion = companion or (lambda: None)
+        self._environments_root = environments_root
+        self._default_environment = default_environment or (lambda: "work")
 
     def seed(self) -> None:
         """Copy the packaged default workflows into ``root``, never overwriting."""
@@ -238,8 +248,10 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             return self._me_user()
         if source is context_source.ME_LEARNED:
             return self._me_learned()
-        if source is context_source.COMPANY and self._profile_root is not None:
-            return self._concat_dir(self._profile_root / "company")
+        if source is context_source.COMPANY and self._environments_root is not None:
+            # Place-specific context now lives per environment; read the active one. The
+            # config key stays "company"; only its on-disk home moved (environments/<env>/).
+            return self._concat_dir(self._environments_root / self._default_environment())
         return ""
 
     def _persona(self) -> str:

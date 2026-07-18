@@ -19,6 +19,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   A fresh install gets a full seeded `config.toml`; a legacy install has only the `[init]`
   marker appended, its existing file left verbatim (settings migration comes next). Retires
   the thinner 0.2.0 `FirstRunInit`.
+- **Environment migration.** Place-specific context is now a first-class **environment**:
+  it lives under `environments/<env>/` (one folder per environment, the movie set) instead
+  of the single `profile/company/`. On any command, gmlw non-destructively wraps an old
+  `profile/company/` into the **active** environment (`[profile] default_environment`,
+  `work` by default) — a move (nothing copied or lost), a name that already exists at the
+  target is left in place and reported (never overwritten), and the emptied old folder is
+  retired. What moved and what was skipped is printed to stderr. The move runs on both the
+  forced-init and the normal bootstrap paths, so an install initialised before the
+  migration existed is caught too. The `company` context source is unchanged as a config
+  key; only its on-disk home moved to `environments/<env>/`.
 
 ## [0.3.0] - 2026-07-18
 

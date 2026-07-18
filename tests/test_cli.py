@@ -11,6 +11,7 @@ import pytest
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
@@ -31,6 +32,7 @@ from generic_ml_wrapper.application.port.inbound.list_personas import ListPerson
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
+from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
     NewWorkflowCommand,
@@ -83,6 +85,14 @@ class _Greeting(RenderGreeting):
         return self._text
 
 
+class _FakeMigrate(MigrateLayout):
+    def __init__(self, report: MigrationReport | None = None) -> None:
+        self._report = report if report is not None else MigrationReport(environment="work")
+
+    def execute(self) -> MigrationReport:
+        return self._report
+
+
 class _CheckClient(CheckClientReady):
     def __init__(self, readiness: ClientReadiness | None = None) -> None:
         self._readiness = readiness
@@ -103,6 +113,7 @@ def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
     monkeypatch.setattr(app.config, "init_version", _init_done)
+    monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate())  # no-op by default
     monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting(None))
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient())
 
@@ -635,6 +646,57 @@ def test_init_announces_the_chosen_persona(
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     assert "persona 'butler' selected" in capsys.readouterr().err
+
+
+def test_migration_is_announced_on_the_bootstrap_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # An already-initialised install (bootstrap path) still runs migration — catching an
+    # install initialised before migration existed.
+    report = MigrationReport(environment="work", moved=["stack.md", "policies.md"])
+    monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
+    _stub_jobs(monkeypatch)
+    assert app.main(["jobs"]) == 0
+    err = capsys.readouterr().err
+    assert "migrated 2 item(s) from profile/company into environments/work" in err
+    assert "stack.md" in err
+
+
+def test_migration_surfaces_skipped_collisions(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = MigrationReport(environment="work", moved=["ok.md"], skipped=["stack.md"])
+    monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
+    _stub_jobs(monkeypatch)
+    assert app.main(["jobs"]) == 0
+    err = capsys.readouterr().err
+    assert "left 1 item(s) in profile/company" in err
+    assert "stack.md" in err
+
+
+def test_no_migration_output_when_nothing_moved(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _stub_jobs(monkeypatch)  # fixture's migrate stub returns an empty report
+    assert app.main(["jobs"]) == 0
+    assert "migrated" not in capsys.readouterr().err
+
+
+def test_init_command_runs_migration_after_init(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), []))
+    report = MigrationReport(environment="work", moved=["co.md"])
+    monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
+    assert app.main(["init"]) == 0
+    err = capsys.readouterr().err
+    assert "set up — speaking en" in err  # init announced
+    assert "migrated 1 item(s)" in err  # and migration ran after it
+
+
+def test_build_migrate_layout_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_migrate_layout(), MigrateLayout)
 
 
 def test_start_prints_the_host_greeting_to_stderr(

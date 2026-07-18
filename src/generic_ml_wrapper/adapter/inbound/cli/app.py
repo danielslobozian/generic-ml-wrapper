@@ -30,6 +30,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     JobId,
     WorkflowName,
 )
+from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
@@ -58,6 +59,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_plugins,
     build_list_sessions,
     build_list_workflows,
+    build_migrate_layout,
     build_new_workflow,
     build_render_greeting,
     build_render_statusline,
@@ -422,9 +424,16 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             _announce_init(build_init().execute())
         elif not needs_init:
             build_bootstrap().execute()
+        # Wrap the old profile/company layout into the active environment. Runs after init
+        # has persisted the environment (or reads the existing one), once per command, and
+        # is a no-op once the old layout is gone — catching installs initialised before the
+        # migration existed. The `init` command runs its own below (after it writes config).
+        if args.command != "init":
+            _announce_migration(build_migrate_layout().execute())
     try:
         if args.command == "init":
             _announce_init(build_init().execute())
+            _announce_migration(build_migrate_layout().execute())
             return 0
         if args.command == "start":
             return _start(args)
@@ -467,10 +476,9 @@ def _announce_init(outcome: InitOutcome) -> None:
             "Change any of it in ~/.gmlw/config.toml.",
             file=sys.stderr,
         )
-    else:  # legacy install: only the gate marker was written; settings are migrated later
+    else:  # legacy install: only the gate marker was written into the existing config
         print(
-            "gmlw: existing setup marked initialised. Your ~/.gmlw/config.toml is "
-            "unchanged; role/environment migration comes in a later step.",
+            "gmlw: existing setup marked initialised — your ~/.gmlw/config.toml is left unchanged.",
             file=sys.stderr,
         )
     if outcome.client is not None:
@@ -487,6 +495,29 @@ def _announce_init(outcome: InitOutcome) -> None:
     if outcome.persona is not None:
         print(
             f"gmlw: persona '{outcome.persona}' selected — it will greet you at launch.",
+            file=sys.stderr,
+        )
+
+
+def _announce_migration(report: MigrationReport) -> None:
+    """Narrate a layout migration to stderr, only when it actually moved or skipped.
+
+    Args:
+        report: What the migration relocated into the environment (and left behind).
+    """
+    if not report.did_anything:
+        return
+    if report.moved:
+        print(
+            f"gmlw: migrated {len(report.moved)} item(s) from profile/company into "
+            f"environments/{report.environment}: {', '.join(report.moved)}.",
+            file=sys.stderr,
+        )
+    if report.skipped:  # a same-named entry already existed at the target — never overwritten
+        print(
+            f"gmlw: left {len(report.skipped)} item(s) in profile/company "
+            f"(already present in environments/{report.environment}): "
+            f"{', '.join(report.skipped)}.",
             file=sys.stderr,
         )
 

@@ -66,7 +66,8 @@ The stages are assembled in this **fixed order**:
 
 - `_common/base.md` — the shared "how to behave" base (orient first, one step at a
   time, work in the user's language, offer to capture rules).
-- `profile/*` — your `me/` and `company/` context.
+- `profile/me/` — your `me/` context; place-specific context comes from the active
+  `environments/<env>/`.
 - global rules — `~/.gmlw/rules/*`.
 - workflow rules — the workflow's own `rules/`.
 - workflow steps — this workflow's `workflow.md`.

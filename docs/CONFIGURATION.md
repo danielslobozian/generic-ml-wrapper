@@ -148,7 +148,9 @@ On every run gmlw composes an operating context from a fixed set of sources.
 
 - `me.user` — `profile/me/*.md`
 - `me.learned` — `profile/me/learned*`
-- `company` — `profile/company/*.md`
+- `company` — `environments/<env>/*.md`, where `<env>` is the active
+  `[profile] default_environment` (the config key stays `company`; only its on-disk home
+  moved from the old `profile/company/`)
 - `rules` — `rules/*.md`
 - `persona` — the selected persona plus the shared floor (see [`[companion]`](#companion))
 - `base` / `steps` — a workflow run also composes its `base` and `steps`
