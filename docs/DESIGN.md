@@ -138,6 +138,7 @@ resume unsupported) records no session, so there are no ghost sessions.
 | `CredentialsStorePort` | resolve/set per-workflow credentials |
 | `ClientStatusParserPort` | parse a client's native status payload → `ClientStatus` |
 | `InterceptorPort` | transform a named target (`profile`/`rules`/`workflow`/`context` at compile time; `request`/`response` on the wire) |
+| `HookPort` | run an action at a lifecycle seam bracketing the client run (`pre-launch` / `post-session`) |
 | `WorkspaceInspectorPort` | report the run's folder + git state |
 | `LayoutSeederPort` | create the runtime dirs + a default config, missing-only |
 | `ContextCompressorPort` | compress one context source through its typed prompt (via `generic-ml-cache`) |
@@ -267,15 +268,25 @@ Seeded on first run, fully commented, every section optional:
 | `[client] default` | the client used when `--client` is absent | `claude` |
 | `[callers]` | override a client with a `module:Class` / `/path.py:Class` spec or plugin id | none |
 | `[[interceptors]]` | bind an interceptor spec to a `target` | none |
+| `[[hooks]]` | bind a hook spec to a lifecycle `phase` (`pre-launch` / `post-session`), optional `client` scope | none |
 | `[startup.<mode>]` | per-mode (default / workflow / authoring) source activation + compression matrix | built-in |
 | `[companion]` | the persona gmlw adopts (host greeting + the `persona` source) | off |
 | `[compress]` | compressor adapter / model / effort + `[compress.prompts]` (typed per-source prompts) | off |
 | `[transcript]` | enable the opt-in transcript + its root | off |
 | `[logging] level` | log verbosity (also `GMLW_LOG_LEVEL`) | `warning` |
 
-`[callers]` and `[[interceptors]]` load and **run Python** with your permissions — a
-trusted-code extension point (see `SECURITY.md`). A configured-but-unloadable spec
-**fails loudly**; only an absent one is a silent no-op.
+`[callers]`, `[[interceptors]]`, and `[[hooks]]` load and **run Python** with your
+permissions — a trusted-code extension point (see `SECURITY.md`). A
+configured-but-unloadable spec **fails loudly**; only an absent one is a silent no-op.
+
+**Hooks vs interceptors.** An interceptor transforms *content* (a context section, a wire
+body) and returns text; a hook performs an *action* at a lifecycle *seam* and returns
+nothing. The `HookRunner` runs the hooks bound to a phase — `pre-launch` (after the context
+is compiled and the caller resolved, before the client starts) or `post-session` (after the
+client exits, with its exit code) — filtered by an optional `client` scope, in declared
+order. Both use cases that launch a client (`start`, `workflow new`) route through the same
+`run_with_hooks` sequence, so the seams bracket every run. Hooks are **best-effort**: a
+failing hook is logged and skipped, never breaking a launch or its teardown.
 
 ## 12. The home — `~/.gmlw`
 

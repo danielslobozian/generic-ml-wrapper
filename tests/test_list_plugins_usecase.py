@@ -17,6 +17,9 @@ class _FakePlugins(PluginSourcePort):
     def resolve_caller(self, reference: str) -> str:
         raise NotImplementedError
 
+    def resolve_hook(self, reference: str) -> str:
+        raise NotImplementedError
+
 
 def test_lists_the_source_plugins() -> None:
     plugins = [Plugin("cursor-mitm", "MITM proxy")]

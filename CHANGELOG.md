@@ -7,6 +7,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Lifecycle action hooks.** gmlw already hooks *content* (the interceptor chain); it now
+  hooks *actions* at two seams bracketing the client run. A `[[hooks]]` entry binds a
+  `HookPort` spec (a `module:Class` / `/path.py:Class`, or a plugin id) to a `phase` —
+  `pre-launch` (after the context is compiled and the caller resolved, before the client
+  starts) or `post-session` (after the client exits, with its exit code) — with an optional
+  `client` scope, under the same trusted-code boundary as `[[interceptors]]` and `[callers]`.
+  Hooks are best-effort: a failing hook never breaks a launch or its teardown. Both launch
+  paths (`start`, `workflow new`) route through one `run_with_hooks` sequence. Ships the
+  built-in `SessionLogger` as a reference hook.
 - **Always-on rule lifecycle.** Rule capture is no longer workflow-only: the `rules`
   context source (now active by default in a plain start, config-overridable) leads with
   a capture directive so a demanded correction becomes a draft rule in **any** session.

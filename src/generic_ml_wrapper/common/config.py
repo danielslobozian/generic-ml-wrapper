@@ -20,6 +20,11 @@ if TYPE_CHECKING:
 
 _DEFAULT_CLIENT = "claude"
 
+# The valid ``[[hooks]]`` phases, as literal strings (config keeps its own vocabulary of
+# string keys rather than importing domain enums, mirroring ``_STARTUP_ACTIVATION``). Kept
+# in step with ``domain.service.hook.HookPhase``; a test guards that they agree.
+_HOOK_PHASES = frozenset({"pre-launch", "post-session"})
+
 
 def _config_path() -> Path:
     return paths.HOME / "config.toml"
@@ -119,6 +124,40 @@ def interceptors(path: Path | None = None) -> list[tuple[str, str]]:
         if isinstance(target, str) and target and isinstance(spec, str) and spec:
             pairs.append((target, spec))
     return pairs
+
+
+def hooks(path: Path | None = None) -> list[tuple[str, str, str | None]]:
+    """Return the configured lifecycle hooks from ``[[hooks]]``.
+
+    Each entry is a ``phase`` (``pre-launch`` / ``post-session``), a ``spec`` (an
+    importable ``"module:Class"`` / ``"/path.py:Class"``, or a plugin id), and an
+    optional ``client`` scope, run in declared order. Entries with an unknown phase or
+    a missing phase/spec are dropped (a malformed hook must not break a launch); the
+    ``client`` is kept only when it is a non-empty string, else ``None`` (every client).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``(phase, spec, client)`` triples in order (empty when none are configured).
+    """
+    raw = _load(path).get("hooks")
+    if not isinstance(raw, list):
+        return []
+    triples: list[tuple[str, str, str | None]] = []
+    for entry in cast("list[object]", raw):
+        if not isinstance(entry, dict):
+            continue
+        table = cast("dict[str, object]", entry)
+        phase = table.get("phase")
+        spec = table.get("spec")
+        if not (isinstance(phase, str) and phase in _HOOK_PHASES):
+            continue
+        if not (isinstance(spec, str) and spec):
+            continue
+        client = table.get("client")
+        triples.append((phase, spec, client if isinstance(client, str) and client else None))
+    return triples
 
 
 @dataclass(frozen=True)

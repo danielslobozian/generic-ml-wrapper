@@ -10,6 +10,7 @@ from dataclasses import replace
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
@@ -21,19 +22,20 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPro
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.common.log import log
+from generic_ml_wrapper.application.usecase.launch import run_with_hooks
 
 
 class StartJobUseCase(StartJob):
     """Resolve a session (new or resumed), optionally attach a workflow, run it."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  (a use case binding its full set of outbound ports)
         self,
         store: SessionStorePort,
         workflows: WorkflowSourcePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
         credentials: CredentialsStorePort,
+        hooks: HookRunner,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -43,12 +45,14 @@ class StartJobUseCase(StartJob):
             callers: Resolves the client caller for a run.
             uuid_factory: Mints a client-side session uuid for new sessions.
             credentials: Resolves a workflow's credentials to export at launch.
+            hooks: The lifecycle hooks bracketing the client run.
         """
         self._store = store
         self._workflows = workflows
         self._callers = callers
         self._uuid_factory = uuid_factory
         self._credentials = credentials
+        self._hooks = hooks
 
     def execute(self, command: StartJobCommand) -> int:
         """Resolve the session, optionally inject a workflow, run the client.
@@ -78,14 +82,7 @@ class StartJobUseCase(StartJob):
         # a rejected start never leaves a ghost session that burns an id and could be resumed.
         if session is not None:
             self._store.record(session)
-        caller.start_metering()
-        try:
-            return caller.start_client()
-        finally:
-            try:
-                caller.end_metering()
-            except Exception as error:  # noqa: BLE001  teardown must never crash the run
-                log.warning(f"metering teardown failed: {error}")
+        return run_with_hooks(caller, run, self._hooks)
 
     def _attach_baseline(self, run: RunContext) -> RunContext:
         """Inject the always-on baseline context (profile/learned/persona) on a plain run.

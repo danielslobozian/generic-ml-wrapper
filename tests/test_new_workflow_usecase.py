@@ -7,6 +7,7 @@ import pytest
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
     WorkflowExistsError,
@@ -78,7 +79,9 @@ class _NoopCaller(CliCaller):
 def _use_case(
     workflows: FakeWorkflows, store: FakeStore, provider: CapturingProvider
 ) -> NewWorkflowUseCase:
-    return NewWorkflowUseCase(workflows, store, provider, uuid_factory=lambda: "fixed-uuid")
+    return NewWorkflowUseCase(
+        workflows, store, provider, uuid_factory=lambda: "fixed-uuid", hooks=HookRunner(())
+    )
 
 
 def test_authors_a_new_workflow() -> None:

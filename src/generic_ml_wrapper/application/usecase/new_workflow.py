@@ -10,6 +10,7 @@ from generic_ml_wrapper.application.domain.model.context_source import CompileMo
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
@@ -20,6 +21,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.launch import run_with_hooks
 
 _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
@@ -34,6 +36,7 @@ class NewWorkflowUseCase(NewWorkflow):
         store: SessionStorePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
+        hooks: HookRunner,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -42,11 +45,13 @@ class NewWorkflowUseCase(NewWorkflow):
             store: Records the authoring session.
             callers: Resolves the client caller for the run.
             uuid_factory: Mints a client-side session uuid.
+            hooks: The lifecycle hooks bracketing the authoring client run.
         """
         self._workflows = workflows
         self._store = store
         self._callers = callers
         self._uuid_factory = uuid_factory
+        self._hooks = hooks
 
     def execute(self, command: NewWorkflowCommand) -> int:
         """Run the authoring session for a new workflow.
@@ -103,8 +108,4 @@ class NewWorkflowUseCase(NewWorkflow):
             ),
         )
         caller = self._callers.for_run(run)
-        caller.start_metering()
-        try:
-            return caller.start_client()
-        finally:
-            caller.end_metering()
+        return run_with_hooks(caller, run, self._hooks)

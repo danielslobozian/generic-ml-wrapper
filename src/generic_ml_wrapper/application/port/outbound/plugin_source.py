@@ -43,3 +43,22 @@ class PluginSourcePort(ABC):
         Raises:
             PluginError: If the id names no installed plugin, or its manifest is bad.
         """
+
+    @abstractmethod
+    def resolve_hook(self, reference: str) -> str:
+        """Resolve a ``[[hooks]]`` spec to a loadable ``"path.py:Class"`` spec.
+
+        A value containing ``":"`` is already a module/path spec and is returned
+        unchanged. A bare value is a plugin id: it is resolved through that plugin's
+        ``plugin.toml`` ``[plugin] hook`` entry to an absolute spec.
+
+        Args:
+            reference: The ``[[hooks]]`` ``spec`` — a plugin id or a hook spec.
+
+        Returns:
+            A loadable ``"module:Class"`` / ``"/path.py:Class"`` spec.
+
+        Raises:
+            PluginError: If the id names no installed plugin, or its manifest lacks a
+                well-formed ``[plugin] hook``.
+        """

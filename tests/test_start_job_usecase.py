@@ -7,6 +7,8 @@ import pytest
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJobCommand,
@@ -109,11 +111,22 @@ class FakeProvider(CliCallerProvider):
         return RecordingCaller(run, self.log, can_resume=self._can_resume)
 
 
+class RecordingHook(Hook):
+    """A hook that appends ``<phase>:<client>:<exit>`` to a shared log when it runs."""
+
+    def __init__(self, log: list[str]) -> None:
+        self._log = log
+
+    def run(self, context: HookContext) -> None:
+        self._log.append(f"{context.phase.value}:{context.client}:{context.exit_code}")
+
+
 def _use_case(
     store: FakeStore,
     provider: FakeProvider,
     workflows: FakeWorkflows | None = None,
     credentials: FakeCredentials | None = None,
+    hooks: HookRunner | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -121,6 +134,7 @@ def _use_case(
         callers=provider,
         uuid_factory=lambda: "fixed-uuid",
         credentials=credentials or FakeCredentials(),
+        hooks=hooks or HookRunner(()),
     )
 
 
@@ -141,6 +155,30 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     # a plain start now composes the always-on baseline (default mode)
     assert workflows.compiled == [(CompileMode.DEFAULT, None)]
     assert provider.run.context == "BASELINE"
+
+
+def test_lifecycle_hooks_bracket_the_client_run() -> None:
+    shared: list[str] = []  # both hooks and the caller append here, so order is observable
+    hooks = HookRunner(
+        [
+            (HookPhase.PRE_LAUNCH, None, RecordingHook(shared)),
+            (HookPhase.POST_SESSION, None, RecordingHook(shared)),
+        ]
+    )
+    provider = FakeProvider(log=shared)
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, hooks=hooks).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+
+    # pre-launch runs before metering (exit unknown); post-session runs after teardown
+    # (exit code in hand) — the client run is bracketed by the two seams.
+    assert shared == [
+        "pre-launch:claude:None",
+        "start_metering",
+        "start_client",
+        "end_metering",
+        "post-session:claude:0",
+    ]
 
 
 def test_plain_start_with_empty_baseline_injects_no_context() -> None:
