@@ -42,3 +42,6 @@ credentials.toml
 # not be committed (it would reintroduce the very leak it checks for).
 /setup-repo.sh
 /secret-audit.sh
+
+# Build-time generated (stamped by hatch_build.py at wheel build); never committed.
+/src/generic_ml_wrapper/_build_info.py

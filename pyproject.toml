@@ -67,6 +67,13 @@ gmlw = "generic_ml_wrapper.adapter.inbound.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/generic_ml_wrapper"]
+# _build_info.py is generated (and git-ignored) by the build hook below; force-include
+# it so the stamped build id ships in the wheel.
+artifacts = ["src/generic_ml_wrapper/_build_info.py"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+# Stamps src/generic_ml_wrapper/_build_info.py with a build timestamp + git sha.
+path = "hatch_build.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
