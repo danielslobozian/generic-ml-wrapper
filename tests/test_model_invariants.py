@@ -49,6 +49,9 @@ def test_client_status_accepts_valid_and_absent() -> None:
     assert ClientStatus("m", 0, 0.0, ()).context_pct == 0
     assert ClientStatus("m", 100, 1.5, ()).context_pct == 100
     assert ClientStatus(None, None, None, ()).model is None
+    # the window fields are optional and default to absent
+    assert ClientStatus("m", 50, 1.0, ()).context_window_size is None
+    assert ClientStatus("m", 50, 1.0, (), 200000, 68000).context_tokens == 68000
 
 
 @pytest.mark.parametrize(
@@ -58,6 +61,8 @@ def test_client_status_accepts_valid_and_absent() -> None:
         {"context_pct": 101},
         {"session_cost_usd": -0.01},
         {"session_cost_usd": math.inf},
+        {"context_window_size": -1},
+        {"context_tokens": -1},
     ],
 )
 def test_client_status_rejects_out_of_range(kwargs: dict[str, object]) -> None:
