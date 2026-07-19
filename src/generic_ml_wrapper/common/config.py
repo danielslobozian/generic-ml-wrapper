@@ -13,16 +13,22 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model import context_source
-from generic_ml_wrapper.common import paths
+from generic_ml_wrapper.common import paths, settings_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-_DEFAULT_CLIENT = "claude"
-# The init-seeded defaults for the movie-set axes: one plays a "default" role on the
-# "work" set until the config commands (0.5.0) let either be changed.
-_DEFAULT_ROLE = "default"
-_DEFAULT_ENVIRONMENT = "work"
+# Every scalar default is sourced from the registry (the single typed source of truth),
+# so a default is declared once — on its Field — not duplicated here. This module keeps
+# the *tolerant* reading (a malformed or ill-typed file falls back, never raises); the
+# registry supplies the fallback value.
+_DEFAULT_CLIENT = cast("str", settings_registry.default_for("client.default"))
+_DEFAULT_ROLE = cast("str", settings_registry.default_for("profile.default_role"))
+_DEFAULT_ENVIRONMENT = cast("str", settings_registry.default_for("profile.default_environment"))
+_DEFAULT_LOG_LEVEL = cast("str", settings_registry.default_for("logging.level"))
+_DEFAULT_COMPRESS_ADAPTER = cast("str", settings_registry.default_for("compress.adapter"))
+_DEFAULT_COMPRESS_MODEL = cast("str", settings_registry.default_for("compress.model"))
+_DEFAULT_COMPRESS_EFFORT = cast("str", settings_registry.default_for("compress.effort"))
 
 # The valid ``[[hooks]]`` phases, as literal strings (config keeps its own vocabulary of
 # string keys rather than importing domain enums, mirroring ``_STARTUP_ACTIVATION``). Kept
@@ -30,8 +36,72 @@ _DEFAULT_ENVIRONMENT = "work"
 _HOOK_PHASES = frozenset({"pre-launch", "post-session"})
 
 
-def _config_path() -> Path:
+def config_path() -> Path:
+    """Return the config file path (``~/.gmlw/config.toml``)."""
     return paths.HOME / "config.toml"
+
+
+_config_path = config_path  # internal alias, kept for the accessors below
+
+
+def current_values(path: Path | None = None) -> dict[str, object]:
+    """Return the current effective value of every registered scalar setting.
+
+    Reads each setting through its own tolerant accessor, so the map reflects exactly what
+    the app will use (defaults where unset). The keys mirror
+    :func:`settings_registry.keys`; a test guards that they stay in step.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        A ``dotted.key -> value`` map for the settable scalar keys.
+    """
+    companion_settings = companion(path)
+    transcript_settings = transcript(path)
+    compress_settings = compress(path)
+    return {
+        "client.default": default_client(path),
+        "language.code": language(path),
+        "profile.default_role": default_role(path),
+        "profile.default_environment": default_environment(path),
+        "logging.level": log_level(path),
+        "companion.persona": companion_settings.persona,
+        "companion.name": companion_settings.name,
+        "transcript.enabled": transcript_settings.enabled,
+        "transcript.root": transcript_settings.root,
+        "compress.adapter": compress_settings.adapter,
+        "compress.model": compress_settings.model,
+        "compress.effort": compress_settings.effort,
+        "hints.show": hints_show(path),
+        "ambient.capability_card": ambient_capability_card(path),
+    }
+
+
+def hints_show(path: Path | None = None) -> bool:
+    """Return whether to show a usage-driven tip on the exit receipt (``[hints] show``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[hints] show`` value, or ``True`` when unset.
+    """
+    value = _table(_load(path), "hints").get("show")
+    return value if isinstance(value, bool) else True
+
+
+def ambient_capability_card(path: Path | None = None) -> bool:
+    """Return whether to inject the ambient capability card (``[ambient] capability_card``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[ambient] capability_card`` value, or ``False`` when unset.
+    """
+    value = _table(_load(path), "ambient").get("capability_card")
+    return value if isinstance(value, bool) else False
 
 
 def config_exists(path: Path | None = None) -> bool:
@@ -159,7 +229,7 @@ def log_level(path: Path | None = None) -> str:
         The ``[logging] level`` value, or ``"warning"`` when unset.
     """
     value = _table(_load(path), "logging").get("level")
-    return value if isinstance(value, str) and value else "warning"
+    return value if isinstance(value, str) and value else _DEFAULT_LOG_LEVEL
 
 
 def interceptors(path: Path | None = None) -> list[tuple[str, str]]:
@@ -280,9 +350,9 @@ def compress(path: Path | None = None) -> CompressSettings:
     model = table.get("model")
     effort = table.get("effort")
     return CompressSettings(
-        adapter=adapter if isinstance(adapter, str) and adapter else "cursor",
-        model=model if isinstance(model, str) and model else "gpt-5.4",
-        effort=effort if isinstance(effort, str) and effort else "low",
+        adapter=adapter if isinstance(adapter, str) and adapter else _DEFAULT_COMPRESS_ADAPTER,
+        model=model if isinstance(model, str) and model else _DEFAULT_COMPRESS_MODEL,
+        effort=effort if isinstance(effort, str) and effort else _DEFAULT_COMPRESS_EFFORT,
         prompts=prompts,
     )
 

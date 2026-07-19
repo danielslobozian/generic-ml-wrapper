@@ -20,6 +20,9 @@ gmlw workflow list [--json]
 gmlw persona list [--json]
 gmlw plugins list [--json]
 gmlw creds set <workflow> <ENV_VAR_NAME>
+gmlw config list [--json]
+gmlw config get <key> [--json]
+gmlw config set <key> <value>
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
@@ -180,6 +183,7 @@ Author and list workflows. Invoked with no action, prints its own help.
 
 ```
 gmlw workflow new <name> [--client CLIENT]
+gmlw workflow edit <name> [--client CLIENT]
 gmlw workflow list [--json]
 ```
 
@@ -196,6 +200,22 @@ Example:
 
 ```
 gmlw workflow new tidy-review
+```
+
+### workflow edit
+
+Open an existing workflow for changes in a metered authoring session (no job). Unlike
+`new`, it never creates or overwrites — it opens the workflow's existing folder and amends
+its `workflow.md`. An unknown workflow exits non-zero with guidance.
+
+- `name` (positional, required) — the workflow to edit.
+- `--client CLIENT` — which client to wrap; defaults to the configured default, or
+  `claude`.
+
+Example:
+
+```
+gmlw workflow edit tidy-review
 ```
 
 ### workflow list
@@ -273,6 +293,68 @@ Example:
 ```
 gmlw creds set deploy-bot DEPLOY_TOKEN
 ```
+
+---
+
+## config
+
+View and change the settable `~/.gmlw/config.toml` settings. Every key is backed by a
+typed registry (its type, default, allowed values, and description); `set` validates
+against it and merges the change into your file, preserving comments and formatting.
+Invoked with no action, prints its own help.
+
+```
+gmlw config list [--json]
+gmlw config get <key> [--json]
+gmlw config set <key> <value>
+```
+
+### config list
+
+List every setting with its current value and description.
+
+### config get
+
+Show one setting — its value, description, default, and any allowed values.
+
+- `key` (positional, required) — the dotted setting key (e.g. `profile.default_role`).
+
+### config set
+
+Change one setting. The value is validated against the registry (type and allowed
+values) before anything is written; the change is echoed (old → new), never silent. Use
+`none` to clear an optional key back to its default.
+
+- `key` (positional, required) — the dotted setting key.
+- `value` (positional, required) — the new value.
+
+Example:
+
+```
+gmlw config set profile.default_role reviewer
+gmlw config set logging.level debug
+gmlw config get client.default
+```
+
+The home for changing `default_role` / `default_environment` after `init`.
+
+---
+
+## help
+
+Explain a core concept. `gmlw help` lists the topics; `gmlw help <topic>` prints one.
+
+```
+gmlw help
+gmlw help <topic>
+```
+
+- `topic` (positional, optional) — one of `job-vs-workflow`, `start-vs-run`, `personas`,
+  `cost`. Omit to list the topics. An unknown topic exits non-zero with guidance.
+
+Bare `gmlw` (no arguments) is first-run-aware: on a fresh install it runs `init`;
+thereafter it prints a grouped capability index (**launch / inspect / author**) with a
+next-action footer. The flat argparse view is still available via `gmlw --help`.
 
 ---
 

@@ -62,6 +62,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def create(self, name: str) -> str:
         raise NotImplementedError
 
+    def folder(self, name: str) -> str:
+        return f"/workflows/{name}"
+
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         self.compiled.append((mode, name))
         if mode is CompileMode.DEFAULT:
@@ -121,12 +124,14 @@ class RecordingHook(Hook):
         self._log.append(f"{context.phase.value}:{context.client}:{context.exit_code}")
 
 
-def _use_case(
+def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the greeting)
     store: FakeStore,
     provider: FakeProvider,
     workflows: FakeWorkflows | None = None,
     credentials: FakeCredentials | None = None,
     hooks: HookRunner | None = None,
+    greeting: str | None = None,
+    capability_card: str | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -135,6 +140,8 @@ def _use_case(
         uuid_factory=lambda: "fixed-uuid",
         credentials=credentials or FakeCredentials(),
         hooks=hooks or HookRunner(()),
+        greeting=lambda: greeting,
+        capability_card=lambda: capability_card,
     )
 
 
@@ -142,11 +149,13 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     store = FakeStore(ids=["JOB-1_001"])
     provider = FakeProvider()
     workflows = FakeWorkflows()
-    exit_code = _use_case(store, provider, workflows).execute(
+    result = _use_case(store, provider, workflows).execute(
         StartJobCommand(job="JOB-1", client="claude")
     )
 
-    assert exit_code == 0
+    assert result.exit_code == 0
+    assert result.job == "JOB-1"
+    assert result.session_id == "JOB-1_002"
     assert provider.log == ["start_metering", "start_client", "end_metering"]
     minted = store.recorded[0]
     assert minted.session_id == "JOB-1_002"
@@ -154,6 +163,60 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     assert provider.run.resume is False
     # a plain start now composes the always-on baseline (default mode)
     assert workflows.compiled == [(CompileMode.DEFAULT, None)]
+    assert provider.run.context == "BASELINE"
+
+
+def test_host_greeting_is_prepended_to_a_new_session_context() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, greeting="Good evening, Dan.").execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.context is not None
+    assert "# Greeting" in provider.run.context
+    assert "Good evening, Dan." in provider.run.context
+    assert "BASELINE" in provider.run.context  # ahead of the baseline, not replacing it
+
+
+def test_greeting_becomes_the_context_when_the_baseline_is_empty() -> None:
+    provider = FakeProvider()
+    _use_case(
+        FakeStore(ids=["JOB-1_001"]),
+        provider,
+        workflows=FakeWorkflows(baseline=""),
+        greeting="Hi, Dan.",
+    ).execute(StartJobCommand(job="JOB-1", client="claude"))
+    assert provider.run is not None
+    assert provider.run.context is not None
+    assert "Hi, Dan." in provider.run.context
+
+
+def test_no_greeting_leaves_the_context_untouched() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, greeting=None).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.context == "BASELINE"  # companion off → no greeting section
+
+
+def test_capability_card_is_appended_when_enabled() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, capability_card="HOW-TO-CARD").execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.context is not None
+    assert provider.run.context.startswith("BASELINE")  # appended after the baseline
+    assert "HOW-TO-CARD" in provider.run.context
+
+
+def test_capability_card_off_by_default_leaves_context_untouched() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, capability_card=None).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
     assert provider.run.context == "BASELINE"
 
 

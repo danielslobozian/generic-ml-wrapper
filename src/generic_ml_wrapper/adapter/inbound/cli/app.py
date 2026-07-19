@@ -16,10 +16,17 @@ import sys
 from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
+from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
+    TOPICS,
+    render_topic,
+    render_topic_list,
+)
+from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
+from generic_ml_wrapper.adapter.inbound.cli.index import render_index
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
@@ -35,6 +42,15 @@ from generic_ml_wrapper.application.domain.model.migration import MigrationRepor
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
+from generic_ml_wrapper.application.port.inbound.config_commands import (
+    ConfigCommands,
+    SetOutcome,
+    SettingView,
+)
+from generic_ml_wrapper.application.port.inbound.edit_workflow import (
+    EditWorkflowCommand,
+    WorkflowNotFoundError,
+)
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -48,11 +64,14 @@ from generic_ml_wrapper.application.port.inbound.set_credential import SetCreden
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJobCommand,
+    StartJobResult,
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
+    build_config_commands,
+    build_edit_workflow,
     build_export_usage,
     build_init,
     build_list_jobs,
@@ -60,17 +79,22 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_plugins,
     build_list_sessions,
     build_list_workflows,
+    build_localizer,
     build_migrate_layout,
     build_new_workflow,
-    build_render_greeting,
     build_render_statusline,
     build_set_credential,
     build_start_job,
 )
-from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common import config, i18n, paths, settings_registry
 from generic_ml_wrapper.common.log import configure as configure_logging
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
+
+if TYPE_CHECKING:
+    # argparse does not publicly export the type ``add_subparsers`` returns; alias it once
+    # (the private reference is confined here) so the parser-builder helpers can type it.
+    _SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]  # pyright: ignore[reportPrivateUsage]
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
@@ -93,6 +117,8 @@ _COMMANDS = frozenset(
         "persona",
         "plugins",
         "creds",
+        "config",
+        "help",
     }
 )
 
@@ -103,6 +129,7 @@ _SUBACTIONS = {
     "persona": "persona_command",
     "plugins": "plugins_command",
     "creds": "creds_command",
+    "config": "config_command",
 }
 
 
@@ -146,7 +173,7 @@ def _as_json(payload: object) -> str:
 
 
 def _version_string() -> str:
-    """Return ``gmlw <version> (build <id>, git <sha>)``; a plain fallback if unbuilt.
+    """Return ``gmlw <version> (build <id>)``; a plain fallback if unbuilt.
 
     ``_build_info`` is stamped into the wheel at build time; a source checkout that was
     never built lacks it and reports ``(source, unbuilt)`` instead.
@@ -159,8 +186,7 @@ def _version_string() -> str:
     except ModuleNotFoundError:
         return f"gmlw {__version__} (source, unbuilt)"
     build_id = getattr(build_info, "BUILD_ID", "unknown")
-    git_sha = getattr(build_info, "GIT_SHA", "unknown")
-    return f"gmlw {__version__} (build {build_id}, git {git_sha})"
+    return f"gmlw {__version__} (build {build_id})"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -223,6 +249,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="which client to wrap (default: the configured default, or claude)",
     )
+    edit = workflow_sub.add_parser("edit", help="edit an existing workflow (no job)")
+    edit.add_argument("name", help="the workflow to edit")
+    edit.add_argument(
+        "--client",
+        default=None,
+        help="which client to wrap (default: the configured default, or claude)",
+    )
     workflow_list = workflow_sub.add_parser("list", help="list the runnable workflows")
     _add_json_flag(workflow_list)
 
@@ -241,84 +274,141 @@ def build_parser() -> argparse.ArgumentParser:
     creds_set = creds_sub.add_parser("set", help="store a workflow credential")
     creds_set.add_argument("workflow", help="the workflow the credential belongs to")
     creds_set.add_argument("name", help="the environment-variable name to export at launch")
+
+    _add_config_parser(sub)
+    _add_help_parser(sub)
     return parser
 
 
-def format_jobs(summaries: list[JobSummary]) -> str:
+def _add_config_parser(sub: _SubParsers) -> None:
+    """Add the ``config`` command (list/get/set) to the top-level subparsers."""
+    config_parser = sub.add_parser("config", help="view or change gmlw settings")
+    config_sub = config_parser.add_subparsers(dest="config_command", metavar="<action>")
+    config_list = config_sub.add_parser("list", help="list every setting and its value")
+    _add_json_flag(config_list)
+    config_get = config_sub.add_parser("get", help="show one setting")
+    config_get.add_argument("key", help="the dotted setting key (e.g. profile.default_role)")
+    _add_json_flag(config_get)
+    config_set = config_sub.add_parser("set", help="change one setting")
+    config_set.add_argument("key", help="the dotted setting key")
+    config_set.add_argument("value", help="the new value (use 'none' to clear an optional key)")
+
+
+def _add_help_parser(sub: _SubParsers) -> None:
+    """Add the ``help`` command (topic explainers) to the top-level subparsers."""
+    help_parser = sub.add_parser("help", help="explain a core concept (see: gmlw help)")
+    help_parser.add_argument(
+        "topic",
+        nargs="?",
+        default=None,
+        metavar="<topic>",
+        help=f"the concept to explain ({', '.join(TOPICS)}); omit to list the topics",
+    )
+
+
+def format_jobs(summaries: list[JobSummary], loc: i18n.Localizer | None = None) -> str:
     """Render the job summaries as human-readable lines.
 
     Args:
         summaries: The job summaries to render.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     if not summaries:
-        return "No jobs yet. Start one with: gmlw start <job>"
-    lines = [f"{len(summaries)} job(s):", ""]
+        return loc.t("jobs.none")
+    lines = [loc.t("jobs.count", count=len(summaries)), ""]
     width = max(len(summary.job) for summary in summaries)
     lines += [
-        f"  {summary.job:<{width}}  {summary.session_count} session(s)" for summary in summaries
+        loc.t("jobs.row", job=f"{summary.job:<{width}}", count=summary.session_count)
+        for summary in summaries
     ]
     return "\n".join(lines)
 
 
-def format_sessions(job: str, sessions: list[SessionSummary]) -> str:
+def format_sessions(
+    job: str, sessions: list[SessionSummary], loc: i18n.Localizer | None = None
+) -> str:
     """Render a job's sessions as human-readable lines.
 
     Args:
         job: The job the sessions belong to.
         sessions: The session summaries to render.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     if not sessions:
-        return f"No sessions for {job!r}. Start one with: gmlw start {job}"
-    lines = [f"{job} — {len(sessions)} session(s):", ""]
+        return loc.t("sessions.none", job=repr(job), start_job=job)
+    lines = [loc.t("sessions.count", job=job, count=len(sessions)), ""]
     width = max(len(session.session_id) for session in sessions)
-    lines += [f"  {session.session_id:<{width}}  {session.client}" for session in sessions]
+    lines += [
+        loc.t("sessions.row", session=f"{session.session_id:<{width}}", client=session.client)
+        for session in sessions
+    ]
     return "\n".join(lines)
 
 
-def format_usage(report: UsageReport) -> str:
+def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
     """Render a job's usage report: per-turn rows, totals by model, cost, and totals.
 
     Args:
         report: The usage report to render.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     if report.turn_count == 0 and not report.session_costs:
-        return f"No usage recorded for {report.job!r} yet."
+        return loc.t("usage.none", job=repr(report.job))
     width = max(
         (len(model.model) for model in report.models),
         default=len(_UNKNOWN_LABEL),
     )
-    lines = [f"{report.job} — usage  ({report.turn_count} turn(s))", ""]
+    lines = [loc.t("usage.header", job=report.job, count=report.turn_count), ""]
     for turn in report.turns:
         lines.append(
-            f"  {_clock(turn.timestamp)}  {turn.model:<{width}}  {turn.duration_s:>5.1f}s"
-            f"{_tokens(turn.input_tokens, turn.output_tokens, turn.cache_tokens)}"
-            f"  · [{turn.turn_id or '-'}]"
+            loc.t(
+                "usage.turn_row",
+                clock=_clock(turn.timestamp),
+                model=f"{turn.model:<{width}}",
+                duration=f"{turn.duration_s:>5.1f}",
+                tokens=_tokens(turn.input_tokens, turn.output_tokens, turn.cache_tokens, loc),
+                turn_id=turn.turn_id or "-",
+            )
         )
     if report.models:
-        lines += ["", "  ── totals by model ──"]
+        lines += ["", loc.t("usage.totals_by_model")]
         lines += [
-            f"  {model.model:<{width}}  {model.calls:>3} call(s)"
-            f"{_tokens(model.input_tokens, model.output_tokens, model.cache_tokens)}"
-            f"  {model.duration_s:.1f}s"
+            loc.t(
+                "usage.model_row",
+                model=f"{model.model:<{width}}",
+                calls=f"{model.calls:>3}",
+                tokens=_tokens(model.input_tokens, model.output_tokens, model.cache_tokens, loc),
+                duration=f"{model.duration_s:.1f}",
+            )
             for model in report.models
         ]
     if report.session_costs:
-        lines += ["", "  ── cost by session ──"]
-        lines += [f"  {cost.session_id}  ${cost.cost_usd:.2f}" for cost in report.session_costs]
+        lines += ["", loc.t("usage.cost_by_session")]
+        lines += [
+            loc.t("usage.cost_row", session=cost.session_id, cost=f"{cost.cost_usd:.2f}")
+            for cost in report.session_costs
+        ]
     lines += [
         "",
-        f"  ── total ──  {report.turn_count} turn(s)"
-        f"{_tokens(report.input_tokens, report.output_tokens, report.cache_tokens)}"
-        f"  {report.duration_s:.1f}s  ${report.total_usd:.2f}",
+        loc.t(
+            "usage.total",
+            count=report.turn_count,
+            tokens=_tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
+            duration=f"{report.duration_s:.1f}",
+            total=f"{report.total_usd:.2f}",
+        ),
     ]
     return "\n".join(lines)
 
@@ -333,59 +423,71 @@ def _clock(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).astimezone().strftime("%H:%M:%S")
 
 
-def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int) -> str:
+def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.Localizer) -> str:
     """Render a token triple as ``  <in>(+<cache> cache)+<out> tok`` for the report."""
-    cache = f"(+{cache_tokens} cache)" if cache_tokens else ""
-    return f"  {input_tokens}{cache}+{output_tokens} tok"
+    cache = loc.t("usage.cache", cache=cache_tokens) if cache_tokens else ""
+    return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
 
 
-def format_workflows(names: list[str]) -> str:
+def format_workflows(names: list[str], loc: i18n.Localizer | None = None) -> str:
     """Render the runnable workflow names as human-readable lines.
 
     Args:
         names: The workflow names to render.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     if not names:
-        return "No workflows yet. Author one with: gmlw workflow new <name>"
-    lines = [f"{len(names)} workflow(s):", ""]
+        return loc.t("workflow.none")
+    lines = [loc.t("workflow.count", count=len(names)), ""]
     lines += [f"  {name}" for name in names]
     return "\n".join(lines)
 
 
-def format_personas(personas: list[Persona]) -> str:
+def format_personas(personas: list[Persona], loc: i18n.Localizer | None = None) -> str:
     """Render the selectable personas as human-readable lines.
 
     Args:
         personas: The personas to render.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     if not personas:
-        return "No personas."
-    lines = [f'{len(personas)} persona(s)  (select with: [companion] persona = "<name>")', ""]
+        return loc.t("persona.none")
+    lines = [loc.t("persona.count", count=len(personas)), ""]
     width = max(len(persona.name) for persona in personas)
-    lines += [f"  {persona.name:<{width}}  {persona.description}" for persona in personas]
+    lines += [
+        loc.t("persona.row", name=f"{persona.name:<{width}}", description=persona.description)
+        for persona in personas
+    ]
     return "\n".join(lines)
 
 
-def format_plugins(plugins: list[Plugin]) -> str:
+def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> str:
     """Render the installed plugins as human-readable lines.
 
     Args:
         plugins: The plugins to render.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     if not plugins:
-        return "No plugins installed. Add one at ~/.gmlw/plugins/<id>/ (with a plugin.toml)."
-    lines = [f'{len(plugins)} plugin(s)  (use with: [callers] <client> = "<id>")', ""]
+        return loc.t("plugins.none")
+    lines = [loc.t("plugins.count", count=len(plugins)), ""]
     width = max(len(plugin.plugin_id) for plugin in plugins)
-    lines += [f"  {plugin.plugin_id:<{width}}  {plugin.description}" for plugin in plugins]
+    lines += [
+        loc.t("plugins.row", plugin=f"{plugin.plugin_id:<{width}}", description=plugin.description)
+        for plugin in plugins
+    ]
     return "\n".join(lines)
 
 
@@ -404,7 +506,7 @@ def main(argv: list[str] | None = None) -> int:
         print(file=sys.stderr)  # a tidy newline after ^C, never a traceback
         return 130
     except Exception as error:  # noqa: BLE001  last resort: no traceback reaches the user
-        print(f"gmlw: unexpected error: {error}", file=sys.stderr)
+        print(i18n.t("error.unexpected", error=error), file=sys.stderr)
         return 1
 
 
@@ -412,6 +514,9 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     parser = build_parser()
     args = parser.parse_args(_implicit_start(resolved))
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
+    # Bind the language the whole app speaks: every user string and log line renders
+    # through this active localiser (seeded to English until now).
+    i18n.set_active(build_localizer())
     if _incomplete_command_help(parser, args):  # e.g. `gmlw workflow` -> show its help
         return 0
     # The init gate: on a real command (not the statusline hot path or bare help), an
@@ -419,7 +524,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     # forced setup before the requested command runs. `gmlw init` is exempt — it *is* the
     # setup, run by the dispatch below; bootstrapping ahead of it would seed a config that
     # init then mistook for a legacy one. Once initialised, just ensure the layout.
-    if args.command not in (None, "statusline"):
+    if args.command not in (None, "statusline", "help"):
         needs_init = config.init_version() is None
         if needs_init and args.command != "init":
             _announce_init(build_init().execute())
@@ -432,6 +537,10 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command != "init":
             _announce_migration(build_migrate_layout().execute())
     try:
+        if args.command is None:  # bare `gmlw`: first run → init, thereafter → the index
+            return _index()
+        if args.command == "help":
+            return _help(args)
         if args.command == "init":
             _announce_init(build_init().execute())
             _announce_migration(build_migrate_layout().execute())
@@ -448,6 +557,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _plugins(args)
         if args.command == "creds":
             return _creds(args)
+        if args.command == "config":
+            return _config(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
     except (
         IdentifierError,
@@ -455,7 +566,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         CredentialsUnreadableError,
         SpecLoadError,
     ) as error:
-        print(f"error: {error}", file=sys.stderr)
+        print(i18n.t("error.generic", error=error), file=sys.stderr)
         return 2
     if view is None:
         parser.print_help()
@@ -470,37 +581,28 @@ def _announce_init(outcome: InitOutcome) -> None:
     Args:
         outcome: What the init interview decided.
     """
+    loc = i18n.active()
     if outcome.fresh:
         print(
-            f"gmlw: set up — speaking {outcome.language}, calling you {outcome.name}, "
-            f"role '{outcome.role}' on '{outcome.environment}'. "
-            "Change any of it in ~/.gmlw/config.toml.",
+            loc.t(
+                "init.announce.fresh",
+                language=outcome.language,
+                name=outcome.name,
+                role=outcome.role,
+                environment=outcome.environment,
+            ),
             file=sys.stderr,
         )
     else:  # legacy install: the answers were merged into the existing config
-        print(
-            "gmlw: your choices were saved into ~/.gmlw/config.toml — "
-            "your other settings and comments are untouched.",
-            file=sys.stderr,
-        )
+        print(loc.t("init.announce.legacy"), file=sys.stderr)
         for change in outcome.overwrites:  # surface each replaced value, never silently
-            print(f"gmlw: updated {change}.", file=sys.stderr)
+            print(loc.t("init.announce.updated", change=change), file=sys.stderr)
     if outcome.client is not None:
-        print(
-            f"gmlw: default client '{outcome.client}'. Change it in ~/.gmlw/config.toml.",
-            file=sys.stderr,
-        )
+        print(loc.t("init.announce.client", client=outcome.client), file=sys.stderr)
     elif not outcome.found:
-        print(
-            "gmlw: no supported client found on your PATH (claude, cursor-agent, codex, "
-            "vibe). Install one or set [client] default in ~/.gmlw/config.toml.",
-            file=sys.stderr,
-        )
+        print(loc.t("init.announce.no_client"), file=sys.stderr)
     if outcome.persona is not None:
-        print(
-            f"gmlw: persona '{outcome.persona}' selected — it will greet you at launch.",
-            file=sys.stderr,
-        )
+        print(loc.t("init.announce.persona", persona=outcome.persona), file=sys.stderr)
 
 
 def _announce_migration(report: MigrationReport) -> None:
@@ -511,19 +613,56 @@ def _announce_migration(report: MigrationReport) -> None:
     """
     if not report.did_anything:
         return
+    loc = i18n.active()
     if report.moved:
         print(
-            f"gmlw: migrated {len(report.moved)} item(s) from profile/company into "
-            f"environments/{report.environment}: {', '.join(report.moved)}.",
+            loc.t(
+                "migration.moved",
+                count=len(report.moved),
+                environment=report.environment,
+                items=", ".join(report.moved),
+            ),
             file=sys.stderr,
         )
     if report.skipped:  # a same-named entry already existed at the target — never overwritten
         print(
-            f"gmlw: left {len(report.skipped)} item(s) in profile/company "
-            f"(already present in environments/{report.environment}): "
-            f"{', '.join(report.skipped)}.",
+            loc.t(
+                "migration.skipped",
+                count=len(report.skipped),
+                environment=report.environment,
+                items=", ".join(report.skipped),
+            ),
             file=sys.stderr,
         )
+
+
+def _index() -> int:
+    """Bare ``gmlw``: run the forced setup on a fresh install, else show the index.
+
+    Mirrors the gate's first-run behaviour (init once, then the layout migration) so a
+    brand-new user is set up; on an initialised install it prints the grouped capability
+    index instead of the raw argparse help.
+    """
+    if config.init_version() is None:  # first run — funnel through the forced setup
+        _announce_init(build_init().execute())
+        _announce_migration(build_migrate_layout().execute())
+        return 0
+    print(render_index(i18n.active()))
+    return 0
+
+
+def _help(args: argparse.Namespace) -> int:
+    """``gmlw help`` lists the topics; ``gmlw help <topic>`` explains one."""
+    loc = i18n.active()
+    if args.topic is None:
+        print(render_topic_list(loc))
+        return 0
+    body = render_topic(loc, args.topic)
+    if body is None:
+        print(i18n.t("help.unknown", topic=args.topic), file=sys.stderr)
+        return 2
+    print(body)
+    return 0
 
 
 def _view(args: argparse.Namespace) -> str | None:
@@ -550,35 +689,43 @@ def _client(raw: str | None) -> str:
     return raw if raw else config.default_client()
 
 
-def format_client_guidance(readiness: ClientReadiness) -> str:
+def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | None = None) -> str:
     """Render install/login guidance for a client that cannot launch.
 
     Args:
         readiness: The not-ready verdict from the client check.
+        loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The guidance text to print (no trailing newline).
     """
+    loc = loc or i18n.active()
     system = platform.system()
     if readiness.missing is not None:
         info = readiness.missing
         lines = [
-            f"gmlw: client {readiness.client!r} ({info.display}) isn't on your PATH yet.",
-            f"  install:     {info.install_for(system)}",
-            f"  then log in: {info.login}",
+            loc.t("client.guidance.missing", client=repr(readiness.client), display=info.display),
+            loc.t("client.guidance.install", command=info.install_for(system)),
+            loc.t("client.guidance.login", login=info.login),
         ]
         others = [name for name in readiness.installed if name != readiness.client]
         if others:
-            lines.append(f"  or use one you already have:  --client {others[0]}")
+            lines.append(loc.t("client.guidance.use_other", other=others[0]))
     else:
         supported = ", ".join(info.name for info in client_catalog.SUPPORTED)
-        lines = [f"gmlw: {readiness.client!r} is not a supported client. Supported: {supported}."]
+        lines = [
+            loc.t(
+                "client.guidance.unsupported",
+                client=repr(readiness.client),
+                supported=supported,
+            )
+        ]
     if not readiness.installed:
-        lines += ["", "No supported client is installed yet — any of these works:"]
+        lines += ["", loc.t("client.guidance.none_installed")]
         width = max(len(info.name) for info in client_catalog.SUPPORTED)
         for info in client_catalog.SUPPORTED:
             lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
-        lines.append("...then log in (see each tool's docs), or run `gmlw init` to be guided.")
+        lines.append(loc.t("client.guidance.then_login"))
     return "\n".join(lines)
 
 
@@ -600,11 +747,7 @@ def _preflight_cwd() -> bool:
     try:
         os.getcwd()  # noqa: PTH109  (a probe for a live cwd; Path.cwd() would be equivalent)
     except OSError:
-        print(
-            "gmlw: your current directory no longer exists (it was moved or deleted).\n"
-            "  cd to a directory that exists — e.g. `cd ~` — and try again.",
-            file=sys.stderr,
-        )
+        print(i18n.t("preflight.cwd_gone"), file=sys.stderr)
         return False
     return True
 
@@ -627,7 +770,7 @@ def _statusline() -> int:
             os.environ.get("GMLW_SESSION"),
         )
     except Exception as error:  # noqa: BLE001  degrade to an empty line, never error at the client
-        log.warning(f"status line render failed: {error}")
+        log.warning(i18n.t("log.status_render_failed", error=error))
         print()
         return 0
     print(line)
@@ -666,14 +809,6 @@ def _with_cursor_plan(payload_json: str, client: str | None) -> str:  # noqa: PL
         return payload_json
     payload["plan"] = cast("dict[str, object]", plan)
     return json.dumps(payload)
-
-
-_START_NEEDS_JOB = (
-    "gmlw: start needs a job to work on.\n"
-    "  gmlw <job>          start (or resume) a session on <job>\n"
-    "  gmlw start <job>    the same, spelled out\n"
-    "A job groups related sessions; list yours with:  gmlw jobs"
-)
 
 
 class _Terminated(Exception):  # noqa: N818  (a control-flow signal, not an *Error)
@@ -736,12 +871,12 @@ def _farewell() -> str | None:
     settings = config.companion()
     if settings.persona is None:
         return None
-    return f"Bye, {settings.name or getpass.getuser()}."
+    return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
 def _start(args: argparse.Namespace) -> int:
     if args.job is None:  # `gmlw start` with no job — guide instead of an argparse dump
-        print(_START_NEEDS_JOB, file=sys.stderr)
+        print(i18n.t("start.needs_job"), file=sys.stderr)
         return 2
     workflow = None if args.workflow is None else str(args.workflow)
     client = _client(args.client)
@@ -755,26 +890,59 @@ def _start(args: argparse.Namespace) -> int:
         return 2
     if not _preflight_client(client):  # client not installed — guide, don't launch
         return 2
-    # The free host greeting (when a companion persona is set), to stderr so it stays
-    # out of any piped stdout — printed before the client takes over the terminal.
-    greeting = build_render_greeting().execute()
-    if greeting:
-        print(greeting, file=sys.stderr)
+    # The free host greeting (when a companion persona is set) is now injected into the
+    # session's context by StartJob, so the client renders it in-band — the launch-time
+    # stderr greeting was structurally invisible once the client cleared the screen.
     # The client owns the terminal for the session: it handles Ctrl+C itself, and a
     # kill/hangup is turned into a clean unwind so teardown (relay stop + status-line
     # restore) always runs -- gmlw never leaves its hook behind in the user's settings.
     with _client_owns_interrupts():
         try:
-            code = build_start_job().execute(command)
+            result = build_start_job().execute(command)
         except _Terminated:
             return 143  # 128 + SIGTERM: terminated, but teardown ran
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(f"error: {error}")
+            print(i18n.t("error.generic", error=error))
             return 2
     farewell = _farewell()
     if farewell:
         print(farewell, file=sys.stderr)
-    return code
+    _print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
+    return result.exit_code
+
+
+def _print_exit_receipt(result: StartJobResult) -> None:
+    """Print the exit receipt to stderr: this session's and the job's cost, then next steps.
+
+    A persistent summary on the return (the client has exited): the cost of the session and
+    the job, the resume/report commands, and one usage-driven, suppressible tip. Best-effort
+    — the cost line degrades to just the commands if the usage read fails, never raising on
+    the way out.
+    """
+    loc = i18n.active()
+    try:
+        report = build_export_usage().execute(JobId(result.job))
+        session_cost = next(
+            (c.cost_usd for c in report.session_costs if c.session_id == result.session_id),
+            0.0,
+        )
+        print(
+            loc.t(
+                "receipt.cost",
+                session=result.session_id,
+                session_cost=f"{session_cost:.2f}",
+                job=result.job,
+                job_cost=f"{report.total_usd:.2f}",
+            ),
+            file=sys.stderr,
+        )
+    except Exception as error:  # noqa: BLE001  the receipt must never break a clean exit
+        log.debug(i18n.t("log.receipt_failed", error=error))
+    print(loc.t("receipt.resume", job=result.job), file=sys.stderr)
+    print(loc.t("receipt.report", job=result.job), file=sys.stderr)
+    tip = next_hint(loc)
+    if tip:
+        print(tip, file=sys.stderr)
 
 
 def _read_secret() -> str:
@@ -791,28 +959,161 @@ def _creds(args: argparse.Namespace) -> int:
         build_set_credential().execute(
             SetCredentialCommand(workflow=workflow, name=name, value=_read_secret())
         )
-        print(f"stored {workflow}.{name}")
+        print(i18n.t("creds.stored", workflow=workflow, name=name))
         return 0
     return 0
 
 
+def _setting_value(value: object, loc: i18n.Localizer) -> str:
+    """Render a setting value for display: ``(unset)`` for None, lower-case for bools."""
+    if value is None:
+        return loc.t("config.unset")
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def format_setting_list(views: list[SettingView], loc: i18n.Localizer | None = None) -> str:
+    """Render every setting with its current value and description (aligned).
+
+    Args:
+        views: The settings to render, in registry order.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [loc.t("config.list.header", count=len(views)), ""]
+    width = max((len(view.key) for view in views), default=0)
+    for view in views:
+        lines.append(
+            loc.t("config.row", key=f"{view.key:<{width}}", value=_setting_value(view.value, loc))
+        )
+        lines.append(loc.t("config.row_desc", description=view.description))
+    return "\n".join(lines)
+
+
+def format_setting(view: SettingView, loc: i18n.Localizer | None = None) -> str:
+    """Render a single setting: value, description, default and any allowed values.
+
+    Args:
+        view: The setting to render.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [
+        loc.t("config.get", key=view.key, value=_setting_value(view.value, loc)),
+        loc.t("config.get_desc", description=view.description),
+        loc.t("config.get_default", default=_setting_value(view.default, loc)),
+    ]
+    if view.choices is not None:
+        lines.append(loc.t("config.get_allowed", choices=", ".join(view.choices)))
+    return "\n".join(lines)
+
+
+def _config(args: argparse.Namespace) -> int:
+    commands = build_config_commands()
+    as_json = bool(getattr(args, "json", False))
+    if args.config_command == "list":
+        views = commands.list()
+        if as_json:
+            print(_as_json([_setting_payload(view) for view in views]))
+        else:
+            print(format_setting_list(views))
+        return 0
+    if args.config_command == "get":
+        try:
+            view = commands.get(args.key)
+        except settings_registry.UnknownSettingError:
+            print(i18n.t("config.unknown_key", key=args.key), file=sys.stderr)
+            return 2
+        print(_as_json(_setting_payload(view)) if as_json else format_setting(view))
+        return 0
+    if args.config_command == "set":
+        return _config_set(commands, args.key, args.value)
+    return 0
+
+
+def _config_set(commands: ConfigCommands, key: str, value: str) -> int:
+    try:
+        outcome = commands.set(key, value)
+    except settings_registry.UnknownSettingError:
+        print(i18n.t("config.unknown_key", key=key), file=sys.stderr)
+        return 2
+    except settings_registry.InvalidSettingValueError as error:
+        print(i18n.t("error.generic", error=error), file=sys.stderr)
+        return 2
+    print(_format_set_outcome(outcome))
+    return 0
+
+
+def _format_set_outcome(outcome: SetOutcome, loc: i18n.Localizer | None = None) -> str:
+    """Render the localised summary of a ``config set`` — never silent about the change."""
+    loc = loc or i18n.active()
+    if not outcome.changed:
+        value = _setting_value(outcome.new, loc)
+        return loc.t("config.set_unchanged", key=outcome.key, value=value)
+    if outcome.new is None:
+        return loc.t("config.set_cleared", key=outcome.key, old=_setting_value(outcome.old, loc))
+    return loc.t(
+        "config.set_changed",
+        key=outcome.key,
+        new=_setting_value(outcome.new, loc),
+        old=_setting_value(outcome.old, loc),
+    )
+
+
+def _setting_payload(view: SettingView) -> dict[str, object]:
+    """Render a setting as a JSON-friendly dict."""
+    return {
+        "key": view.key,
+        "value": view.value,
+        "default": view.default,
+        "type": view.type_name,
+        "choices": list(view.choices) if view.choices is not None else None,
+        "description": view.description,
+    }
+
+
 def _workflow(args: argparse.Namespace) -> int:
     if args.workflow_command == "new":
-        client = _client(args.client)
-        if not _preflight_client(client):  # client not installed — guide, don't launch
-            return 2
-        try:
-            return build_new_workflow().execute(
-                NewWorkflowCommand(name=str(args.name), client=client)
-            )
-        except (WorkflowNameError, WorkflowExistsError) as error:
-            print(f"error: {error}")
-            return 2
+        return _workflow_new(args)
+    if args.workflow_command == "edit":
+        return _workflow_edit(args)
     if args.workflow_command == "list":
         names = build_list_workflows().execute()
         print(_as_json(names) if bool(args.json) else format_workflows(names))
         return 0
     return 0
+
+
+def _workflow_new(args: argparse.Namespace) -> int:
+    """Author a new workflow (guide instead of launching when the client isn't ready)."""
+    client = _client(args.client)
+    if not _preflight_client(client):
+        return 2
+    try:
+        return build_new_workflow().execute(NewWorkflowCommand(name=str(args.name), client=client))
+    except (WorkflowNameError, WorkflowExistsError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
+
+
+def _workflow_edit(args: argparse.Namespace) -> int:
+    """Edit an existing workflow (guide instead of launching when the client isn't ready)."""
+    client = _client(args.client)
+    if not _preflight_client(client):
+        return 2
+    try:
+        command = EditWorkflowCommand(name=str(args.name), client=client)
+        return build_edit_workflow().execute(command)
+    except (WorkflowNameError, WorkflowNotFoundError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
 
 
 def _persona(args: argparse.Namespace) -> int:

@@ -7,9 +7,16 @@ import pytest
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.greeting import (
     daypart,
+    greeting_context,
     render_greeting,
     repo_note,
 )
+
+
+def test_greeting_context_wraps_the_greeting_as_a_renderable_section() -> None:
+    section = greeting_context("Good evening, Dan.")
+    assert section.startswith("# Greeting")
+    assert "Good evening, Dan." in section
 
 
 @pytest.mark.parametrize(

@@ -31,6 +31,7 @@ from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
+from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -286,7 +287,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._proxy()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002  (stdlib signature)
-        log.debug("gateway " + (format % args if args else format))
+        log.debug(i18n.t("log.gateway", message=(format % args if args else format)))
 
     def _proxy(self) -> None:
         relay = cast("_RelayServer", self.server).relay

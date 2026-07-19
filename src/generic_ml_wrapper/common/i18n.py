@@ -5,7 +5,15 @@
 The catalogue lives in packaged ``resources/i18n/<lang>.json`` as flat, dotted keys
 mapped to ``str.format`` templates. A :class:`Localizer` merges the chosen language over
 English, so a missing translation degrades to English rather than a raw key. This is
-deliberately *not* gettext: onboarding-scale copy, no plural rules, zero dependencies.
+deliberately *not* gettext: app-wide copy, no plural rules (labels dodge plurals with the
+``job(s)`` convention), zero dependencies.
+
+Every user-facing string and every diagnostic log line the wrapper emits routes through a
+localiser. Deep code (adapters that log, the ``format_*`` renderers) reaches the running
+language through the **process-global active localiser** — :func:`set_active` is called once
+at startup with the configured language, and :func:`active` / :func:`t` read it from
+anywhere without threading a :class:`Localizer` through every constructor. It is seeded to
+English at import so a lookup before startup still resolves.
 """
 
 from __future__ import annotations
@@ -32,11 +40,14 @@ class Localizer:
         self.lang = lang
         self._catalog = catalog
 
-    def t(self, key: str, **params: object) -> str:
+    def t(self, key: str, /, **params: object) -> str:
         """Return the template for ``key``, formatted with ``params``.
 
         Falls back to English (already merged in) and finally to ``key`` itself, so a
         lookup never raises and an unknown key is visible rather than fatal.
+
+        ``key`` is positional-only so a template may itself use a ``{key}`` field without
+        colliding with this parameter.
 
         Args:
             key: The dotted catalogue key.
@@ -93,3 +104,43 @@ def _read_catalog(lang: str) -> dict[str, str]:
     if not isinstance(raw, dict):
         return {}
     return {str(key): str(value) for key, value in cast("dict[object, object]", raw).items()}
+
+
+# The process-global active localiser: the language the whole app speaks. Seeded to English
+# so every ``active()``/``t()`` lookup resolves even before startup calls ``set_active``.
+_active: Localizer = load_localizer(_DEFAULT)
+
+
+def set_active(localizer: Localizer) -> None:
+    """Set the process-global active localiser (called once at startup).
+
+    Args:
+        localizer: The localiser for the language the wrapper speaks to the user.
+    """
+    global _active  # noqa: PLW0603  (one deliberate process-global: the active language)
+    _active = localizer
+
+
+def active() -> Localizer:
+    """Return the process-global active localiser (English until ``set_active`` runs).
+
+    Returns:
+        The current active localiser.
+    """
+    return _active
+
+
+def t(key: str, /, **params: object) -> str:
+    """Shorthand for ``active().t(key, **params)`` — the app-wide localise call.
+
+    ``key`` is positional-only so a template may use a ``{key}`` field (see
+    :meth:`Localizer.t`).
+
+    Args:
+        key: The dotted catalogue key.
+        params: Values interpolated into the template.
+
+    Returns:
+        The formatted string in the active language, English-fallback then raw-key safe.
+    """
+    return _active.t(key, **params)

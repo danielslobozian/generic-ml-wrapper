@@ -13,6 +13,7 @@ from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_firs
 from generic_ml_wrapper.adapter.outbound.gateway import openai_responses
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -89,7 +90,7 @@ class CodexCliCaller(CliCaller):
         try:
             relay.start()
         except OSError as error:
-            log.warning(f"metering relay failed to start ({error}); launching codex unmetered")
+            log.warning(i18n.t("log.codex_relay_failed", error=error))
             return
         self._relay = relay
 

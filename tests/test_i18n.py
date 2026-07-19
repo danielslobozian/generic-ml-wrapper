@@ -2,12 +2,23 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the JSON-backed localiser."""
 
+import json
+from importlib import resources
+
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
     Localizer,
+    active,
     load_localizer,
     resolve_language,
+    set_active,
+    t,
 )
+
+
+def _catalog(lang: str) -> dict[str, str]:
+    path = resources.files("generic_ml_wrapper").joinpath("resources", "i18n", f"{lang}.json")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def test_t_returns_template_without_params() -> None:
@@ -65,3 +76,32 @@ def test_load_localizer_falls_back_to_english_for_a_missing_translation() -> Non
     french = load_localizer("fr")
     for key in load_localizer("en").__dict__["_catalog"]:
         assert french.t(key, range="1-2", default=1, reply="x") != key
+
+
+def test_catalogues_have_identical_key_sets() -> None:
+    # The app-wide catalogue must not drift: every language carries exactly the same
+    # keys, so a new user-facing string can never ship translated in one language and
+    # missing in another (English fallback would mask it silently otherwise).
+    english = set(_catalog("en"))
+    for lang in SUPPORTED_LANGUAGES:
+        assert set(_catalog(lang)) == english, f"{lang}.json keys differ from en.json"
+
+
+def test_active_defaults_to_english_then_tracks_set_active() -> None:
+    original = active()
+    try:
+        assert active().lang == "en"  # seeded to English at import
+        set_active(load_localizer("fr"))
+        assert active().lang == "fr"
+        assert t("prompt.pick_plain", range="1-2").startswith("Choisissez")
+    finally:
+        set_active(original)  # never leak the language change into other tests
+
+
+def test_module_level_t_uses_the_active_localiser() -> None:
+    original = active()
+    try:
+        set_active(load_localizer("en"))
+        assert t("jobs.none") == "No jobs yet. Start one with: gmlw start <job>"
+    finally:
+        set_active(original)

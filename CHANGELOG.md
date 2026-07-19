@@ -6,6 +6,52 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-19
+
+Discoverability and progressive disclosure — shortening time-to-first-session and
+revealing depth gradually — plus app-wide localisation.
+
+### Added
+- **App-wide localisation.** Every user-facing message **and every diagnostic log line**
+  now renders through a process-global active localiser (`i18n.set_active` / `active` /
+  `t`), bound once at startup from the configured language, English-fallback then raw-key
+  safe. The EN/FR catalogues are kept in lockstep by a drift-guard test. Localising the
+  logs too is a deliberate choice, not the usual English-only-logs convention.
+- **Config registry + `config` commands.** A `pydantic-settings` model is the typed source
+  of truth for every settable scalar key (type, default, allowed values, description).
+  `gmlw config list / get / set` render and validate against it; `set` merges through a
+  shared tomlkit writer (comments and formatting preserved, never rewritten) and surfaces
+  the old→new change. The home for changing `default_role` / `default_environment` after
+  init. Scope is the scalar keys; the structural matrices (`[[hooks]]`, `[[interceptors]]`,
+  `[startup.*.context]`, `[compress.prompts]`) stay hand-rolled, a deferred follow-up.
+- **Bare `gmlw` capability index + `gmlw help <topic>`.** Bare `gmlw` is first-run-aware: a
+  fresh install runs `init`, thereafter it shows a grouped capability index
+  (launch / inspect / author) with a next-action footer. `gmlw help` explains the core
+  concepts (`job-vs-workflow`, `start-vs-run`, `personas`, `cost`). `--help` keeps the
+  argparse view.
+- **Exit receipt.** On the return (client exit), a persistent summary: this session's and
+  the job's cost, the resume/report commands, and one usage-driven, suppressible tip (shown
+  once each; `[hints] show = false` disables). `StartJob` now returns a `StartJobResult` so
+  the receipt can name the session.
+- **Ambient capability card.** An off-by-default context injection
+  (`[ambient] capability_card`): a localised "how do I … in gmlw" card appended to a new
+  session's context so the client can answer gmlw questions mid-session.
+- **`gmlw workflow edit`.** Amend an existing workflow in an authoring session — opens its
+  folder, never creates or overwrites; an unknown workflow exits non-zero with guidance.
+
+### Changed
+- **Greeting → context.** The launch-time host greeting (structurally invisible once the
+  client clears the screen) is no longer printed to stderr; it is injected into a new
+  session's context so the client renders it in-band. The parting `Bye, <name>.` on exit
+  stays.
+- **`--version`.** Reports `gmlw <version> (build <id>)`; the git sha was dropped — it was
+  captured at build time and every distributed artifact is built without a `.git` checkout,
+  so it was always `unknown` where it would matter.
+
+### Notes
+- Authoring-cost visibility is deferred: the authoring bucket is deliberately kept out of
+  `gmlw jobs`; surfacing its spend cleanly is its own design.
+
 ## [0.4.0] - 2026-07-19
 
 The first-run release — a mandatory `init` that establishes the model the rest of the app
@@ -177,7 +223,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.1.0...v0.2.0

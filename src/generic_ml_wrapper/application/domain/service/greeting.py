@@ -70,3 +70,24 @@ def render_greeting(template: str, *, name: str, daypart: str, repo_note: str) -
         .replace("{repo_note}", repo_note)
     )
     return _SPACES.sub(" ", text).strip()
+
+
+def greeting_context(greeting: str) -> str:
+    """Wrap a rendered greeting as a launch-context instruction the client renders in-band.
+
+    The host greeting used to print to stderr, which the client clears the moment it takes
+    the screen — structurally invisible. Delivered as context instead, the client renders it
+    in-band at the top of the session. Model-directed framing, kept in English to match the
+    workflow kickoff (the other model-directed launch text).
+
+    Args:
+        greeting: The rendered greeting line.
+
+    Returns:
+        A markdown context section carrying the greeting.
+    """
+    return (
+        "# Greeting\n"
+        "Open this session by greeting the user in your companion voice, then continue:\n\n"
+        f"{greeting}"
+    )

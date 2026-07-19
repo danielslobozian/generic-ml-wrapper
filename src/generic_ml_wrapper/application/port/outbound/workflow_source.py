@@ -51,6 +51,17 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
+    def folder(self, name: str) -> str:
+        """Return a workflow's folder path without creating or modifying anything.
+
+        Args:
+            name: The workflow name.
+
+        Returns:
+            The absolute path to the workflow's folder (whether or not it exists).
+        """
+
+    @abstractmethod
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         """Compile a run's operating context for a mode.
 

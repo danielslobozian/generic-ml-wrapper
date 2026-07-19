@@ -31,6 +31,7 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultC
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
 )
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
 )
@@ -60,6 +61,8 @@ from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
@@ -79,6 +82,7 @@ from generic_ml_wrapper.application.port.outbound.interceptor import Interceptor
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
+from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -92,10 +96,12 @@ from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetin
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
     Localizer,
+    active,
     load_localizer,
     resolve_language,
 )
@@ -255,7 +261,20 @@ def build_start_job() -> StartJob:
         uuid_factory=lambda: str(uuid.uuid4()),
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
         hooks=_hook_runner(),
+        greeting=lambda: build_render_greeting().execute(),
+        capability_card=_capability_card,
     )
+
+
+def _capability_card() -> str | None:
+    """The ambient capability card in the active language, or ``None`` when it is off.
+
+    Off by default; enabled via ``[ambient] capability_card``. A static, localised "how do
+    I … in gmlw" card the client can answer from mid-session.
+    """
+    if not config.ambient_capability_card():
+        return None
+    return active().t("ambient.card")
 
 
 def build_list_jobs() -> ListJobs:
@@ -301,6 +320,15 @@ def build_bootstrap() -> Bootstrap:
         A ready-to-run Bootstrap.
     """
     return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+
+
+def build_config_commands() -> ConfigCommands:
+    """Build the ConfigCommands use case wired to the tomlkit config writer.
+
+    Returns:
+        A ready-to-run ConfigCommands, writing to ``~/.gmlw/config.toml``.
+    """
+    return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
 
 
 def build_migrate_layout() -> MigrateLayout:
@@ -424,6 +452,28 @@ def build_new_workflow() -> NewWorkflow:
     """
     interceptors = _interceptor_chain()
     return NewWorkflowUseCase(
+        workflows=_workflow_source(interceptors),
+        store=SqliteSessionStore(_ledger(), kind="authoring"),
+        callers=DefaultCliCallerProvider(
+            config.caller_overrides(),
+            metering=SqlitePerTurnStore(_ledger()),
+            transcript=_transcript(),
+            interceptors=interceptors,
+            plugins=build_plugin_source(),
+        ),
+        uuid_factory=lambda: str(uuid.uuid4()),
+        hooks=_hook_runner(),
+    )
+
+
+def build_edit_workflow() -> EditWorkflow:
+    """Build the EditWorkflow use case wired to its outbound adapters.
+
+    Returns:
+        A ready-to-run EditWorkflow.
+    """
+    interceptors = _interceptor_chain()
+    return EditWorkflowUseCase(
         workflows=_workflow_source(interceptors),
         store=SqliteSessionStore(_ledger(), kind="authoring"),
         callers=DefaultCliCallerProvider(
