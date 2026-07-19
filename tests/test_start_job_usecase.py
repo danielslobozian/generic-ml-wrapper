@@ -168,9 +168,9 @@ def test_new_session_is_minted_recorded_and_run() -> None:
 
 def test_host_greeting_is_prepended_to_a_new_session_context() -> None:
     provider = FakeProvider()
-    _use_case(
-        FakeStore(ids=["JOB-1_001"]), provider, greeting="Good evening, Dan."
-    ).execute(StartJobCommand(job="JOB-1", client="claude"))
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, greeting="Good evening, Dan.").execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
     assert provider.run is not None
     assert provider.run.context is not None
     assert "# Greeting" in provider.run.context
@@ -181,7 +181,9 @@ def test_host_greeting_is_prepended_to_a_new_session_context() -> None:
 def test_greeting_becomes_the_context_when_the_baseline_is_empty() -> None:
     provider = FakeProvider()
     _use_case(
-        FakeStore(ids=["JOB-1_001"]), provider, workflows=FakeWorkflows(baseline=""),
+        FakeStore(ids=["JOB-1_001"]),
+        provider,
+        workflows=FakeWorkflows(baseline=""),
         greeting="Hi, Dan.",
     ).execute(StartJobCommand(job="JOB-1", client="claude"))
     assert provider.run is not None
@@ -200,9 +202,9 @@ def test_no_greeting_leaves_the_context_untouched() -> None:
 
 def test_capability_card_is_appended_when_enabled() -> None:
     provider = FakeProvider()
-    _use_case(
-        FakeStore(ids=["JOB-1_001"]), provider, capability_card="HOW-TO-CARD"
-    ).execute(StartJobCommand(job="JOB-1", client="claude"))
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, capability_card="HOW-TO-CARD").execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
     assert provider.run is not None
     assert provider.run.context is not None
     assert provider.run.context.startswith("BASELINE")  # appended after the baseline

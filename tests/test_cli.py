@@ -217,9 +217,16 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     class _Init(Init):
         def execute(self) -> InitOutcome:
             seen.append("init")
-            return InitOutcome(fresh=True, language="en", name="Dan", role="default",
-                               environment="work", client="claude", persona=None,
-                               found=["claude"])
+            return InitOutcome(
+                fresh=True,
+                language="en",
+                name="Dan",
+                role="default",
+                environment="work",
+                client="claude",
+                persona=None,
+                found=["claude"],
+            )
 
     monkeypatch.setattr(app, "build_init", lambda: _Init())
     assert app.main([]) == 0

@@ -424,9 +424,7 @@ def _clock(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).astimezone().strftime("%H:%M:%S")
 
 
-def _tokens(
-    input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.Localizer
-) -> str:
+def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.Localizer) -> str:
     """Render a token triple as ``  <in>(+<cache> cache)+<out> tok`` for the report."""
     cache = loc.t("usage.cache", cache=cache_tokens) if cache_tokens else ""
     return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
@@ -692,9 +690,7 @@ def _client(raw: str | None) -> str:
     return raw if raw else config.default_client()
 
 
-def format_client_guidance(
-    readiness: ClientReadiness, loc: i18n.Localizer | None = None
-) -> str:
+def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | None = None) -> str:
     """Render install/login guidance for a client that cannot launch.
 
     Args:

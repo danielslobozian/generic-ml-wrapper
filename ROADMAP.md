@@ -152,51 +152,48 @@ not built. **Persona *previews* moved to 0.7.0** — sample lines are only worth
 the personas behind them are proven to actually differ, and doing them in French requires
 localising persona content, which is the same job (see 0.7.0).
 
-## Planned
-
 ### 0.5.0 — discoverability & progressive disclosure
 Reframed around the real metric for a new user: **time to a first live session**, and then
-revealing depth *gradually* rather than dumping it up front. Because the wrapper cedes the
-screen to the client, discovery lives in the thin surfaces **around** a run — bare-command
-indexes, the return, and ambient context pushed *into* the client — never a persistent UI
-over a live session.
+revealing depth *gradually*. Because the wrapper cedes the screen to the client, discovery
+lives in the thin surfaces **around** a run — bare-command indexes, the return, and ambient
+context pushed *into* the client — never a persistent UI over a live session.
 
-- **Bare `gmlw` is first-run-aware** — first time → the 0.4.0 init; thereafter → a grouped
-  capability index (*launch / inspect / author*), with `gmlw help <topic>` for the core
-  concepts (job vs workflow, start vs run, personas, cost). `--help` keeps the argparse
-  view; every listing ends with a next-action footer.
-- **Config registry** — one typed source of truth (a `pydantic-settings` model) for every
-  setting: key, type, default, allowed values, description. It replaces the hand-rolled
-  accessors, and every surface (help, `config`, per-workflow settings, the 0.4.0
-  role/environment keys) renders from it.
-- **`config` commands** — `config list / get / set`, rendering the registry with inline
-  allowed-value validation. The home for changing `default_role` / `default_environment`
-  after init.
-- **`--version`** — surface the running version.
-- **Progressive disclosure** — depth is revealed over time, not dumped up front:
-  - **Exit receipt** — on the return (client exit), a persistent summary: this session's
-    and the job's cost, the resume/report commands, and one usage-driven, suppressible
-    tip (the channel that surfaces features as they become relevant). Also the home for
-    **authoring-cost visibility** — workflow authoring is already a metered session;
-    surface it in listings/export instead of hiding it, keeping the work/authoring split.
-  - **Ambient capability card** — an optional, off-by-default context injection so the
-    client itself answers "how do I …" gmlw questions mid-session. Kept minimal and
-    counted against the context budget.
-- **Greeting → context** — retire the launch-time host greeting (structurally invisible:
-  the client clears the screen) and inject it as a context instruction the client
-  renders in-band, with live metadata (time, name, recent activity).
-- **`workflow edit`** — update an existing workflow, not only create.
-- **App-wide localisation** — the JSON string catalogue introduced for the 0.4.0 init
-  graduates from onboarding-scale copy to the *whole app*: **every** message the app
-  emits to the user **and every line it writes to a log** routes through the localiser, so
-  the running language governs all output rather than just the first run. Today only a
-  handful of modules speak through `i18n.t`; the rest are raw `print` / `logging` calls
-  hard-coded in English. The work is to funnel those through the catalogue, grow
-  `resources/i18n/<lang>.json` to cover them, and keep the English-merged fallback so an
-  untranslated key still degrades to English, never a raw key. Localising the logs too is
-  a deliberate choice — not the usual English-only-logs convention.
-- **Robustness** — clean interrupt/exit: catch Ctrl+C / an interrupt so leaving a client
-  session ends cleanly instead of surfacing the child's raw error.
+- **App-wide localisation** (`0fe8c0a`) — the init-only JSON catalogue now spans the whole
+  app: every user-facing message **and every diagnostic log line** renders through a
+  process-global active localiser (`i18n.set_active`/`active`/`t`), English-fallback then
+  raw-key safe. A catalogue-drift guard keeps EN/FR key sets identical. Localising the logs
+  too was a deliberate choice, not the usual English-only-logs convention.
+- **Config registry** (`9fe05b6`) — a `pydantic-settings` model is the typed source of
+  truth for every settable scalar key (type, default, allowed values, description);
+  `registry_rows()`/`coerce()`/`load()` drive help, `config`, and validation. `config.py`
+  sources its defaults from it (no duplicated literals) while keeping its tolerant reads.
+  *Scope:* scalar keys only — the structural matrices (`[[hooks]]`, `[[interceptors]]`,
+  `[startup.*.context]`, `[compress.prompts]`) stay hand-rolled, a deferred follow-up.
+- **`config` commands** (`0db3ca7`) — `config list / get / set`, rendering + validating
+  against the registry; `set` merges through the shared tomlkit writer (comments preserved,
+  never rewritten) and surfaces the old→new change. The home for changing `default_role` /
+  `default_environment` after init.
+- **Bare `gmlw` + `gmlw help`** (`61bb15f`) — bare `gmlw` is first-run-aware: fresh install
+  → init; thereafter → a grouped capability index (*launch / inspect / author*) with a
+  next-action footer. `gmlw help <topic>` explains the core concepts (job-vs-workflow,
+  start-vs-run, personas, cost). `--help` keeps the argparse view.
+- **Greeting → context** (`85a77da`) — the launch-time host greeting (structurally
+  invisible once the client clears the screen) is retired from stderr and injected into a
+  new session's context, so the client renders it in-band. `_farewell` (exit) stays.
+- **Exit receipt + ambient card** (`f36fcd8`) — on the return, a persistent receipt: this
+  session's and the job's cost, the resume/report commands, and one usage-driven,
+  suppressible tip (shown once each; `[hints] show` to disable). `StartJob` returns a
+  `StartJobResult` so the receipt can name the session. The off-by-default ambient
+  capability card (`[ambient] capability_card`) injects a "how do I …" gmlw card into the
+  context. **Authoring-cost visibility deferred** — the authoring bucket is deliberately
+  kept out of `gmlw jobs`; surfacing its spend cleanly is its own design.
+- **`workflow edit`** (`0445c6d`) — amend an existing workflow in an authoring session
+  (opens its folder, never creates/overwrites; unknown name → clean error).
+- **Already shipped earlier, verified here:** **`--version`** (surfaces the running version)
+  and **robustness** (clean Ctrl+C / SIGTERM interrupt-exit) were already present; their few
+  strings were folded into the app-wide localisation pass.
+
+## Planned
 
 ### 0.6.0 — the workflow, first-class
 Two ways people relate to a workflow: *applied to a job* (a ticket it treats), or *the

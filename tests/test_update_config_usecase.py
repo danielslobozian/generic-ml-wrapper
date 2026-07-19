@@ -38,7 +38,7 @@ def test_get_unknown_key_raises(tmp_path: Path) -> None:
 def test_set_changes_a_value_and_preserves_comments(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     path.write_text(
-        "# my config\n[profile]\ndefault_role = \"default\"  # keep this comment\n",
+        '# my config\n[profile]\ndefault_role = "default"  # keep this comment\n',
         encoding="utf-8",
     )
     outcome = _commands(path).set("profile.default_role", "reviewer")
@@ -53,7 +53,7 @@ def test_set_changes_a_value_and_preserves_comments(tmp_path: Path) -> None:
 
 def test_set_creates_a_missing_table(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
-    path.write_text("[init]\nversion = \"0.4.0\"\n", encoding="utf-8")
+    path.write_text('[init]\nversion = "0.4.0"\n', encoding="utf-8")
     outcome = _commands(path).set("transcript.enabled", "yes")
     assert outcome.new is True
     assert "[transcript]" in path.read_text(encoding="utf-8")
