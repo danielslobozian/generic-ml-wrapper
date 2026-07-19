@@ -21,6 +21,11 @@ from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     ClientReadiness,
 )
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.edit_workflow import (
+    EditWorkflow,
+    EditWorkflowCommand,
+    WorkflowNotFoundError,
+)
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
@@ -1214,3 +1219,32 @@ def test_exit_receipt_tip_suppressed_when_hints_disabled(
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     assert app.main(["start", "JOB-1"]) == 0
     assert "tip:" not in capsys.readouterr().err
+
+
+def test_workflow_edit_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, EditWorkflowCommand] = {}
+
+    class FakeUseCase(EditWorkflow):
+        def execute(self, command: EditWorkflowCommand) -> int:
+            seen["command"] = command
+            return 0
+
+    monkeypatch.setattr(app, "build_edit_workflow", lambda: FakeUseCase())
+    assert app.main(["workflow", "edit", "doc-review"]) == 0
+    assert seen["command"] == EditWorkflowCommand(name="doc-review", client="claude")
+
+
+def test_workflow_edit_reports_a_missing_workflow(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FailingUseCase(EditWorkflow):
+        def execute(self, command: EditWorkflowCommand) -> int:
+            raise WorkflowNotFoundError("unknown workflow: 'missing'")
+
+    monkeypatch.setattr(app, "build_edit_workflow", lambda: FailingUseCase())
+    assert app.main(["workflow", "edit", "missing"]) == 2
+    assert "unknown workflow" in capsys.readouterr().out
+
+
+def test_build_edit_workflow_is_wired() -> None:
+    assert isinstance(composition.build_edit_workflow(), EditWorkflow)

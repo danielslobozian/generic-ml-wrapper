@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the NewWorkflow use case, driven by fakes."""
+"""Tests for the EditWorkflow use case, driven by fakes."""
 
 import pytest
 
@@ -8,19 +8,19 @@ from generic_ml_wrapper.application.domain.model.context_source import CompileMo
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
-from generic_ml_wrapper.application.port.inbound.new_workflow import (
-    NewWorkflowCommand,
-    WorkflowExistsError,
-    WorkflowNameError,
+from generic_ml_wrapper.application.port.inbound.edit_workflow import (
+    EditWorkflowCommand,
+    WorkflowNotFoundError,
 )
+from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 
 
 class FakeWorkflows(WorkflowSourcePort):
-    def __init__(self, *, existing: bool = False) -> None:
+    def __init__(self, *, existing: bool = True) -> None:
         self.seeded = False
         self.created: str | None = None
         self._existing = existing
@@ -35,7 +35,7 @@ class FakeWorkflows(WorkflowSourcePort):
         return self._existing
 
     def create(self, name: str) -> str:
-        self.created = name
+        self.created = name  # must never be called when editing
         return f"/workflows/{name}"
 
     def folder(self, name: str) -> str:
@@ -81,29 +81,30 @@ class _NoopCaller(CliCaller):
 
 def _use_case(
     workflows: FakeWorkflows, store: FakeStore, provider: CapturingProvider
-) -> NewWorkflowUseCase:
-    return NewWorkflowUseCase(
+) -> EditWorkflowUseCase:
+    return EditWorkflowUseCase(
         workflows, store, provider, uuid_factory=lambda: "fixed-uuid", hooks=HookRunner(())
     )
 
 
-def test_authors_a_new_workflow() -> None:
-    workflows = FakeWorkflows()
+def test_edits_an_existing_workflow_without_creating_it() -> None:
+    workflows = FakeWorkflows(existing=True)
     store = FakeStore()
     provider = CapturingProvider()
 
     exit_code = _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name="doc-review", client="claude")
+        EditWorkflowCommand(name="doc-review", client="claude")
     )
 
     assert exit_code == 0
     assert workflows.seeded is True
-    assert workflows.created == "doc-review"
+    assert workflows.created is None  # editing never creates/overwrites the folder
     assert len(store.recorded) == 1
     assert store.recorded[0].job == "doc-review"
     assert provider.run is not None
     assert provider.run.cwd == "/workflows/doc-review"
     assert provider.run.context == "CONTEXT<authoring:create-workflow>"
+    assert "editing" in (provider.run.kickoff or "")
     assert "doc-review" in (provider.run.kickoff or "")
 
 
@@ -111,12 +112,12 @@ def test_authors_a_new_workflow() -> None:
 def test_rejects_invalid_or_reserved_names(name: str) -> None:
     with pytest.raises(WorkflowNameError):
         _use_case(FakeWorkflows(), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(name=name, client="claude")
+            EditWorkflowCommand(name=name, client="claude")
         )
 
 
-def test_refuses_when_the_workflow_exists() -> None:
-    with pytest.raises(WorkflowExistsError):
-        _use_case(FakeWorkflows(existing=True), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(name="doc-review", client="claude")
+def test_refuses_when_the_workflow_does_not_exist() -> None:
+    with pytest.raises(WorkflowNotFoundError):
+        _use_case(FakeWorkflows(existing=False), FakeStore(), CapturingProvider()).execute(
+            EditWorkflowCommand(name="missing", client="claude")
         )

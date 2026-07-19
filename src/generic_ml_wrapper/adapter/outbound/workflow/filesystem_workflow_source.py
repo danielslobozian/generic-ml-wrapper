@@ -152,6 +152,17 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         (folder / "rules").mkdir(parents=True, exist_ok=True)
         return str(folder)
 
+    def folder(self, name: str) -> str:
+        """Return ``<root>/<name>`` without touching the filesystem.
+
+        Args:
+            name: The workflow name.
+
+        Returns:
+            The absolute path to the workflow's folder.
+        """
+        return str(self._root / name)
+
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         """Compose a run's operating context for a mode.
 

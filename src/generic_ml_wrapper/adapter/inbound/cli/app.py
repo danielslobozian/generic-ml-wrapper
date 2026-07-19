@@ -47,6 +47,10 @@ from generic_ml_wrapper.application.port.inbound.config_commands import (
     SetOutcome,
     SettingView,
 )
+from generic_ml_wrapper.application.port.inbound.edit_workflow import (
+    EditWorkflowCommand,
+    WorkflowNotFoundError,
+)
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -67,6 +71,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
     build_config_commands,
+    build_edit_workflow,
     build_export_usage,
     build_init,
     build_list_jobs,
@@ -241,6 +246,13 @@ def build_parser() -> argparse.ArgumentParser:
     new = workflow_sub.add_parser("new", help="author a new workflow (no job)")
     new.add_argument("name", help="the new workflow's name")
     new.add_argument(
+        "--client",
+        default=None,
+        help="which client to wrap (default: the configured default, or claude)",
+    )
+    edit = workflow_sub.add_parser("edit", help="edit an existing workflow (no job)")
+    edit.add_argument("name", help="the workflow to edit")
+    edit.add_argument(
         "--client",
         default=None,
         help="which client to wrap (default: the configured default, or claude)",
@@ -1074,21 +1086,39 @@ def _setting_payload(view: SettingView) -> dict[str, object]:
 
 def _workflow(args: argparse.Namespace) -> int:
     if args.workflow_command == "new":
-        client = _client(args.client)
-        if not _preflight_client(client):  # client not installed — guide, don't launch
-            return 2
-        try:
-            return build_new_workflow().execute(
-                NewWorkflowCommand(name=str(args.name), client=client)
-            )
-        except (WorkflowNameError, WorkflowExistsError) as error:
-            print(i18n.t("error.generic", error=error))
-            return 2
+        return _workflow_new(args)
+    if args.workflow_command == "edit":
+        return _workflow_edit(args)
     if args.workflow_command == "list":
         names = build_list_workflows().execute()
         print(_as_json(names) if bool(args.json) else format_workflows(names))
         return 0
     return 0
+
+
+def _workflow_new(args: argparse.Namespace) -> int:
+    """Author a new workflow (guide instead of launching when the client isn't ready)."""
+    client = _client(args.client)
+    if not _preflight_client(client):
+        return 2
+    try:
+        return build_new_workflow().execute(NewWorkflowCommand(name=str(args.name), client=client))
+    except (WorkflowNameError, WorkflowExistsError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
+
+
+def _workflow_edit(args: argparse.Namespace) -> int:
+    """Edit an existing workflow (guide instead of launching when the client isn't ready)."""
+    client = _client(args.client)
+    if not _preflight_client(client):
+        return 2
+    try:
+        command = EditWorkflowCommand(name=str(args.name), client=client)
+        return build_edit_workflow().execute(command)
+    except (WorkflowNameError, WorkflowNotFoundError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
 
 
 def _persona(args: argparse.Namespace) -> int:

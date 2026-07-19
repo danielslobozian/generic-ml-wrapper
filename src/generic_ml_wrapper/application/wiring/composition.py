@@ -62,6 +62,7 @@ from generic_ml_wrapper.application.domain.service.interceptor_chain import Inte
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
@@ -81,6 +82,7 @@ from generic_ml_wrapper.application.port.outbound.interceptor import Interceptor
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
+from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -450,6 +452,28 @@ def build_new_workflow() -> NewWorkflow:
     """
     interceptors = _interceptor_chain()
     return NewWorkflowUseCase(
+        workflows=_workflow_source(interceptors),
+        store=SqliteSessionStore(_ledger(), kind="authoring"),
+        callers=DefaultCliCallerProvider(
+            config.caller_overrides(),
+            metering=SqlitePerTurnStore(_ledger()),
+            transcript=_transcript(),
+            interceptors=interceptors,
+            plugins=build_plugin_source(),
+        ),
+        uuid_factory=lambda: str(uuid.uuid4()),
+        hooks=_hook_runner(),
+    )
+
+
+def build_edit_workflow() -> EditWorkflow:
+    """Build the EditWorkflow use case wired to its outbound adapters.
+
+    Returns:
+        A ready-to-run EditWorkflow.
+    """
+    interceptors = _interceptor_chain()
+    return EditWorkflowUseCase(
         workflows=_workflow_source(interceptors),
         store=SqliteSessionStore(_ledger(), kind="authoring"),
         callers=DefaultCliCallerProvider(

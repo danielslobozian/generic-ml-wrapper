@@ -183,6 +183,7 @@ Author and list workflows. Invoked with no action, prints its own help.
 
 ```
 gmlw workflow new <name> [--client CLIENT]
+gmlw workflow edit <name> [--client CLIENT]
 gmlw workflow list [--json]
 ```
 
@@ -199,6 +200,22 @@ Example:
 
 ```
 gmlw workflow new tidy-review
+```
+
+### workflow edit
+
+Open an existing workflow for changes in a metered authoring session (no job). Unlike
+`new`, it never creates or overwrites — it opens the workflow's existing folder and amends
+its `workflow.md`. An unknown workflow exits non-zero with guidance.
+
+- `name` (positional, required) — the workflow to edit.
+- `--client CLIENT` — which client to wrap; defaults to the configured default, or
+  `claude`.
+
+Example:
+
+```
+gmlw workflow edit tidy-review
 ```
 
 ### workflow list

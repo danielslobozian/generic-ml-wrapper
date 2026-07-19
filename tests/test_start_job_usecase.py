@@ -62,6 +62,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def create(self, name: str) -> str:
         raise NotImplementedError
 
+    def folder(self, name: str) -> str:
+        return f"/workflows/{name}"
+
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         self.compiled.append((mode, name))
         if mode is CompileMode.DEFAULT:
