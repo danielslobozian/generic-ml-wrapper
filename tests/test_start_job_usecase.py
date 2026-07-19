@@ -121,12 +121,13 @@ class RecordingHook(Hook):
         self._log.append(f"{context.phase.value}:{context.client}:{context.exit_code}")
 
 
-def _use_case(
+def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the greeting)
     store: FakeStore,
     provider: FakeProvider,
     workflows: FakeWorkflows | None = None,
     credentials: FakeCredentials | None = None,
     hooks: HookRunner | None = None,
+    greeting: str | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -135,6 +136,7 @@ def _use_case(
         uuid_factory=lambda: "fixed-uuid",
         credentials=credentials or FakeCredentials(),
         hooks=hooks or HookRunner(()),
+        greeting=lambda: greeting,
     )
 
 
@@ -155,6 +157,38 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     # a plain start now composes the always-on baseline (default mode)
     assert workflows.compiled == [(CompileMode.DEFAULT, None)]
     assert provider.run.context == "BASELINE"
+
+
+def test_host_greeting_is_prepended_to_a_new_session_context() -> None:
+    provider = FakeProvider()
+    _use_case(
+        FakeStore(ids=["JOB-1_001"]), provider, greeting="Good evening, Dan."
+    ).execute(StartJobCommand(job="JOB-1", client="claude"))
+    assert provider.run is not None
+    assert provider.run.context is not None
+    assert "# Greeting" in provider.run.context
+    assert "Good evening, Dan." in provider.run.context
+    assert "BASELINE" in provider.run.context  # ahead of the baseline, not replacing it
+
+
+def test_greeting_becomes_the_context_when_the_baseline_is_empty() -> None:
+    provider = FakeProvider()
+    _use_case(
+        FakeStore(ids=["JOB-1_001"]), provider, workflows=FakeWorkflows(baseline=""),
+        greeting="Hi, Dan.",
+    ).execute(StartJobCommand(job="JOB-1", client="claude"))
+    assert provider.run is not None
+    assert provider.run.context is not None
+    assert "Hi, Dan." in provider.run.context
+
+
+def test_no_greeting_leaves_the_context_untouched() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, greeting=None).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.context == "BASELINE"  # companion off → no greeting section
 
 
 def test_lifecycle_hooks_bracket_the_client_run() -> None:

@@ -64,11 +64,6 @@ def _true_for_client(_client: object) -> bool:
     return True
 
 
-class _SilentGreeting:
-    def execute(self) -> None:
-        return None
-
-
 class _TerminatingStartJob:
     def execute(self, _command: object) -> int:
         raise app._Terminated
@@ -93,7 +88,6 @@ def test_client_owns_interrupts_installs_and_restores() -> None:
 def test_start_returns_143_when_terminated(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "_preflight_cwd", _true)
     monkeypatch.setattr(app, "_preflight_client", _true_for_client)
-    monkeypatch.setattr(app, "build_render_greeting", _SilentGreeting)
     monkeypatch.setattr(app, "build_start_job", _TerminatingStartJob)
     args = argparse.Namespace(job="test", client="claude", workflow=None, resume_latest=False)
     assert app._start(args) == 143

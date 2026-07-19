@@ -258,6 +258,7 @@ def build_start_job() -> StartJob:
         uuid_factory=lambda: str(uuid.uuid4()),
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
         hooks=_hook_runner(),
+        greeting=lambda: build_render_greeting().execute(),
     )
 
 

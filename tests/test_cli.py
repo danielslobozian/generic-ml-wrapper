@@ -81,14 +81,6 @@ def _init_absent(*_: object, **__: object) -> str | None:
     return None  # the gate sees an un-initialised (or legacy) install
 
 
-class _Greeting(RenderGreeting):
-    def __init__(self, text: str | None = None) -> None:
-        self._text = text
-
-    def execute(self) -> str | None:
-        return self._text
-
-
 class _FakeMigrate(MigrateLayout):
     def __init__(self, report: MigrationReport | None = None) -> None:
         self._report = report if report is not None else MigrationReport(environment="work")
@@ -118,7 +110,6 @@ def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
     monkeypatch.setattr(app.config, "init_version", _init_done)
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate())  # no-op by default
-    monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting(None))
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient())
 
 
@@ -764,20 +755,18 @@ def test_build_migrate_layout_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_migrate_layout(), MigrateLayout)
 
 
-def test_start_prints_the_host_greeting_to_stderr(
+def test_start_does_not_print_the_greeting_to_stderr(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app, "build_render_greeting", lambda: _Greeting("Good evening, Daniel."))
-
+    # The host greeting is now injected into the session context (rendered in-band by the
+    # client), not printed to the launch-time stderr that the client immediately clears.
     class FakeUseCase(StartJob):
         def execute(self, command: StartJobCommand) -> int:
             return 0
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     assert app.main(["start", "JOB-1"]) == 0
-    captured = capsys.readouterr()
-    assert "Good evening, Daniel." in captured.err  # greeting on stderr, not stdout
-    assert "Good evening, Daniel." not in captured.out
+    assert "# Greeting" not in capsys.readouterr().err  # no greeting on stderr anymore
 
 
 def test_build_render_greeting_wires_a_real_use_case() -> None:

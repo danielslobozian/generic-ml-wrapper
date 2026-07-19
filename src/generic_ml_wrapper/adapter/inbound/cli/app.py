@@ -75,7 +75,6 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_localizer,
     build_migrate_layout,
     build_new_workflow,
-    build_render_greeting,
     build_render_statusline,
     build_set_credential,
     build_start_job,
@@ -882,11 +881,9 @@ def _start(args: argparse.Namespace) -> int:
         return 2
     if not _preflight_client(client):  # client not installed — guide, don't launch
         return 2
-    # The free host greeting (when a companion persona is set), to stderr so it stays
-    # out of any piped stdout — printed before the client takes over the terminal.
-    greeting = build_render_greeting().execute()
-    if greeting:
-        print(greeting, file=sys.stderr)
+    # The free host greeting (when a companion persona is set) is now injected into the
+    # session's context by StartJob, so the client renders it in-band — the launch-time
+    # stderr greeting was structurally invisible once the client cleared the screen.
     # The client owns the terminal for the session: it handles Ctrl+C itself, and a
     # kill/hangup is turned into a clean unwind so teardown (relay stop + status-line
     # restore) always runs -- gmlw never leaves its hook behind in the user's settings.

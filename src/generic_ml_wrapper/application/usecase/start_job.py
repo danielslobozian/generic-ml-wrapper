@@ -10,6 +10,7 @@ from dataclasses import replace
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.greeting import greeting_context
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.start_job import (
@@ -36,6 +37,7 @@ class StartJobUseCase(StartJob):
         uuid_factory: Callable[[], str],
         credentials: CredentialsStorePort,
         hooks: HookRunner,
+        greeting: Callable[[], str | None],
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -46,6 +48,8 @@ class StartJobUseCase(StartJob):
             uuid_factory: Mints a client-side session uuid for new sessions.
             credentials: Resolves a workflow's credentials to export at launch.
             hooks: The lifecycle hooks bracketing the client run.
+            greeting: Renders the host greeting, or ``None`` when the companion is off —
+                injected into a new session's context so the client greets in-band.
         """
         self._store = store
         self._workflows = workflows
@@ -53,6 +57,7 @@ class StartJobUseCase(StartJob):
         self._uuid_factory = uuid_factory
         self._credentials = credentials
         self._hooks = hooks
+        self._greeting = greeting
 
     def execute(self, command: StartJobCommand) -> int:
         """Resolve the session, optionally inject a workflow, run the client.
@@ -74,6 +79,7 @@ class StartJobUseCase(StartJob):
                 run = self._attach_workflow(run, command.workflow)
             else:
                 run = self._attach_baseline(run)
+            run = self._with_greeting(run)  # in-band host greeting for a fresh session
         caller = self._callers.for_run(run)
         if run.resume and not caller.can_resume():
             message = f"session resume not supported on {run.client}"
@@ -83,6 +89,20 @@ class StartJobUseCase(StartJob):
         if session is not None:
             self._store.record(session)
         return run_with_hooks(caller, run, self._hooks)
+
+    def _with_greeting(self, run: RunContext) -> RunContext:
+        """Prepend the host greeting to a new session's context, when the companion is on.
+
+        The greeting is composed locally (free, no tokens) and rendered by the client
+        in-band. Prepended so it opens the session ahead of the profile/workflow context;
+        a no-op when the companion is off (no persona) or the greeting is empty.
+        """
+        greeting = self._greeting()
+        if not greeting:
+            return run
+        section = greeting_context(greeting)
+        context = section if run.context is None else f"{section}\n\n{run.context}"
+        return replace(run, context=context)
 
     def _attach_baseline(self, run: RunContext) -> RunContext:
         """Inject the always-on baseline context (profile/learned/persona) on a plain run.
