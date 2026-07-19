@@ -51,6 +51,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def deploy_draft(self, draft_path: str, name: str) -> str:
         raise NotImplementedError
 
+    def meta_guide(self) -> str:
+        return "GUIDE-LAYER"
+
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         return f"CONTEXT<{mode.value}:{name}>"
 
@@ -116,6 +119,18 @@ def test_edits_an_existing_workflow_without_creating_it() -> None:
     assert provider.run.context == "CONTEXT<authoring:create-workflow>"
     assert "editing" in (provider.run.kickoff or "")
     assert "doc-review" in (provider.run.kickoff or "")
+
+
+def test_guided_edit_appends_the_facilitation_layer() -> None:
+    workflows = FakeWorkflows(existing=True)
+    provider = CapturingProvider()
+
+    _use_case(workflows, FakeStore(), provider).execute(
+        EditWorkflowCommand(name="doc-review", client="claude", guided=True)
+    )
+
+    assert provider.run is not None
+    assert "GUIDE-LAYER" in (provider.run.context or "")  # the guide layers onto the edit
 
 
 @pytest.mark.parametrize("name", ["Bad Name", "_common", "create-workflow", ""])

@@ -16,7 +16,7 @@ gmlw jobs [--json]
 gmlw sessions <job> [--json]
 gmlw export <job> [--json]
 gmlw statusline                          # called by the client, not by hand
-gmlw workflow new [name] [--client X]    # name optional — proposed at the end
+gmlw workflow new [name] [--client X] [--guided|--quick]   # name optional; asks depth if unset
 gmlw workflow list [--json]
 gmlw persona list [--json]
 gmlw plugins list [--json]
@@ -212,8 +212,8 @@ status line is installed and parsed.
 Author and list workflows. Invoked with no action, prints its own help.
 
 ```
-gmlw workflow new [name] [--client CLIENT]
-gmlw workflow edit <name> [--client CLIENT]
+gmlw workflow new [name] [--client CLIENT] [--guided | --quick]
+gmlw workflow edit <name> [--client CLIENT] [--guided | --quick]
 gmlw workflow list [--json]
 ```
 
@@ -234,6 +234,12 @@ workflow never appears in `workflow list` or `run`.
   but it lets a known name **fail fast** on a collision before any work is done.
 - `--client CLIENT` — which client to wrap; defaults to the configured default, or
   `claude`.
+- `--guided` / `--quick` — the authoring depth. **Guided** adds a facilitative
+  consultant layer (a parking lot for tangents, diverge→converge, process-leveling,
+  proposing the stages you left out) and keeps distilled state on disk so a long session
+  survives compaction — richer, and it costs a bit more. **Quick** is the lean interview.
+  With neither flag, an interactive run **asks** (Enter takes guided); a non-interactive
+  run defaults to quick. Passing a flag skips the prompt.
 
 On the return, gmlw reports how the draft resolved:
 
@@ -260,6 +266,8 @@ its `workflow.md`. An unknown workflow exits non-zero with guidance.
 - `name` (positional, required) — the workflow to edit.
 - `--client CLIENT` — which client to wrap; defaults to the configured default, or
   `claude`.
+- `--guided` / `--quick` — the authoring depth, exactly as for `workflow new` (an
+  interactive run asks when neither is given).
 
 Example:
 

@@ -57,6 +57,9 @@ class FakeWorkflows(WorkflowSourcePort):
         self.deployed = (draft_path, name)
         return f"/workflows/{name}"
 
+    def meta_guide(self) -> str:
+        return "GUIDE-LAYER"
+
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         return f"CONTEXT<{mode.value}:{name}>"
 
@@ -199,3 +202,28 @@ def test_a_proposed_unusable_name_is_incomplete() -> None:
 
     assert result.outcome is WorkflowOutcome.INCOMPLETE
     assert workflows.deployed is None
+
+
+def test_guided_appends_the_facilitation_layer() -> None:
+    workflows = FakeWorkflows(marker=DraftMarker("x", finished=True))
+    provider = CapturingProvider()
+
+    _use_case(workflows, FakeStore(), provider).execute(
+        NewWorkflowCommand(name=None, client="claude", guided=True)
+    )
+
+    assert provider.run is not None
+    assert "GUIDE-LAYER" in (provider.run.context or "")  # the guide is injected
+    assert "draft.md" in (provider.run.kickoff or "")  # kickoff names the distilled files
+
+
+def test_quick_omits_the_facilitation_layer() -> None:
+    workflows = FakeWorkflows(marker=DraftMarker("x", finished=True))
+    provider = CapturingProvider()
+
+    _use_case(workflows, FakeStore(), provider).execute(
+        NewWorkflowCommand(name=None, client="claude", guided=False)
+    )
+
+    assert provider.run is not None
+    assert "GUIDE-LAYER" not in (provider.run.context or "")  # not injected -> cheaper

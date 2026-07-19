@@ -27,6 +27,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
@@ -75,6 +76,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_config_commands,
     build_edit_workflow,
     build_export_usage,
+    build_guided_chooser,
     build_init,
     build_list_jobs,
     build_list_personas,
@@ -103,6 +105,25 @@ if TYPE_CHECKING:
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--json`` flag to a read command's parser."""
     parser.add_argument("--json", action="store_true", help="output as JSON instead of text")
+
+
+def _add_guided_flags(parser: argparse.ArgumentParser) -> None:
+    """Add the mutually-exclusive ``--guided`` / ``--quick`` authoring-depth flags.
+
+    With neither, an interactive authoring command prompts for the choice; either flag
+    answers it up front, so full argv never prompts.
+    """
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "--guided",
+        action="store_true",
+        help="use the guided authoring experience (a facilitative guide; costs more)",
+    )
+    group.add_argument(
+        "--quick",
+        action="store_true",
+        help="use the lean interview (skip the guided experience)",
+    )
 
 
 # The top-level subcommands. A first argv token that is none of these (and not a flag)
@@ -271,6 +292,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="which client to wrap (default: the configured default, or claude)",
     )
+    _add_guided_flags(new)
     edit = workflow_sub.add_parser("edit", help="edit an existing workflow (no job)")
     edit.add_argument("name", help="the workflow to edit")
     edit.add_argument(
@@ -278,6 +300,7 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="which client to wrap (default: the configured default, or claude)",
     )
+    _add_guided_flags(edit)
     workflow_list = workflow_sub.add_parser("list", help="list the runnable workflows")
     _add_json_flag(workflow_list)
 
@@ -1187,8 +1210,11 @@ def _workflow_new(args: argparse.Namespace) -> int:
     if not _preflight_client(client):
         return 2
     name = None if args.name is None else str(args.name)
+    guided = _resolve_guided(args)
     try:
-        result = build_new_workflow().execute(NewWorkflowCommand(name=name, client=client))
+        result = build_new_workflow().execute(
+            NewWorkflowCommand(name=name, client=client, guided=guided)
+        )
     except WorkflowExistsError:  # a seed name that already exists — point at editing it
         print(i18n.t("workflow.new.exists", name=name), file=sys.stderr)
         return 2
@@ -1217,12 +1243,27 @@ def _workflow_edit(args: argparse.Namespace) -> int:
     client = _client(args.client)
     if not _preflight_client(client):
         return 2
+    guided = _resolve_guided(args)
     try:
-        command = EditWorkflowCommand(name=str(args.name), client=client)
+        command = EditWorkflowCommand(name=str(args.name), client=client, guided=guided)
         return build_edit_workflow().execute(command)
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))
         return 2
+
+
+def _resolve_guided(args: argparse.Namespace) -> bool:
+    """Resolve the authoring depth: the flag if given, else an interactive prompt.
+
+    ``--guided`` / ``--quick`` answer up front (full argv never prompts). With neither, an
+    interactive terminal is asked; off a terminal the chooser declines and we fall back to
+    the lean interview.
+    """
+    if args.guided:
+        return True
+    if args.quick:
+        return False
+    return build_guided_chooser().choose() == GUIDED  # None (no TTY) → lean
 
 
 def _persona(args: argparse.Namespace) -> int:

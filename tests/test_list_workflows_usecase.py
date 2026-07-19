@@ -36,6 +36,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def deploy_draft(self, draft_path: str, name: str) -> str:
         raise NotImplementedError
 
+    def meta_guide(self) -> str:
+        raise NotImplementedError
+
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         raise NotImplementedError
 

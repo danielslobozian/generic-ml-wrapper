@@ -103,8 +103,8 @@ class NewWorkflowUseCase(NewWorkflow):
             uuid=session.uuid,
             resume=False,
             cwd=draft,
-            context=self._workflows.compile(CompileMode.AUTHORING, _META),
-            kickoff=self._kickoff(command.name, draft),
+            context=self._authoring_context(guided=command.guided),
+            kickoff=self._kickoff(command.name, draft, guided=command.guided),
         )
         caller = self._callers.for_run(run)
         exit_code = run_with_hooks(caller, run, self._hooks)
@@ -129,6 +129,14 @@ class NewWorkflowUseCase(NewWorkflow):
         deployed = self._workflows.deploy_draft(draft, marker.name)
         return NewWorkflowResult(exit_code, WorkflowOutcome.DEPLOYED, marker.name, deployed)
 
+    def _authoring_context(self, *, guided: bool) -> str:
+        """The authoring context, with the guided-facilitation layer added when chosen."""
+        context = self._workflows.compile(CompileMode.AUTHORING, _META)
+        if not guided:
+            return context
+        guide = self._workflows.meta_guide()
+        return f"{context}\n\n\n{guide}" if guide else context
+
     @staticmethod
     def _validate(name: str) -> None:
         """Reject an invalid or reserved workflow name."""
@@ -141,18 +149,24 @@ class NewWorkflowUseCase(NewWorkflow):
             raise WorkflowNameError(message)
 
     @staticmethod
-    def _kickoff(name: str | None, draft: str) -> str:
+    def _kickoff(name: str | None, draft: str, *, guided: bool) -> str:
         """The opening instruction: author in the draft, then leave a deploy marker."""
         suggested = (
             f"The user suggested the name {name!r}; confirm it or propose a better one. "
             if name is not None
             else "No name was given; propose one once the workflow has taken shape. "
         )
+        guide = (
+            "Guided facilitation is on — follow the guided layer in your context, and keep "
+            "a draft.md and a parking-lot.md in this folder as you go. "
+            if guided
+            else ""
+        )
         return (
             "You are creating a new workflow. Your working directory is a private draft "
-            f"folder ({draft}); do all your authoring there. " + suggested + "Follow the "
-            "create-workflow steps: interview the user, then draft and save workflow.md in "
-            "this folder. When it is ready, write a meta.json file here containing "
+            f"folder ({draft}); do all your authoring there. " + suggested + guide + "Follow "
+            "the create-workflow steps: interview the user, then draft and save workflow.md "
+            "in this folder. When it is ready, write a meta.json file here containing "
             '{"name": "<the-workflow-name>", "status": "finished"} so gmlw can deploy the '
             "draft to its final home. Start by asking what this workflow is for."
         )
