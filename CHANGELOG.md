@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-19
+
+The workflow, made first-class — a direct way to run one, name-at-the-end authoring, and
+a guided authoring experience — plus a truthful context meter on the status line.
+
+### Added
+- **`run <workflow>`.** Launch a workflow directly: the job is named after the workflow
+  and its sessions accumulate there — the recurring-procedure counterpart to `start`
+  (which enters a job you return to), equivalent to `gmlw start <workflow> -w <workflow>`.
+  With no workflow given, a trigger-gated pre-launch chooser offers the authored ones at a
+  terminal and echoes the equivalent one-liner so interactive use teaches the fast path;
+  full argv never prompts, and a non-interactive run degrades cleanly.
+- **`workflow new` decides the name at the end.** The name is optional and proposed at the
+  end of the interview, not demanded up front. Authoring runs in a private draft folder
+  under `~/.gmlw/drafts/` (sessions accumulate under `create-workflow`); on a finished
+  marker, gmlw atomically deploys the draft into `~/.gmlw/workflows/<name>/`, so a
+  half-authored workflow never appears in `workflow list` or `run`. A name given up front
+  is a seed that fails fast on a collision; a name taken at deploy, or an unfinished
+  session, keeps the draft and points at `workflow edit`.
+- **Guided authoring.** `workflow new` / `edit` offer a richer, facilitative guide — a
+  parking lot for tangents, a diverge→converge rhythm, process-leveling ("a step, or its
+  own workflow?"), proposing the upstream/downstream stages you left out, with
+  anti-railroading and consent-gate guardrails, and distilled-state files (`draft.md`,
+  `parking-lot.md`) so a long session survives context compaction. The choice is asked on
+  every interactive run (Enter takes guided); `--guided` / `--quick` answer up front, and a
+  non-interactive run defaults to quick. The guide is injected only when chosen, so quick
+  is genuinely cheaper.
+- **Status line: a truthful context meter.** The claude status line now shows the
+  denominator — `ctx 155.6k/200k (78%)` instead of a bare percentage — so a window
+  under-reported behind the metering relay (which looks like a gateway, capping the
+  reported window at 200k) is visible. Rate-limit windows also render their time-to-reset
+  (`5h 90% (↻ 12m) · wk 40% (↻ 3d)`) from `resets_at`, since a percentage without a reset
+  time is not actionable. Both degrade to the previous output when a client omits the
+  fields; the cursor parser reads the same context shape.
+
 ## [0.5.0] - 2026-07-19
 
 Discoverability and progressive disclosure — shortening time-to-first-session and
@@ -223,7 +258,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.2.0...v0.3.0
