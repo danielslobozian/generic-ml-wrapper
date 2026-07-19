@@ -11,6 +11,7 @@ and flag. For deeper behaviour, follow the cross-links to [CONFIGURATION.md](CON
 gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
 gmlw start [job] [--client X] [--resume-latest] [--workflow|-w NAME]
+gmlw run [workflow] [--client X]         # run a workflow directly (job named after it)
 gmlw jobs [--json]
 gmlw sessions <job> [--json]
 gmlw export <job> [--json]
@@ -111,6 +112,35 @@ Example:
 
 ```
 gmlw start billing-api --client claude -w tidy-review --resume-latest
+```
+
+## run
+
+Run a workflow directly. The job is named after the workflow and its sessions accumulate
+there, so `run` is the counterpart to `start` for a *recurring procedure* — where `start`
+enters a job you return to, `run` launches a repeatable workflow. It is equivalent to
+`gmlw start <workflow> -w <workflow>`.
+
+```
+gmlw run [workflow] [--client CLIENT]
+```
+
+- `workflow` (optional positional) — the workflow to run. With no workflow given, `run`
+  offers a chooser at an interactive terminal and, once you pick, echoes the equivalent
+  one-liner (`gmlw run <workflow>`) so the interactive path teaches the fast one. Off a
+  terminal (piped/scripted), or when you decline, it prints a guide and exits 2 rather
+  than blocking. Full argv (`gmlw run <workflow>`) never prompts. With no workflows
+  authored yet, it points you at `gmlw workflow new <name>`.
+- `--client CLIENT` — which client to wrap (`claude`, `cursor`, `codex`, `vibe`).
+  Defaults to the configured default client, or `claude`. See [CLIENTS.md](CLIENTS.md).
+
+Like `start`, `run` preflights the working directory and the client before launching, and
+reports an unknown workflow cleanly. See [WORKFLOWS.md](WORKFLOWS.md).
+
+Example:
+
+```
+gmlw run nightly-etl
 ```
 
 ## jobs

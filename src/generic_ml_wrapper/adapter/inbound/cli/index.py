@@ -25,6 +25,7 @@ _GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("gmlw <job>", "index.desc.job"),
             ("gmlw start <job>", "index.desc.start"),
             ("gmlw start <job> -w <workflow>", "index.desc.run_workflow"),
+            ("gmlw run <workflow>", "index.desc.run"),
         ),
     ),
     (

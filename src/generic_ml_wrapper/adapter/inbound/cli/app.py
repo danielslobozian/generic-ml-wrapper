@@ -85,6 +85,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_render_statusline,
     build_set_credential,
     build_start_job,
+    build_workflow_chooser,
 )
 from generic_ml_wrapper.common import config, i18n, paths, settings_registry
 from generic_ml_wrapper.common.log import configure as configure_logging
@@ -109,6 +110,7 @@ _COMMANDS = frozenset(
     {
         "init",
         "start",
+        "run",
         "jobs",
         "sessions",
         "export",
@@ -225,6 +227,19 @@ def build_parser() -> argparse.ArgumentParser:
         "-w",
         default=None,
         help="run a workflow on the job (see: gmlw workflow list)",
+    )
+
+    run = sub.add_parser("run", help="run a workflow directly (the job is named after it)")
+    run.add_argument(
+        "workflow",
+        nargs="?",
+        default=None,
+        help="the workflow to run (omit to choose one; see: gmlw workflow list)",
+    )
+    run.add_argument(
+        "--client",
+        default=None,
+        help="which client to wrap (default: the configured default, or claude)",
     )
 
     jobs = sub.add_parser("jobs", help="list the jobs with recorded activity")
@@ -547,6 +562,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return 0
         if args.command == "start":
             return _start(args)
+        if args.command == "run":
+            return _run(args)
         if args.command == "statusline":
             return _statusline()
         if args.command == "workflow":
@@ -909,6 +926,67 @@ def _start(args: argparse.Namespace) -> int:
         print(farewell, file=sys.stderr)
     _print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
     return result.exit_code
+
+
+def _run(args: argparse.Namespace) -> int:
+    """Run a workflow directly: the job is named after it and its sessions accumulate.
+
+    ``gmlw run <workflow>`` is the recurring-procedure counterpart to ``gmlw start`` —
+    equivalent to ``gmlw start <workflow> -w <workflow>``. With no workflow given it
+    offers a chooser at a terminal (never off one), then echoes the one-liner so the
+    interactive path teaches the fast one; full argv never prompts.
+    """
+    workflow = _resolve_workflow(args.workflow)
+    if workflow is None:
+        return 2
+    client = _client(args.client)
+    command = StartJobCommand(
+        job=JobId(workflow),
+        client=client,
+        resume_latest=False,
+        workflow=workflow,
+    )
+    if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
+        return 2
+    if not _preflight_client(client):  # client not installed — guide, don't launch
+        return 2
+    with _client_owns_interrupts():
+        try:
+            result = build_start_job().execute(command)
+        except _Terminated:
+            return 143  # 128 + SIGTERM: terminated, but teardown ran
+        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+            print(i18n.t("error.generic", error=error))
+            return 2
+    farewell = _farewell()
+    if farewell:
+        print(farewell, file=sys.stderr)
+    _print_exit_receipt(result)
+    return result.exit_code
+
+
+def _resolve_workflow(given: str | None) -> str | None:
+    """Resolve the workflow to run: the given name, else an interactive choice.
+
+    Args:
+        given: The workflow named on the command line, or ``None``.
+
+    Returns:
+        The workflow name to run, or ``None`` when it could not be resolved (with
+        guidance already printed to stderr).
+    """
+    if given is not None:
+        return str(given)
+    names = build_list_workflows().execute()
+    if not names:  # nothing to run yet — point at authoring, not a picker with no options
+        print(i18n.t("run.no_workflows"), file=sys.stderr)
+        return None
+    chosen = build_workflow_chooser().choose(names)
+    if chosen is None:  # declined, or no terminal to prompt on
+        print(i18n.t("run.needs_workflow"), file=sys.stderr)
+        return None
+    print(i18n.t("run.echo", workflow=chosen), file=sys.stderr)  # teach the fast path
+    return chosen
 
 
 def _print_exit_receipt(result: StartJobResult) -> None:

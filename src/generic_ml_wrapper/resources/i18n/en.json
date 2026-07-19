@@ -74,6 +74,10 @@
   "client.guidance.then_login": "...then log in (see each tool's docs), or run `gmlw init` to be guided.",
   "preflight.cwd_gone": "gmlw: your current directory no longer exists (it was moved or deleted).\n  cd to a directory that exists — e.g. `cd ~` — and try again.",
   "start.needs_job": "gmlw: start needs a job to work on.\n  gmlw <job>          start (or resume) a session on <job>\n  gmlw start <job>    the same, spelled out\nA job groups related sessions; list yours with:  gmlw jobs",
+  "run.pick_header": "gmlw: which workflow do you want to run?",
+  "run.needs_workflow": "gmlw: run needs a workflow.\n  gmlw run <workflow>   run a workflow directly (the job is named after it)\nList the runnable ones with:  gmlw workflow list",
+  "run.no_workflows": "gmlw: no workflows to run yet. Author one with:  gmlw workflow new <name>",
+  "run.echo": "  next time:  gmlw run {workflow}",
   "farewell": "Bye, {name}.",
   "creds.stored": "stored {workflow}.{name}",
   "config.unset": "(unset)",
@@ -97,6 +101,7 @@
   "index.desc.job": "start or resume a session on a job",
   "index.desc.start": "the same, spelled out",
   "index.desc.run_workflow": "run a workflow on the job",
+  "index.desc.run": "run a workflow directly (the job is named after it)",
   "index.desc.jobs": "list jobs with recorded activity",
   "index.desc.sessions": "list a job's sessions",
   "index.desc.export": "report a job's usage and cost",
@@ -112,7 +117,7 @@
   "help.job_vs_workflow.summary": "how a job differs from a workflow",
   "help.job_vs_workflow.body": "A job is a unit of work you return to — it groups related sessions and their recorded usage (e.g. 'checkout-refactor'). A workflow is a reusable, authored recipe you run on a job (e.g. 'doc-review').\nYou start sessions on jobs; you run workflows on them.\nSee: gmlw jobs, gmlw workflow list",
   "help.start_vs_run.summary": "starting a session vs running a workflow",
-  "help.start_vs_run.body": "gmlw start <job> opens (or resumes) a plain session on a job — the wrapper hands the terminal to your client.\ngmlw start <job> -w <workflow> runs an authored workflow on that job instead.\nBare 'gmlw <job>' is shorthand for 'gmlw start <job>'.",
+  "help.start_vs_run.body": "gmlw start <job> opens (or resumes) a plain session on a job — the wrapper hands the terminal to your client.\ngmlw start <job> -w <workflow> runs an authored workflow on that job instead.\ngmlw run <workflow> runs a workflow directly — the job is named after the workflow and its sessions accumulate there. Use it for a recurring procedure; use start for exploratory work on a job.\nBare 'gmlw <job>' is shorthand for 'gmlw start <job>'.",
   "help.personas.summary": "what a persona changes",
   "help.personas.body": "A persona is a companion voice: when one is selected it greets you at launch and can shape tone. It is off by default (invisible).\nSelect one with: gmlw config set companion.persona <name> (see gmlw persona list).",
   "help.cost.summary": "where cost is tracked and shown",
@@ -141,5 +146,5 @@
   "hint.cost": "tip: see where cost is tracked — gmlw help cost",
   "hint.persona": "tip: pick a companion voice — gmlw persona list",
   "hint.config": "tip: view and change settings — gmlw config list",
-  "ambient.card": "# gmlw\nYou are running inside gmlw, a wrapper around this CLI. If the user asks how to do something in gmlw, you can tell them:\n- start or resume a session: gmlw start <job> [--resume-latest]\n- run a workflow on a job: gmlw start <job> -w <workflow>\n- see usage and cost: gmlw export <job>\n- change settings: gmlw config list, then gmlw config set <key> <value>\n- learn a concept: gmlw help <topic>"
+  "ambient.card": "# gmlw\nYou are running inside gmlw, a wrapper around this CLI. If the user asks how to do something in gmlw, you can tell them:\n- start or resume a session: gmlw start <job> [--resume-latest]\n- run a workflow on a job: gmlw start <job> -w <workflow>\n- run a workflow directly: gmlw run <workflow>\n- see usage and cost: gmlw export <job>\n- change settings: gmlw config list, then gmlw config set <key> <value>\n- learn a concept: gmlw help <topic>"
 }

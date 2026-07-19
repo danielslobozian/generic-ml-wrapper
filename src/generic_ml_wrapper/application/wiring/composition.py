@@ -27,6 +27,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyCl
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
@@ -302,6 +303,15 @@ def build_list_workflows() -> ListWorkflows:
         A ready-to-run ListWorkflows.
     """
     return ListWorkflowsUseCase(workflows=_workflow_source(InterceptorChain(())))
+
+
+def build_workflow_chooser() -> TtyWorkflowChooser:
+    """Build the pre-launch workflow chooser for ``gmlw run`` with no workflow.
+
+    Returns:
+        A terminal chooser that offers the runnable workflows, or declines off a TTY.
+    """
+    return TtyWorkflowChooser(build_localizer())
 
 
 def build_set_credential() -> SetCredential:
