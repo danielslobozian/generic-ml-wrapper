@@ -8,6 +8,7 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
     FilesystemWorkflowSource,
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
@@ -39,6 +40,50 @@ def test_exists_and_create(tmp_path: Path) -> None:
     assert source.exists("doc-review") is False  # still no workflow.md
     (tmp_path / "doc-review" / "workflow.md").write_text("# doc-review", encoding="utf-8")
     assert source.exists("doc-review") is True
+
+
+def test_create_draft_makes_a_sibling_folder_outside_workflows(tmp_path: Path) -> None:
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    draft = source.create_draft("create-workflow_001")
+    assert Path(draft) == tmp_path / "drafts" / "create-workflow_001"  # a sibling of workflows/
+    assert (Path(draft) / "rules").is_dir()
+
+
+def test_read_draft_marker_parses_a_finished_marker(tmp_path: Path) -> None:
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    draft = Path(source.create_draft("create-workflow_001"))
+    (draft / "meta.json").write_text('{"name": "nightly-etl", "status": "finished"}', "utf-8")
+    marker = source.read_draft_marker(str(draft))
+    assert marker == DraftMarker("nightly-etl", finished=True)
+
+
+def test_read_draft_marker_tolerates_absent_or_malformed(tmp_path: Path) -> None:
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    draft = Path(source.create_draft("create-workflow_001"))
+    assert source.read_draft_marker(str(draft)) == DraftMarker(None, finished=False)  # no file
+    (draft / "meta.json").write_text("not json", encoding="utf-8")
+    assert source.read_draft_marker(str(draft)) == DraftMarker(None, finished=False)  # bad json
+    (draft / "meta.json").write_text('{"name": "x"}', encoding="utf-8")  # no status
+    assert source.read_draft_marker(str(draft)) == DraftMarker("x", finished=False)
+    (draft / "meta.json").write_text('{"status": "finished"}', encoding="utf-8")  # no name
+    assert source.read_draft_marker(str(draft)) == DraftMarker(None, finished=True)
+
+
+def test_deploy_draft_moves_the_draft_and_drops_the_marker(tmp_path: Path) -> None:
+    workflows = tmp_path / "workflows"
+    source = FilesystemWorkflowSource(workflows)
+    draft = Path(source.create_draft("create-workflow_001"))
+    (draft / "workflow.md").write_text("# nightly-etl", encoding="utf-8")
+    (draft / "meta.json").write_text('{"name": "nightly-etl", "status": "finished"}', "utf-8")
+
+    deployed = source.deploy_draft(str(draft), "nightly-etl")
+
+    deployed_dir = workflows / "nightly-etl"
+    assert Path(deployed) == deployed_dir
+    assert (deployed_dir / "workflow.md").read_text(encoding="utf-8") == "# nightly-etl"
+    assert not (deployed_dir / "meta.json").exists()  # transient marker stripped
+    assert not draft.exists()  # the draft was moved, not copied
+    assert source.exists("nightly-etl") is True
 
 
 def _add_workflow(root: Path, name: str) -> None:

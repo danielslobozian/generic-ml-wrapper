@@ -57,8 +57,10 @@ from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
+    NewWorkflowResult,
     WorkflowExistsError,
     WorkflowNameError,
+    WorkflowOutcome,
 )
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialCommand
 from generic_ml_wrapper.application.port.inbound.start_job import (
@@ -258,7 +260,12 @@ def build_parser() -> argparse.ArgumentParser:
     workflow = sub.add_parser("workflow", help="author/list workflows")
     workflow_sub = workflow.add_subparsers(dest="workflow_command", metavar="<action>")
     new = workflow_sub.add_parser("new", help="author a new workflow (no job)")
-    new.add_argument("name", help="the new workflow's name")
+    new.add_argument(
+        "name",
+        nargs="?",
+        default=None,
+        help="a suggested name (optional; the session proposes one at the end)",
+    )
     new.add_argument(
         "--client",
         default=None,
@@ -1170,15 +1177,39 @@ def _workflow(args: argparse.Namespace) -> int:
 
 
 def _workflow_new(args: argparse.Namespace) -> int:
-    """Author a new workflow (guide instead of launching when the client isn't ready)."""
+    """Author a new workflow (guide instead of launching when the client isn't ready).
+
+    The name is optional — omit it and the authoring session proposes one at the end,
+    after which gmlw deploys the draft. A name given up front is a seed that fails fast
+    on a collision. The draft's fate on the return is reported from the result.
+    """
     client = _client(args.client)
     if not _preflight_client(client):
         return 2
+    name = None if args.name is None else str(args.name)
     try:
-        return build_new_workflow().execute(NewWorkflowCommand(name=str(args.name), client=client))
-    except (WorkflowNameError, WorkflowExistsError) as error:
+        result = build_new_workflow().execute(NewWorkflowCommand(name=name, client=client))
+    except WorkflowExistsError:  # a seed name that already exists — point at editing it
+        print(i18n.t("workflow.new.exists", name=name), file=sys.stderr)
+        return 2
+    except WorkflowNameError as error:
         print(i18n.t("error.generic", error=error))
         return 2
+    _announce_new_workflow(result)
+    return result.exit_code
+
+
+def _announce_new_workflow(result: NewWorkflowResult) -> None:
+    """Report how an authoring session's draft resolved, on the return (to stderr)."""
+    if result.outcome is WorkflowOutcome.DEPLOYED:
+        print(i18n.t("workflow.new.deployed", name=result.name), file=sys.stderr)
+    elif result.outcome is WorkflowOutcome.COLLISION:
+        print(
+            i18n.t("workflow.new.collision", name=result.name, draft=result.draft_path),
+            file=sys.stderr,
+        )
+    else:  # INCOMPLETE — no finished marker; the draft is kept so nothing is lost
+        print(i18n.t("workflow.new.incomplete", draft=result.draft_path), file=sys.stderr)
 
 
 def _workflow_edit(args: argparse.Namespace) -> int:

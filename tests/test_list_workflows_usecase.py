@@ -3,6 +3,7 @@
 """Tests for the ListWorkflows use case, driven by a fake source."""
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 
@@ -24,6 +25,15 @@ class FakeWorkflows(WorkflowSourcePort):
         raise NotImplementedError
 
     def folder(self, name: str) -> str:
+        raise NotImplementedError
+
+    def create_draft(self, key: str) -> str:
+        raise NotImplementedError
+
+    def read_draft_marker(self, draft_path: str) -> DraftMarker:
+        raise NotImplementedError
+
+    def deploy_draft(self, draft_path: str, name: str) -> str:
         raise NotImplementedError
 
     def compile(self, mode: CompileMode, name: str | None = None) -> str:

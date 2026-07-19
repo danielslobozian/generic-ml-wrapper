@@ -15,8 +15,10 @@ from generic_ml_wrapper.application.domain.service.session_naming import next_se
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
     NewWorkflowCommand,
+    NewWorkflowResult,
     WorkflowExistsError,
     WorkflowNameError,
+    WorkflowOutcome,
 )
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
@@ -28,7 +30,15 @@ _RESERVED = frozenset({_META, "_common"})
 
 
 class NewWorkflowUseCase(NewWorkflow):
-    """Create a workflow folder and run the create-workflow authoring session."""
+    """Author a workflow in a draft folder, then deploy it once the session names it.
+
+    The name is decided at the end of the interview, not the start, so authoring runs
+    in a scratch draft folder under the ``create-workflow`` job (sessions accumulate as
+    ``create-workflow_NNN``). On convergence the session writes a marker naming the
+    workflow; the use case then deploys the draft into ``workflows/<name>/``. A given
+    name is only a seed — it lets a known name fail fast on a collision up front, but
+    the final name still comes from the marker.
+    """
 
     def __init__(
         self,
@@ -41,7 +51,7 @@ class NewWorkflowUseCase(NewWorkflow):
         """Wire the use case to its outbound ports.
 
         Args:
-            workflows: Seeds, checks, creates, and compiles workflows.
+            workflows: Seeds, checks, drafts, compiles, and deploys workflows.
             store: Records the authoring session.
             callers: Resolves the client caller for the run.
             uuid_factory: Mints a client-side session uuid.
@@ -53,37 +63,30 @@ class NewWorkflowUseCase(NewWorkflow):
         self._uuid_factory = uuid_factory
         self._hooks = hooks
 
-    def execute(self, command: NewWorkflowCommand) -> int:
-        """Run the authoring session for a new workflow.
+    def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+        """Run the authoring session for a new workflow and deploy its draft.
 
         Args:
-            command: The request describing the workflow name and client.
+            command: The request describing the (optional) name and the client.
 
         Returns:
-            The client's exit code.
+            The result: the client's exit code and how the draft resolved.
 
         Raises:
-            WorkflowNameError: If the name is invalid or reserved.
-            WorkflowExistsError: If a workflow with that name already exists.
+            WorkflowNameError: If a given name is invalid or reserved.
+            WorkflowExistsError: If a given name already exists (fail fast, up front).
         """
-        name = command.name
-        try:
-            WorkflowName(name)
-        except IdentifierError as error:
-            raise WorkflowNameError(str(error)) from error
-        if name in _RESERVED:
-            message = f"reserved workflow name: {name!r}"
-            raise WorkflowNameError(message)
         self._workflows.seed()
-        if self._workflows.exists(name):
-            message = f"workflow already exists: {name!r}"
-            raise WorkflowExistsError(message)
+        if command.name is not None:  # a seed name lets a known collision fail fast
+            self._validate(command.name)
+            if self._workflows.exists(command.name):
+                message = f"workflow already exists: {command.name!r}"
+                raise WorkflowExistsError(message)
 
-        folder = self._workflows.create(name)
-        # The authoring session's store is rooted apart from real work jobs (the
-        # composition root injects the authoring root), so the job is just the
-        # workflow name — no prefix, no folder-name collision with a real job.
-        job = name
+        # Authoring always runs under the create-workflow job (its store is rooted apart
+        # from real work jobs), so sessions accumulate as create-workflow_NNN regardless
+        # of the target name — which is not known until the session ends.
+        job = _META
         session = Session(
             session_id=next_session_id(job, self._store.ids_for_job(job)),
             job=job,
@@ -92,20 +95,64 @@ class NewWorkflowUseCase(NewWorkflow):
         )
         self._store.record(session)
 
+        draft = self._workflows.create_draft(session.session_id)
         run = RunContext(
             job=job,
             session_id=session.session_id,
             client=session.client,
             uuid=session.uuid,
             resume=False,
-            cwd=folder,
+            cwd=draft,
             context=self._workflows.compile(CompileMode.AUTHORING, _META),
-            kickoff=(
-                f"You are creating a new workflow named {name!r}. Your working "
-                f"directory is its folder ({folder}); write the new workflow.md there. "
-                "Follow the create-workflow steps: interview me, then draft and save "
-                "the workflow. Start by asking what this workflow is for."
-            ),
+            kickoff=self._kickoff(command.name, draft),
         )
         caller = self._callers.for_run(run)
-        return run_with_hooks(caller, run, self._hooks)
+        exit_code = run_with_hooks(caller, run, self._hooks)
+        return self._finalize(exit_code, draft)
+
+    def _finalize(self, exit_code: int, draft: str) -> NewWorkflowResult:
+        """Deploy the draft if the session named it and declared it finished.
+
+        A missing/unfinished marker, an unusable proposed name, or a name already taken
+        each leaves the draft in place (nothing is lost); only a finished, valid, free
+        name is deployed into ``workflows/<name>/``.
+        """
+        marker = self._workflows.read_draft_marker(draft)
+        if not marker.finished or marker.name is None:
+            return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
+        try:
+            self._validate(marker.name)
+        except WorkflowNameError:  # the session proposed an unusable name — keep the draft
+            return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
+        if self._workflows.exists(marker.name):
+            return NewWorkflowResult(exit_code, WorkflowOutcome.COLLISION, marker.name, draft)
+        deployed = self._workflows.deploy_draft(draft, marker.name)
+        return NewWorkflowResult(exit_code, WorkflowOutcome.DEPLOYED, marker.name, deployed)
+
+    @staticmethod
+    def _validate(name: str) -> None:
+        """Reject an invalid or reserved workflow name."""
+        try:
+            WorkflowName(name)
+        except IdentifierError as error:
+            raise WorkflowNameError(str(error)) from error
+        if name in _RESERVED:
+            message = f"reserved workflow name: {name!r}"
+            raise WorkflowNameError(message)
+
+    @staticmethod
+    def _kickoff(name: str | None, draft: str) -> str:
+        """The opening instruction: author in the draft, then leave a deploy marker."""
+        suggested = (
+            f"The user suggested the name {name!r}; confirm it or propose a better one. "
+            if name is not None
+            else "No name was given; propose one once the workflow has taken shape. "
+        )
+        return (
+            "You are creating a new workflow. Your working directory is a private draft "
+            f"folder ({draft}); do all your authoring there. " + suggested + "Follow the "
+            "create-workflow steps: interview the user, then draft and save workflow.md in "
+            "this folder. When it is ready, write a meta.json file here containing "
+            '{"name": "<the-workflow-name>", "status": "finished"} so gmlw can deploy the '
+            "draft to its final home. Start by asking what this workflow is for."
+        )
