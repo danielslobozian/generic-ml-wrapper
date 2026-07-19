@@ -37,6 +37,12 @@ dependencies = [
   # formatting exactly. stdlib tomllib reads TOML but cannot write it. Pure Python,
   # no transitive deps.
   "tomlkit>=0.13",
+  # pydantic-settings (MIT) is the typed source of truth for the settable config keys:
+  # the registry model carries each key's type, default, allowed values and description,
+  # and every surface (config commands, help, validation) renders from it. It pulls in
+  # pydantic (a compiled core) — a deliberate, load-bearing exception to the thin-dep
+  # rule for the one place that benefits from real schema + validation.
+  "pydantic-settings>=2",
 ]
 
 [project.urls]

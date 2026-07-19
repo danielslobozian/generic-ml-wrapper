@@ -13,16 +13,22 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model import context_source
-from generic_ml_wrapper.common import paths
+from generic_ml_wrapper.common import paths, settings_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-_DEFAULT_CLIENT = "claude"
-# The init-seeded defaults for the movie-set axes: one plays a "default" role on the
-# "work" set until the config commands (0.5.0) let either be changed.
-_DEFAULT_ROLE = "default"
-_DEFAULT_ENVIRONMENT = "work"
+# Every scalar default is sourced from the registry (the single typed source of truth),
+# so a default is declared once — on its Field — not duplicated here. This module keeps
+# the *tolerant* reading (a malformed or ill-typed file falls back, never raises); the
+# registry supplies the fallback value.
+_DEFAULT_CLIENT = cast("str", settings_registry.default_for("client.default"))
+_DEFAULT_ROLE = cast("str", settings_registry.default_for("profile.default_role"))
+_DEFAULT_ENVIRONMENT = cast("str", settings_registry.default_for("profile.default_environment"))
+_DEFAULT_LOG_LEVEL = cast("str", settings_registry.default_for("logging.level"))
+_DEFAULT_COMPRESS_ADAPTER = cast("str", settings_registry.default_for("compress.adapter"))
+_DEFAULT_COMPRESS_MODEL = cast("str", settings_registry.default_for("compress.model"))
+_DEFAULT_COMPRESS_EFFORT = cast("str", settings_registry.default_for("compress.effort"))
 
 # The valid ``[[hooks]]`` phases, as literal strings (config keeps its own vocabulary of
 # string keys rather than importing domain enums, mirroring ``_STARTUP_ACTIVATION``). Kept
@@ -159,7 +165,7 @@ def log_level(path: Path | None = None) -> str:
         The ``[logging] level`` value, or ``"warning"`` when unset.
     """
     value = _table(_load(path), "logging").get("level")
-    return value if isinstance(value, str) and value else "warning"
+    return value if isinstance(value, str) and value else _DEFAULT_LOG_LEVEL
 
 
 def interceptors(path: Path | None = None) -> list[tuple[str, str]]:
@@ -280,9 +286,9 @@ def compress(path: Path | None = None) -> CompressSettings:
     model = table.get("model")
     effort = table.get("effort")
     return CompressSettings(
-        adapter=adapter if isinstance(adapter, str) and adapter else "cursor",
-        model=model if isinstance(model, str) and model else "gpt-5.4",
-        effort=effort if isinstance(effort, str) and effort else "low",
+        adapter=adapter if isinstance(adapter, str) and adapter else _DEFAULT_COMPRESS_ADAPTER,
+        model=model if isinstance(model, str) and model else _DEFAULT_COMPRESS_MODEL,
+        effort=effort if isinstance(effort, str) and effort else _DEFAULT_COMPRESS_EFFORT,
         prompts=prompts,
     )
 
