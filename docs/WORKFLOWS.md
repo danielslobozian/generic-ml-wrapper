@@ -12,11 +12,15 @@ If you have never authored one, you can ignore this file entirely and use
 
 ## Creating one
 
-    gmlw workflow new <name>
+    gmlw workflow new            # name it at the end
+    gmlw workflow new <name>     # or seed a name up front (optional)
 
 This runs the shipped `create-workflow` meta-workflow as a metered **authoring**
-session (kind `authoring`, so it stays hidden from `gmlw jobs`). It is a warm,
-one-question-at-a-time interview, not a form. It:
+session (kind `authoring`, so it stays hidden from `gmlw jobs`; sessions accumulate
+under `create-workflow`). The name is decided at the **end** of the interview, not the
+start — a name given up front is only a seed you can change (though it lets a known name
+fail fast if it is already taken). It is a warm, one-question-at-a-time interview, not a
+form. It:
 
 1. **Interviews you** about a task you do repeatedly — what it's for, how you do it
    today start to finish, what "done" looks like, and what you always check. It keeps
@@ -32,8 +36,11 @@ one-question-at-a-time interview, not a form. It:
    approve each one; a scripted step then becomes "run `scripts/<name>`" instead of
    re-reasoning it every run — faster, cheaper, reliable. Judgment steps stay with
    the model.
-4. **Writes `workflow.md`** into the new workflow's folder and tells you how to run
-   it.
+4. **Names it and writes `workflow.md`** into a private draft folder
+   (`~/.gmlw/drafts/`), then proposes the workflow's name and marks it finished. gmlw
+   deploys the finished draft into `~/.gmlw/workflows/<name>/` (an atomic move) and tells
+   you how to run it. A half-authored workflow never appears in `workflow list` or `run`;
+   if the name is taken, the draft is kept and you are pointed at `gmlw workflow edit`.
 
 You can pass `--client X` to author under a specific client. See [CLI.md](CLI.md) for
 the full command surface.

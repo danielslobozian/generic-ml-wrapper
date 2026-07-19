@@ -40,5 +40,6 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
 
     # `gmlw jobs` reads the work kind only -- untouched by authoring.
     assert ListJobsUseCase(SqliteSessionStore(ledger, kind="work")).execute() == []
-    # The authoring session landed under the authoring kind.
-    assert SqliteSessionStore(ledger, kind="authoring").jobs() == ["doc-review"]
+    # The authoring session landed under the authoring kind, always as create-workflow
+    # (the target name is a seed, decided at the end -- sessions accumulate here).
+    assert SqliteSessionStore(ledger, kind="authoring").jobs() == ["create-workflow"]

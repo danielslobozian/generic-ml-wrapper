@@ -32,6 +32,11 @@ CREDENTIALS = HOME / "credentials.toml"
 # Authoring sessions (gmlw workflow new) live apart from real work jobs, so they
 # never appear in `gmlw jobs` and their spend is its own bucket.
 AUTHORING = HOME / "authoring"
+# In-progress workflow drafts, one folder per authoring session. A new workflow is
+# authored here (its name is decided at the end), then atomically moved into
+# workflows/<name>/ on finish — so a half-authored workflow never appears in
+# `workflow list` / `run`. Kept out of workflows/ by living in its own root.
+DRAFTS = HOME / "drafts"
 # The generic-ml-cache store the context compressor records/replays through.
 COMPRESS_CACHE = HOME / "compress-cache"
 # Small bits of local UI state (e.g. which one-time exit-receipt hints have been shown).

@@ -43,7 +43,9 @@ from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLa
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
     NewWorkflowCommand,
+    NewWorkflowResult,
     WorkflowExistsError,
+    WorkflowOutcome,
 )
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
@@ -1002,29 +1004,68 @@ def test_complete_subcommand_does_not_print_help(
     assert "usage: gmlw workflow" not in capsys.readouterr().out  # it ran, not helped
 
 
-def test_workflow_new_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, NewWorkflowCommand] = {}
-
+def _deploying_use_case(seen: dict[str, NewWorkflowCommand]) -> NewWorkflow:
     class FakeUseCase(NewWorkflow):
-        def execute(self, command: NewWorkflowCommand) -> int:
+        def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
             seen["command"] = command
-            return 0
+            return NewWorkflowResult(
+                exit_code=0,
+                outcome=WorkflowOutcome.DEPLOYED,
+                name=command.name or "nightly-etl",
+                draft_path="/drafts/create-workflow_001",
+            )
 
-    monkeypatch.setattr(app, "build_new_workflow", lambda: FakeUseCase())
+    return FakeUseCase()
+
+
+def test_workflow_new_dispatches_to_the_use_case(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: dict[str, NewWorkflowCommand] = {}
+    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
     assert app.main(["workflow", "new", "doc-review"]) == 0
     assert seen["command"] == NewWorkflowCommand(name="doc-review", client="claude")
+    assert "created" in capsys.readouterr().err  # the deployed announcement
 
 
-def test_workflow_new_reports_errors_cleanly(
+def test_workflow_new_without_a_name_is_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, NewWorkflowCommand] = {}
+    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
+    assert app.main(["workflow", "new"]) == 0
+    assert seen["command"] == NewWorkflowCommand(name=None, client="claude")  # name optional
+
+
+def test_workflow_new_reports_a_seed_name_collision(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FailingUseCase(NewWorkflow):
-        def execute(self, command: NewWorkflowCommand) -> int:
+        def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
             raise WorkflowExistsError("workflow already exists: 'doc-review'")
 
     monkeypatch.setattr(app, "build_new_workflow", lambda: FailingUseCase())
     assert app.main(["workflow", "new", "doc-review"]) == 2
-    assert "already exists" in capsys.readouterr().out
+    err = capsys.readouterr().err
+    assert "already exists" in err
+    assert "gmlw workflow edit doc-review" in err  # points at editing the existing one
+
+
+def test_workflow_new_reports_an_incomplete_draft(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class IncompleteUseCase(NewWorkflow):
+        def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+            return NewWorkflowResult(
+                exit_code=0,
+                outcome=WorkflowOutcome.INCOMPLETE,
+                name=None,
+                draft_path="/drafts/create-workflow_002",
+            )
+
+    monkeypatch.setattr(app, "build_new_workflow", lambda: IncompleteUseCase())
+    assert app.main(["workflow", "new"]) == 0
+    err = capsys.readouterr().err
+    assert "wasn't finished" in err
+    assert "/drafts/create-workflow_002" in err  # the kept draft is surfaced
 
 
 def test_build_new_workflow_wires_a_real_use_case() -> None:

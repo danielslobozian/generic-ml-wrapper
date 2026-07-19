@@ -5,6 +5,7 @@
 import pytest
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
@@ -12,18 +13,23 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
     WorkflowExistsError,
     WorkflowNameError,
+    WorkflowOutcome,
 )
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 
+_UNFINISHED = DraftMarker(None, finished=False)
+
 
 class FakeWorkflows(WorkflowSourcePort):
-    def __init__(self, *, existing: bool = False) -> None:
+    def __init__(self, *, existing: bool = False, marker: DraftMarker = _UNFINISHED) -> None:
         self.seeded = False
-        self.created: str | None = None
+        self.draft_key: str | None = None
+        self.deployed: tuple[str, str] | None = None
         self._existing = existing
+        self._marker = marker
 
     def seed(self) -> None:
         self.seeded = True
@@ -35,10 +41,20 @@ class FakeWorkflows(WorkflowSourcePort):
         return self._existing
 
     def create(self, name: str) -> str:
-        self.created = name
         return f"/workflows/{name}"
 
     def folder(self, name: str) -> str:
+        return f"/workflows/{name}"
+
+    def create_draft(self, key: str) -> str:
+        self.draft_key = key
+        return f"/drafts/{key}"
+
+    def read_draft_marker(self, draft_path: str) -> DraftMarker:
+        return self._marker
+
+    def deploy_draft(self, draft_path: str, name: str) -> str:
+        self.deployed = (draft_path, name)
         return f"/workflows/{name}"
 
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
@@ -87,36 +103,99 @@ def _use_case(
     )
 
 
-def test_authors_a_new_workflow() -> None:
-    workflows = FakeWorkflows()
+def test_authoring_runs_in_a_draft_under_the_create_workflow_job() -> None:
+    workflows = FakeWorkflows(marker=DraftMarker("nightly-etl", finished=True))
     store = FakeStore()
     provider = CapturingProvider()
 
-    exit_code = _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name="doc-review", client="claude")
+    result = _use_case(workflows, store, provider).execute(
+        NewWorkflowCommand(name=None, client="claude")
     )
 
-    assert exit_code == 0
+    assert result.exit_code == 0
     assert workflows.seeded is True
-    assert workflows.created == "doc-review"
+    # the session accumulates under create-workflow, not the (unknown) target name
     assert len(store.recorded) == 1
-    assert store.recorded[0].job == "doc-review"
+    assert store.recorded[0].job == "create-workflow"
+    assert store.recorded[0].session_id == "create-workflow_001"
+    assert workflows.draft_key == "create-workflow_001"
     assert provider.run is not None
-    assert provider.run.cwd == "/workflows/doc-review"
+    assert provider.run.cwd == "/drafts/create-workflow_001"
     assert provider.run.context == "CONTEXT<authoring:create-workflow>"
-    assert "doc-review" in (provider.run.kickoff or "")
+    assert "draft" in (provider.run.kickoff or "").lower()
+
+
+def test_deploys_a_finished_named_draft() -> None:
+    workflows = FakeWorkflows(marker=DraftMarker("nightly-etl", finished=True))
+
+    result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
+        NewWorkflowCommand(name=None, client="claude")
+    )
+
+    assert result.outcome is WorkflowOutcome.DEPLOYED
+    assert result.name == "nightly-etl"
+    assert workflows.deployed == ("/drafts/create-workflow_001", "nightly-etl")
+
+
+def test_a_seed_name_seeds_the_kickoff() -> None:
+    workflows = FakeWorkflows(marker=DraftMarker("foo", finished=True))
+    provider = CapturingProvider()
+
+    _use_case(workflows, FakeStore(), provider).execute(
+        NewWorkflowCommand(name="foo", client="claude")
+    )
+
+    assert provider.run is not None
+    assert "foo" in (provider.run.kickoff or "")
 
 
 @pytest.mark.parametrize("name", ["Bad Name", "_common", "create-workflow", ""])
-def test_rejects_invalid_or_reserved_names(name: str) -> None:
+def test_rejects_invalid_or_reserved_seed_names(name: str) -> None:
     with pytest.raises(WorkflowNameError):
         _use_case(FakeWorkflows(), FakeStore(), CapturingProvider()).execute(
             NewWorkflowCommand(name=name, client="claude")
         )
 
 
-def test_refuses_when_the_workflow_exists() -> None:
+def test_a_taken_seed_name_fails_fast() -> None:
     with pytest.raises(WorkflowExistsError):
         _use_case(FakeWorkflows(existing=True), FakeStore(), CapturingProvider()).execute(
             NewWorkflowCommand(name="doc-review", client="claude")
         )
+
+
+def test_a_taken_name_at_deploy_keeps_the_draft() -> None:
+    # No seed name (so no up-front check); the proposed name collides at deploy time.
+    workflows = FakeWorkflows(existing=True, marker=DraftMarker("taken", finished=True))
+
+    result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
+        NewWorkflowCommand(name=None, client="claude")
+    )
+
+    assert result.outcome is WorkflowOutcome.COLLISION
+    assert result.name == "taken"
+    assert result.draft_path == "/drafts/create-workflow_001"
+    assert workflows.deployed is None  # nothing moved
+
+
+def test_incomplete_when_the_marker_is_absent_or_unfinished() -> None:
+    workflows = FakeWorkflows(marker=DraftMarker("foo", finished=False))
+
+    result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
+        NewWorkflowCommand(name=None, client="claude")
+    )
+
+    assert result.outcome is WorkflowOutcome.INCOMPLETE
+    assert workflows.deployed is None
+
+
+def test_a_proposed_unusable_name_is_incomplete() -> None:
+    # The session declared it finished but named it something invalid — keep the draft.
+    workflows = FakeWorkflows(marker=DraftMarker("Bad Name", finished=True))
+
+    result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
+        NewWorkflowCommand(name=None, client="claude")
+    )
+
+    assert result.outcome is WorkflowOutcome.INCOMPLETE
+    assert workflows.deployed is None

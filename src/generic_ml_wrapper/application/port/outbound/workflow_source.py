@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+    from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 
 
 class WorkflowSourcePort(ABC):
@@ -59,6 +60,48 @@ class WorkflowSourcePort(ABC):
 
         Returns:
             The absolute path to the workflow's folder (whether or not it exists).
+        """
+
+    @abstractmethod
+    def create_draft(self, key: str) -> str:
+        """Create a scratch draft folder for an in-progress workflow.
+
+        A workflow is authored here (its name is decided at the end) before being
+        deployed into ``workflows/<name>/``. The draft lives outside ``workflows/`` so
+        a half-authored one never appears as runnable.
+
+        Args:
+            key: A unique key for the draft (the authoring session id).
+
+        Returns:
+            The absolute path to the created draft folder.
+        """
+
+    @abstractmethod
+    def read_draft_marker(self, draft_path: str) -> DraftMarker:
+        """Read the convergence marker an authoring session left in its draft folder.
+
+        Args:
+            draft_path: The draft folder returned by :meth:`create_draft`.
+
+        Returns:
+            The parsed marker; a missing or malformed one yields
+            ``DraftMarker(None, finished=False)`` (an incomplete draft).
+        """
+
+    @abstractmethod
+    def deploy_draft(self, draft_path: str, name: str) -> str:
+        """Move a finished draft into ``workflows/<name>/``.
+
+        The move is atomic (a directory rename on the same filesystem). The caller is
+        responsible for validating the name and confirming it is free first.
+
+        Args:
+            draft_path: The draft folder to deploy.
+            name: The workflow name to deploy it as.
+
+        Returns:
+            The absolute path to the deployed workflow folder.
         """
 
     @abstractmethod

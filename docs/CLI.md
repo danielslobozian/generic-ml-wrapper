@@ -16,7 +16,7 @@ gmlw jobs [--json]
 gmlw sessions <job> [--json]
 gmlw export <job> [--json]
 gmlw statusline                          # called by the client, not by hand
-gmlw workflow new <name> [--client X]
+gmlw workflow new [name] [--client X]    # name optional — proposed at the end
 gmlw workflow list [--json]
 gmlw persona list [--json]
 gmlw plugins list [--json]
@@ -212,7 +212,7 @@ status line is installed and parsed.
 Author and list workflows. Invoked with no action, prints its own help.
 
 ```
-gmlw workflow new <name> [--client CLIENT]
+gmlw workflow new [name] [--client CLIENT]
 gmlw workflow edit <name> [--client CLIENT]
 gmlw workflow list [--json]
 ```
@@ -220,16 +220,35 @@ gmlw workflow list [--json]
 ### workflow new
 
 Author a new workflow by running the shipped `create-workflow` meta-workflow as a
-metered authoring session (no job — it is hidden from `gmlw jobs`).
+metered authoring session (no job — it is hidden from `gmlw jobs`; sessions accumulate
+under `create-workflow`).
 
-- `name` (positional, required) — the new workflow's name.
+The workflow's name is decided at the **end** of the interview, not the start — forcing a
+name up front presumes you already know the shape. So authoring happens in a private draft
+folder under `~/.gmlw/drafts/`, and when the session marks the workflow finished, gmlw
+deploys the draft into `~/.gmlw/workflows/<name>/` (an atomic move). A half-authored
+workflow never appears in `workflow list` or `run`.
+
+- `name` (positional, **optional**) — a suggested name. Omit it and the authoring session
+  proposes one at convergence. When given, it is only a seed (the session may rename it),
+  but it lets a known name **fail fast** on a collision before any work is done.
 - `--client CLIENT` — which client to wrap; defaults to the configured default, or
   `claude`.
+
+On the return, gmlw reports how the draft resolved:
+
+- **deployed** — the workflow was named, finished, and moved into place; run it with
+  `gmlw run <name>`.
+- **name already taken** — the draft is kept under `~/.gmlw/drafts/`; change the existing
+  workflow with `gmlw workflow edit <name>` instead.
+- **not finished** — the session left no finished marker; the draft is kept so nothing is
+  lost.
 
 Example:
 
 ```
-gmlw workflow new tidy-review
+gmlw workflow new              # interview, name it at the end, gmlw deploys it
+gmlw workflow new tidy-review  # same, but seed the name (fails fast if it exists)
 ```
 
 ### workflow edit

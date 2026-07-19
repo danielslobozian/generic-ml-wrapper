@@ -5,6 +5,7 @@
 import pytest
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
@@ -64,6 +65,15 @@ class FakeWorkflows(WorkflowSourcePort):
 
     def folder(self, name: str) -> str:
         return f"/workflows/{name}"
+
+    def create_draft(self, key: str) -> str:
+        raise NotImplementedError
+
+    def read_draft_marker(self, draft_path: str) -> DraftMarker:
+        raise NotImplementedError
+
+    def deploy_draft(self, draft_path: str, name: str) -> str:
+        raise NotImplementedError
 
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         self.compiled.append((mode, name))

@@ -4,12 +4,15 @@
 
 from __future__ import annotations
 
+import json
 from importlib import resources
 from importlib.resources.abc import Traversable
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
+from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.model.rules import RULE_CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
@@ -19,7 +22,6 @@ from generic_ml_wrapper.common import config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
 
     from generic_ml_wrapper.application.port.outbound.context_compressor import (
         ContextCompressorPort,
@@ -32,6 +34,8 @@ _HIDDEN = frozenset({_COMMON, _META})
 _LEARNED_FILE = "learned.md"
 _LEARNED_DIR = "learned"
 _STRIP_SECTIONS = ("Origin", "Notes")
+_MARKER = "meta.json"
+_FINISHED = "finished"
 
 
 class FilesystemWorkflowSource(WorkflowSourcePort):
@@ -86,6 +90,9 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
                 ``"default"`` until the composition root injects :func:`config.default_role`.
         """
         self._root = root
+        # In-progress drafts live in a sibling root (``~/.gmlw/drafts``), so a half-
+        # authored workflow is never visible under ``workflows/`` until it is deployed.
+        self._drafts_root = root.parent / "drafts"
         self._profile_root = profile_root
         self._rules_root = rules_root
         self._interceptors = interceptors or InterceptorChain(())
@@ -162,6 +169,63 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             The absolute path to the workflow's folder.
         """
         return str(self._root / name)
+
+    def create_draft(self, key: str) -> str:
+        """Create ``<drafts>/<key>/`` (and its ``rules/`` folder).
+
+        Args:
+            key: A unique key for the draft (the authoring session id).
+
+        Returns:
+            The absolute path to the created draft folder.
+        """
+        folder = self._drafts_root / key
+        (folder / "rules").mkdir(parents=True, exist_ok=True)
+        return str(folder)
+
+    def read_draft_marker(self, draft_path: str) -> DraftMarker:
+        """Read ``<draft>/meta.json`` into a :class:`DraftMarker`, tolerantly.
+
+        A missing file, unreadable bytes, invalid JSON, or an unexpected shape all
+        yield ``DraftMarker(None, finished=False)`` — an incomplete draft, left in place.
+
+        Args:
+            draft_path: The draft folder returned by :meth:`create_draft`.
+
+        Returns:
+            The parsed marker.
+        """
+        marker = Path(draft_path) / _MARKER
+        try:
+            data: object = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return DraftMarker(None, finished=False)
+        if not isinstance(data, dict):
+            return DraftMarker(None, finished=False)
+        fields = cast("dict[str, object]", data)
+        raw_name = fields.get("name")
+        name = raw_name if isinstance(raw_name, str) and raw_name else None
+        return DraftMarker(name, finished=fields.get("status") == _FINISHED)
+
+    def deploy_draft(self, draft_path: str, name: str) -> str:
+        """Move a finished draft into ``<root>/<name>/`` (an atomic directory rename).
+
+        The transient marker is removed first so it does not linger in the deployed
+        workflow. The caller must have validated the name and confirmed it is free.
+
+        Args:
+            draft_path: The draft folder to deploy.
+            name: The workflow name to deploy it as.
+
+        Returns:
+            The absolute path to the deployed workflow folder.
+        """
+        draft = Path(draft_path)
+        (draft / _MARKER).unlink(missing_ok=True)
+        target = self._root / name
+        self._root.mkdir(parents=True, exist_ok=True)
+        draft.rename(target)
+        return str(target)
 
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         """Compose a run's operating context for a mode.

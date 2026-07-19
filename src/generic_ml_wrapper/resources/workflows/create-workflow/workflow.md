@@ -1,8 +1,9 @@
 # create-workflow
 
 *The meta-workflow: it interviews the user about a task they do repeatedly, then
-writes a new workflow into its folder so the wrapper can run it later. The new
-workflow's folder is your working directory — write the new files there.*
+writes a new workflow so the wrapper can run it later. You author in a private draft
+folder (your working directory); the workflow's name is decided at the end, not the
+start, and gmlw deploys the finished draft to its final home when you mark it done.*
 
 ## How to interview — be a warm, active listener
 
@@ -47,10 +48,21 @@ faster, cheaper, and reliable. Generate a script only where it genuinely simplif
 get the user's OK first, and leave the judgment steps to the AI.
 
 ### 4. Write workflow.md
-Write the steps to `workflow.md` in this folder, following the shape of this file
-(title, one-line purpose, numbered `## Steps`). For a scripted step, the instruction
-is to run its script; for a judgment step, the instruction is what to decide. Revise
-until they agree.
+Write the steps to `workflow.md` in your working directory (the draft folder), following
+the shape of this file (title, one-line purpose, numbered `## Steps`). For a scripted
+step, the instruction is to run its script; for a judgment step, the instruction is what
+to decide. Revise until they agree.
 
-### 5. Confirm
-Tell the user how to run it, then stop.
+### 5. Name it, and mark it finished
+Propose a short name for the workflow (lowercase letters, digits, and dashes) and confirm
+it with the user — this is the name they will `gmlw run`. Then write a `meta.json` file in
+your working directory:
+
+```json
+{"name": "<the-name>", "status": "finished"}
+```
+
+gmlw reads this when the session ends and deploys your draft to `workflows/<name>/`.
+Tell the user the workflow is ready and how to run it (`gmlw run <name>`), then stop.
+If the name they want is already taken, gmlw will keep the draft and point them at
+`gmlw workflow edit` instead.
