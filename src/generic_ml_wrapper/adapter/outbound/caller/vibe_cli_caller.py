@@ -16,6 +16,7 @@ from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_firs
 from generic_ml_wrapper.adapter.outbound.gateway import openai_chat
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -75,11 +76,11 @@ class VibeCliCaller(CliCaller):
         try:
             source_text = _VIBE_CONFIG.read_text(encoding="utf-8")
         except OSError as error:
-            log.warning(f"cannot read {_VIBE_CONFIG} ({error}); launching vibe unmetered")
+            log.warning(i18n.t("log.vibe_config_unreadable", config=_VIBE_CONFIG, error=error))
             return
         upstream = vibe_config.active_upstream(source_text)
         if upstream is None:
-            log.warning("could not resolve vibe's active-model upstream; launching unmetered")
+            log.warning(i18n.t("log.vibe_no_upstream"))
             return
         relay = MeteringRelay(
             job=self.run.job,
@@ -95,7 +96,7 @@ class VibeCliCaller(CliCaller):
         try:
             relay.start()
         except OSError as error:
-            log.warning(f"metering relay failed to start ({error}); launching vibe unmetered")
+            log.warning(i18n.t("log.vibe_relay_failed", error=error))
             return
         self._relay = relay
         home = Path(tempfile.mkdtemp(prefix="gmlw-vibe-"))

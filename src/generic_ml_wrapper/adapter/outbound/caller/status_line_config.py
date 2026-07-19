@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
 
 
@@ -113,7 +114,7 @@ def install_best_effort(path: Path, status_line: dict[str, object]) -> StatusLin
     try:
         return install(path, status_line)
     except OSError as error:
-        log.warning(f"could not install the status line at {path} ({error}); running without it")
+        log.warning(i18n.t("log.statusline_install_failed", path=path, error=error))
         return None
 
 
@@ -131,7 +132,7 @@ def restore(path: Path, snapshot: StatusLineSnapshot) -> None:
     try:
         settings = _load(path)
     except SettingsUnreadableError:
-        log.warning(f"leaving {path} untouched: it is no longer readable JSON")
+        log.warning(i18n.t("log.statusline_unreadable", path=path))
         return
     if settings.get("statusLine") != snapshot.installed:
         return  # a later run owns the statusLine now -- don't clobber its value

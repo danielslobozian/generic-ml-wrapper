@@ -186,6 +186,15 @@ over a live session.
   the client clears the screen) and inject it as a context instruction the client
   renders in-band, with live metadata (time, name, recent activity).
 - **`workflow edit`** — update an existing workflow, not only create.
+- **App-wide localisation** — the JSON string catalogue introduced for the 0.4.0 init
+  graduates from onboarding-scale copy to the *whole app*: **every** message the app
+  emits to the user **and every line it writes to a log** routes through the localiser, so
+  the running language governs all output rather than just the first run. Today only a
+  handful of modules speak through `i18n.t`; the rest are raw `print` / `logging` calls
+  hard-coded in English. The work is to funnel those through the catalogue, grow
+  `resources/i18n/<lang>.json` to cover them, and keep the English-merged fallback so an
+  untranslated key still degrades to English, never a raw key. Localising the logs too is
+  a deliberate choice — not the usual English-only-logs convention.
 - **Robustness** — clean interrupt/exit: catch Ctrl+C / an interrupt so leaving a client
   session ends cleanly instead of surfacing the child's raw error.
 

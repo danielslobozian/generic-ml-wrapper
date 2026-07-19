@@ -19,7 +19,7 @@ from generic_ml_cache_core.application.usecase.select_adapter_for_execution_serv
 )
 
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
-from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common import config, i18n, paths
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -64,12 +64,14 @@ class CacheBackedContextCompressor(ContextCompressorPort):
         try:
             prompt = Path(prompt_path).read_text(encoding="utf-8")
         except OSError as error:
-            log.warning(f"cannot read compress prompt {prompt_path!r} ({error}); skipping")
+            log.warning(
+                i18n.t("log.compress_prompt_unreadable", path=repr(prompt_path), error=error)
+            )
             return text
         try:
             execution = self._compress(text, prompt, settings)
         except Exception as error:  # noqa: BLE001  (a compile must never die on the cache/LLM)
-            log.warning(f"compression failed for {source_key!r} ({error}); leaving it uncompressed")
+            log.warning(i18n.t("log.compress_failed", source=repr(source_key), error=error))
             return text
         return _stdout(execution) or text
 

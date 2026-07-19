@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -46,4 +47,4 @@ class HookRunner:
             try:
                 hook.run(context)
             except Exception as error:  # noqa: BLE001  a hook must never break the run
-                log.warning(f"{phase} hook failed: {error}")
+                log.warning(i18n.t("log.hook_failed", phase=phase, error=error))

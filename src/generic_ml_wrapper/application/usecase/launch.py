@@ -17,6 +17,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.service.hook import HookContext, HookPhase
+from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -52,7 +53,7 @@ def run_with_hooks(caller: CliCaller, run: RunContext, hooks: HookRunner) -> int
         try:
             caller.end_metering()
         except Exception as error:  # noqa: BLE001  teardown must never crash the run
-            log.warning(f"metering teardown failed: {error}")
+            log.warning(i18n.t("log.metering_teardown_failed", error=error))
         hooks.run(HookPhase.POST_SESSION, _context(run, HookPhase.POST_SESSION, exit_code))
 
 

@@ -52,6 +52,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
+from generic_ml_wrapper.common.i18n import load_localizer
 
 
 class _RecordingBootstrap(Bootstrap):
@@ -269,6 +270,14 @@ def test_format_jobs_lists_each_summary() -> None:
     assert "2 job(s):" in text
     assert "JOB-1" in text
     assert "2 session(s)" in text
+
+
+def test_format_jobs_renders_through_an_injected_localiser() -> None:
+    # The renderers take an explicit localiser so app-wide localisation is testable
+    # without mutating the process-global active language.
+    french = load_localizer("fr")
+    assert "Aucun job" in app.format_jobs([], loc=french)
+    assert "Aucun usage" in app.format_usage(UsageReport("JOB-1"), loc=french)
 
 
 def test_jobs_command_prints_the_summaries(
