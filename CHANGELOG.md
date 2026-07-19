@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-19
+
+The first-run release — a mandatory `init` that establishes the model the rest of the app
+runs on, migrates the on-disk layout to match, and settles a working client before the
+first session.
+
 ### Added
 - **Guided client setup.** The init client step is no longer a silent chooser — it always
   talks the choice through. It lists each installed client with its version, and when a
@@ -171,7 +177,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/danielslobozian/generic-ml-wrapper/releases/tag/v0.1.0
