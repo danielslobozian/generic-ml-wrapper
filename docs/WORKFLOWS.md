@@ -20,7 +20,17 @@ session (kind `authoring`, so it stays hidden from `gmlw jobs`; sessions accumul
 under `create-workflow`). The name is decided at the **end** of the interview, not the
 start — a name given up front is only a seed you can change (though it lets a known name
 fail fast if it is already taken). It is a warm, one-question-at-a-time interview, not a
-form. It:
+form.
+
+**Guided or quick.** Creating a workflow well is the part that pays off — a well-shaped
+one makes every future run smoother — so at the start you choose the depth: **guided**
+adds a facilitative consultant (a parking lot for tangents, a diverge→converge rhythm,
+process-leveling on "is this a step or its own workflow?", and proposing the stages you
+left out), keeping a `draft.md` and `parking-lot.md` on disk so a long session survives
+compaction — richer, and a bit costlier. **quick** is the lean interview. An interactive
+run asks (Enter takes guided); `--guided` / `--quick` answer up front, and a
+non-interactive run defaults to quick. The steps below are the quick core; guided layers
+on top of them. It:
 
 1. **Interviews you** about a task you do repeatedly — what it's for, how you do it
    today start to finish, what "done" looks like, and what you always check. It keeps

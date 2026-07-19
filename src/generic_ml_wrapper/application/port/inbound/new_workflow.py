@@ -19,10 +19,13 @@ class NewWorkflowCommand:
             seed — the session may rename it, and the final name comes from the draft
             marker — but it lets a known name fail fast on a collision before any work.
         client: The client to run the authoring session on.
+        guided: Whether to add the guided-facilitation layer (a richer, costlier
+            authoring experience) on top of the core interview.
     """
 
     name: str | None
     client: str
+    guided: bool = False
 
 
 class WorkflowOutcome(Enum):

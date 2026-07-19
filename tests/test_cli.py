@@ -1068,6 +1068,33 @@ def test_workflow_new_reports_an_incomplete_draft(
     assert "/drafts/create-workflow_002" in err  # the kept draft is surfaced
 
 
+def test_workflow_new_guided_flag_sets_guided(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, NewWorkflowCommand] = {}
+    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
+    assert app.main(["workflow", "new", "--guided"]) == 0
+    assert seen["command"].guided is True
+
+
+def test_workflow_new_quick_flag_unsets_guided(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, NewWorkflowCommand] = {}
+    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
+    assert app.main(["workflow", "new", "--quick"]) == 0
+    assert seen["command"].guided is False
+
+
+def test_workflow_new_off_a_tty_defaults_to_quick(monkeypatch: pytest.MonkeyPatch) -> None:
+    # No flag + no terminal (tests) -> the guided chooser declines -> lean interview.
+    seen: dict[str, NewWorkflowCommand] = {}
+    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
+    assert app.main(["workflow", "new"]) == 0
+    assert seen["command"].guided is False
+
+
+def test_workflow_new_guided_and_quick_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit):  # argparse rejects both at once
+        app.build_parser().parse_args(["workflow", "new", "--guided", "--quick"])
+
+
 def test_build_new_workflow_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_new_workflow(), NewWorkflow)
 

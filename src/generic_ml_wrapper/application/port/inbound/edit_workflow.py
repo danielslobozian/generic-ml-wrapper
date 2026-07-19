@@ -15,10 +15,13 @@ class EditWorkflowCommand:
     Attributes:
         name: The workflow to edit (lowercase letters, digits, dashes).
         client: The client to run the authoring session on.
+        guided: Whether to add the guided-facilitation layer (a richer, costlier
+            authoring experience) on top of the core interview.
     """
 
     name: str
     client: str
+    guided: bool = False
 
 
 class WorkflowNotFoundError(ValueError):

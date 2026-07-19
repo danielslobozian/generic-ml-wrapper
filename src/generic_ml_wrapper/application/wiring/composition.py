@@ -24,6 +24,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner imp
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
@@ -312,6 +313,15 @@ def build_workflow_chooser() -> TtyWorkflowChooser:
         A terminal chooser that offers the runnable workflows, or declines off a TTY.
     """
     return TtyWorkflowChooser(build_localizer())
+
+
+def build_guided_chooser() -> TtyGuidedChooser:
+    """Build the guided-vs-quick authoring chooser for ``workflow new`` / ``edit``.
+
+    Returns:
+        A terminal chooser that asks whether to author with the guided experience.
+    """
+    return TtyGuidedChooser(build_localizer())
 
 
 def build_set_credential() -> SetCredential:

@@ -36,6 +36,7 @@ _LEARNED_DIR = "learned"
 _STRIP_SECTIONS = ("Origin", "Notes")
 _MARKER = "meta.json"
 _FINISHED = "finished"
+_GUIDE = "guided.md"
 
 
 class FilesystemWorkflowSource(WorkflowSourcePort):
@@ -226,6 +227,10 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self._root.mkdir(parents=True, exist_ok=True)
         draft.rename(target)
         return str(target)
+
+    def meta_guide(self) -> str:
+        """Return the create-workflow guided supplement (``guided.md``), or ``""``."""
+        return self._read(self._root / _META / _GUIDE)
 
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         """Compose a run's operating context for a mode.

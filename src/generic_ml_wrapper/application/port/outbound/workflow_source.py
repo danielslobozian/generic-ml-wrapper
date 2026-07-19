@@ -105,6 +105,17 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
+    def meta_guide(self) -> str:
+        """Return the create-workflow guided-facilitation supplement, or ``""``.
+
+        The facilitation layer injected on top of the core interview when a user picks
+        the guided authoring experience. Absent (empty) if the file is not present.
+
+        Returns:
+            The guide text, or ``""`` when there is none.
+        """
+
+    @abstractmethod
     def compile(self, mode: CompileMode, name: str | None = None) -> str:
         """Compile a run's operating context for a mode.
 
