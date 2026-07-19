@@ -16,10 +16,16 @@ import sys
 from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
+from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
+    TOPICS,
+    render_topic,
+    render_topic_list,
+)
+from generic_ml_wrapper.adapter.inbound.cli.index import render_index
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
@@ -79,6 +85,11 @@ from generic_ml_wrapper.common.log import configure as configure_logging
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
 
+if TYPE_CHECKING:
+    # argparse does not publicly export the type ``add_subparsers`` returns; alias it once
+    # (the private reference is confined here) so the parser-builder helpers can type it.
+    _SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]  # pyright: ignore[reportPrivateUsage]
+
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--json`` flag to a read command's parser."""
@@ -101,6 +112,7 @@ _COMMANDS = frozenset(
         "plugins",
         "creds",
         "config",
+        "help",
     }
 )
 
@@ -251,6 +263,13 @@ def build_parser() -> argparse.ArgumentParser:
     creds_set.add_argument("workflow", help="the workflow the credential belongs to")
     creds_set.add_argument("name", help="the environment-variable name to export at launch")
 
+    _add_config_parser(sub)
+    _add_help_parser(sub)
+    return parser
+
+
+def _add_config_parser(sub: _SubParsers) -> None:
+    """Add the ``config`` command (list/get/set) to the top-level subparsers."""
     config_parser = sub.add_parser("config", help="view or change gmlw settings")
     config_sub = config_parser.add_subparsers(dest="config_command", metavar="<action>")
     config_list = config_sub.add_parser("list", help="list every setting and its value")
@@ -261,7 +280,18 @@ def build_parser() -> argparse.ArgumentParser:
     config_set = config_sub.add_parser("set", help="change one setting")
     config_set.add_argument("key", help="the dotted setting key")
     config_set.add_argument("value", help="the new value (use 'none' to clear an optional key)")
-    return parser
+
+
+def _add_help_parser(sub: _SubParsers) -> None:
+    """Add the ``help`` command (topic explainers) to the top-level subparsers."""
+    help_parser = sub.add_parser("help", help="explain a core concept (see: gmlw help)")
+    help_parser.add_argument(
+        "topic",
+        nargs="?",
+        default=None,
+        metavar="<topic>",
+        help=f"the concept to explain ({', '.join(TOPICS)}); omit to list the topics",
+    )
 
 
 def format_jobs(summaries: list[JobSummary], loc: i18n.Localizer | None = None) -> str:
@@ -484,7 +514,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     # forced setup before the requested command runs. `gmlw init` is exempt — it *is* the
     # setup, run by the dispatch below; bootstrapping ahead of it would seed a config that
     # init then mistook for a legacy one. Once initialised, just ensure the layout.
-    if args.command not in (None, "statusline"):
+    if args.command not in (None, "statusline", "help"):
         needs_init = config.init_version() is None
         if needs_init and args.command != "init":
             _announce_init(build_init().execute())
@@ -497,6 +527,10 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command != "init":
             _announce_migration(build_migrate_layout().execute())
     try:
+        if args.command is None:  # bare `gmlw`: first run → init, thereafter → the index
+            return _index()
+        if args.command == "help":
+            return _help(args)
         if args.command == "init":
             _announce_init(build_init().execute())
             _announce_migration(build_migrate_layout().execute())
@@ -590,6 +624,35 @@ def _announce_migration(report: MigrationReport) -> None:
             ),
             file=sys.stderr,
         )
+
+
+def _index() -> int:
+    """Bare ``gmlw``: run the forced setup on a fresh install, else show the index.
+
+    Mirrors the gate's first-run behaviour (init once, then the layout migration) so a
+    brand-new user is set up; on an initialised install it prints the grouped capability
+    index instead of the raw argparse help.
+    """
+    if config.init_version() is None:  # first run — funnel through the forced setup
+        _announce_init(build_init().execute())
+        _announce_migration(build_migrate_layout().execute())
+        return 0
+    print(render_index(i18n.active()))
+    return 0
+
+
+def _help(args: argparse.Namespace) -> int:
+    """``gmlw help`` lists the topics; ``gmlw help <topic>`` explains one."""
+    loc = i18n.active()
+    if args.topic is None:
+        print(render_topic_list(loc))
+        return 0
+    body = render_topic(loc, args.topic)
+    if body is None:
+        print(i18n.t("help.unknown", topic=args.topic), file=sys.stderr)
+        return 2
+    print(body)
+    return 0
 
 
 def _view(args: argparse.Namespace) -> str | None:

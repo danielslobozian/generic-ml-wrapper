@@ -153,6 +153,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "plugins": ["plugins"],
         "creds": ["creds"],
         "config": ["config"],
+        "help": ["help"],
     }
     assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
     for command, argv in samples.items():
@@ -198,11 +199,57 @@ def test_client_defaults_to_config_when_flag_absent() -> None:
     assert app._client("cursor") == "cursor"
 
 
-def test_no_command_prints_help_with_banner(capsys: pytest.CaptureFixture[str]) -> None:
+def test_bare_gmlw_shows_the_capability_index(capsys: pytest.CaptureFixture[str]) -> None:
+    # Initialised install (fixture pins init_version): bare gmlw shows the grouped index,
+    # not the raw argparse help.
     assert app.main([]) == 0
     out = capsys.readouterr().out
-    assert "start" in out
-    assert "a wrapper around an ML coding CLI" in out  # banner in the help description
+    assert "launch" in out  # the groups
+    assert "inspect" in out
+    assert "author" in out
+    assert "gmlw help <topic>" in out  # the next-action footer
+
+
+def test_bare_gmlw_on_a_fresh_install_runs_init(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # First run (no init marker): bare gmlw funnels through the forced setup, not the index.
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    seen: list[str] = []
+
+    class _Init(Init):
+        def execute(self) -> InitOutcome:
+            seen.append("init")
+            return InitOutcome(fresh=True, language="en", name="Dan", role="default",
+                               environment="work", client="claude", persona=None,
+                               found=["claude"])
+
+    monkeypatch.setattr(app, "build_init", lambda: _Init())
+    assert app.main([]) == 0
+    assert seen == ["init"]
+
+
+def test_help_lists_topics(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["help"]) == 0
+    out = capsys.readouterr().out
+    assert "job-vs-workflow" in out
+    assert "cost" in out
+
+
+def test_help_prints_a_topic(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["help", "cost"]) == 0
+    assert "metered" in capsys.readouterr().out
+
+
+def test_help_unknown_topic_errors(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["help", "nope"]) == 2
+    assert "no help topic" in capsys.readouterr().err
+
+
+def test_explicit_help_flag_still_shows_argparse(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        app.main(["--help"])
+    assert "a wrapper around an ML coding CLI" in capsys.readouterr().out  # argparse banner
 
 
 def test_start_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -323,6 +323,24 @@ The home for changing `default_role` / `default_environment` after `init`.
 
 ---
 
+## help
+
+Explain a core concept. `gmlw help` lists the topics; `gmlw help <topic>` prints one.
+
+```
+gmlw help
+gmlw help <topic>
+```
+
+- `topic` (positional, optional) — one of `job-vs-workflow`, `start-vs-run`, `personas`,
+  `cost`. Omit to list the topics. An unknown topic exits non-zero with guidance.
+
+Bare `gmlw` (no arguments) is first-run-aware: on a fresh install it runs `init`;
+thereafter it prints a grouped capability index (**launch / inspect / author**) with a
+next-action footer. The flat argparse view is still available via `gmlw --help`.
+
+---
+
 ## See also
 
 - [USER_GUIDE.md](USER_GUIDE.md) — task-oriented walkthrough.
