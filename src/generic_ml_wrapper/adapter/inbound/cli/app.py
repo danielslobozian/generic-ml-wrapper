@@ -30,11 +30,12 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     JobId,
     WorkflowName,
 )
+from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
-from generic_ml_wrapper.application.port.inbound.first_run_init import FirstRunOutcome
+from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -52,12 +53,13 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
     build_export_usage,
-    build_first_run_init,
+    build_init,
     build_list_jobs,
     build_list_personas,
     build_list_plugins,
     build_list_sessions,
     build_list_workflows,
+    build_migrate_layout,
     build_new_workflow,
     build_render_greeting,
     build_render_statusline,
@@ -79,7 +81,18 @@ def _add_json_flag(parser: argparse.ArgumentParser) -> None:
 # is treated as a job name — `gmlw <job>` is shorthand for `gmlw start <job>`. Kept in
 # sync with build_parser by a test.
 _COMMANDS = frozenset(
-    {"start", "jobs", "sessions", "export", "statusline", "workflow", "persona", "plugins", "creds"}
+    {
+        "init",
+        "start",
+        "jobs",
+        "sessions",
+        "export",
+        "statusline",
+        "workflow",
+        "persona",
+        "plugins",
+        "creds",
+    }
 )
 
 
@@ -162,6 +175,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=_version_string())
     sub = parser.add_subparsers(dest="command", metavar="<command>")
+
+    sub.add_parser(
+        "init",
+        help="set up gmlw (language, name, role, environment, persona, client)",
+    )
 
     start = sub.add_parser("start", help="start or resume a session on a job")
     start.add_argument("job", nargs="?", default=None, help="the job identifier")
@@ -395,13 +413,28 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
     if _incomplete_command_help(parser, args):  # e.g. `gmlw workflow` -> show its help
         return 0
-    # Self-initialize on a real command; skip the statusline hot path and bare help.
+    # The init gate: on a real command (not the statusline hot path or bare help), an
+    # un-initialised or legacy install (`[init] version` absent) is funnelled through the
+    # forced setup before the requested command runs. `gmlw init` is exempt — it *is* the
+    # setup, run by the dispatch below; bootstrapping ahead of it would seed a config that
+    # init then mistook for a legacy one. Once initialised, just ensure the layout.
     if args.command not in (None, "statusline"):
-        if config.config_exists():
+        needs_init = config.init_version() is None
+        if needs_init and args.command != "init":
+            _announce_init(build_init().execute())
+        elif not needs_init:
             build_bootstrap().execute()
-        else:  # first run: detect clients, seed a config with a default baked in
-            _announce_first_run(build_first_run_init().execute())
+        # Wrap the old profile/company layout into the active environment. Runs after init
+        # has persisted the environment (or reads the existing one), once per command, and
+        # is a no-op once the old layout is gone — catching installs initialised before the
+        # migration existed. The `init` command runs its own below (after it writes config).
+        if args.command != "init":
+            _announce_migration(build_migrate_layout().execute())
     try:
+        if args.command == "init":
+            _announce_init(build_init().execute())
+            _announce_migration(build_migrate_layout().execute())
+            return 0
         if args.command == "start":
             return _start(args)
         if args.command == "statusline":
@@ -430,23 +463,33 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     return 0
 
 
-def _announce_first_run(outcome: FirstRunOutcome) -> None:
-    """Narrate first-run init to stderr (stdout stays clean for view/--json output).
+def _announce_init(outcome: InitOutcome) -> None:
+    """Narrate the init pass to stderr (stdout stays clean for view/--json output).
 
     Args:
-        outcome: What first-run init found and chose.
+        outcome: What the init interview decided.
     """
-    if outcome.chosen is not None:
+    if outcome.fresh:
         print(
-            f"gmlw: first run — set '{outcome.chosen}' as your default client. "
-            "Change it any time in ~/.gmlw/config.toml.",
+            f"gmlw: set up — speaking {outcome.language}, calling you {outcome.name}, "
+            f"role '{outcome.role}' on '{outcome.environment}'. "
+            "Change any of it in ~/.gmlw/config.toml.",
+            file=sys.stderr,
+        )
+    else:  # legacy install: only the gate marker was written into the existing config
+        print(
+            "gmlw: existing setup marked initialised — your ~/.gmlw/config.toml is left unchanged.",
+            file=sys.stderr,
+        )
+    if outcome.client is not None:
+        print(
+            f"gmlw: default client '{outcome.client}'. Change it in ~/.gmlw/config.toml.",
             file=sys.stderr,
         )
     elif not outcome.found:
         print(
-            "gmlw: first run — no supported client found on your PATH "
-            "(claude, cursor-agent, codex, vibe). Seeded ~/.gmlw/config.toml; "
-            "install one or set [client] default there.",
+            "gmlw: no supported client found on your PATH (claude, cursor-agent, codex, "
+            "vibe). Install one or set [client] default in ~/.gmlw/config.toml.",
             file=sys.stderr,
         )
     if outcome.persona is not None:
@@ -454,8 +497,29 @@ def _announce_first_run(outcome: FirstRunOutcome) -> None:
             f"gmlw: persona '{outcome.persona}' selected — it will greet you at launch.",
             file=sys.stderr,
         )
-    # Several found but none chosen (non-interactive): stay silent; the built-in
-    # 'claude' default applies and the seeded config records nothing to undo.
+
+
+def _announce_migration(report: MigrationReport) -> None:
+    """Narrate a layout migration to stderr, only when it actually moved or skipped.
+
+    Args:
+        report: What the migration relocated into the environment (and left behind).
+    """
+    if not report.did_anything:
+        return
+    if report.moved:
+        print(
+            f"gmlw: migrated {len(report.moved)} item(s) from profile/company into "
+            f"environments/{report.environment}: {', '.join(report.moved)}.",
+            file=sys.stderr,
+        )
+    if report.skipped:  # a same-named entry already existed at the target — never overwritten
+        print(
+            f"gmlw: left {len(report.skipped)} item(s) in profile/company "
+            f"(already present in environments/{report.environment}): "
+            f"{', '.join(report.skipped)}.",
+            file=sys.stderr,
+        )
 
 
 def _view(args: argparse.Namespace) -> str | None:

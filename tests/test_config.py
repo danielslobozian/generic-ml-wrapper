@@ -29,6 +29,31 @@ def test_malformed_config_falls_back(tmp_path: Path) -> None:
     assert config.caller_overrides(path) == {}
 
 
+def test_init_version_is_none_when_unmarked(tmp_path: Path) -> None:
+    assert config.init_version(tmp_path / "missing.toml") is None  # fresh
+    assert config.init_version(_write(tmp_path, '[client]\ndefault = "cursor"\n')) is None  # legacy
+
+
+def test_init_version_reads_the_marker(tmp_path: Path) -> None:
+    assert config.init_version(_write(tmp_path, '[init]\nversion = "0.4.0"\n')) == "0.4.0"
+
+
+def test_language_reads_config_and_is_none_when_absent(tmp_path: Path) -> None:
+    assert config.language(tmp_path / "missing.toml") is None
+    assert config.language(_write(tmp_path, '[language]\ncode = "fr"\n')) == "fr"
+
+
+def test_default_role_reads_config_and_defaults(tmp_path: Path) -> None:
+    assert config.default_role(tmp_path / "missing.toml") == "default"
+    assert config.default_role(_write(tmp_path, '[profile]\ndefault_role = "qa"\n')) == "qa"
+
+
+def test_default_environment_reads_config_and_defaults(tmp_path: Path) -> None:
+    assert config.default_environment(tmp_path / "missing.toml") == "work"
+    path = _write(tmp_path, '[profile]\ndefault_environment = "open-source"\n')
+    assert config.default_environment(path) == "open-source"
+
+
 def test_caller_overrides_are_read(tmp_path: Path) -> None:
     path = _write(tmp_path, '[callers]\ncursor = "my_pkg.mod:MyCaller"\nclaude = 3\n')
     # only string values survive; the bogus int entry is dropped

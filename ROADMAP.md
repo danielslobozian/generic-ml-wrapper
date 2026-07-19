@@ -86,37 +86,90 @@ start:
   step-codeability logic (create-workflow) generalised from workflow steps to rules, and
   a natural future `pre-launch` hook consumer.
 
-### 0.4.0 — discoverability & first-run: getting captivated fast
-Reframed around the real metric for a new user: **time to a first live session.**
-Captivation lives in the model session, not the wrapper — so the job is to remove
-everything between a stranger and that first response, then reveal depth *gradually*
-(progressive disclosure). Because the wrapper cedes the screen to the client, discovery
-lives in the thin surfaces **around** a run — pre-launch, run-and-return commands, the
-return, and ambient context pushed *into* the client — never a persistent UI over a
-live session.
+### 0.4.0 — first run: the forced setup that shapes every session
+One job, done properly: a **mandatory `init`** every user passes through once — new or
+existing — because it establishes the model the rest of the app runs on and migrates the
+on-disk layout to match. It is a *forced update*: the old single-context folder layout is
+wrapped into the new one non-destructively, and role + environment are chosen before the
+first session. The discoverability work that used to sit here has moved to 0.5.0; this
+release is the init and the two concepts under it.
 
-- **First-run onboarding** — on first launch, a greeting instead of the help menu:
-  *"looks like your first time — set up (about a minute), or skip? (`gmlw init`
-  anytime)."* Setup establishes the two things that shape every later run:
-  - **A working client** — the one hard requirement (no client, no session). *Fast path*
-    when a client is already installed and authenticated: detect it and reach a session
-    in seconds. *Guided path* when none is: a subscription→client mapping (*"do you pay
-    for Claude / ChatGPT / Cursor / Mistral?"* → the matching supported client CLI), a
-    link/script to install, and **guide-and-verify auth** — print the exact login
-    command, then poll readiness until it goes green (guide, don't drive the login).
-  - **A default persona** — the experience-defining choice (otherwise every launch needs
-    a flag). Picked from **static previews** (sample lines per persona), not a live
-    model quiz, so choosing costs nothing.
-- **Bare `gmlw` is first-run-aware** — first time → the greeting/onboarding; thereafter →
-  a grouped capability index (*launch / inspect / author*), with `gmlw help <topic>` for
-  the core concepts (job vs workflow, start vs run, personas, cost). `--help` keeps the
-  argparse view; every listing ends with a next-action footer.
-- **Config registry** — one typed source of truth (a `pydantic-settings` model) for
-  every setting: key, type, default, allowed values, description. It replaces the
-  hand-rolled accessors, and every surface (help, `config`, per-workflow settings)
-  renders from it — so the config file no longer has to be pre-populated to be found.
+**The movie-set model.** A launch composes four axes — three describe *you and your
+context* (they become the briefing the wrapper hands the companion), one describes *the
+companion itself*:
+
+- **Me — the actor.** Who you are, invariant across everything: name, language, the
+  journal. Spans every launch.
+- **Role — the character.** The functional hat you're wearing (software engineer, product
+  owner, QA, a private individual buying groceries). A *lens over `me`*, not a copy — it
+  parameterises the `me`-extraction (which facets are in scope) and scopes rules/learned.
+  You stay one person; you play different parts.
+- **Environment — the movie set.** Where the work happens (work-at-a-company, a personal
+  project, open source). It swaps the *place-specific context* — today's forced `company`
+  becomes one environment's bucket. Changing environment changes the set and the
+  guidelines, not who you are.
+- **Persona — the director.** The one entity you actually talk to: the companion. Persona
+  is *its* manner (manner over method — see 0.6.0).
+
+gmlw itself is the **stage organiser / assistant director**: it builds the set, arranges
+costume and makeup, briefs the director, then cedes the screen ([[wrapper-not-standalone]]).
+
+- **Forced init (`gmlw init`, and the gate)** — init is both a command and a first-class
+  gate: a stored marker records that it ran, and bare `gmlw` routes an un-initialised or
+  old-layout install into it before anything else runs. It captures, in order, **language
+  → name → role → environment → persona**, then does the technical client step. Each
+  answer carries a sensible default so the forced pass stays short.
+- **Two new concepts — role & environment** — the two axes above, made real: `default_role`
+  and `default_environment` in `config.toml` (read directly — no registry yet), a
+  `profile/roles/<role>/` folder for role-scoped rules/learned, and an
+  `environments/<env>/` folder for place-specific context. Both are changeable later (via
+  the `config` commands landing in 0.5.0). This **resolves the parked _profiles_ fork** —
+  `me` spans, role is a lens over it, environment is the external place — by splitting one
+  container into two orthogonal axes.
+- **Forced migration** — the existing global layout (`profile/company`, single-context
+  `rules`) is wrapped non-destructively into the new shape — `profile/company` →
+  `environments/work/`, a `default` role seeded — surfacing exactly what moved
+  ([[no-silent-removals]]). No install is left on the old layout.
+- **Localised setup (EN / FR)** — onboarding strings move into a keyed language file
+  (`i18n/en.*`, `i18n/fr.*`) read through a small `t(key, lang)` lookup with English
+  fallback; the default is seeded from `$LANG`. Mechanism built to extend; content scoped
+  to onboarding for now.
+- **`language` — our voice only** — a `language` setting fixes the language gmlw speaks to
+  *you* (onboarding now, receipts/help later). It does **not** force the companion's
+  language: only Claude Code exposes a real language setting; Cursor, Codex and Vibe have
+  none, so pushing it would be a leaky per-client hack for one client out of four. gmlw
+  speaks your language; the companion stays as its own config leaves it.
+- **A working client — the one hard requirement** — after the human setup, the technical
+  step. *Fast path*: detect an installed, authenticated client and reach a session in
+  seconds. *Guided path* when none is found: a subscription→client map (*"do you pay for
+  Claude / ChatGPT / Cursor / Mistral?"*), the **official install command for the detected
+  OS** (Windows / Linux / macOS), and **guide-and-verify auth** — print the exact login
+  command, poll readiness until it goes green (guide, don't drive).
+- **A default persona** — the experience-defining choice, from **static previews** (sample
+  lines per persona), so choosing costs nothing.
+
+Deferred but homed: a detached model call to synthesise a `role.md` for an unfamiliar role
+(e.g. product owner) is a natural future consumer of the 0.3.0 `pre-launch` seam — parked,
+not built.
+
+### 0.5.0 — discoverability & progressive disclosure
+Reframed around the real metric for a new user: **time to a first live session**, and then
+revealing depth *gradually* rather than dumping it up front. Because the wrapper cedes the
+screen to the client, discovery lives in the thin surfaces **around** a run — bare-command
+indexes, the return, and ambient context pushed *into* the client — never a persistent UI
+over a live session.
+
+- **Bare `gmlw` is first-run-aware** — first time → the 0.4.0 init; thereafter → a grouped
+  capability index (*launch / inspect / author*), with `gmlw help <topic>` for the core
+  concepts (job vs workflow, start vs run, personas, cost). `--help` keeps the argparse
+  view; every listing ends with a next-action footer.
+- **Config registry** — one typed source of truth (a `pydantic-settings` model) for every
+  setting: key, type, default, allowed values, description. It replaces the hand-rolled
+  accessors, and every surface (help, `config`, per-workflow settings, the 0.4.0
+  role/environment keys) renders from it.
 - **`config` commands** — `config list / get / set`, rendering the registry with inline
-  allowed-value validation.
+  allowed-value validation. The home for changing `default_role` / `default_environment`
+  after init.
 - **`--version`** — surface the running version.
 - **Progressive disclosure** — depth is revealed over time, not dumped up front:
   - **Exit receipt** — on the return (client exit), a persistent summary: this session's
@@ -134,7 +187,7 @@ live session.
 - **Robustness** — clean interrupt/exit: catch Ctrl+C / an interrupt so leaving a client
   session ends cleanly instead of surfacing the child's raw error.
 
-### 0.5.0 — the workflow, first-class
+### 0.6.0 — the workflow, first-class
 Two ways people relate to a workflow: *applied to a job* (a ticket it treats), or *the
 recurring job itself* (a repeatable extraction). Make both first-class, and make
 authoring one a guided conversation — because most people don't arrive with a clear

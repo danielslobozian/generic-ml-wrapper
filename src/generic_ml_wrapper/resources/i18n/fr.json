@@ -1,0 +1,13 @@
+{
+  "prompt.pick_default": "Choisissez un numéro [{range}, défaut {default}] : ",
+  "prompt.pick_skippable": "Choisissez un numéro [{range}, Entrée pour passer] : ",
+  "prompt.pick_plain": "Choisissez un numéro [{range}] : ",
+  "prompt.not_in_range": "« {reply} » n'est pas parmi {range}.",
+  "prompt.ask_text": "[défaut {default}] : ",
+  "init.language.header": "gmlw : premier lancement — quelle langue dois-je vous parler ?",
+  "init.name.header": "gmlw : comment dois-je vous appeler ?",
+  "init.role.header": "gmlw : quel rôle occupez-vous ? (votre casquette fonctionnelle)",
+  "init.environment.header": "gmlw : où se déroule ce travail ? (votre environnement)",
+  "init.client.header": "gmlw : premier lancement — quel client dois-je encapsuler par défaut ?",
+  "init.persona.header": "gmlw : choisissez une persona (sa voix vous accueille et peut adapter le ton) ?"
+}

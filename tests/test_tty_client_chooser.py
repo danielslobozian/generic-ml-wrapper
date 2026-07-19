@@ -6,8 +6,11 @@ import io
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.bootstrap import tty_client_chooser
+from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_chooser import TtyClientChooser
+from generic_ml_wrapper.common.i18n import load_localizer
+
+_I18N = load_localizer("en")
 
 
 class _Tty(io.StringIO):
@@ -18,22 +21,22 @@ class _Tty(io.StringIO):
 
 
 def _wire(monkeypatch: pytest.MonkeyPatch, *, stdin: str, tty: bool = True) -> io.StringIO:
-    """Point the chooser's stdin/stderr at fakes; return the captured stderr."""
+    """Point the shared prompt's stdin/stderr at fakes; return the captured stderr."""
     stdin_stream: io.StringIO = _Tty(stdin) if tty else io.StringIO(stdin)
     err: io.StringIO = _Tty() if tty else io.StringIO()
-    monkeypatch.setattr(tty_client_chooser.sys, "stdin", stdin_stream)
-    monkeypatch.setattr(tty_client_chooser.sys, "stderr", err)
+    monkeypatch.setattr(tty_prompt.sys, "stdin", stdin_stream)
+    monkeypatch.setattr(tty_prompt.sys, "stderr", err)
     return err
 
 
 def test_declines_when_not_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="1\n", tty=False)
-    assert TtyClientChooser().choose(["claude", "cursor"]) is None
+    assert TtyClientChooser(_I18N).choose(["claude", "cursor"]) is None
 
 
 def test_empty_line_takes_the_first_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
     err = _wire(monkeypatch, stdin="\n")
-    assert TtyClientChooser().choose(["claude", "cursor"]) == "claude"
+    assert TtyClientChooser(_I18N).choose(["claude", "cursor"]) == "claude"
     prompt = err.getvalue()
     assert "1) claude" in prompt
     assert "2) cursor" in prompt
@@ -41,15 +44,15 @@ def test_empty_line_takes_the_first_candidate(monkeypatch: pytest.MonkeyPatch) -
 
 def test_a_number_selects_that_candidate(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="2\n")
-    assert TtyClientChooser().choose(["claude", "cursor", "codex"]) == "cursor"
+    assert TtyClientChooser(_I18N).choose(["claude", "cursor", "codex"]) == "cursor"
 
 
 def test_reprompts_on_an_out_of_range_answer(monkeypatch: pytest.MonkeyPatch) -> None:
     err = _wire(monkeypatch, stdin="9\nfoo\n2\n")
-    assert TtyClientChooser().choose(["claude", "cursor"]) == "cursor"
+    assert TtyClientChooser(_I18N).choose(["claude", "cursor"]) == "cursor"
     assert "not one of 1-2" in err.getvalue()
 
 
 def test_declines_on_end_of_input(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="")  # EOF immediately
-    assert TtyClientChooser().choose(["claude", "cursor"]) is None
+    assert TtyClientChooser(_I18N).choose(["claude", "cursor"]) is None

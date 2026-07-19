@@ -16,6 +16,9 @@ CONTEXTS = HOME / "contexts"
 TRANSCRIPTS = HOME / "transcripts"
 WORKFLOWS = HOME / "workflows"
 PROFILE = HOME / "profile"
+# Place-specific context, one folder per environment (the movie set). The old single
+# profile/company folder is migrated into environments/<default_environment>/ on init.
+ENVIRONMENTS = HOME / "environments"
 RULES = HOME / "rules"
 # The personas folder: one persona per file; the selected one is injected as a source.
 PERSONAS = HOME / "personas"

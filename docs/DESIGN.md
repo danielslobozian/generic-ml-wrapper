@@ -257,7 +257,8 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
   as a normal (metered) authoring session, kept out of `gmlw jobs`.
 
 Hidden folders `_common` and `create-workflow` are not listed as runnable workflows;
-`profile/` has `me/` and `company/` subdirs.
+`profile/` has a `me/` subdir (place-specific context lives per-environment under
+`environments/<env>/` — the old `profile/company/` is migrated there on first run).
 
 ## 11. Config — `~/.gmlw/config.toml`
 
@@ -300,7 +301,8 @@ Created owner-only (`0700`) on first run:
   contexts/<job>/<session>.context.md   the context a session launched with
   transcripts/<job>/<session>/    opt-in per-call in/out/usage trio
   workflows/  _common/ · create-workflow/ · <name>/
-  profile/    me/*.md (incl. learned.md) · company/*.md
+  profile/    me/*.md (incl. learned.md)
+  environments/<env>/*.md           place-specific context (migrated from profile/company)
   personas/   *.md                user-authored personas (built-ins are packaged)
   plugins/    <id>/plugin.toml     caller plugins referenced by id
   rules/      *.md

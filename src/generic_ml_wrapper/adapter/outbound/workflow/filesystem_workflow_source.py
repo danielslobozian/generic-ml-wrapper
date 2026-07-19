@@ -54,6 +54,9 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         compressor: ContextCompressorPort | None = None,
         startup: Callable[[str], dict[str, config.SourceSetting]] | None = None,
         companion: Callable[[], str | None] | None = None,
+        environments_root: Path | None = None,
+        default_environment: Callable[[], str] | None = None,
+        default_role: Callable[[], str] | None = None,
     ) -> None:
         """Bind the source to its roots and context policy.
 
@@ -72,6 +75,15 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             companion: Resolves the selected persona name; defaults to none selected
                 (the persona section stays invisible until the composition root injects
                 :func:`config.companion`).
+            environments_root: The environments directory holding one folder per
+                environment; the ``company`` source reads the active one. ``None`` omits
+                the source (place-specific context is off).
+            default_environment: Resolves the active environment's name; defaults to
+                ``"work"`` until the composition root injects
+                :func:`config.default_environment`.
+            default_role: Resolves the active role's name; the ``rules`` and ``me.learned``
+                sources also read that role's ``profile/roles/<role>/`` folder. Defaults to
+                ``"default"`` until the composition root injects :func:`config.default_role`.
         """
         self._root = root
         self._profile_root = profile_root
@@ -81,6 +93,9 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self._compressor = compressor
         self._startup = startup or config.default_startup
         self._companion = companion or (lambda: None)
+        self._environments_root = environments_root
+        self._default_environment = default_environment or (lambda: "work")
+        self._default_role = default_role or (lambda: "default")
 
     def seed(self) -> None:
         """Copy the packaged default workflows into ``root``, never overwriting."""
@@ -190,6 +205,13 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         )
         if global_rules:
             parts.append(global_rules)
+        role_dir = self._role_dir()  # rules scoped to the active role, more specific than global
+        if role_dir is not None:
+            role_rules = self._maybe_compress(
+                self._rules(role_dir / "rules"), context_source.RULES, setting
+            )
+            if role_rules:
+                parts.append(role_rules)
         if context_source.includes_workflow(mode) and name:
             scoped = self._maybe_compress(
                 self._rules(self._root / name / "rules"), context_source.RULES, setting
@@ -238,8 +260,10 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             return self._me_user()
         if source is context_source.ME_LEARNED:
             return self._me_learned()
-        if source is context_source.COMPANY and self._profile_root is not None:
-            return self._concat_dir(self._profile_root / "company")
+        if source is context_source.COMPANY and self._environments_root is not None:
+            # Place-specific context now lives per environment; read the active one. The
+            # config key stays "company"; only its on-disk home moved (environments/<env>/).
+            return self._concat_dir(self._environments_root / self._default_environment())
         return ""
 
     def _persona(self) -> str:
@@ -275,15 +299,26 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         return "\n\n".join(text for text in texts if text)
 
     def _me_learned(self) -> str:
-        """Compose the learned section: the capture directive over the user's notebook.
+        """Compose the learned section: the capture directive over the user's notebooks.
 
         The notebook (``learned.md`` and any ``learned/`` folder) is the AI-about-the-user
-        store; the directive (gmlw's voice) asks the client to keep mirroring into it. The
-        section is invisible when the notebook is absent, so a run without one stays clean.
+        store; the directive (gmlw's voice) asks the client to keep mirroring into it. Both
+        the shared ``profile/me`` notebook and the active role's ``profile/roles/<role>``
+        notebook compose here (role notes are still learned — just scoped to the role); the
+        directive stays global (capture is not role-aware yet). The section is invisible when
+        both notebooks are absent, so a run without one stays clean.
         """
         if self._profile_root is None:
             return ""
-        directory = self._profile_root / "me"
+        notebooks = [
+            self._notebook(self._profile_root / "me"),
+            self._notebook(self._profile_root / "roles" / self._default_role()),
+        ]
+        notebook = "\n\n".join(text for text in notebooks if text)
+        return f"{CAPTURE_DIRECTIVE}\n\n{notebook}" if notebook else ""
+
+    def _notebook(self, directory: Path) -> str:
+        """Concatenate a learned notebook: ``learned.md`` then ``learned/*.md`` (sorted)."""
         parts: list[str] = []
         learned_file = directory / _LEARNED_FILE
         if learned_file.is_file():
@@ -291,8 +326,13 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         learned_dir = directory / _LEARNED_DIR
         if learned_dir.is_dir():
             parts += [self._read(path) for path in sorted(learned_dir.glob("*.md"))]
-        notebook = "\n\n".join(text for text in parts if text)
-        return f"{CAPTURE_DIRECTIVE}\n\n{notebook}" if notebook else ""
+        return "\n\n".join(text for text in parts if text)
+
+    def _role_dir(self) -> Path | None:
+        """The active role's folder (``profile/roles/<role>``), or ``None`` without a profile."""
+        if self._profile_root is None:
+            return None
+        return self._profile_root / "roles" / self._default_role()
 
     def _concat_dir(self, directory: Path | None) -> str:
         """Concatenate every ``*.md`` in a folder, sorted by filename."""

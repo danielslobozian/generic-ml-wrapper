@@ -6,6 +6,37 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Forced init + the gate.** A mandatory first-run setup, `gmlw init`, is now both a
+  command and a first-class gate: `[init] version` in `config.toml` records that it ran,
+  and any command on an un-initialised or pre-0.4.0 install is funnelled through init
+  before it runs (`statusline` and bare `--help` are exempt). The interview captures, in
+  order — each with a sensible default so a non-interactive run never blocks — **language
+  → name → role → environment → persona → client**: language sets the voice the rest of
+  the interview speaks (chosen language re-localises every later prompt), name is what the
+  companion calls you, role and environment seed the movie-set axes (`[profile]
+  default_role` / `default_environment`), persona and client reuse the existing choosers.
+  A fresh install gets a full seeded `config.toml`; a legacy install has only the `[init]`
+  marker appended, its existing file left verbatim (settings migration comes next). Retires
+  the thinner 0.2.0 `FirstRunInit`.
+- **Environment migration.** Place-specific context is now a first-class **environment**:
+  it lives under `environments/<env>/` (one folder per environment, the movie set) instead
+  of the single `profile/company/`. On any command, gmlw non-destructively wraps an old
+  `profile/company/` into the **active** environment (`[profile] default_environment`,
+  `work` by default) — a move (nothing copied or lost), a name that already exists at the
+  target is left in place and reported (never overwritten), and the emptied old folder is
+  retired. What moved and what was skipped is printed to stderr. The move runs on both the
+  forced-init and the normal bootstrap paths, so an install initialised before the
+  migration existed is caught too. The `company` context source is unchanged as a config
+  key; only its on-disk home moved to `environments/<env>/`.
+- **Role-scoped rules & learned.** The role chosen at init (`[profile] default_role`, a lens
+  over `me`) now shapes context: rules under `profile/roles/<role>/rules/*.md` and a
+  `profile/roles/<role>/learned.md` compose into the `rules` and `me.learned` sources **only
+  when that role is active** — layered after the global rules/learned (general → specific).
+  `gmlw init` seeds the chosen role's folder with an empty `rules/` drop-zone. Capture stays
+  global for now (new reflexes are still written to `rules/` and `profile/me/learned.md`);
+  role-aware capture is a later step.
+
 ## [0.3.0] - 2026-07-18
 
 The lifecycle release — hooks that act at the seams around a run, and rule capture that

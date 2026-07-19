@@ -8,6 +8,7 @@ and flag. For deeper behaviour, follow the cross-links to [CONFIGURATION.md](CON
 ## Synopsis
 
 ```
+gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
 gmlw start [job] [--client X] [--resume-latest] [--workflow|-w NAME]
 gmlw jobs [--json]
@@ -45,6 +46,33 @@ prints its own help, then exits 0.
   by `statusline`; you do not set these yourself.
 
 ---
+
+## init
+
+Run the forced first-run setup that shapes every session. `init` is both a command and
+a **gate**: the first time you run *any* command on a new or pre-0.4.0 install, gmlw
+funnels you through it before that command runs. Once it has run, a marker
+(`[init] version` in `~/.gmlw/config.toml`) records it, and the gate stays out of the way.
+
+```
+gmlw init
+```
+
+The interview captures, in order — each with a sensible default, so a non-interactive
+run completes without blocking:
+
+1. **language** — which language gmlw speaks *to you* (`en` | `fr`); it does not force the
+   companion's language. Seeded from `$LANG`.
+2. **name** — what the companion calls you (defaults to your OS user).
+3. **role** — the functional hat you wear (a lens over *you*), e.g. `engineer`, `qa`.
+4. **environment** — where the work happens, e.g. `work`, a personal project.
+5. **persona** — the companion's voice (skippable; leaves the companion off).
+6. **client** — the client to wrap by default; a lone installed one is taken silently,
+   several prompt a choice, none leaves it unset.
+
+On a **fresh** install a full `config.toml` is seeded with your choices. On a **legacy**
+install (a pre-0.4.0 config already exists) only the `[init]` marker is appended — your
+existing file is left untouched; migrating the older layout comes in a later release.
 
 ## start
 
