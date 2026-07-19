@@ -4,6 +4,7 @@
 
 import io
 import json
+import platform
 from pathlib import Path
 
 import pytest
@@ -765,7 +766,7 @@ def test_start_lists_all_when_no_client_installed(
     assert app.main(["start", "JOB-1"]) == 2
     err = capsys.readouterr().err
     for info in client_catalog.SUPPORTED:  # every supported client's install is offered
-        assert info.install in err
+        assert info.install_for(platform.system()) in err
 
 
 def test_workflow_new_aborts_when_client_missing(
@@ -777,7 +778,7 @@ def test_workflow_new_aborts_when_client_missing(
     )
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
-    assert "openai/codex" in capsys.readouterr().err
+    assert client_catalog.CODEX.install_for(platform.system()) in capsys.readouterr().err
 
 
 def test_build_check_client_ready_wires_a_real_use_case() -> None:

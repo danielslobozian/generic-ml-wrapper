@@ -7,6 +7,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Guided client setup.** The init client step is no longer a silent chooser — it always
+  talks the choice through. It lists each installed client with its version, and when a
+  first-party release channel reports a newer one it flags an **old install** and offers
+  the one-line update (comparing on numeric components, so a build *ahead* of a lagging
+  stable channel is never nagged). It lets you switch, or **install a different client**:
+  it prints the OS-specific install command (macOS/Linux vs Windows), copies it to the
+  clipboard when a clipboard tool is present, offers to **run it for you** or let you run
+  it yourself, then polls `PATH` until the client appears — and installs a prerequisite
+  first (`uv` for Vibe) when it is missing. Every client's latest version comes from its
+  vendor's own channel with a changelog/registry fallback: Claude Code's native stable
+  manifest → GitHub `CHANGELOG.md`; Cursor's install-script version → the Homebrew cask
+  JSON; the npm registry → GitHub releases for Codex; PyPI → GitHub releases for Vibe.
+  All version reads are best-effort — an offline machine degrades to a plain list, never
+  a block. The launch-time "client not on your PATH" guidance now shows the same
+  OS-specific command. The client catalog (`client_catalog.py`) carries per-OS
+  install/update commands, the paid-plan framing, and the version sources.
 - **Forced init + the gate.** A mandatory first-run setup, `gmlw init`, is now both a
   command and a first-class gate: `[init] version` in `config.toml` records that it ran,
   and any command on an un-initialised or pre-0.4.0 install is funnelled through init
@@ -36,6 +52,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `gmlw init` seeds the chosen role's folder with an empty `rules/` drop-zone. Capture stays
   global for now (new reflexes are still written to `rules/` and `profile/me/learned.md`);
   role-aware capture is a later step.
+
+### Changed
+- **`ClientInfo` gained per-OS commands.** The single `install` field became
+  `install_unix` / `install_windows` (plus `update`, `subscription`, `version_probes`,
+  `prereq`); callers use `install_for(system)` / `update_for(system)`. The 0.2.0
+  `TtyClientChooser` and its `ClientChooserPort` were **removed**, superseded by the new
+  `ClientSetupPort` (`TtyClientSetup`) that owns the full guided conversation.
 
 ## [0.3.0] - 2026-07-18
 

@@ -12,8 +12,8 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import InitSelec
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from generic_ml_wrapper.application.port.outbound.client_chooser import ClientChooserPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
+    from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
     from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
     from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
     from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
@@ -43,7 +43,7 @@ class InitUseCase(Init):
         text_prompt: TextPromptPort,
         personas: PersonaSourcePort,
         persona_chooser: PersonaChooserPort,
-        client_chooser: ClientChooserPort,
+        client_setup: ClientSetupPort,
         localizer_factory: Callable[[str], Localizer],
         languages: list[str],
         default_language: str,
@@ -61,7 +61,7 @@ class InitUseCase(Init):
             text_prompt: Asks the three free-text steps (name, role, environment).
             personas: The source the offered personas come from.
             persona_chooser: Offers the persona choice (declines non-interactively).
-            client_chooser: Resolves the tie when several clients are installed.
+            client_setup: Runs the guided client step (choose / update / install+verify).
             localizer_factory: Builds a localiser for a chosen language code.
             languages: The supported language codes offered at step one.
             default_language: The language the language step defaults to ($LANG-seeded).
@@ -76,7 +76,7 @@ class InitUseCase(Init):
         self._text_prompt = text_prompt
         self._personas = personas
         self._persona_chooser = persona_chooser
-        self._client_chooser = client_chooser
+        self._client_setup = client_setup
         self._localizer_factory = localizer_factory
         self._languages = languages
         self._default_language = default_language
@@ -101,7 +101,7 @@ class InitUseCase(Init):
         )
         persona = self._persona_chooser.choose(self._personas.available(), i18n)
         found = self._detector.available()
-        client = self._resolve_client(found, i18n)
+        client = self._client_setup.choose(found, i18n)
         fresh = self._seeder.initialize(
             InitSelections(
                 version=self._version,
@@ -123,11 +123,3 @@ class InitUseCase(Init):
             found=found,
             fresh=fresh,
         )
-
-    def _resolve_client(self, found: list[str], i18n: Localizer) -> str | None:
-        """Pick the default client: the lone one silently, else the chooser, else none."""
-        if not found:
-            return None
-        if len(found) == 1:
-            return found[0]
-        return self._client_chooser.choose(found, i18n)
