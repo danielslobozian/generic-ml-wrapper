@@ -74,6 +74,10 @@
   "client.guidance.then_login": "...puis connectez-vous (voir la doc de chaque outil), ou lancez `gmlw init` pour être guidé.",
   "preflight.cwd_gone": "gmlw : votre répertoire courant n'existe plus (il a été déplacé ou supprimé).\n  placez-vous dans un répertoire existant — p. ex. `cd ~` — et réessayez.",
   "start.needs_job": "gmlw : start a besoin d'un job à traiter.\n  gmlw <job>          démarre (ou reprend) une session sur <job>\n  gmlw start <job>    la même chose, en toutes lettres\nUn job regroupe des sessions liées ; listez les vôtres avec :  gmlw jobs",
+  "run.pick_header": "gmlw : quel workflow voulez-vous exécuter ?",
+  "run.needs_workflow": "gmlw : run a besoin d'un workflow.\n  gmlw run <workflow>   exécuter un workflow directement (le job porte son nom)\nListez ceux disponibles avec :  gmlw workflow list",
+  "run.no_workflows": "gmlw : aucun workflow à exécuter pour l'instant. Créez-en un avec :  gmlw workflow new <name>",
+  "run.echo": "  la prochaine fois :  gmlw run {workflow}",
   "farewell": "À bientôt, {name}.",
   "creds.stored": "enregistré {workflow}.{name}",
   "config.unset": "(non défini)",
@@ -97,6 +101,7 @@
   "index.desc.job": "démarrer ou reprendre une session sur un job",
   "index.desc.start": "la même chose, en toutes lettres",
   "index.desc.run_workflow": "exécuter un workflow sur le job",
+  "index.desc.run": "exécuter un workflow directement (le job porte son nom)",
   "index.desc.jobs": "lister les jobs avec activité enregistrée",
   "index.desc.sessions": "lister les sessions d'un job",
   "index.desc.export": "rapporter l'usage et le coût d'un job",
@@ -112,7 +117,7 @@
   "help.job_vs_workflow.summary": "en quoi un job diffère d'un workflow",
   "help.job_vs_workflow.body": "Un job est une unité de travail à laquelle vous revenez — il regroupe des sessions liées et leur usage enregistré (p. ex. « checkout-refactor »). Un workflow est une recette réutilisable que vous exécutez sur un job (p. ex. « doc-review »).\nVous démarrez des sessions sur des jobs ; vous exécutez des workflows sur ceux-ci.\nVoir : gmlw jobs, gmlw workflow list",
   "help.start_vs_run.summary": "démarrer une session vs exécuter un workflow",
-  "help.start_vs_run.body": "gmlw start <job> ouvre (ou reprend) une session simple sur un job — le wrapper cède le terminal à votre client.\ngmlw start <job> -w <workflow> exécute plutôt un workflow créé sur ce job.\n« gmlw <job> » est un raccourci pour « gmlw start <job> ».",
+  "help.start_vs_run.body": "gmlw start <job> ouvre (ou reprend) une session simple sur un job — le wrapper cède le terminal à votre client.\ngmlw start <job> -w <workflow> exécute plutôt un workflow créé sur ce job.\ngmlw run <workflow> exécute un workflow directement — le job porte le nom du workflow et ses sessions s'y accumulent. À utiliser pour une procédure récurrente ; utilisez start pour du travail exploratoire sur un job.\n« gmlw <job> » est un raccourci pour « gmlw start <job> ».",
   "help.personas.summary": "ce qu'une persona change",
   "help.personas.body": "Une persona est une voix compagnon : lorsqu'elle est sélectionnée, elle vous accueille au lancement et peut adapter le ton. Désactivée par défaut (invisible).\nSélectionnez-en une avec : gmlw config set companion.persona <name> (voir gmlw persona list).",
   "help.cost.summary": "où le coût est suivi et affiché",
@@ -141,5 +146,5 @@
   "hint.cost": "astuce : voyez où le coût est suivi — gmlw help cost",
   "hint.persona": "astuce : choisissez une voix compagnon — gmlw persona list",
   "hint.config": "astuce : voir et changer les réglages — gmlw config list",
-  "ambient.card": "# gmlw\nVous vous exécutez dans gmlw, un wrapper autour de cette CLI. Si l'utilisateur demande comment faire quelque chose dans gmlw, vous pouvez lui dire :\n- démarrer ou reprendre une session : gmlw start <job> [--resume-latest]\n- exécuter un workflow sur un job : gmlw start <job> -w <workflow>\n- voir l'usage et le coût : gmlw export <job>\n- changer les réglages : gmlw config list, puis gmlw config set <key> <value>\n- apprendre un concept : gmlw help <topic>"
+  "ambient.card": "# gmlw\nVous vous exécutez dans gmlw, un wrapper autour de cette CLI. Si l'utilisateur demande comment faire quelque chose dans gmlw, vous pouvez lui dire :\n- démarrer ou reprendre une session : gmlw start <job> [--resume-latest]\n- exécuter un workflow sur un job : gmlw start <job> -w <workflow>\n- exécuter un workflow directement : gmlw run <workflow>\n- voir l'usage et le coût : gmlw export <job>\n- changer les réglages : gmlw config list, puis gmlw config set <key> <value>\n- apprendre un concept : gmlw help <topic>"
 }

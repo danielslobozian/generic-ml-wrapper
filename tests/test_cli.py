@@ -141,6 +141,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
     samples = {
         "init": ["init"],
         "start": ["start"],
+        "run": ["run"],
         "jobs": ["jobs"],
         "sessions": ["sessions", "J"],
         "export": ["export", "J"],
@@ -295,6 +296,94 @@ def test_start_reports_unknown_workflow_cleanly(
     monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
     assert app.main(["start", "JOB-1", "--workflow", "missing"]) == 2
     assert "unknown workflow" in capsys.readouterr().out
+
+
+def test_parser_parses_run() -> None:
+    parser = app.build_parser()
+    args = parser.parse_args(["run", "etl", "--client", "codex"])
+    assert args.command == "run"
+    assert args.workflow == "etl"
+    assert args.client == "codex"
+    bare = parser.parse_args(["run"])  # workflow is optional (a chooser fills it)
+    assert bare.command == "run"
+    assert bare.workflow is None
+
+
+def test_run_launches_the_workflow_as_its_own_job(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, StartJobCommand] = {}
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            seen["command"] = command
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["run", "nightly-etl"]) == 0
+    command = seen["command"]
+    assert command.job == "nightly-etl"  # job is named after the workflow
+    assert command.workflow == "nightly-etl"
+    assert command.resume_latest is False
+
+
+def test_run_reports_unknown_workflow_cleanly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FailingUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            raise UnknownWorkflowError("unknown workflow: 'missing'")
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
+    assert app.main(["run", "missing"]) == 2
+    assert "unknown workflow" in capsys.readouterr().out
+
+
+class _FakeWorkflows(ListWorkflows):
+    def __init__(self, names: list[str]) -> None:
+        self._names = names
+
+    def execute(self) -> list[str]:
+        return self._names
+
+
+def test_run_without_a_workflow_off_a_tty_guides(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # No terminal in tests, so the real chooser declines -> we guide instead of blocking.
+    monkeypatch.setattr(app, "build_list_workflows", lambda: _FakeWorkflows(["a", "b"]))
+    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
+    assert app.main(["run"]) == 2
+    assert "run needs a workflow" in capsys.readouterr().err
+
+
+def test_run_without_a_workflow_and_none_authored_points_to_authoring(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_list_workflows", lambda: _FakeWorkflows([]))
+    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
+    assert app.main(["run"]) == 2
+    assert "no workflows to run" in capsys.readouterr().err
+
+
+def test_run_interactive_pick_echoes_the_fast_path(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class _Chooser:
+        def choose(self, names: list[str], i18n: object | None = None) -> str | None:
+            return names[0]
+
+    seen: dict[str, StartJobCommand] = {}
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            seen["command"] = command
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
+
+    monkeypatch.setattr(app, "build_list_workflows", lambda: _FakeWorkflows(["nightly-etl"]))
+    monkeypatch.setattr(app, "build_workflow_chooser", lambda: _Chooser())
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["run"]) == 0
+    assert seen["command"].job == "nightly-etl"
+    assert "gmlw run nightly-etl" in capsys.readouterr().err  # teaches the fast path
 
 
 def test_start_reports_resume_not_supported_cleanly(
