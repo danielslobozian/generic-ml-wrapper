@@ -21,7 +21,10 @@ class InitOutcome:
         client: The default client chosen, or ``None`` when none was installed/picked.
         found: The installed clients detected, in canonical order (empty when none).
         fresh: ``True`` when this was a brand-new install (full config seeded);
-            ``False`` on a legacy install (only the gate marker was appended).
+            ``False`` on a legacy install (the answers were merged into the existing
+            config).
+        overwrites: On a legacy merge, the ``table.key: old → new`` lines for any
+            existing setting a freshly chosen value replaced (empty otherwise).
     """
 
     language: str
@@ -32,6 +35,7 @@ class InitOutcome:
     client: str | None
     found: list[str]
     fresh: bool
+    overwrites: tuple[str, ...] = ()
 
 
 class Init(ABC):

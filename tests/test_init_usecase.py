@@ -5,10 +5,11 @@
 from __future__ import annotations
 
 from generic_ml_wrapper.application.domain.model.persona import Persona
-from generic_ml_wrapper.application.port.outbound.client_chooser import ClientChooserPort
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
+from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
 from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
+    InitPersist,
     InitSelections,
     LayoutSeederPort,
 )
@@ -30,16 +31,17 @@ class _FakeDetector(ClientDetectorPort):
 
 
 class _RecordingSeeder(LayoutSeederPort):
-    def __init__(self, *, fresh: bool = True) -> None:
+    def __init__(self, *, fresh: bool = True, overwrites: tuple[str, ...] = ()) -> None:
         self.selections: InitSelections | None = None
         self._fresh = fresh
+        self._overwrites = overwrites
 
     def ensure(self, default_client: str | None = None, persona: str | None = None) -> None:
         raise AssertionError("init must not call ensure")
 
-    def initialize(self, selections: InitSelections) -> bool:
+    def initialize(self, selections: InitSelections) -> InitPersist:
         self.selections = selections
-        return self._fresh
+        return InitPersist(fresh=self._fresh, overwrites=self._overwrites)
 
 
 class _FakeLanguageChooser(LanguageChooserPort):
@@ -90,30 +92,37 @@ class _FakePersonaChooser(PersonaChooserPort):
         return self._choice
 
 
-class _FakeClientChooser(ClientChooserPort):
-    def __init__(self, choice: str | None) -> None:
+_KEEP_FOUND = object()  # sentinel: emulate the "lone installed client is taken" default
+
+
+class _FakeClientSetup(ClientSetupPort):
+    """Record the found clients + language; return a preset choice or the lone default."""
+
+    def __init__(self, choice: object = _KEEP_FOUND) -> None:
         self._choice = choice
-        self.asked: list[str] | None = None
+        self.found: list[str] | None = None
         self.lang: str | None = None
 
-    def choose(self, candidates: list[str], i18n: Localizer | None = None) -> str | None:
-        self.asked = candidates
+    def choose(self, found: list[str], i18n: Localizer | None = None) -> str | None:
+        self.found = found
         self.lang = i18n.lang if i18n else None
-        return self._choice
+        if self._choice is _KEEP_FOUND:
+            return found[0] if found else None
+        return self._choice  # type: ignore[return-value]
 
 
 def _use_case(  # noqa: PLR0913  (mirrors the wired ports; all defaulted)
     *,
     language: str = "en",
     found: list[str] | None = None,
-    client_choice: str | None = None,
+    client_choice: object = _KEEP_FOUND,
     persona: str | None = None,
     text_prompt: _RecordingTextPrompt | None = None,
     seeder: _RecordingSeeder | None = None,
     default_name: str = "ada",
-) -> tuple[InitUseCase, _RecordingSeeder, _FakeClientChooser, _RecordingTextPrompt]:
+) -> tuple[InitUseCase, _RecordingSeeder, _FakeClientSetup, _RecordingTextPrompt]:
     seeder = seeder or _RecordingSeeder()
-    client_chooser = _FakeClientChooser(client_choice)
+    client_setup = _FakeClientSetup(client_choice)
     text = text_prompt or _RecordingTextPrompt()
     use_case = InitUseCase(
         detector=_FakeDetector([] if found is None else found),
@@ -122,14 +131,14 @@ def _use_case(  # noqa: PLR0913  (mirrors the wired ports; all defaulted)
         text_prompt=text,
         personas=_FakePersonas(),
         persona_chooser=_FakePersonaChooser(persona),
-        client_chooser=client_chooser,
+        client_setup=client_setup,
         localizer_factory=load_localizer,
         languages=["en", "fr"],
         default_language="en",
         default_name=default_name,
         version="0.4.0",
     )
-    return use_case, seeder, client_chooser, text
+    return use_case, seeder, client_setup, text
 
 
 def test_runs_every_step_and_persists_the_selections() -> None:
@@ -144,7 +153,7 @@ def test_runs_every_step_and_persists_the_selections() -> None:
         "work",
     )
     assert outcome.persona == "butler"
-    assert outcome.client == "cursor"  # a lone installed client is taken silently
+    assert outcome.client == "cursor"  # the guided setup settled on the installed client
     assert outcome.fresh is True
     # The very same selections are handed to the seeder to persist.
     assert seeder.selections is not None
@@ -167,18 +176,18 @@ def test_defaults_flow_through_when_nothing_is_typed() -> None:
 
 def test_reprompts_in_the_chosen_language_after_the_language_step() -> None:
     # Pick French first; the localiser handed to every later prompt must speak French.
-    use_case, _, client_chooser, text = _use_case(
+    use_case, _, client_setup, text = _use_case(
         language="fr", found=["claude", "cursor"], client_choice="cursor"
     )
     use_case.execute()
     assert {lang for _, _, lang in text.calls} == {"fr"}  # name/role/environment all in fr
-    assert client_chooser.lang == "fr"  # and the client tie-break too
+    assert client_setup.lang == "fr"  # and the guided client step too
 
 
-def test_several_clients_go_through_the_chooser() -> None:
-    use_case, _, client_chooser, _ = _use_case(found=["claude", "cursor"], client_choice="cursor")
+def test_client_setup_receives_the_found_clients_and_its_choice_wins() -> None:
+    use_case, _, client_setup, _ = _use_case(found=["claude", "cursor"], client_choice="cursor")
     outcome = use_case.execute()
-    assert client_chooser.asked == ["claude", "cursor"]
+    assert client_setup.found == ["claude", "cursor"]
     assert outcome.client == "cursor"
 
 

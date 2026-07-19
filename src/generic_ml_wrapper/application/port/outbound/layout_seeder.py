@@ -31,6 +31,23 @@ class InitSelections:
     client: str | None
 
 
+@dataclass(frozen=True)
+class InitPersist:
+    """The result of persisting an init pass, for the caller to narrate.
+
+    Attributes:
+        fresh: ``True`` when a brand-new config was written, ``False`` when the answers
+            were merged into a pre-existing (legacy) config.
+        overwrites: Human-readable ``table.key: old → new`` lines for each existing
+            setting the merge replaced with a freshly chosen value (empty on a fresh
+            install, or when the merge only added new keys). Surfaced so a changed
+            setting is never dropped silently.
+    """
+
+    fresh: bool
+    overwrites: tuple[str, ...] = ()
+
+
 class LayoutSeederPort(ABC):
     """Create the wrapper's runtime directories and a default config, missing-only."""
 
@@ -49,19 +66,20 @@ class LayoutSeederPort(ABC):
         """
 
     @abstractmethod
-    def initialize(self, selections: InitSelections) -> bool:
+    def initialize(self, selections: InitSelections) -> InitPersist:
         """Persist an init pass, creating directories as needed.
 
         Fresh install (no config): write a full config with every selection baked in,
-        including the ``[init]`` gate marker. Legacy install (a pre-init config already
-        exists): append only the ``[init]`` marker (append-only, comment-preserving,
-        idempotent) so the gate stops forcing init — migrating the captured settings
-        into the existing file is a later step. Either way the marker ends up present.
+        including the ``[init]`` gate marker. Legacy install (a config already exists):
+        **merge** every captured answer into the existing file — creating any missing
+        table and setting each key — while preserving the user's other settings,
+        comments, and formatting exactly (a round-trip edit, not a rewrite). The persona
+        and client are written only when one was chosen. Nothing the user set is lost.
 
         Args:
             selections: What the init interview resolved.
 
         Returns:
-            ``True`` when a fresh config was written, ``False`` when only the marker was
-            appended to a pre-existing (legacy) config.
+            An :class:`InitPersist`: whether the write was fresh, and any existing
+            settings the merge replaced.
         """

@@ -4,6 +4,7 @@
 
 import io
 import json
+import platform
 from pathlib import Path
 
 import pytest
@@ -537,6 +538,7 @@ def _fresh_outcome(
     found: list[str] | None = None,
     persona: str | None = None,
     fresh: bool = True,
+    overwrites: tuple[str, ...] = (),
 ) -> InitOutcome:
     return InitOutcome(
         language="en",
@@ -547,6 +549,7 @@ def _fresh_outcome(
         client=client,
         found=found if found is not None else (["cursor"] if client else []),
         fresh=fresh,
+        overwrites=overwrites,
     )
 
 
@@ -624,14 +627,17 @@ def test_init_announces_no_client_found(
     assert "no supported client found on your PATH" in capsys.readouterr().err
 
 
-def test_init_on_legacy_reports_marker_only(
+def test_init_on_legacy_reports_the_merge_and_any_overwrites(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app.config, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(fresh=False), []))
+    outcome = _fresh_outcome(fresh=False, overwrites=("client.default: cursor → claude",))
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(outcome, []))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
-    assert "existing setup marked initialised" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "your choices were saved into" in err
+    assert "client.default: cursor → claude" in err  # the replaced value is surfaced
 
 
 def test_build_init_wires_a_real_use_case() -> None:
@@ -765,7 +771,7 @@ def test_start_lists_all_when_no_client_installed(
     assert app.main(["start", "JOB-1"]) == 2
     err = capsys.readouterr().err
     for info in client_catalog.SUPPORTED:  # every supported client's install is offered
-        assert info.install in err
+        assert info.install_for(platform.system()) in err
 
 
 def test_workflow_new_aborts_when_client_missing(
@@ -777,7 +783,7 @@ def test_workflow_new_aborts_when_client_missing(
     )
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
-    assert "openai/codex" in capsys.readouterr().err
+    assert client_catalog.CODEX.install_for(platform.system()) in capsys.readouterr().err
 
 
 def test_build_check_client_ready_wires_a_real_use_case() -> None:

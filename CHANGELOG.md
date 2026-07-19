@@ -6,7 +6,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-19
+
+The first-run release — a mandatory `init` that establishes the model the rest of the app
+runs on, migrates the on-disk layout to match, and settles a working client before the
+first session.
+
 ### Added
+- **Guided client setup.** The init client step is no longer a silent chooser — it always
+  talks the choice through. It lists each installed client with its version, and when a
+  first-party release channel reports a newer one it flags an **old install** and offers
+  the one-line update (comparing on numeric components, so a build *ahead* of a lagging
+  stable channel is never nagged). It lets you switch, or **install a different client**:
+  it prints the OS-specific install command (macOS/Linux vs Windows), copies it to the
+  clipboard when a clipboard tool is present, offers to **run it for you** or let you run
+  it yourself, then polls `PATH` until the client appears — and installs a prerequisite
+  first (`uv` for Vibe) when it is missing. Every client's latest version comes from its
+  vendor's own channel with a changelog/registry fallback: Claude Code's native stable
+  manifest → GitHub `CHANGELOG.md`; Cursor's install-script version → the Homebrew cask
+  JSON; the npm registry → GitHub releases for Codex; PyPI → GitHub releases for Vibe.
+  All version reads are best-effort — an offline machine degrades to a plain list, never
+  a block. The launch-time "client not on your PATH" guidance now shows the same
+  OS-specific command. The client catalog (`client_catalog.py`) carries per-OS
+  install/update commands, the paid-plan framing, and the version sources.
 - **Forced init + the gate.** A mandatory first-run setup, `gmlw init`, is now both a
   command and a first-class gate: `[init] version` in `config.toml` records that it ran,
   and any command on an un-initialised or pre-0.4.0 install is funnelled through init
@@ -16,9 +38,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the interview speaks (chosen language re-localises every later prompt), name is what the
   companion calls you, role and environment seed the movie-set axes (`[profile]
   default_role` / `default_environment`), persona and client reuse the existing choosers.
-  A fresh install gets a full seeded `config.toml`; a legacy install has only the `[init]`
-  marker appended, its existing file left verbatim (settings migration comes next). Retires
-  the thinner 0.2.0 `FirstRunInit`.
+  A fresh install gets a full seeded `config.toml`; a legacy install gets every answer
+  merged into its existing file (see below). Retires the thinner 0.2.0 `FirstRunInit`.
+- **Every init answer is persisted — on a legacy install too.** Previously a pre-0.4.0
+  install had only the `[init]` marker appended, so the language, name, role, environment,
+  persona and client you had just chosen were discarded and had to be re-entered. They are
+  now **merged into the existing `config.toml`**: each value is written into its table
+  (created when missing) through a round-trip TOML edit, so **every other setting, every
+  comment, and the file's formatting survive untouched** — arrays like `[[interceptors]]`
+  included. The persona and client are written only when one was chosen, so declining never
+  clears an existing value. Any setting a fresh choice replaced is reported on stderr
+  (`client.default: cursor → claude`) rather than changed silently.
 - **Environment migration.** Place-specific context is now a first-class **environment**:
   it lives under `environments/<env>/` (one folder per environment, the movie set) instead
   of the single `profile/company/`. On any command, gmlw non-destructively wraps an old
@@ -36,6 +66,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `gmlw init` seeds the chosen role's folder with an empty `rules/` drop-zone. Capture stays
   global for now (new reflexes are still written to `rules/` and `profile/me/learned.md`);
   role-aware capture is a later step.
+
+### Changed
+- **New runtime dependency: `tomlkit`** (MIT, pure Python, no transitive deps) — the
+  round-trip TOML editor that merges init's answers into an existing `config.toml`
+  without disturbing the user's comments or settings. stdlib `tomllib` reads TOML but
+  cannot write it. `LayoutSeederPort.initialize` now returns an `InitPersist`
+  (`fresh` + `overwrites`) instead of a bare bool.
+- **`ClientInfo` gained per-OS commands.** The single `install` field became
+  `install_unix` / `install_windows` (plus `update`, `subscription`, `version_probes`,
+  `prereq`); callers use `install_for(system)` / `update_for(system)`. The 0.2.0
+  `TtyClientChooser` and its `ClientChooserPort` were **removed**, superseded by the new
+  `ClientSetupPort` (`TtyClientSetup`) that owns the full guided conversation.
 
 ## [0.3.0] - 2026-07-18
 
@@ -135,7 +177,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/danielslobozian/generic-ml-wrapper/releases/tag/v0.1.0

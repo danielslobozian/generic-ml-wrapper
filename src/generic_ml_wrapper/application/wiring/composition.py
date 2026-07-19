@@ -17,8 +17,13 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator im
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
+from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import HttpClientVersions
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_chooser import TtyClientChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner import (
+    SubprocessCommandRunner,
+)
+from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
@@ -332,7 +337,12 @@ def build_init() -> Init:
         text_prompt=TtyTextPrompt(seed_i18n),
         personas=build_persona_source(),
         persona_chooser=TtyPersonaChooser(seed_i18n),
-        client_chooser=TtyClientChooser(seed_i18n),
+        client_setup=TtyClientSetup(
+            seed_i18n,
+            version=HttpClientVersions(),
+            runner=SubprocessCommandRunner(),
+            clipboard=SystemClipboard(),
+        ),
         localizer_factory=load_localizer,
         languages=list(SUPPORTED_LANGUAGES),
         default_language=seed_language,

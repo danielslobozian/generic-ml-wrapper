@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "generic-ml-wrapper"
-version = "0.3.0"
+version = "0.4.0"
 description = "A wrapper around an ML coding CLI: enter at a job, get a named resumable session, optionally driven by a workflow."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,6 +32,11 @@ dependencies = [
   "generic-ml-cache-core>=1.0.0",
   "generic-ml-cache-adapters>=1.0.0",
   "generic-ml-cache-bootstrap>=1.0.0",
+  # tomlkit (MIT) is a round-trip TOML editor: it merges the init interview's answers
+  # into an *existing* config.toml while preserving the user's comments, keys, and
+  # formatting exactly. stdlib tomllib reads TOML but cannot write it. Pure Python,
+  # no transitive deps.
+  "tomlkit>=0.13",
 ]
 
 [project.urls]

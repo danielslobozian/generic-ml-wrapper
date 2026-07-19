@@ -41,9 +41,7 @@ Everything a session inherits, and the ergonomics around it.
 - **Create-workflow** — the interviewer assesses each step's *codeability* and offers
   to script the mechanical ones, keeping the AI for the judgment steps.
 
-## Planned
-
-### 0.3.0 — lifecycle action hooks — done (Unreleased)
+### 0.3.0 — lifecycle action hooks
 gmlw already hooks **content**: the interceptor chain transforms context sections at
 compile time and wire traffic at relay time (e.g. anonymisation on `request`). It now
 also hooks **actions** — "after this phase, run something" — at two lifecycle seams
@@ -68,7 +66,7 @@ consumes a git repo of skills and installs them, per client, as faithfully as ea
 client's format allows. It is its own initiative (per-client format knowledge), built on
 the seam above; the infrastructure is done and waiting for it.
 
-#### Rule lifecycle — done (Unreleased)
+#### Rule lifecycle
 0.2.0 shipped rule *capture*, but only inside a workflow (the directive lived in the
 workflow base) and without dedup or a path to code. The rule loop is now rounded out —
 the directive moved out of the workflow base to the head of the always-on `rules`
@@ -145,12 +143,16 @@ costume and makeup, briefs the director, then cedes the screen ([[wrapper-not-st
   Claude / ChatGPT / Cursor / Mistral?"*), the **official install command for the detected
   OS** (Windows / Linux / macOS), and **guide-and-verify auth** — print the exact login
   command, poll readiness until it goes green (guide, don't drive).
-- **A default persona** — the experience-defining choice, from **static previews** (sample
-  lines per persona), so choosing costs nothing.
+- **A default persona** — the experience-defining choice, offered with a one-line
+  description per persona so it can be made without reading docs.
 
 Deferred but homed: a detached model call to synthesise a `role.md` for an unfamiliar role
 (e.g. product owner) is a natural future consumer of the 0.3.0 `pre-launch` seam — parked,
-not built.
+not built. **Persona *previews* moved to 0.7.0** — sample lines are only worth shipping once
+the personas behind them are proven to actually differ, and doing them in French requires
+localising persona content, which is the same job (see 0.7.0).
+
+## Planned
 
 ### 0.5.0 — discoverability & progressive disclosure
 Reframed around the real metric for a new user: **time to a first live session**, and then
@@ -217,6 +219,52 @@ model of their own process.
   floor (guaranteed, persona-independent), and the persona colors delivery on top — it
   can voice the invariants but not break them. Personas carry an **authoring-friendliness**
   expectation, so a voice built around brutal efficiency can't sabotage the facilitation.
+
+### 0.7.0 — personas, proven (and multilingual)
+Today "personas shape tone" is an **untested claim**. A persona ships a tone block, but
+nothing demonstrates that `mentor` and `terse` actually answer differently — and the tone
+block is injected *on top of* each client's own system prompt, which may simply swamp it.
+This release makes the claim falsifiable first, then builds on it. Its own initiative: it
+is an evaluation loop, not a feature.
+
+- **A persona evaluation harness** — the core of the release. Run every persona against a
+  fixed question set and compare. Two design calls, both deliberate:
+  - **Questions curated against the declared dimensions, not scraped.** Generic benchmark
+    sets measure *correctness* and would show almost no tone variance. Each persona already
+    declares `Warmth · Verbosity · Formality · Proactivity`, so the set probes exactly those,
+    plus the high-divergence moments — being corrected, delivering bad news, being handed a
+    half-formed request.
+  - **A distinctness metric, not eyeballing.** A judge scores each answer on the declared
+    dimensions and yields a **pairwise distance matrix**, so collapsed pairs are named rather
+    than sensed (`plain`/`terse` and `companion`/`mentor` are the likely offenders). Runs go
+    through **generic-ml-cache**, so re-running one persona after a tweak replays the other
+    four for free and keeps iterations deterministic and diffable.
+- **Tune until distinct** — the back-and-forth the harness exists to serve: adapt each tone
+  block, re-run, watch the matrix separate. The honest possible outcome is that personas must
+  become **bolder** to survive a client's own voice — or that they differentiate on some
+  clients and not others. That finding is a deliverable, not a failure.
+- **Persona content becomes multilingual** — required for previews in French, and a real gap
+  today: only the *prompt header* is localised, so a French user gets an English description
+  and an **English greeting at every launch**. This is not a strings port: French carries a
+  `tu`/`vous` register English cannot express, and a butler is *defined* by register — so the
+  directives themselves need per-language authoring, not translation.
+  - Layout: a **folder per persona** — a language-neutral `body.md` (dimensions, do/don't)
+    plus `en.md` / `fr.md` carrying description, greeting, register notes, and samples.
+  - **A flat `<name>.md` must keep working.** Users author personas by dropping a file in
+    `~/.gmlw/personas/`; a folder gets the full treatment, a flat file behaves as it does
+    today (English, no samples, falls back to its description). Breaking user-authored
+    personas to gain previews would be a bad trade.
+- **Previews, as a byproduct** — once the answers are generated, reviewed, and committed as
+  data, the first-run chooser can show a real sample line per persona. It stays **static** at
+  runtime: generated at authoring time, read from disk, **zero tokens and zero latency**, so
+  choosing still costs nothing. Length forces a split — one short line inline in the chooser,
+  the full side-by-side behind `gmlw persona preview`. Samples are labelled as indicative:
+  they come from one model at authoring time, and the user's client may differ.
+
+**Sequencing risk, stated plainly:** 0.6.0 layers *per-workflow persona* on top of personas
+whose distinctness this release is what proves. If the matrix shows they collapse, 0.6.0's
+persona composition needs revisiting — so pull this earlier if that work starts leaning hard
+on the foundation.
 
 ## Parked
 

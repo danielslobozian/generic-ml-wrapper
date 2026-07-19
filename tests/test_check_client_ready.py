@@ -54,4 +54,7 @@ def test_catalog_covers_every_built_in_client() -> None:
     assert {info.name for info in client_catalog.SUPPORTED} == {"claude", "cursor", "codex", "vibe"}
     assert client_catalog.by_name("cursor") is client_catalog.CURSOR
     assert client_catalog.by_name("nope") is None
-    assert all(info.install and info.login and info.binary for info in client_catalog.SUPPORTED)
+    assert all(
+        info.install_unix and info.install_windows and info.login and info.binary
+        for info in client_catalog.SUPPORTED
+    )

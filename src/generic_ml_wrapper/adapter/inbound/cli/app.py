@@ -10,6 +10,7 @@ import getpass
 import importlib
 import json
 import os
+import platform
 import signal
 import sys
 from collections.abc import Generator
@@ -476,11 +477,14 @@ def _announce_init(outcome: InitOutcome) -> None:
             "Change any of it in ~/.gmlw/config.toml.",
             file=sys.stderr,
         )
-    else:  # legacy install: only the gate marker was written into the existing config
+    else:  # legacy install: the answers were merged into the existing config
         print(
-            "gmlw: existing setup marked initialised — your ~/.gmlw/config.toml is left unchanged.",
+            "gmlw: your choices were saved into ~/.gmlw/config.toml — "
+            "your other settings and comments are untouched.",
             file=sys.stderr,
         )
+        for change in outcome.overwrites:  # surface each replaced value, never silently
+            print(f"gmlw: updated {change}.", file=sys.stderr)
     if outcome.client is not None:
         print(
             f"gmlw: default client '{outcome.client}'. Change it in ~/.gmlw/config.toml.",
@@ -555,11 +559,12 @@ def format_client_guidance(readiness: ClientReadiness) -> str:
     Returns:
         The guidance text to print (no trailing newline).
     """
+    system = platform.system()
     if readiness.missing is not None:
         info = readiness.missing
         lines = [
             f"gmlw: client {readiness.client!r} ({info.display}) isn't on your PATH yet.",
-            f"  install:     {info.install}",
+            f"  install:     {info.install_for(system)}",
             f"  then log in: {info.login}",
         ]
         others = [name for name in readiness.installed if name != readiness.client]
@@ -572,8 +577,8 @@ def format_client_guidance(readiness: ClientReadiness) -> str:
         lines += ["", "No supported client is installed yet — any of these works:"]
         width = max(len(info.name) for info in client_catalog.SUPPORTED)
         for info in client_catalog.SUPPORTED:
-            lines.append(f"  {info.name:<{width}}  {info.install}")
-        lines.append("...then log in (see each tool's docs) before running gmlw again.")
+            lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
+        lines.append("...then log in (see each tool's docs), or run `gmlw init` to be guided.")
     return "\n".join(lines)
 
 

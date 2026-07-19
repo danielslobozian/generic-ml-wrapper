@@ -93,6 +93,22 @@ def choose_number(
         print("  " + i18n.t("prompt.not_in_range", reply=reply, range=rng), file=sys.stderr)
 
 
+def emit(*lines: str) -> None:
+    """Write already-localised narration ``lines`` to the prompt's stderr.
+
+    Used by richer conversations (the guided client setup) to print status around the
+    numbered prompts, on the same stream :func:`choose_number` writes to, so stdout
+    stays clean and a non-TTY run stays silent. Skipped entirely without a terminal.
+
+    Args:
+        lines: The lines to print, each on its own row.
+    """
+    if not sys.stderr.isatty():
+        return
+    for line in lines:
+        print(line, file=sys.stderr)
+
+
 def _read(prompt: str) -> str | None:
     """Write ``prompt`` (no newline) to stderr and read one line from stdin.
 
