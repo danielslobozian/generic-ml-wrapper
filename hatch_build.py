@@ -4,13 +4,16 @@
 
 Writes ``src/generic_ml_wrapper/_build_info.py`` (git-ignored, force-included via
 ``[tool.hatch.build.targets.wheel] artifacts``) at build time so ``gmlw --version``
-can report the exact build. A source checkout that was never built has no
+can report the build date. A source checkout that was never built has no
 ``_build_info`` module and reports a plain ``(source, unbuilt)`` version instead.
+
+Only the build timestamp is stamped: a git sha was deliberately dropped because it is
+captured at build time and every distributed artifact (PyPI wheel/sdist) is built without
+a ``.git`` checkout, so it was ``unknown`` exactly where provenance would matter.
 """
 
 from __future__ import annotations
 
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,7 +22,7 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 
 
 class BuildInfoHook(BuildHookInterface):
-    """Write ``_build_info.py`` with a UTC build timestamp and the short git sha."""
+    """Write ``_build_info.py`` with a UTC build timestamp."""
 
     PLUGIN_NAME = "custom"
 
@@ -32,22 +35,6 @@ class BuildInfoHook(BuildHookInterface):
             "# SPDX-FileCopyrightText: 2026 Daniel Slobozian\n"
             "# SPDX-License-Identifier: Apache-2.0\n"
             '"""Generated at build time by hatch_build.py -- do not edit or commit."""\n\n'
-            f'BUILD_ID = "{build_id}"\n'
-            f'GIT_SHA = "{_git_sha(root)}"\n',
+            f'BUILD_ID = "{build_id}"\n',
             encoding="utf-8",
         )
-
-
-def _git_sha(root: Path) -> str:
-    """Return the short git sha, or ``"unknown"`` outside a git checkout."""
-    try:
-        completed = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],  # noqa: S607
-            cwd=root,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return "unknown"
-    return completed.stdout.strip() or "unknown"

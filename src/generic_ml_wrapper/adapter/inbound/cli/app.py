@@ -173,7 +173,7 @@ def _as_json(payload: object) -> str:
 
 
 def _version_string() -> str:
-    """Return ``gmlw <version> (build <id>, git <sha>)``; a plain fallback if unbuilt.
+    """Return ``gmlw <version> (build <id>)``; a plain fallback if unbuilt.
 
     ``_build_info`` is stamped into the wheel at build time; a source checkout that was
     never built lacks it and reports ``(source, unbuilt)`` instead.
@@ -186,8 +186,7 @@ def _version_string() -> str:
     except ModuleNotFoundError:
         return f"gmlw {__version__} (source, unbuilt)"
     build_id = getattr(build_info, "BUILD_ID", "unknown")
-    git_sha = getattr(build_info, "GIT_SHA", "unknown")
-    return f"gmlw {__version__} (build {build_id}, git {git_sha})"
+    return f"gmlw {__version__} (build {build_id})"
 
 
 def build_parser() -> argparse.ArgumentParser:
