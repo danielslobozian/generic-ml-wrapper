@@ -4,16 +4,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
+
+import tomlkit
+from tomlkit.items import Table
 
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.domain.model.rules import EXAMPLE_RULE
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
+    InitPersist,
     InitSelections,
     LayoutSeederPort,
 )
 
 if TYPE_CHECKING:
+    from collections.abc import MutableMapping
     from pathlib import Path
 
 # The personas/ folder is seeded on demand by the persona source (packaged defaults),
@@ -301,14 +306,15 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
                 encoding="utf-8",
             )
 
-    def initialize(self, selections: InitSelections) -> bool:
-        """Persist an init pass: full config on a fresh install, marker-only on a legacy one.
+    def initialize(self, selections: InitSelections) -> InitPersist:
+        """Persist an init pass: full config on a fresh install, merge into a legacy one.
 
         Args:
             selections: What the init interview resolved.
 
         Returns:
-            ``True`` on a fresh full write, ``False`` when only the marker was appended.
+            An :class:`InitPersist` recording whether the write was fresh and what the
+            merge replaced.
         """
         self._ensure_dirs()
         # The chosen environment's folder — the movie set the migration wraps company into.
@@ -317,8 +323,7 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         (self._home / _ROLES / selections.role / "rules").mkdir(parents=True, exist_ok=True)
         config = self._home / _CONFIG
         if config.exists():
-            self._append_marker(config, selections.version)
-            return False
+            return InitPersist(fresh=False, overwrites=self._merge(config, selections))
         config.write_text(
             _render_config(
                 init_version=selections.version,
@@ -331,7 +336,7 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             ),
             encoding="utf-8",
         )
-        return True
+        return InitPersist(fresh=True)
 
     def _ensure_dirs(self) -> None:
         """Create the runtime directories and the copy-me seed files (missing-only)."""
@@ -348,18 +353,51 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             example_rule.write_text(EXAMPLE_RULE, encoding="utf-8")
 
     @staticmethod
-    def _append_marker(config: Path, version: str) -> None:
-        """Append the ``[init]`` marker to a legacy config, once (append-only, idempotent).
+    def _merge(config: Path, selections: InitSelections) -> tuple[str, ...]:
+        """Merge every captured answer into an existing config, preserving the rest.
 
-        A pre-init config already carries the user's settings and comments; rather than
-        rewrite it (and risk losing either), the marker is appended at the end. Guarded so
-        a re-run is a no-op — a legacy config already carrying ``[init]`` is left as is.
+        A legacy config already carries the user's settings and comments. tomlkit does a
+        round-trip edit: each captured value is set into its table (created if missing)
+        while every other key, comment, and the file's formatting are kept exactly. The
+        persona and client are written only when one was chosen, so a decline never
+        clears an existing value. Returns the ``table.key: old → new`` lines for any
+        setting the merge replaced, so a changed value is surfaced rather than dropped.
+
+        Args:
+            config: The existing config file to merge into.
+            selections: What the init interview resolved.
+
+        Returns:
+            The human-readable overwrite lines (empty when nothing was replaced).
         """
-        existing = config.read_text(encoding="utf-8")
-        if "[init]" in existing:
-            return
-        separator = "" if existing.endswith("\n") else "\n"
-        config.write_text(
-            f"{existing}{separator}\n{_init_marker_block(version)}\n",
-            encoding="utf-8",
+        doc = tomlkit.parse(config.read_text(encoding="utf-8"))
+        # tomlkit's containers are mapping-like but loosely typed; view them as typed
+        # mappings so the merge below stays fully checked.
+        container = cast("MutableMapping[str, object]", doc)
+        overwrites: list[str] = []
+        # (table, key, value) for every setting init owns; None values are skipped below.
+        settings: tuple[tuple[str, str, str | None], ...] = (
+            ("init", "version", selections.version),
+            ("language", "code", selections.language),
+            ("profile", "default_role", selections.role),
+            ("profile", "default_environment", selections.environment),
+            ("companion", "name", selections.name),
+            ("companion", "persona", selections.persona),
+            ("client", "default", selections.client),
         )
+        for table_name, key, value in settings:
+            if value is None:  # persona/client not chosen — leave any existing value be
+                continue
+            node = container.get(table_name)
+            if isinstance(node, Table):
+                table = node
+            else:  # the table is absent (or not a table) — add a fresh one at the end
+                table = tomlkit.table()
+                container[table_name] = table
+            entries = cast("MutableMapping[str, object]", table)
+            old = entries.get(key)
+            if old is not None and str(old) != value:
+                overwrites.append(f"{table_name}.{key}: {old!s} → {value}")
+            entries[key] = value
+        config.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        return tuple(overwrites)

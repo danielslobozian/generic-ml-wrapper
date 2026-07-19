@@ -32,9 +32,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the interview speaks (chosen language re-localises every later prompt), name is what the
   companion calls you, role and environment seed the movie-set axes (`[profile]
   default_role` / `default_environment`), persona and client reuse the existing choosers.
-  A fresh install gets a full seeded `config.toml`; a legacy install has only the `[init]`
-  marker appended, its existing file left verbatim (settings migration comes next). Retires
-  the thinner 0.2.0 `FirstRunInit`.
+  A fresh install gets a full seeded `config.toml`; a legacy install gets every answer
+  merged into its existing file (see below). Retires the thinner 0.2.0 `FirstRunInit`.
+- **Every init answer is persisted — on a legacy install too.** Previously a pre-0.4.0
+  install had only the `[init]` marker appended, so the language, name, role, environment,
+  persona and client you had just chosen were discarded and had to be re-entered. They are
+  now **merged into the existing `config.toml`**: each value is written into its table
+  (created when missing) through a round-trip TOML edit, so **every other setting, every
+  comment, and the file's formatting survive untouched** — arrays like `[[interceptors]]`
+  included. The persona and client are written only when one was chosen, so declining never
+  clears an existing value. Any setting a fresh choice replaced is reported on stderr
+  (`client.default: cursor → claude`) rather than changed silently.
 - **Environment migration.** Place-specific context is now a first-class **environment**:
   it lives under `environments/<env>/` (one folder per environment, the movie set) instead
   of the single `profile/company/`. On any command, gmlw non-destructively wraps an old
@@ -54,6 +62,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   role-aware capture is a later step.
 
 ### Changed
+- **New runtime dependency: `tomlkit`** (MIT, pure Python, no transitive deps) — the
+  round-trip TOML editor that merges init's answers into an existing `config.toml`
+  without disturbing the user's comments or settings. stdlib `tomllib` reads TOML but
+  cannot write it. `LayoutSeederPort.initialize` now returns an `InitPersist`
+  (`fresh` + `overwrites`) instead of a bare bool.
 - **`ClientInfo` gained per-OS commands.** The single `install` field became
   `install_unix` / `install_windows` (plus `update`, `subscription`, `version_probes`,
   `prereq`); callers use `install_for(system)` / `update_for(system)`. The 0.2.0

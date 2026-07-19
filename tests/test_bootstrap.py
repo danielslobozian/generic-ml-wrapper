@@ -9,6 +9,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder impo
     FilesystemLayoutSeeder,
 )
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
+    InitPersist,
     InitSelections,
     LayoutSeederPort,
 )
@@ -100,7 +101,7 @@ def test_seeder_is_idempotent_and_preserves_an_edited_config(tmp_path: Path) -> 
 
 
 def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> None:
-    fresh = FilesystemLayoutSeeder(tmp_path).initialize(
+    persisted = FilesystemLayoutSeeder(tmp_path).initialize(
         InitSelections(
             version="0.4.0",
             language="fr",
@@ -111,7 +112,8 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
             client="claude",
         )
     )
-    assert fresh is True  # a brand-new install got the full write
+    assert persisted.fresh is True  # a brand-new install got the full write
+    assert persisted.overwrites == ()  # nothing pre-existed to replace
     assert (tmp_path / "environments" / "work").is_dir()  # the chosen environment's folder
     assert (tmp_path / "profile" / "roles" / "engineer" / "rules").is_dir()  # the role's drop-zone
     parsed = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
@@ -122,12 +124,18 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
     assert parsed["client"] == {"default": "claude"}
 
 
-def test_initialize_appends_only_the_marker_on_a_legacy_install(tmp_path: Path) -> None:
+def test_initialize_merges_every_answer_into_a_legacy_config(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
-    legacy = '[client]\ndefault = "cursor"\n\n[companion]\npersona = "mentor"\n'
+    # A pre-0.4.0 config with a hand-written comment and settings init does not own.
+    legacy = (
+        "# my notes\n"
+        '[client]\ndefault = "cursor"\n\n'
+        '[logging]\nlevel = "debug"\n\n'
+        '[companion]\npersona = "mentor"\n'
+    )
     config.write_text(legacy, encoding="utf-8")
 
-    fresh = FilesystemLayoutSeeder(tmp_path).initialize(
+    persisted = FilesystemLayoutSeeder(tmp_path).initialize(
         InitSelections(
             version="0.4.0",
             language="fr",
@@ -139,31 +147,47 @@ def test_initialize_appends_only_the_marker_on_a_legacy_install(tmp_path: Path) 
         )
     )
 
-    assert fresh is False  # legacy install: marker-only, not a full rewrite
+    assert persisted.fresh is False  # legacy install: merged, not a fresh write
     text = config.read_text(encoding="utf-8")
-    assert text.startswith(legacy)  # the original file is preserved verbatim, untouched
+    assert "# my notes" in text  # the user's comment survives the round-trip edit
     parsed = tomllib.loads(text)
-    assert parsed["init"] == {"version": "0.4.0"}  # marker appended
-    assert parsed["client"] == {"default": "cursor"}  # captured client NOT merged in (yet)
-    assert parsed["companion"] == {"persona": "mentor"}  # captured name/persona NOT merged
+    # Every captured answer is now persisted...
+    assert parsed["init"] == {"version": "0.4.0"}
+    assert parsed["language"] == {"code": "fr"}
+    assert parsed["profile"] == {"default_role": "engineer", "default_environment": "work"}
+    assert parsed["companion"] == {"name": "Daniel", "persona": "butler"}
+    assert parsed["client"] == {"default": "claude"}
+    # ...settings init does not own are left exactly as they were.
+    assert parsed["logging"] == {"level": "debug"}
+    # The two values the fresh choice replaced are surfaced, not dropped silently.
+    assert set(persisted.overwrites) == {
+        "client.default: cursor → claude",
+        "companion.persona: mentor → butler",
+    }
 
 
-def test_initialize_marker_append_is_idempotent(tmp_path: Path) -> None:
+def test_initialize_does_not_clear_settings_when_persona_or_client_declined(
+    tmp_path: Path,
+) -> None:
     config = tmp_path / "config.toml"
-    config.write_text('[init]\nversion = "0.4.0"\n[client]\ndefault = "cursor"\n', encoding="utf-8")
-    before = config.read_text(encoding="utf-8")
-    FilesystemLayoutSeeder(tmp_path).initialize(
+    config.write_text('[companion]\npersona = "mentor"\n[client]\ndefault = "cursor"\n', "utf-8")
+
+    persisted = FilesystemLayoutSeeder(tmp_path).initialize(
         InitSelections(
-            version="9.9.9",
+            version="0.4.0",
             language="en",
-            name="x",
-            role="r",
-            environment="e",
-            persona=None,
-            client=None,
+            name="Ada",
+            role="default",
+            environment="work",
+            persona=None,  # declined — must not clear the existing persona
+            client=None,  # none chosen — must not clear the existing default
         )
     )
-    assert config.read_text(encoding="utf-8") == before  # already marked: left untouched
+
+    parsed = tomllib.loads(config.read_text(encoding="utf-8"))
+    assert parsed["companion"] == {"persona": "mentor", "name": "Ada"}  # kept + name added
+    assert parsed["client"] == {"default": "cursor"}  # untouched
+    assert persisted.overwrites == ()  # nothing replaced
 
 
 def test_use_case_delegates_to_the_seeder() -> None:
@@ -173,9 +197,9 @@ def test_use_case_delegates_to_the_seeder() -> None:
         def ensure(self, default_client: str | None = None, persona: str | None = None) -> None:
             calls.append(f"ensure:{default_client}:{persona}")
 
-        def initialize(self, selections: InitSelections) -> bool:
+        def initialize(self, selections: InitSelections) -> InitPersist:
             calls.append("initialize")
-            return True
+            return InitPersist(fresh=True)
 
     BootstrapUseCase(FakeSeeder()).execute()
     assert calls == ["ensure:None:None"]

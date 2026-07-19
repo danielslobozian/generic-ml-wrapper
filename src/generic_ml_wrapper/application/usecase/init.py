@@ -102,7 +102,7 @@ class InitUseCase(Init):
         persona = self._persona_chooser.choose(self._personas.available(), i18n)
         found = self._detector.available()
         client = self._client_setup.choose(found, i18n)
-        fresh = self._seeder.initialize(
+        persisted = self._seeder.initialize(
             InitSelections(
                 version=self._version,
                 language=language,
@@ -121,5 +121,6 @@ class InitUseCase(Init):
             persona=persona,
             client=client,
             found=found,
-            fresh=fresh,
+            fresh=persisted.fresh,
+            overwrites=persisted.overwrites,
         )

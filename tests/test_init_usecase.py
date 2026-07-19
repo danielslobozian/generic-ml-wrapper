@@ -9,6 +9,7 @@ from generic_ml_wrapper.application.port.outbound.client_detector import ClientD
 from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
 from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
+    InitPersist,
     InitSelections,
     LayoutSeederPort,
 )
@@ -30,16 +31,17 @@ class _FakeDetector(ClientDetectorPort):
 
 
 class _RecordingSeeder(LayoutSeederPort):
-    def __init__(self, *, fresh: bool = True) -> None:
+    def __init__(self, *, fresh: bool = True, overwrites: tuple[str, ...] = ()) -> None:
         self.selections: InitSelections | None = None
         self._fresh = fresh
+        self._overwrites = overwrites
 
     def ensure(self, default_client: str | None = None, persona: str | None = None) -> None:
         raise AssertionError("init must not call ensure")
 
-    def initialize(self, selections: InitSelections) -> bool:
+    def initialize(self, selections: InitSelections) -> InitPersist:
         self.selections = selections
-        return self._fresh
+        return InitPersist(fresh=self._fresh, overwrites=self._overwrites)
 
 
 class _FakeLanguageChooser(LanguageChooserPort):

@@ -477,11 +477,14 @@ def _announce_init(outcome: InitOutcome) -> None:
             "Change any of it in ~/.gmlw/config.toml.",
             file=sys.stderr,
         )
-    else:  # legacy install: only the gate marker was written into the existing config
+    else:  # legacy install: the answers were merged into the existing config
         print(
-            "gmlw: existing setup marked initialised — your ~/.gmlw/config.toml is left unchanged.",
+            "gmlw: your choices were saved into ~/.gmlw/config.toml — "
+            "your other settings and comments are untouched.",
             file=sys.stderr,
         )
+        for change in outcome.overwrites:  # surface each replaced value, never silently
+            print(f"gmlw: updated {change}.", file=sys.stderr)
     if outcome.client is not None:
         print(
             f"gmlw: default client '{outcome.client}'. Change it in ~/.gmlw/config.toml.",
