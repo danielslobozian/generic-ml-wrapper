@@ -50,6 +50,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJob,
     StartJobCommand,
+    StartJobResult,
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
@@ -156,9 +157,9 @@ def test_bare_job_dispatches_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, StartJobCommand] = {}
 
     class FakeUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
-            return 0
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     assert app.main(["my-proj"]) == 0  # `gmlw my-proj`
@@ -247,9 +248,9 @@ def test_start_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> No
     seen: dict[str, StartJobCommand] = {}
 
     class FakeUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
-            return 3
+            return StartJobResult(exit_code=3, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     exit_code = app.main(["start", "JOB-9", "--resume-latest"])
@@ -262,9 +263,9 @@ def test_start_passes_the_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, StartJobCommand] = {}
 
     class FakeUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
-            return 0
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     app.main(["start", "JOB-1", "--workflow", "doc-review"])
@@ -276,7 +277,7 @@ def test_start_reports_unknown_workflow_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FailingUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             raise UnknownWorkflowError("unknown workflow: 'missing'")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
@@ -288,7 +289,7 @@ def test_start_reports_resume_not_supported_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FailingUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             raise ResumeNotSupportedError("session resume not supported on codex")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
@@ -761,8 +762,8 @@ def test_start_does_not_print_the_greeting_to_stderr(
     # The host greeting is now injected into the session context (rendered in-band by the
     # client), not printed to the launch-time stderr that the client immediately clears.
     class FakeUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
-            return 0
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     assert app.main(["start", "JOB-1"]) == 0
@@ -779,9 +780,9 @@ def test_start_aborts_with_guidance_when_client_missing(
     launched: list[str] = []
 
     class FakeUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             launched.append(command.job)
-            return 0
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     readiness = ClientReadiness(
@@ -1074,7 +1075,7 @@ def test_start_aborts_on_unreadable_settings(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FailingUseCase(StartJob):
-        def execute(self, command: StartJobCommand) -> int:
+        def execute(self, command: StartJobCommand) -> StartJobResult:
             raise SettingsUnreadableError(Path("/x/.claude/settings.json"))
 
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
@@ -1165,3 +1166,51 @@ def test_bare_config_shows_its_help(
 
 def test_build_config_commands_is_wired() -> None:
     assert isinstance(composition.build_config_commands(), ConfigCommands)
+
+
+def test_exit_receipt_prints_cost_and_next_steps(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["start", "JOB-1"]) == 0
+    err = capsys.readouterr().err
+    assert "JOB-1_001" in err  # this session
+    assert "gmlw start JOB-1 --resume-latest" in err  # resume command
+    assert "gmlw export JOB-1" in err  # report command
+
+
+def test_exit_receipt_tip_is_shown_once_then_suppressed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["start", "JOB-1"]) == 0
+    first = capsys.readouterr().err
+    assert "tip:" in first  # the first unseen hint
+    # a second run shows a different hint (the first was recorded as seen)
+    assert app.main(["start", "JOB-1"]) == 0
+    second = capsys.readouterr().err
+    assert "tip:" in second
+    assert first != second
+
+
+def test_exit_receipt_tip_suppressed_when_hints_disabled(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (paths.HOME).mkdir(parents=True, exist_ok=True)
+    (paths.HOME / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    assert app.main(["start", "JOB-1"]) == 0
+    assert "tip:" not in capsys.readouterr().err

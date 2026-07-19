@@ -119,6 +119,23 @@ class CompressSettings(_Section):
     effort: Annotated[str, Field(description="The reasoning effort for compression.")] = "low"
 
 
+class HintsSettings(_Section):
+    """The ``[hints]`` section: the suppressible exit-receipt tips."""
+
+    show: Annotated[
+        bool, Field(description="Show one usage-driven tip on the exit receipt (once each).")
+    ] = True
+
+
+class AmbientSettings(_Section):
+    """The ``[ambient]`` section: optional in-session context injections."""
+
+    capability_card: Annotated[
+        bool,
+        Field(description="Inject an off-by-default 'how do I …' gmlw card into the context."),
+    ] = False
+
+
 class GmlwSettings(BaseSettings):
     """The typed, TOML-backed source of truth for every settable scalar key."""
 
@@ -131,6 +148,8 @@ class GmlwSettings(BaseSettings):
     companion: CompanionSettings = CompanionSettings()
     transcript: TranscriptSettings = TranscriptSettings()
     compress: CompressSettings = CompressSettings()
+    hints: HintsSettings = HintsSettings()
+    ambient: AmbientSettings = AmbientSettings()
 
     @classmethod
     def settings_customise_sources(
@@ -163,6 +182,8 @@ _SECTIONS: tuple[tuple[str, type[_Section]], ...] = (
     ("companion", CompanionSettings),
     ("transcript", TranscriptSettings),
     ("compress", CompressSettings),
+    ("hints", HintsSettings),
+    ("ambient", AmbientSettings),
 )
 
 

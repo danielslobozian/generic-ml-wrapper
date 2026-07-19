@@ -29,6 +29,8 @@ def test_registry_covers_the_settable_scalar_keys() -> None:
         "compress.adapter",
         "compress.model",
         "compress.effort",
+        "hints.show",
+        "ambient.capability_card",
     }
 
 

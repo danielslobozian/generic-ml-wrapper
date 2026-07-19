@@ -99,6 +99,7 @@ from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
     Localizer,
+    active,
     load_localizer,
     resolve_language,
 )
@@ -259,7 +260,19 @@ def build_start_job() -> StartJob:
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),
+        capability_card=_capability_card,
     )
+
+
+def _capability_card() -> str | None:
+    """The ambient capability card in the active language, or ``None`` when it is off.
+
+    Off by default; enabled via ``[ambient] capability_card``. A static, localised "how do
+    I … in gmlw" card the client can answer from mid-session.
+    """
+    if not config.ambient_capability_card():
+        return None
+    return active().t("ambient.card")
 
 
 def build_list_jobs() -> ListJobs:

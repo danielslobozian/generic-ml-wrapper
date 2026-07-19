@@ -25,6 +25,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
     render_topic,
     render_topic_list,
 )
+from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
@@ -59,6 +60,7 @@ from generic_ml_wrapper.application.port.inbound.set_credential import SetCreden
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJobCommand,
+    StartJobResult,
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring.composition import (
@@ -889,7 +891,7 @@ def _start(args: argparse.Namespace) -> int:
     # restore) always runs -- gmlw never leaves its hook behind in the user's settings.
     with _client_owns_interrupts():
         try:
-            code = build_start_job().execute(command)
+            result = build_start_job().execute(command)
         except _Terminated:
             return 143  # 128 + SIGTERM: terminated, but teardown ran
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
@@ -898,7 +900,42 @@ def _start(args: argparse.Namespace) -> int:
     farewell = _farewell()
     if farewell:
         print(farewell, file=sys.stderr)
-    return code
+    _print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
+    return result.exit_code
+
+
+def _print_exit_receipt(result: StartJobResult) -> None:
+    """Print the exit receipt to stderr: this session's and the job's cost, then next steps.
+
+    A persistent summary on the return (the client has exited): the cost of the session and
+    the job, the resume/report commands, and one usage-driven, suppressible tip. Best-effort
+    — the cost line degrades to just the commands if the usage read fails, never raising on
+    the way out.
+    """
+    loc = i18n.active()
+    try:
+        report = build_export_usage().execute(JobId(result.job))
+        session_cost = next(
+            (c.cost_usd for c in report.session_costs if c.session_id == result.session_id),
+            0.0,
+        )
+        print(
+            loc.t(
+                "receipt.cost",
+                session=result.session_id,
+                session_cost=f"{session_cost:.2f}",
+                job=result.job,
+                job_cost=f"{report.total_usd:.2f}",
+            ),
+            file=sys.stderr,
+        )
+    except Exception as error:  # noqa: BLE001  the receipt must never break a clean exit
+        log.debug(i18n.t("log.receipt_failed", error=error))
+    print(loc.t("receipt.resume", job=result.job), file=sys.stderr)
+    print(loc.t("receipt.report", job=result.job), file=sys.stderr)
+    tip = next_hint(loc)
+    if tip:
+        print(tip, file=sys.stderr)
 
 
 def _read_secret() -> str:

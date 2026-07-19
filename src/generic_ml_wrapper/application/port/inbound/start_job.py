@@ -25,6 +25,21 @@ class StartJobCommand:
     workflow: str | None = None
 
 
+@dataclass(frozen=True)
+class StartJobResult:
+    """The outcome of a run, carrying what the exit receipt needs.
+
+    Attributes:
+        exit_code: The client's exit code.
+        job: The job the session ran on.
+        session_id: The session that ran (new or resumed).
+    """
+
+    exit_code: int
+    job: str
+    session_id: str
+
+
 class UnknownWorkflowError(ValueError):
     """Raised when a requested workflow does not exist."""
 
@@ -37,14 +52,14 @@ class StartJob(ABC):
     """Start or resume a session on a job and hand over to the client."""
 
     @abstractmethod
-    def execute(self, command: StartJobCommand) -> int:
+    def execute(self, command: StartJobCommand) -> StartJobResult:
         """Run the use case.
 
         Args:
             command: The request describing job, client, resume, and workflow.
 
         Returns:
-            The client's exit code.
+            The run's outcome: exit code, job, and the session that ran.
 
         Raises:
             UnknownWorkflowError: If a workflow was requested but does not exist.

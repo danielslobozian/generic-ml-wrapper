@@ -73,7 +73,35 @@ def current_values(path: Path | None = None) -> dict[str, object]:
         "compress.adapter": compress_settings.adapter,
         "compress.model": compress_settings.model,
         "compress.effort": compress_settings.effort,
+        "hints.show": hints_show(path),
+        "ambient.capability_card": ambient_capability_card(path),
     }
+
+
+def hints_show(path: Path | None = None) -> bool:
+    """Return whether to show a usage-driven tip on the exit receipt (``[hints] show``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[hints] show`` value, or ``True`` when unset.
+    """
+    value = _table(_load(path), "hints").get("show")
+    return value if isinstance(value, bool) else True
+
+
+def ambient_capability_card(path: Path | None = None) -> bool:
+    """Return whether to inject the ambient capability card (``[ambient] capability_card``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[ambient] capability_card`` value, or ``False`` when unset.
+    """
+    value = _table(_load(path), "ambient").get("capability_card")
+    return value if isinstance(value, bool) else False
 
 
 def config_exists(path: Path | None = None) -> bool:

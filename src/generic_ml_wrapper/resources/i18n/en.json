@@ -132,5 +132,14 @@
   "log.relay_failed": "metering relay failed to start ({error}); launching unmetered",
   "log.codex_relay_failed": "metering relay failed to start ({error}); launching codex unmetered",
   "log.statusline_install_failed": "could not install the status line at {path} ({error}); running without it",
-  "log.statusline_unreadable": "leaving {path} untouched: it is no longer readable JSON"
+  "log.statusline_unreadable": "leaving {path} untouched: it is no longer readable JSON",
+  "log.receipt_failed": "exit receipt usage read failed: {error}",
+  "receipt.cost": "gmlw: session {session} — this session ${session_cost}, {job} total ${job_cost}.",
+  "receipt.resume": "  resume:  gmlw start {job} --resume-latest",
+  "receipt.report": "  report:  gmlw export {job}",
+  "hint.resume": "tip: resume a job where you left off — gmlw start <job> --resume-latest",
+  "hint.cost": "tip: see where cost is tracked — gmlw help cost",
+  "hint.persona": "tip: pick a companion voice — gmlw persona list",
+  "hint.config": "tip: view and change settings — gmlw config list",
+  "ambient.card": "# gmlw\nYou are running inside gmlw, a wrapper around this CLI. If the user asks how to do something in gmlw, you can tell them:\n- start or resume a session: gmlw start <job> [--resume-latest]\n- run a workflow on a job: gmlw start <job> -w <workflow>\n- see usage and cost: gmlw export <job>\n- change settings: gmlw config list, then gmlw config set <key> <value>\n- learn a concept: gmlw help <topic>"
 }

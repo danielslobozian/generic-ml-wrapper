@@ -132,5 +132,14 @@
   "log.relay_failed": "échec du démarrage du relais de métrage ({error}) ; lancement sans métrage",
   "log.codex_relay_failed": "échec du démarrage du relais de métrage ({error}) ; lancement de codex sans métrage",
   "log.statusline_install_failed": "impossible d'installer la barre d'état à {path} ({error}) ; exécution sans elle",
-  "log.statusline_unreadable": "{path} laissé intact : ce n'est plus du JSON lisible"
+  "log.statusline_unreadable": "{path} laissé intact : ce n'est plus du JSON lisible",
+  "log.receipt_failed": "échec de la lecture de l'usage pour le reçu de sortie : {error}",
+  "receipt.cost": "gmlw : session {session} — cette session {session_cost} $, {job} total {job_cost} $.",
+  "receipt.resume": "  reprendre :  gmlw start {job} --resume-latest",
+  "receipt.report": "  rapport :    gmlw export {job}",
+  "hint.resume": "astuce : reprenez un job où vous en étiez — gmlw start <job> --resume-latest",
+  "hint.cost": "astuce : voyez où le coût est suivi — gmlw help cost",
+  "hint.persona": "astuce : choisissez une voix compagnon — gmlw persona list",
+  "hint.config": "astuce : voir et changer les réglages — gmlw config list",
+  "ambient.card": "# gmlw\nVous vous exécutez dans gmlw, un wrapper autour de cette CLI. Si l'utilisateur demande comment faire quelque chose dans gmlw, vous pouvez lui dire :\n- démarrer ou reprendre une session : gmlw start <job> [--resume-latest]\n- exécuter un workflow sur un job : gmlw start <job> -w <workflow>\n- voir l'usage et le coût : gmlw export <job>\n- changer les réglages : gmlw config list, puis gmlw config set <key> <value>\n- apprendre un concept : gmlw help <topic>"
 }

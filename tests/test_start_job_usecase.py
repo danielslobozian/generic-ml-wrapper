@@ -128,6 +128,7 @@ def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the
     credentials: FakeCredentials | None = None,
     hooks: HookRunner | None = None,
     greeting: str | None = None,
+    capability_card: str | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -137,6 +138,7 @@ def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the
         credentials=credentials or FakeCredentials(),
         hooks=hooks or HookRunner(()),
         greeting=lambda: greeting,
+        capability_card=lambda: capability_card,
     )
 
 
@@ -144,11 +146,13 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     store = FakeStore(ids=["JOB-1_001"])
     provider = FakeProvider()
     workflows = FakeWorkflows()
-    exit_code = _use_case(store, provider, workflows).execute(
+    result = _use_case(store, provider, workflows).execute(
         StartJobCommand(job="JOB-1", client="claude")
     )
 
-    assert exit_code == 0
+    assert result.exit_code == 0
+    assert result.job == "JOB-1"
+    assert result.session_id == "JOB-1_002"
     assert provider.log == ["start_metering", "start_client", "end_metering"]
     minted = store.recorded[0]
     assert minted.session_id == "JOB-1_002"
@@ -189,6 +193,26 @@ def test_no_greeting_leaves_the_context_untouched() -> None:
     )
     assert provider.run is not None
     assert provider.run.context == "BASELINE"  # companion off → no greeting section
+
+
+def test_capability_card_is_appended_when_enabled() -> None:
+    provider = FakeProvider()
+    _use_case(
+        FakeStore(ids=["JOB-1_001"]), provider, capability_card="HOW-TO-CARD"
+    ).execute(StartJobCommand(job="JOB-1", client="claude"))
+    assert provider.run is not None
+    assert provider.run.context is not None
+    assert provider.run.context.startswith("BASELINE")  # appended after the baseline
+    assert "HOW-TO-CARD" in provider.run.context
+
+
+def test_capability_card_off_by_default_leaves_context_untouched() -> None:
+    provider = FakeProvider()
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, capability_card=None).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.context == "BASELINE"
 
 
 def test_lifecycle_hooks_bracket_the_client_run() -> None:

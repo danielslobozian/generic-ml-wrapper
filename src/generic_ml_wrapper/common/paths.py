@@ -34,3 +34,5 @@ CREDENTIALS = HOME / "credentials.toml"
 AUTHORING = HOME / "authoring"
 # The generic-ml-cache store the context compressor records/replays through.
 COMPRESS_CACHE = HOME / "compress-cache"
+# Small bits of local UI state (e.g. which one-time exit-receipt hints have been shown).
+STATE = HOME / "state"
