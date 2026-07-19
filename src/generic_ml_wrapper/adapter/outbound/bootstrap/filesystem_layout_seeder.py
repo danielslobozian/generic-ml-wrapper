@@ -4,11 +4,9 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-import tomlkit
-from tomlkit.items import Table
-
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.domain.model.rules import EXAMPLE_RULE
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
@@ -18,7 +16,6 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import MutableMapping
     from pathlib import Path
 
 # The personas/ folder is seeded on demand by the persona source (packaged defaults),
@@ -356,12 +353,13 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
     def _merge(config: Path, selections: InitSelections) -> tuple[str, ...]:
         """Merge every captured answer into an existing config, preserving the rest.
 
-        A legacy config already carries the user's settings and comments. tomlkit does a
-        round-trip edit: each captured value is set into its table (created if missing)
-        while every other key, comment, and the file's formatting are kept exactly. The
-        persona and client are written only when one was chosen, so a decline never
-        clears an existing value. Returns the ``table.key: old → new`` lines for any
-        setting the merge replaced, so a changed value is surfaced rather than dropped.
+        A legacy config already carries the user's settings and comments. The shared
+        :class:`TomlkitConfigWriter` does a round-trip edit: each captured value is set
+        into its table (created if missing) while every other key, comment, and the file's
+        formatting are kept exactly. The persona and client are written only when one was
+        chosen (``None`` values are dropped here, never passed as a clear), so a decline
+        never touches an existing value. Returns the ``table.key: old → new`` lines for any
+        setting the merge replaced.
 
         Args:
             config: The existing config file to merge into.
@@ -370,12 +368,8 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         Returns:
             The human-readable overwrite lines (empty when nothing was replaced).
         """
-        doc = tomlkit.parse(config.read_text(encoding="utf-8"))
-        # tomlkit's containers are mapping-like but loosely typed; view them as typed
-        # mappings so the merge below stays fully checked.
-        container = cast("MutableMapping[str, object]", doc)
-        overwrites: list[str] = []
-        # (table, key, value) for every setting init owns; None values are skipped below.
+        # (table, key, value) for every setting init owns; a value of None means the step
+        # was declined, so it is filtered out (a decline must never clear an existing key).
         settings: tuple[tuple[str, str, str | None], ...] = (
             ("init", "version", selections.version),
             ("language", "code", selections.language),
@@ -385,19 +379,5 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             ("companion", "persona", selections.persona),
             ("client", "default", selections.client),
         )
-        for table_name, key, value in settings:
-            if value is None:  # persona/client not chosen — leave any existing value be
-                continue
-            node = container.get(table_name)
-            if isinstance(node, Table):
-                table = node
-            else:  # the table is absent (or not a table) — add a fresh one at the end
-                table = tomlkit.table()
-                container[table_name] = table
-            entries = cast("MutableMapping[str, object]", table)
-            old = entries.get(key)
-            if old is not None and str(old) != value:
-                overwrites.append(f"{table_name}.{key}: {old!s} → {value}")
-            entries[key] = value
-        config.write_text(tomlkit.dumps(doc), encoding="utf-8")
-        return tuple(overwrites)
+        entries = [(table, key, value) for table, key, value in settings if value is not None]
+        return TomlkitConfigWriter().merge(config, entries)

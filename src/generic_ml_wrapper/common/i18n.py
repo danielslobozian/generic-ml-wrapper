@@ -40,11 +40,14 @@ class Localizer:
         self.lang = lang
         self._catalog = catalog
 
-    def t(self, key: str, **params: object) -> str:
+    def t(self, key: str, /, **params: object) -> str:
         """Return the template for ``key``, formatted with ``params``.
 
         Falls back to English (already merged in) and finally to ``key`` itself, so a
         lookup never raises and an unknown key is visible rather than fatal.
+
+        ``key`` is positional-only so a template may itself use a ``{key}`` field without
+        colliding with this parameter.
 
         Args:
             key: The dotted catalogue key.
@@ -127,8 +130,11 @@ def active() -> Localizer:
     return _active
 
 
-def t(key: str, **params: object) -> str:
+def t(key: str, /, **params: object) -> str:
     """Shorthand for ``active().t(key, **params)`` — the app-wide localise call.
+
+    ``key`` is positional-only so a template may use a ``{key}`` field (see
+    :meth:`Localizer.t`).
 
     Args:
         key: The dotted catalogue key.

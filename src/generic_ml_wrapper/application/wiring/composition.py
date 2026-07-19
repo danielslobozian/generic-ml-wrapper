@@ -31,6 +31,7 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultC
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
 )
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
 )
@@ -60,6 +61,7 @@ from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
@@ -92,6 +94,7 @@ from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetin
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
@@ -301,6 +304,15 @@ def build_bootstrap() -> Bootstrap:
         A ready-to-run Bootstrap.
     """
     return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+
+
+def build_config_commands() -> ConfigCommands:
+    """Build the ConfigCommands use case wired to the tomlkit config writer.
+
+    Returns:
+        A ready-to-run ConfigCommands, writing to ``~/.gmlw/config.toml``.
+    """
+    return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
 
 
 def build_migrate_layout() -> MigrateLayout:

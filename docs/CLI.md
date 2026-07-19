@@ -20,6 +20,9 @@ gmlw workflow list [--json]
 gmlw persona list [--json]
 gmlw plugins list [--json]
 gmlw creds set <workflow> <ENV_VAR_NAME>
+gmlw config list [--json]
+gmlw config get <key> [--json]
+gmlw config set <key> <value>
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
@@ -273,6 +276,50 @@ Example:
 ```
 gmlw creds set deploy-bot DEPLOY_TOKEN
 ```
+
+---
+
+## config
+
+View and change the settable `~/.gmlw/config.toml` settings. Every key is backed by a
+typed registry (its type, default, allowed values, and description); `set` validates
+against it and merges the change into your file, preserving comments and formatting.
+Invoked with no action, prints its own help.
+
+```
+gmlw config list [--json]
+gmlw config get <key> [--json]
+gmlw config set <key> <value>
+```
+
+### config list
+
+List every setting with its current value and description.
+
+### config get
+
+Show one setting — its value, description, default, and any allowed values.
+
+- `key` (positional, required) — the dotted setting key (e.g. `profile.default_role`).
+
+### config set
+
+Change one setting. The value is validated against the registry (type and allowed
+values) before anything is written; the change is echoed (old → new), never silent. Use
+`none` to clear an optional key back to its default.
+
+- `key` (positional, required) — the dotted setting key.
+- `value` (positional, required) — the new value.
+
+Example:
+
+```
+gmlw config set profile.default_role reviewer
+gmlw config set logging.level debug
+gmlw config get client.default
+```
+
+The home for changing `default_role` / `default_environment` after `init`.
 
 ---
 

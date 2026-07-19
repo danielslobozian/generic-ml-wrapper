@@ -36,8 +36,44 @@ _DEFAULT_COMPRESS_EFFORT = cast("str", settings_registry.default_for("compress.e
 _HOOK_PHASES = frozenset({"pre-launch", "post-session"})
 
 
-def _config_path() -> Path:
+def config_path() -> Path:
+    """Return the config file path (``~/.gmlw/config.toml``)."""
     return paths.HOME / "config.toml"
+
+
+_config_path = config_path  # internal alias, kept for the accessors below
+
+
+def current_values(path: Path | None = None) -> dict[str, object]:
+    """Return the current effective value of every registered scalar setting.
+
+    Reads each setting through its own tolerant accessor, so the map reflects exactly what
+    the app will use (defaults where unset). The keys mirror
+    :func:`settings_registry.keys`; a test guards that they stay in step.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        A ``dotted.key -> value`` map for the settable scalar keys.
+    """
+    companion_settings = companion(path)
+    transcript_settings = transcript(path)
+    compress_settings = compress(path)
+    return {
+        "client.default": default_client(path),
+        "language.code": language(path),
+        "profile.default_role": default_role(path),
+        "profile.default_environment": default_environment(path),
+        "logging.level": log_level(path),
+        "companion.persona": companion_settings.persona,
+        "companion.name": companion_settings.name,
+        "transcript.enabled": transcript_settings.enabled,
+        "transcript.root": transcript_settings.root,
+        "compress.adapter": compress_settings.adapter,
+        "compress.model": compress_settings.model,
+        "compress.effort": compress_settings.effort,
+    }
 
 
 def config_exists(path: Path | None = None) -> bool:

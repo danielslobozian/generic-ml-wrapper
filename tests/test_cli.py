@@ -20,6 +20,7 @@ from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     CheckClientReady,
     ClientReadiness,
 )
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
@@ -52,6 +53,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
+from generic_ml_wrapper.common import paths
 from generic_ml_wrapper.common.i18n import load_localizer
 
 
@@ -150,6 +152,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "persona": ["persona"],
         "plugins": ["plugins"],
         "creds": ["creds"],
+        "config": ["config"],
     }
     assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
     for command, argv in samples.items():
@@ -1058,3 +1061,71 @@ def test_creds_set_rejects_invalid_env_var_name(
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
     assert app.main(["creds", "set", "wf", "1BAD"]) == 2
     assert "invalid environment-variable name" in capsys.readouterr().err
+
+
+def test_config_list_prints_settings_with_values(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "client.default" in out
+    assert "profile.default_role" in out
+
+
+def test_config_list_json(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config", "list", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    keys = {row["key"] for row in payload}
+    assert "logging.level" in keys
+
+
+def test_config_get_prints_one_setting(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config", "get", "logging.level"]) == 0
+    out = capsys.readouterr().out
+    assert "logging.level = warning" in out
+    assert "allowed:" in out
+
+
+def test_config_get_unknown_key_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config", "get", "nope.key"]) == 2
+    assert "unknown setting" in capsys.readouterr().err
+
+
+def test_config_set_persists_and_echoes_the_change(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config", "set", "profile.default_role", "reviewer"]) == 0
+    out = capsys.readouterr().out
+    assert "profile.default_role = reviewer" in out
+    assert 'default_role = "reviewer"' in (paths.HOME / "config.toml").read_text(encoding="utf-8")
+
+
+def test_config_set_invalid_value_errors(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config", "set", "logging.level", "loud"]) == 2
+    assert "invalid value" in capsys.readouterr().err
+
+
+def test_bare_config_shows_its_help(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
+    assert app.main(["config"]) == 0
+    assert "list" in capsys.readouterr().out  # the sub-action help
+
+
+def test_build_config_commands_is_wired() -> None:
+    assert isinstance(composition.build_config_commands(), ConfigCommands)

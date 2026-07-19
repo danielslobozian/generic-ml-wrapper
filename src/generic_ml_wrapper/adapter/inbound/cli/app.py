@@ -35,6 +35,11 @@ from generic_ml_wrapper.application.domain.model.migration import MigrationRepor
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
+from generic_ml_wrapper.application.port.inbound.config_commands import (
+    ConfigCommands,
+    SetOutcome,
+    SettingView,
+)
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -53,6 +58,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
+    build_config_commands,
     build_export_usage,
     build_init,
     build_list_jobs,
@@ -68,7 +74,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_set_credential,
     build_start_job,
 )
-from generic_ml_wrapper.common import config, i18n, paths
+from generic_ml_wrapper.common import config, i18n, paths, settings_registry
 from generic_ml_wrapper.common.log import configure as configure_logging
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
@@ -94,6 +100,7 @@ _COMMANDS = frozenset(
         "persona",
         "plugins",
         "creds",
+        "config",
     }
 )
 
@@ -104,6 +111,7 @@ _SUBACTIONS = {
     "persona": "persona_command",
     "plugins": "plugins_command",
     "creds": "creds_command",
+    "config": "config_command",
 }
 
 
@@ -242,6 +250,17 @@ def build_parser() -> argparse.ArgumentParser:
     creds_set = creds_sub.add_parser("set", help="store a workflow credential")
     creds_set.add_argument("workflow", help="the workflow the credential belongs to")
     creds_set.add_argument("name", help="the environment-variable name to export at launch")
+
+    config_parser = sub.add_parser("config", help="view or change gmlw settings")
+    config_sub = config_parser.add_subparsers(dest="config_command", metavar="<action>")
+    config_list = config_sub.add_parser("list", help="list every setting and its value")
+    _add_json_flag(config_list)
+    config_get = config_sub.add_parser("get", help="show one setting")
+    config_get.add_argument("key", help="the dotted setting key (e.g. profile.default_role)")
+    _add_json_flag(config_get)
+    config_set = config_sub.add_parser("set", help="change one setting")
+    config_set.add_argument("key", help="the dotted setting key")
+    config_set.add_argument("value", help="the new value (use 'none' to clear an optional key)")
     return parser
 
 
@@ -494,6 +513,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _plugins(args)
         if args.command == "creds":
             return _creds(args)
+        if args.command == "config":
+            return _config(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
     except (
         IdentifierError,
@@ -837,6 +858,121 @@ def _creds(args: argparse.Namespace) -> int:
         print(i18n.t("creds.stored", workflow=workflow, name=name))
         return 0
     return 0
+
+
+def _setting_value(value: object, loc: i18n.Localizer) -> str:
+    """Render a setting value for display: ``(unset)`` for None, lower-case for bools."""
+    if value is None:
+        return loc.t("config.unset")
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def format_setting_list(views: list[SettingView], loc: i18n.Localizer | None = None) -> str:
+    """Render every setting with its current value and description (aligned).
+
+    Args:
+        views: The settings to render, in registry order.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [loc.t("config.list.header", count=len(views)), ""]
+    width = max((len(view.key) for view in views), default=0)
+    for view in views:
+        lines.append(
+            loc.t("config.row", key=f"{view.key:<{width}}", value=_setting_value(view.value, loc))
+        )
+        lines.append(loc.t("config.row_desc", description=view.description))
+    return "\n".join(lines)
+
+
+def format_setting(view: SettingView, loc: i18n.Localizer | None = None) -> str:
+    """Render a single setting: value, description, default and any allowed values.
+
+    Args:
+        view: The setting to render.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [
+        loc.t("config.get", key=view.key, value=_setting_value(view.value, loc)),
+        loc.t("config.get_desc", description=view.description),
+        loc.t("config.get_default", default=_setting_value(view.default, loc)),
+    ]
+    if view.choices is not None:
+        lines.append(loc.t("config.get_allowed", choices=", ".join(view.choices)))
+    return "\n".join(lines)
+
+
+def _config(args: argparse.Namespace) -> int:
+    commands = build_config_commands()
+    as_json = bool(getattr(args, "json", False))
+    if args.config_command == "list":
+        views = commands.list()
+        if as_json:
+            print(_as_json([_setting_payload(view) for view in views]))
+        else:
+            print(format_setting_list(views))
+        return 0
+    if args.config_command == "get":
+        try:
+            view = commands.get(args.key)
+        except settings_registry.UnknownSettingError:
+            print(i18n.t("config.unknown_key", key=args.key), file=sys.stderr)
+            return 2
+        print(_as_json(_setting_payload(view)) if as_json else format_setting(view))
+        return 0
+    if args.config_command == "set":
+        return _config_set(commands, args.key, args.value)
+    return 0
+
+
+def _config_set(commands: ConfigCommands, key: str, value: str) -> int:
+    try:
+        outcome = commands.set(key, value)
+    except settings_registry.UnknownSettingError:
+        print(i18n.t("config.unknown_key", key=key), file=sys.stderr)
+        return 2
+    except settings_registry.InvalidSettingValueError as error:
+        print(i18n.t("error.generic", error=error), file=sys.stderr)
+        return 2
+    print(_format_set_outcome(outcome))
+    return 0
+
+
+def _format_set_outcome(outcome: SetOutcome, loc: i18n.Localizer | None = None) -> str:
+    """Render the localised summary of a ``config set`` — never silent about the change."""
+    loc = loc or i18n.active()
+    if not outcome.changed:
+        value = _setting_value(outcome.new, loc)
+        return loc.t("config.set_unchanged", key=outcome.key, value=value)
+    if outcome.new is None:
+        return loc.t("config.set_cleared", key=outcome.key, old=_setting_value(outcome.old, loc))
+    return loc.t(
+        "config.set_changed",
+        key=outcome.key,
+        new=_setting_value(outcome.new, loc),
+        old=_setting_value(outcome.old, loc),
+    )
+
+
+def _setting_payload(view: SettingView) -> dict[str, object]:
+    """Render a setting as a JSON-friendly dict."""
+    return {
+        "key": view.key,
+        "value": view.value,
+        "default": view.default,
+        "type": view.type_name,
+        "choices": list(view.choices) if view.choices is not None else None,
+        "description": view.description,
+    }
 
 
 def _workflow(args: argparse.Namespace) -> int:
