@@ -33,11 +33,49 @@ def render_statusline(status: ClientStatus, workspace: Workspace) -> str:
         _git(workspace),
         _folder(workspace),
         status.model,
-        None if status.context_pct is None else f"ctx {status.context_pct}%",
+        _context(status),
         *status.extras,
         None if status.session_cost_usd is None else f"${status.session_cost_usd:.2f}",
     ]
     return _SEPARATOR.join(block for block in blocks if block)
+
+
+def _context(status: ClientStatus) -> str | None:
+    """The context-fill block: ``ctx 155.6k/200k (78%)``, degrading to ``ctx 78%``.
+
+    Shows the denominator when the client reports both the tokens in the window and
+    the window size -- a bare percentage hides whether the window is 200k or 1M. When
+    either is missing, falls back to the percentage alone; when even that is absent,
+    the block is omitted.
+    """
+    pct = status.context_pct
+    if status.context_tokens is not None and status.context_window_size:
+        computed = round(100 * status.context_tokens / status.context_window_size)
+        shown = pct if pct is not None else computed
+        return (
+            f"ctx {_compact(status.context_tokens)}/"
+            f"{_compact(status.context_window_size)} ({shown}%)"
+        )
+    return None if pct is None else f"ctx {pct}%"
+
+
+_MILLION = 1_000_000
+_THOUSAND = 1_000
+
+
+def _compact(tokens: int) -> str:
+    """A compact token count: ``200000`` -> ``200k``, ``1000000`` -> ``1M``."""
+    if tokens >= _MILLION:
+        return _trim(tokens / _MILLION) + "M"
+    if tokens >= _THOUSAND:
+        return _trim(tokens / _THOUSAND) + "k"
+    return str(tokens)
+
+
+def _trim(value: float) -> str:
+    """One decimal place, with a trailing ``.0`` dropped (``200.0`` -> ``200``)."""
+    text = f"{value:.1f}"
+    return text[:-2] if text.endswith(".0") else text
 
 
 def render_usage_row(label: str, name: str, turns: int, tokens: int, cost_usd: float) -> str:

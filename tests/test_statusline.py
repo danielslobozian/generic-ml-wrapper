@@ -17,15 +17,25 @@ from generic_ml_wrapper.application.port.outbound.usage_store import UsageStoreP
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
 
+_NOW = 1_000_000.0
 _CLAUDE_PAYLOAD: dict[str, object] = {
     "model": {"display_name": "Opus 4.8"},
-    "context_window": {"used_percentage": 34},
+    "context_window": {
+        "used_percentage": 34,
+        "context_window_size": 200000,
+        "total_input_tokens": 68000,
+    },
     "cost": {"total_cost_usd": 0.4321},
     "rate_limits": {
-        "five_hour": {"used_percentage": 12},
-        "seven_day": {"used_percentage": 47},
+        "five_hour": {"used_percentage": 12, "resets_at": _NOW + 12 * 60},
+        "seven_day": {"used_percentage": 47, "resets_at": _NOW + 3 * 86400},
     },
 }
+
+
+def _clock() -> float:
+    return _NOW
+
 
 _NO_WORKSPACE = Workspace(folder=None, repo=None, branch=None, short_sha=None, dirty=0)
 _REPO = Workspace(folder="~/dev/app", repo="app", branch="main", short_sha="abc1234", dirty=3)
@@ -74,16 +84,35 @@ def _status(**overrides: object) -> ClientStatus:
 
 # ── parser ──
 def test_claude_parser_reads_the_fields() -> None:
-    status = ClaudeStatusParser().parse(_CLAUDE_PAYLOAD)
+    status = ClaudeStatusParser(clock=_clock).parse(_CLAUDE_PAYLOAD)
     assert status.model == "Opus 4.8"
     assert status.context_pct == 34
+    assert status.context_window_size == 200000
+    assert status.context_tokens == 68000
     assert status.session_cost_usd == 0.4321
-    assert status.extras == ("quota 5h 12% · wk 47%",)
+    assert status.extras == ("quota 5h 12% (↻ 12m) · wk 47% (↻ 3d)",)
 
 
 def test_claude_parser_reads_partial_quota() -> None:
+    # No resets_at → the window renders as percentage only (reset marker omitted).
     status = ClaudeStatusParser().parse({"rate_limits": {"five_hour": {"used_percentage": 80}}})
     assert status.extras == ("quota 5h 80%",)
+
+
+def test_claude_parser_reset_durations() -> None:
+    parser = ClaudeStatusParser(clock=_clock)
+
+    def extras_at(delta: float) -> tuple[str, ...]:
+        payload: dict[str, object] = {
+            "rate_limits": {"five_hour": {"used_percentage": 5, "resets_at": _NOW + delta}}
+        }
+        return parser.parse(payload).extras
+
+    assert extras_at(30) == ("quota 5h 5% (↻ 0m)",)  # under a minute
+    assert extras_at(90) == ("quota 5h 5% (↻ 1m)",)
+    assert extras_at(2 * 3600) == ("quota 5h 5% (↻ 2h)",)
+    assert extras_at(5 * 86400) == ("quota 5h 5% (↻ 5d)",)
+    assert extras_at(-100) == ("quota 5h 5% (↻ 0m)",)  # already past → 0m
 
 
 def test_claude_parser_tolerates_missing_fields() -> None:
@@ -96,6 +125,21 @@ def test_claude_parser_tolerates_missing_fields() -> None:
 def test_render_omits_missing_fields() -> None:
     assert render_statusline(_status(), _NO_WORKSPACE) == ""
     assert render_statusline(_status(model="Opus 4.8"), _NO_WORKSPACE) == "Opus 4.8"
+
+
+def test_render_context_shows_denominator() -> None:
+    status = _status(context_pct=34, context_tokens=68000, context_window_size=200000)
+    assert render_statusline(status, _NO_WORKSPACE) == "ctx 68k/200k (34%)"
+
+
+def test_render_context_compact_and_computes_pct_when_absent() -> None:
+    # 1M window, fractional-k tokens; percentage computed since the client omitted it.
+    status = _status(context_tokens=155615, context_window_size=1_000_000)
+    assert render_statusline(status, _NO_WORKSPACE) == "ctx 155.6k/1M (16%)"
+
+
+def test_render_context_falls_back_to_pct_without_tokens_or_size() -> None:
+    assert render_statusline(_status(context_pct=34), _NO_WORKSPACE) == "ctx 34%"
 
 
 def test_render_full_line() -> None:
@@ -151,7 +195,10 @@ def _use_case(
     usage: FakeUsageStore, workspace: Workspace, turns: FakePerTurnStore | None = None
 ) -> RenderStatuslineUseCase:
     return RenderStatuslineUseCase(
-        ClaudeStatusParser(), usage, FakeWorkspaceInspector(workspace), turns or FakePerTurnStore()
+        ClaudeStatusParser(clock=_clock),
+        usage,
+        FakeWorkspaceInspector(workspace),
+        turns or FakePerTurnStore(),
     )
 
 

@@ -148,9 +148,9 @@ costume and makeup, briefs the director, then cedes the screen ([[wrapper-not-st
 
 Deferred but homed: a detached model call to synthesise a `role.md` for an unfamiliar role
 (e.g. product owner) is a natural future consumer of the 0.3.0 `pre-launch` seam — parked,
-not built. **Persona *previews* moved to 0.7.0** — sample lines are only worth shipping once
+not built. **Persona *previews* moved to 0.8.0** — sample lines are only worth shipping once
 the personas behind them are proven to actually differ, and doing them in French requires
-localising persona content, which is the same job (see 0.7.0).
+localising persona content, which is the same job (see 0.8.0).
 
 ### 0.5.0 — discoverability & progressive disclosure
 Reframed around the real metric for a new user: **time to a first live session**, and then
@@ -219,14 +219,68 @@ model of their own process.
   against railroading a novice and a **consent gate** on anything personal. Authoring
   keeps distilled state (a draft plus the parking lot) as files in the workflow folder,
   so it survives context compaction.
-- **Per-workflow persona, composed as voice over method** — a workflow can carry its own
-  persona instead of the single global tone. Persona is **manner**; the authoring
-  behavior above is **method**. They compose by layer: the method lives in the mode
-  floor (guaranteed, persona-independent), and the persona colors delivery on top — it
-  can voice the invariants but not break them. Personas carry an **authoring-friendliness**
-  expectation, so a voice built around brutal efficiency can't sabotage the facilitation.
 
-### 0.7.0 — personas, proven (and multilingual)
+#### Statusline — render the data Claude Code already hands us
+A separate, self-contained thread riding in this release: the status payload gmlw
+receives already carries more than it displays, and two of those fields are parsed out
+and dropped. No new plumbing — the data arrives at the status parser today; the fix is to
+keep it and render it. Claude-first (the cursor parser shares the context shape and
+benefits where the fields overlap); codex and vibe pipe no status payload, so this
+degrades honestly rather than fabricating a denominator.
+
+- **Show the denominator** — today gmlw renders a bare `78%` against an *unstated*
+  window size. The payload also carries `context_window_size` (200k default, 1M for
+  extended-context models), so render `155.6k/200k (78%)` instead. This is what makes the
+  percentage falsifiable: a Max user who sees `/200k` knows the window is being
+  under-reported (the metering relay looks like a gateway, so Claude Code can't verify 1M
+  support and budgets 200k) and can act on it themselves. Extend the client status with
+  `context_window_size` and `context_tokens`.
+- **Quota: time-to-reset, not just percentage** — `5h 90%` is unactionable without
+  knowing whether reset is in 10 minutes or 4 hours. The payload carries `resets_at`
+  (epoch seconds) per window; render it as a relative duration — `5h 90% (↻12m) · wk 40%
+  (↻3d)`. Each window may be independently absent (subscriber-only, appears after the
+  first response), so tolerate a missing reset per field exactly as the percentage
+  already is. The single most decision-relevant pair a metering wrapper can show.
+- **Baseline & drift (candidate)** — a session that opens at 26% full looks identical to
+  one at 5% until it's too late. A pre-launch / first-turn line surfacing the baseline
+  cost (tools · mcp · skills), and a note when the baseline drifts upward across a client
+  auto-update. Softer than the two above; carried as a candidate, not a commitment.
+
+### 0.7.0 — TUI refactoring: the terminal UX as one system
+The discoverability surfaces landed piecemeal across 0.4.0–0.6.0 — the first-run chooser, the
+bare-`gmlw` index, `help` topics, `config list`, the exit receipt, the ambient card, the
+pre-launch workflow chooser. Each was built when its feature needed it. This release stops
+adding surfaces and makes the ones that exist read as **one system**: a consistency and
+quality pass over the terminal UX, from the design deliverable in `generic-ml-wrapper-030-ui-concepts.md`.
+
+**Not a TUI app.** The curses/full-screen "Hub" (that doc's Concept 3) stays **dropped** — it
+carries the only real dependency bill, and a persistent full-screen surface pulls against
+[[wrapper-not-standalone]]. "TUI refactoring" here means refactoring the *text* UX gmlw already
+owns, not adopting a widget toolkit. gmlw's UI lives only on the five legal surfaces and never
+as a persistent UI over a live session.
+
+- **The five surfaces, made consistent** — utility commands (S1), pre-launch (S2), the handoff
+  (S3), ambient in-client greeting/statusline (S4), and **the return** (S5). Audit each for the
+  house rules the codebase already implies: chrome to stderr so stdout stays clean for `--json`,
+  non-TTY degrades to silent/scriptable, and anything shown at the handoff (S3, instantly wiped)
+  is duplicated at S4/S5 so nothing is lost.
+- **Next-action footers everywhere** — the core mechanic of the enriched CLI: every
+  run-and-return command ends with 1–2 contextual next commands, so discovery rides on commands
+  the user already runs. Make it uniform across *all* listings/inspections, not just the ones
+  that happen to have it.
+- **The chooser teaches the fast path** — the pre-launch chooser always echoes the equivalent
+  one-liner before handoff, and `?` at any prompt prints the relevant `help` topic inline then
+  re-prompts, so interactive use graduates the user out of the chooser. Full argv still means
+  zero interaction, always.
+- **Receipt / card parity** — the exit receipt (S5) and the ambient capability card (S4) must
+  describe the same command surface in the same vocabulary, so "what can gmlw do" gets the same
+  answer whether asked mid-session or read on the return. One suppressible, usage-driven tip per
+  return, rotated, never off-TTY.
+- **A visual-consistency pass** — shared alignment, colour/emphasis conventions, and the
+  status-of vs manual split (statusline = ambient *state*; card = ambient *manual*) applied
+  uniformly, so the surfaces look like one product rather than several sittings.
+
+### 0.8.0 — personas, proven (and multilingual)
 Today "personas shape tone" is an **untested claim**. A persona ships a tone block, but
 nothing demonstrates that `mentor` and `terse` actually answer differently — and the tone
 block is injected *on top of* each client's own system prompt, which may simply swamp it.
@@ -249,6 +303,15 @@ is an evaluation loop, not a feature.
   block, re-run, watch the matrix separate. The honest possible outcome is that personas must
   become **bolder** to survive a client's own voice — or that they differentiate on some
   clients and not others. That finding is a deliverable, not a failure.
+- **Per-workflow persona, composed as voice over method** — a workflow can carry its own
+  persona instead of the single global tone. Persona is **manner**; the facilitative +
+  constructive authoring behavior (0.6.0) is **method**. They compose by layer: the method
+  lives in the mode floor (guaranteed, persona-independent), and the persona colors delivery
+  on top — it can voice the invariants but not break them. Personas carry an
+  **authoring-friendliness** expectation, so a voice built around brutal efficiency can't
+  sabotage the facilitation. *Landed here, after the harness proves the personas actually
+  differ* — layering per-workflow persona on top of personas that collapse would build on
+  sand, so composition follows the proof rather than preceding it.
 - **Persona content becomes multilingual** — required for previews in French, and a real gap
   today: only the *prompt header* is localised, so a French user gets an English description
   and an **English greeting at every launch**. This is not a strings port: French carries a
@@ -267,10 +330,11 @@ is an evaluation loop, not a feature.
   the full side-by-side behind `gmlw persona preview`. Samples are labelled as indicative:
   they come from one model at authoring time, and the user's client may differ.
 
-**Sequencing risk, stated plainly:** 0.6.0 layers *per-workflow persona* on top of personas
-whose distinctness this release is what proves. If the matrix shows they collapse, 0.6.0's
-persona composition needs revisiting — so pull this earlier if that work starts leaning hard
-on the foundation.
+**Sequencing, resolved:** *per-workflow persona* used to sit in 0.6.0, ahead of the release
+that proves personas are distinct at all — building composition on an unproven foundation. It
+now lives here in 0.8.0, after the harness and the tuning, so the composition follows the
+proof. If the matrix shows personas collapse even after tuning, per-workflow persona is
+reconsidered in place rather than shipped on sand.
 
 ## Parked
 

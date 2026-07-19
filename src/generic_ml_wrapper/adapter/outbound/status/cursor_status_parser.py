@@ -48,6 +48,8 @@ class CursorStatusParser(ClientStatusParserPort):
             context_pct=_as_pct(_dig(payload, "context_window", "used_percentage")),
             session_cost_usd=None,
             extras=_plan_extras(_dig(payload, "plan")),
+            context_window_size=_as_int(_dig(payload, "context_window", "context_window_size")),
+            context_tokens=_as_int(_dig(payload, "context_window", "total_input_tokens")),
         )
 
 
@@ -69,3 +71,9 @@ def _as_pct(value: object) -> int | None:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     return round(value)
+
+
+def _as_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return int(value)
