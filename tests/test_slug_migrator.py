@@ -67,8 +67,9 @@ def test_is_idempotent_and_leaves_clean_slugs_untouched(tmp_path: Path) -> None:
 
 
 def test_disambiguates_folders_that_slug_to_the_same_name(tmp_path: Path) -> None:
+    # Distinct folder names on every filesystem (accent, not just case) that slug identically.
     _make(tmp_path, environment="Team A")
-    _make(tmp_path, environment="team a")  # both slug to "team-a"
+    _make(tmp_path, environment="Téam A")  # both slug to "team-a"
 
     report = FilesystemSlugMigrator(tmp_path).migrate()
 
