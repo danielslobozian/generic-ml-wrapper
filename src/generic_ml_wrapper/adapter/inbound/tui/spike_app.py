@@ -20,7 +20,7 @@ from typing import ClassVar, cast
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container
 from textual.screen import Screen
 from textual.widgets import Label, ListItem, ListView, Static
 
@@ -109,19 +109,15 @@ _TOP_MENU = [
 
 
 class _Row(ListItem):
-    """A two-line list row: a fixed-width icon column beside a title + subtitle stack."""
+    """A two-line list row: icon + bold title on line one, dim subtitle on line two.
+
+    A single markup ``Label`` (not nested containers) so the row sizes to its two lines --
+    nested ``Horizontal``/``Vertical`` default to *filling* the parent, which blows each row
+    up to the whole viewport.
+    """
 
     def __init__(self, item: _Item) -> None:
-        super().__init__(
-            Horizontal(
-                Label(item.icon, classes="icon"),
-                Vertical(
-                    Label(item.title, classes="title"),
-                    Label(item.subtitle, classes="sub"),
-                ),
-                classes="row",
-            )
-        )
+        super().__init__(Label(f"{item.icon}  [b]{item.title}[/b]\n    [dim]{item.subtitle}[/dim]"))
         self.item = item
 
 
@@ -296,19 +292,21 @@ class SpikeMenuApp(App[MenuChoice | None]):
     and tests can drive it with a fixture list.
     """
 
+    # A calm, mostly-transparent look: no filled bars, and a *subtle* row highlight (the
+    # default full-strength accent was the "whole screen in blue"). Rows are two lines and
+    # size to content -- never fill the viewport.
     CSS = """
+    Screen  { background: $background; }
     #banner { color: cyan; text-style: bold; padding: 1 1 0 1; height: auto; }
-    #crumb  { dock: top; padding: 0 1; color: $text-muted; background: $panel; }
-    #menu   { height: 1fr; }
+    #crumb  { dock: top; padding: 0 1; color: $text-muted; }
+    #menu   { height: 1fr; background: transparent; }
     #empty  { height: 1fr; padding: 1 2; color: $text-muted; }
     #status { dock: bottom; height: auto; }
-    #detail { padding: 0 1; min-height: 2; height: auto; background: $panel; }
-    #keys   { padding: 0 1; color: $text-muted; background: $boost; }
-    .row    { height: auto; }
-    .icon   { width: 4; content-align: center middle; }
-    .title  { text-style: bold; }
-    .sub    { color: $text-muted; }
-    ListItem { height: auto; padding: 0 1; }
+    #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
+    #keys   { padding: 0 1; color: $text-muted; }
+    ListItem { height: auto; padding: 0 1; background: transparent; }
+    ListView > ListItem.-highlight { background: cyan 15%; }
+    ListView:focus > ListItem.-highlight { background: cyan 25%; color: $text; }
     """
     TITLE = "gmlw"
 
