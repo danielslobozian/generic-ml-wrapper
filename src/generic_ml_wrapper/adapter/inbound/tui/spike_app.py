@@ -194,6 +194,10 @@ class _SpikeScreen(Screen[None]):
         """The rows for this screen (overridden by dynamic screens like the job picker)."""
         return []
 
+    def initial_index(self) -> int:
+        """Which row starts highlighted (overridden to land on the current value)."""
+        return 0
+
     def compose(self) -> ComposeResult:
         """Header (banner or breadcrumb), the list, then the docked detail + key bar."""
         if self.show_banner:
@@ -202,7 +206,7 @@ class _SpikeScreen(Screen[None]):
             yield Static(self.crumb, id="crumb")
         items = self.menu_items()
         if items:
-            yield ListView(*(_Row(i) for i in items), id="menu")
+            yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
         else:
             yield Static("Nothing here yet.", id="empty")
         with Container(id="status"):
@@ -348,6 +352,12 @@ class PersonaPickerScreen(_SpikeScreen):
             )
             for p in self.spike_app.personas
         ]
+
+    def initial_index(self) -> int:
+        """Open with the cursor on the active persona, not the first row."""
+        current = self.spike_app.current_persona
+        names = [p.name for p in self.spike_app.personas]
+        return names.index(current) if current in names else 0
 
     def handle(self, item: _Item) -> None:
         """Persist the picked persona, move the dot in place, and confirm in the panel."""

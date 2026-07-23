@@ -124,3 +124,22 @@ def test_persona_switch_keeps_the_cursor_in_place() -> None:
 
     asyncio.run(scenario())
     assert seen["index"] == 1  # cursor stayed on the row that was picked, not reset to top
+
+
+def test_persona_menu_opens_on_the_active_persona() -> None:
+    """The picker starts with the cursor on the current persona, not the first row."""
+    index: dict[str, object] = {}
+
+    async def scenario() -> None:
+        # current persona 'coach' is the second of the two fixtures (index 1).
+        app = SpikeMenuApp(
+            _JOBS, personas=_PERSONAS, current_persona="coach", set_persona=lambda n: n
+        )
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("down", "down", "enter")  # → Config
+            await pilot.press("down", "down", "down", "enter")  # → Persona picker
+            await pilot.pause()
+            index["value"] = app.screen.query_one("#menu", ListView).index
+
+    asyncio.run(scenario())
+    assert index["value"] == 1
