@@ -43,6 +43,10 @@ dependencies = [
   # pydantic (a compiled core) — a deliberate, load-bearing exception to the thin-dep
   # rule for the one place that benefits from real schema + validation.
   "pydantic-settings>=2",
+  # SPIKE ONLY (throwaway branch spike/tui-handoff): Textual for the interactive-menu
+  # front-end proof. Pure-Python, ships a run_test/Pilot harness. Not to be merged as-is
+  # without the library decision (Textual vs questionary vs choose_number) being made.
+  "textual>=0.60",
 ]
 
 [project.urls]

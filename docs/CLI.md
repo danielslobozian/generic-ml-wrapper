@@ -207,6 +207,23 @@ gmlw statusline
 Takes no positionals or flags. See [CLIENTS.md](CLIENTS.md) for how each client's
 status line is installed and parsed.
 
+## tui
+
+> **SPIKE** (branch `spike/tui-handoff`) — a throwaway proof of the interactive-menu
+> front-end and, above all, the client hand-off. Not a committed feature.
+
+Opens a full-screen interactive menu (Start · Resume · Config · Quit). Pick **Resume**,
+choose a job, and gmlw tears the menu down and relaunches that job's latest session on
+its client — the same launch path as `gmlw start <job> --resume-latest`.
+
+```
+gmlw tui
+```
+
+Off a TTY (piped/redirected) it never blocks: it falls back to the capability index,
+exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the arg
+CLI remains the scripting path.
+
 ## workflow
 
 Author and list workflows. Invoked with no action, prints its own help.

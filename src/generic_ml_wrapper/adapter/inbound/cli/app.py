@@ -142,6 +142,7 @@ _COMMANDS = frozenset(
         "sessions",
         "export",
         "statusline",
+        "tui",
         "workflow",
         "persona",
         "plugins",
@@ -281,6 +282,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_flag(export)
 
     sub.add_parser("statusline", help="render the status line (called by the client)")
+
+    sub.add_parser("tui", help="interactive menu (SPIKE — throwaway hand-off proof)")
 
     workflow = sub.add_parser("workflow", help="author/list workflows")
     workflow_sub = workflow.add_subparsers(dest="workflow_command", metavar="<action>")
@@ -602,6 +605,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _run(args)
         if args.command == "statusline":
             return _statusline()
+        if args.command == "tui":
+            return _tui()
         if args.command == "workflow":
             return _workflow(args)
         if args.command == "persona":
@@ -945,6 +950,47 @@ def _farewell() -> str | None:
     if settings.persona is None:
         return None
     return i18n.t("farewell", name=settings.name or getpass.getuser())
+
+
+def _tui() -> int:
+    """SPIKE: run the interactive menu, then hand off to the client outside the event loop.
+
+    The whole point of the spike lives in the *ordering* here: the Textual app owns the
+    terminal only while ``run()`` blocks. When the user picks a job, the app calls
+    ``exit(choice)``; Textual restores the terminal as ``run()`` returns; and only *then*
+    do we launch the client through the same ``build_start_job`` path every other command
+    uses. Off a TTY we never build the app -- we fall back to the plain capability index,
+    honouring the "non-TTY never blocks on a menu" contract.
+    """
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return _index()
+    from generic_ml_wrapper.adapter.inbound.tui.spike_app import (  # noqa: PLC0415  spike-local
+        JobChoice,
+        SpikeMenuApp,
+    )
+
+    jobs = [JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()]
+    choice = SpikeMenuApp(jobs).run()  # blocks; terminal is fully restored on return
+    if choice is None or choice.action != "resume" or choice.job is None:
+        return 0
+    command = StartJobCommand(
+        job=JobId(choice.job),
+        client=_client(None),  # ignored on resume: the stored latest session carries its client
+        resume_latest=True,
+        workflow=None,
+    )
+    if not _preflight_cwd():
+        return 2
+    with _client_owns_interrupts():
+        try:
+            result = build_start_job().execute(command)
+        except _Terminated:
+            return 143
+        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+            print(i18n.t("error.generic", error=error), file=sys.stderr)
+            return 2
+    _print_exit_receipt(result)
+    return result.exit_code
 
 
 def _start(args: argparse.Namespace) -> int:
