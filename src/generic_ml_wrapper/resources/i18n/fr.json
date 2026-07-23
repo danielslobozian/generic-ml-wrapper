@@ -111,6 +111,8 @@
   "run.echo": "  la prochaine fois :  gmlw run {workflow}",
   "farewell": "À bientôt, {name}.",
   "creds.stored": "enregistré {workflow}.{name}",
+  "axis.created": "{kind} « {label} » créé → {slug}",
+  "axis.made_default": "{kind} par défaut : « {slug} »",
   "config.unset": "(non défini)",
   "config.list.header": "{count} réglage(s) :",
   "config.row": "  {key}  {value}",

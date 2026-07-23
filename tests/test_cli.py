@@ -12,7 +12,7 @@ import pytest
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.application.domain.model.axis import AxisSelection
+from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
 from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
@@ -22,6 +22,12 @@ from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     ClientReadiness,
 )
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.create_axis import (
+    AxisExistsError,
+    CreateAxis,
+    CreateAxisCommand,
+    CreateAxisResult,
+)
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflow,
     EditWorkflowCommand,
@@ -154,6 +160,8 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "plugins": ["plugins"],
         "creds": ["creds"],
         "config": ["config"],
+        "environment": ["environment"],
+        "role": ["role"],
         "help": ["help"],
     }
     assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
@@ -1429,3 +1437,58 @@ def test_workflow_edit_reports_a_missing_workflow(
 
 def test_build_edit_workflow_is_wired() -> None:
     assert isinstance(composition.build_edit_workflow(), EditWorkflow)
+
+
+class _FakeCreateAxis(CreateAxis):
+    def __init__(self, error: Exception | None = None) -> None:
+        self.seen: CreateAxisCommand | None = None
+        self._error = error
+
+    def execute(self, command: CreateAxisCommand) -> CreateAxisResult:
+        self.seen = command
+        if self._error is not None:
+            raise self._error
+        return CreateAxisResult(
+            kind=command.kind,
+            slug="client-project",
+            label=command.label,
+            made_default=command.make_default,
+        )
+
+
+def test_environment_new_builds_the_command_and_confirms(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeCreateAxis()
+    monkeypatch.setattr(app, "build_create_axis", lambda: fake)
+    assert app.main(["environment", "new", "Client Project", "--default"]) == 0
+    assert fake.seen == CreateAxisCommand(
+        kind=AxisKind.ENVIRONMENT, label="Client Project", description="", make_default=True
+    )
+    out = capsys.readouterr().out
+    assert "client-project" in out  # the derived slug
+    assert "default" in out  # made-default line printed
+
+
+def test_role_new_defaults_description_empty_and_no_default(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeCreateAxis()
+    monkeypatch.setattr(app, "build_create_axis", lambda: fake)
+    assert app.main(["role", "new", "Code Reviewer"]) == 0
+    assert fake.seen is not None
+    assert fake.seen.kind == AxisKind.ROLE
+    assert fake.seen.make_default is False
+
+
+def test_environment_new_reports_a_collision_and_exits_2(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeCreateAxis(error=AxisExistsError("environment already exists: 'work'"))
+    monkeypatch.setattr(app, "build_create_axis", lambda: fake)
+    assert app.main(["environment", "new", "Work"]) == 2
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_build_create_axis_is_wired() -> None:
+    assert isinstance(composition.build_create_axis(), CreateAxis)
