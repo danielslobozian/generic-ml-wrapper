@@ -13,9 +13,11 @@ import os
 import platform
 import signal
 import sys
+import tomllib
 from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper import __version__
@@ -952,6 +954,34 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
+def _axis_choices(root: Path) -> list[tuple[str, str, str]]:
+    """SPIKE: scan a role/environment root for slug-folders, reading each ``.about.toml``.
+
+    The folder name is the slug (the stored config value); the sidecar carries the human
+    ``label`` and ``description`` shown in the switcher. A real front-end would read these
+    through a use case; the spike scans directly.
+
+    Args:
+        root: The ``environments/`` or ``profile/roles/`` directory.
+
+    Returns:
+        One ``(slug, label, description)`` per folder, sorted by slug.
+    """
+    if not root.exists():
+        return []
+    choices: list[tuple[str, str, str]] = []
+    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
+        label, description = folder.name, ""
+        about = folder / ".about.toml"
+        if about.exists():
+            with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
+                data = tomllib.loads(about.read_text(encoding="utf-8"))
+                label = str(data.get("label", folder.name))
+                description = str(data.get("description", ""))
+        choices.append((folder.name, label, description))
+    return choices
+
+
 def _tui() -> int:
     """SPIKE: run the interactive menu, then hand off to the client outside the event loop.
 
@@ -966,35 +996,55 @@ def _tui() -> int:
         return _index()
     from generic_ml_wrapper.adapter.inbound.tui.spike_app import (  # noqa: PLC0415  spike-local
         JobChoice,
-        PersonaChoice,
         SpikeMenuApp,
+        SwitchChoice,
+        Switcher,
     )
 
     jobs = [
         JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
     ]
-    # Persona switcher (a browser that mutates config in place, no hand-off): fetch the
-    # list and current value, and inject a setter that persists companion.persona. The app
-    # stays pure -- it never imports a use case; the wiring owns every outbound call.
+    # The config switchers (browsers that mutate config in place, no hand-off): each fetches
+    # its options + current value and injects a setter that persists one key. The app stays
+    # pure -- it never imports a use case; the wiring owns every outbound call.
     config_commands = build_config_commands()
+
+    def _switcher(crumb: str, key: str, noun: str, choices: list[SwitchChoice]) -> Switcher:
+        current = config_commands.get(key).value
+
+        def apply(value: str) -> str:  # spike copy is English, like the rest of the menu
+            changed = config_commands.set(key, value).changed
+            return f"{noun} set to '{value}'" if changed else f"{noun} already '{value}'"
+
+        return Switcher(
+            crumb=crumb,
+            choices=choices,
+            current=current if isinstance(current, str) else None,
+            apply=apply,
+        )
+
     personas = [
-        PersonaChoice(name=p.name, description=p.description)
-        for p in build_list_personas().execute()
+        SwitchChoice(p.name, p.name, p.description) for p in build_list_personas().execute()
     ]
-    current_persona = config_commands.get("companion.persona").value
+    environments = [SwitchChoice(s, label, d) for s, label, d in _axis_choices(paths.ENVIRONMENTS)]
+    roles = [SwitchChoice(s, label, d) for s, label, d in _axis_choices(paths.PROFILE / "roles")]
 
-    def _set_persona(name: str) -> str:
-        # Spike copy stays hardcoded English, like the rest of the menu; the real
-        # front-end localises through i18n.
-        outcome = config_commands.set("companion.persona", name)
-        return f"persona already '{name}'" if not outcome.changed else f"persona set to '{name}'"
+    switchers: dict[str, Switcher] = {}
+    if personas:
+        switchers["persona"] = _switcher(
+            "gmlw > Config > Persona", "companion.persona", "persona", personas
+        )
+    if environments:
+        switchers["environment"] = _switcher(
+            "gmlw > Config > Environment",
+            "profile.default_environment",
+            "environment",
+            environments,
+        )
+    if roles:
+        switchers["role"] = _switcher("gmlw > Config > Role", "profile.default_role", "role", roles)
 
-    choice = SpikeMenuApp(
-        jobs,
-        personas=personas,
-        current_persona=current_persona if isinstance(current_persona, str) else None,
-        set_persona=_set_persona,
-    ).run()  # blocks; terminal is fully restored on return
+    choice = SpikeMenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
     if choice is None or choice.action != "resume" or choice.job is None:
         return 0
     command = StartJobCommand(

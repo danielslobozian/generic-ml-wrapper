@@ -30,11 +30,6 @@ from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 _KEYS = "↑↓ move · ⏎ select · Esc back · q quit"
 
 
-def _no_wiring_set_persona(name: str) -> str:
-    """Default persona setter when the app runs unwired (tests / bare construction)."""
-    return f"(spike) would set persona to '{name}'"
-
-
 @dataclass(frozen=True)
 class MenuChoice:
     """What the user asked the app to do, handed back to the wiring on exit.
@@ -56,11 +51,31 @@ class JobChoice:
 
 
 @dataclass(frozen=True)
-class PersonaChoice:
-    """A selectable persona: its name (the config value) and one-line description."""
+class SwitchChoice:
+    """One option in a switcher: the config ``value`` written, plus what the user sees.
 
-    name: str
+    For personas ``value`` and ``label`` are both the persona name; for the folder-backed
+    axes ``value`` is the slug (what's stored) and ``label`` is the human name (what's shown).
+    """
+
+    value: str
+    label: str
     description: str
+
+
+@dataclass
+class Switcher:
+    """A "pick one, set a config key" screen's data: its rows, current value, and setter.
+
+    Mutable because ``current`` moves as the user switches. ``apply`` persists the chosen
+    value and returns a one-line confirmation; it is the only outbound call, injected by the
+    wiring so the app stays free of use-case imports.
+    """
+
+    crumb: str
+    choices: list[SwitchChoice]
+    current: str | None
+    apply: Callable[[str], str]
 
 
 @dataclass(frozen=True)
@@ -198,12 +213,16 @@ class _SpikeScreen(Screen[None]):
         """Which row starts highlighted (overridden to land on the current value)."""
         return 0
 
+    def header_text(self) -> str:
+        """The breadcrumb for this screen (overridden where it is dynamic)."""
+        return self.crumb
+
     def compose(self) -> ComposeResult:
         """Header (banner or breadcrumb), the list, then the docked detail + key bar."""
         if self.show_banner:
             yield Static(boxed_banner(), id="banner")
         else:
-            yield Static(self.crumb, id="crumb")
+            yield Static(self.header_text(), id="crumb")
         items = self.menu_items()
         if items:
             yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
@@ -313,63 +332,84 @@ class WorkflowMenuScreen(_SpikeScreen):
 
 
 class ConfigMenuScreen(_SpikeScreen):
-    """The Config verbs. Persona is wired (a browser that mutates); the rest are stubs."""
+    """The Config verbs. The switchers (Persona/Environment/Role) are wired; rest are stubs."""
 
     crumb = "gmlw > Config"
+
+    # Config verb -> switcher key injected on the app.
+    _SWITCHERS: ClassVar[dict[str, str]] = {
+        "cfg:persona": "persona",
+        "cfg:environment": "environment",
+        "cfg:role": "role",
+    }
 
     def menu_items(self) -> list[_Item]:
         """The Config verbs."""
         return _CONFIG_MENU
 
     def handle(self, item: _Item) -> None:
-        """Persona opens the switcher; the other Config verbs are stubbed."""
-        if item.action == "cfg:persona":
-            self.spike_app.push_screen(PersonaPickerScreen())
+        """A switcher verb opens its picker; the other Config verbs are stubbed."""
+        key = self._SWITCHERS.get(item.action)
+        if key is not None and key in self.spike_app.switchers:
+            self.spike_app.push_screen(SwitcherScreen(key))
         else:
             self._stub(item)
 
 
-class PersonaPickerScreen(_SpikeScreen):
-    """Switch the companion persona: pick one and the config key is written in place.
+class SwitcherScreen(_SpikeScreen):
+    """Generic "pick one, set a config key" browser (Persona / Environment / Role).
 
-    A *browser* screen -- unlike the launchers, it stays in the TUI. Selecting a persona
-    calls the injected setter (which persists ``companion.persona``), marks it current, and
-    confirms in the detail panel. No client is launched; no terminal hand-off.
+    A *browser* -- unlike the launchers, it stays in the TUI. Selecting a row calls the
+    switcher's injected ``apply`` (which persists the config key), moves the dot in place,
+    and confirms in the detail panel. No client is launched; no terminal hand-off. It shows
+    each option's ``label`` but sets its ``value`` (slug for the folder-backed axes).
     """
 
-    crumb = "gmlw > Config > Persona"
+    def __init__(self, key: str) -> None:
+        """Bind the screen to one injected switcher by its key."""
+        super().__init__()
+        self._key = key
+
+    @property
+    def _switcher(self) -> Switcher:
+        return self.spike_app.switchers[self._key]
+
+    def header_text(self) -> str:
+        """The switcher's own breadcrumb (e.g. ``gmlw > Config > Environment``)."""
+        return self._switcher.crumb
 
     def menu_items(self) -> list[_Item]:
-        """One row per persona; the active one is marked with a filled dot."""
-        current = self.spike_app.current_persona
+        """One row per option; the active one (by value) is marked with a filled dot."""
+        current = self._switcher.current
         return [
             _Item(
-                "●" if p.name == current else "○",
-                p.name,
-                p.description,
-                "persona:set",
-                payload=p.name,
+                "●" if c.value == current else "○",
+                c.label,
+                c.description,
+                "switch:set",
+                payload=c.value,
             )
-            for p in self.spike_app.personas
+            for c in self._switcher.choices
         ]
 
     def initial_index(self) -> int:
-        """Open with the cursor on the active persona, not the first row."""
-        current = self.spike_app.current_persona
-        names = [p.name for p in self.spike_app.personas]
-        return names.index(current) if current in names else 0
+        """Open with the cursor on the active option, not the first row."""
+        values = [c.value for c in self._switcher.choices]
+        current = self._switcher.current
+        return values.index(current) if current in values else 0
 
     def handle(self, item: _Item) -> None:
-        """Persist the picked persona, move the dot in place, and confirm in the panel."""
-        if item.action != "persona:set":
+        """Persist the picked value, move the dot in place, and confirm in the panel."""
+        if item.action != "switch:set":
             return
-        message = self.spike_app.set_persona(item.payload)
-        current = self.spike_app.current_persona
+        switcher = self._switcher
+        message = switcher.apply(item.payload)
+        switcher.current = item.payload
         # Update each row's dot in place -- rebuilding the list would reset the cursor to
         # the top and drop the highlight. Selection doesn't move the cursor, so the detail
         # update is safe to set directly (no follow-the-cursor sync will overwrite it).
         for row in self.query_one("#menu", ListView).query(_Row):
-            row.set_icon("●" if row.item.payload == current else "○")
+            row.set_icon("●" if row.item.payload == switcher.current else "○")
         self.query_one("#detail", Static).update(f"✓ {message}")
 
 
@@ -420,30 +460,19 @@ class SpikeMenuApp(App[MenuChoice | None]):
         self,
         jobs: list[JobChoice],
         *,
-        personas: list[PersonaChoice] | None = None,
-        current_persona: str | None = None,
-        set_persona: Callable[[str], str] | None = None,
+        switchers: dict[str, Switcher] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
         Args:
             jobs: The resumable jobs the Resume picker lists.
-            personas: The selectable personas the Persona switcher lists.
-            current_persona: The persona currently set (``None`` when unset).
-            set_persona: Persists a chosen persona and returns a confirmation message;
-                a no-op default keeps the app runnable/testable without wiring.
+            switchers: The config switchers, keyed by ``persona`` / ``environment`` /
+                ``role``. Each carries its options, current value, and a setter. A missing
+                key just leaves that Config verb stubbed, so the app runs unwired in tests.
         """
         super().__init__()
         self.jobs = jobs
-        self.personas = personas or []
-        self.current_persona = current_persona
-        self._set_persona = set_persona or _no_wiring_set_persona
-
-    def set_persona(self, name: str) -> str:
-        """Persist the chosen persona via the injected setter and mark it current."""
-        message = self._set_persona(name)
-        self.current_persona = name
-        return message
+        self.switchers = switchers or {}
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

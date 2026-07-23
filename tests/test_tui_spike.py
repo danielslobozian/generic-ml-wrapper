@@ -17,16 +17,29 @@ from textual.widgets import ListView
 from generic_ml_wrapper.adapter.inbound.tui.spike_app import (
     JobChoice,
     MenuChoice,
-    PersonaChoice,
     SpikeMenuApp,
-    _Row,
+    SwitchChoice,
+    Switcher,
 )
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
-_PERSONAS = [
-    PersonaChoice(name="mentor", description="steady and instructive"),
-    PersonaChoice(name="coach", description="brisk and demanding"),
-]
+
+
+def _persona_switcher(
+    current: str = "mentor", apply: Callable[[str], str] | None = None
+) -> dict[str, Switcher]:
+    """A fresh persona switcher (mentor/coach) for one test -- never share the mutable state."""
+    return {
+        "persona": Switcher(
+            crumb="gmlw > Config > Persona",
+            choices=[
+                SwitchChoice("mentor", "mentor", "steady and instructive"),
+                SwitchChoice("coach", "coach", "brisk and demanding"),
+            ],
+            current=current,
+            apply=apply or (lambda value: f"persona set to '{value}'"),
+        )
+    }
 
 
 def _drive(script: Callable[[Pilot], Awaitable[None]]) -> MenuChoice | None:
@@ -84,18 +97,13 @@ def test_escape_at_top_exits() -> None:
     assert _drive(script) is None
 
 
-def test_persona_switch_persists_via_the_injected_setter() -> None:
-    """Top → Config → Persona → pick 'coach' → the setter is called with 'coach'."""
+def test_switcher_persists_via_the_injected_apply() -> None:
+    """Top → Config → Persona → pick 'coach' → the switcher's apply is called with 'coach'."""
     calls: list[str] = []
-
-    def fake_set(name: str) -> str:
-        calls.append(name)
-        return f"persona set to '{name}'"
+    switchers = _persona_switcher(apply=lambda value: (calls.append(value), f"set {value}")[1])
 
     async def scenario() -> None:
-        app = SpikeMenuApp(
-            _JOBS, personas=_PERSONAS, current_persona="mentor", set_persona=fake_set
-        )
+        app = SpikeMenuApp(_JOBS, switchers=switchers)
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # top → Config (3rd row)
             await pilot.press("down", "down", "down", "enter")  # Config → Persona (4th row)
@@ -103,38 +111,33 @@ def test_persona_switch_persists_via_the_injected_setter() -> None:
 
     asyncio.run(scenario())
     assert calls == ["coach"]
+    assert switchers["persona"].current == "coach"  # current advanced to the picked value
 
 
-def test_persona_switch_keeps_the_cursor_in_place() -> None:
-    """Selecting a persona updates the dots in place -- the highlight must not reset."""
+def test_switcher_keeps_the_cursor_in_place() -> None:
+    """Selecting an option updates the dots in place -- the highlight must not reset."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
-        app = SpikeMenuApp(
-            _JOBS, personas=_PERSONAS, current_persona="mentor", set_persona=lambda n: n
-        )
+        app = SpikeMenuApp(_JOBS, switchers=_persona_switcher(current="mentor"))
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # → Config
             await pilot.press("down", "down", "down", "enter")  # → Persona picker
             await pilot.press("down", "enter")  # highlight + pick 'coach' (index 1)
             await pilot.pause()
-            menu = app.screen.query_one("#menu", ListView)
-            seen["index"] = menu.index
-            seen["icons"] = [row.item.payload for row in menu.query(_Row)]
+            seen["index"] = app.screen.query_one("#menu", ListView).index
 
     asyncio.run(scenario())
     assert seen["index"] == 1  # cursor stayed on the row that was picked, not reset to top
 
 
-def test_persona_menu_opens_on_the_active_persona() -> None:
-    """The picker starts with the cursor on the current persona, not the first row."""
+def test_switcher_menu_opens_on_the_active_option() -> None:
+    """The picker starts with the cursor on the current value, not the first row."""
     index: dict[str, object] = {}
 
     async def scenario() -> None:
-        # current persona 'coach' is the second of the two fixtures (index 1).
-        app = SpikeMenuApp(
-            _JOBS, personas=_PERSONAS, current_persona="coach", set_persona=lambda n: n
-        )
+        # current 'coach' is the second of the two options (index 1).
+        app = SpikeMenuApp(_JOBS, switchers=_persona_switcher(current="coach"))
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # → Config
             await pilot.press("down", "down", "down", "enter")  # → Persona picker
