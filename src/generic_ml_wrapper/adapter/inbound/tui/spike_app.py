@@ -19,6 +19,8 @@ from textual.binding import Binding
 from textual.screen import Screen
 from textual.widgets import Footer, Label, ListItem, ListView, Static
 
+from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
+
 
 @dataclass(frozen=True)
 class JobChoice:
@@ -74,8 +76,8 @@ class MenuScreen(_SpikeScreen):
     BINDINGS: ClassVar[list[Binding]] = [Binding("q", "quit_app", "Quit")]
 
     def compose(self) -> ComposeResult:
-        """Lay out the breadcrumb, the four-row menu, the help bar, and the footer."""
-        yield Static("gmlw", id="crumb")
+        """Lay out the banner, the four-row menu, the help bar, and the footer."""
+        yield Static(boxed_banner(), id="banner")
         yield ListView(
             _Row("Start a job", action="start"),
             _Row("Resume a job", action="resume"),
@@ -160,9 +162,10 @@ class SpikeMenuApp(App[MenuChoice | None]):
     """
 
     CSS = """
-    #crumb { dock: top; padding: 0 1; color: $text-muted; background: $panel; }
-    #help  { dock: bottom; padding: 0 1; color: $text-muted; background: $panel; }
-    #empty { padding: 1 2; }
+    #banner { color: cyan; text-style: bold; padding: 1 1 0 1; height: auto; }
+    #crumb  { dock: top; padding: 0 1; color: $text-muted; background: $panel; }
+    #help   { dock: bottom; padding: 0 1; color: $text-muted; background: $panel; }
+    #empty  { padding: 1 2; }
     ListView { height: 1fr; }
     """
     TITLE = "gmlw"
