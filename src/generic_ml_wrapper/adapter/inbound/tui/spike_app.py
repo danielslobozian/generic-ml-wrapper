@@ -15,6 +15,7 @@ updates the detail panel, so the shape and feel are real without the plumbing.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
@@ -27,6 +28,11 @@ from textual.widgets import Label, ListItem, ListView, Static
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 
 _KEYS = "↑↓ move · ⏎ select · Esc back · q quit"
+
+
+def _no_wiring_set_persona(name: str) -> str:
+    """Default persona setter when the app runs unwired (tests / bare construction)."""
+    return f"(spike) would set persona to '{name}'"
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,14 @@ class JobChoice:
 
     job: str
     session_count: int
+
+
+@dataclass(frozen=True)
+class PersonaChoice:
+    """A selectable persona: its name (the config value) and one-line description."""
+
+    name: str
+    description: str
 
 
 @dataclass(frozen=True)
@@ -286,13 +300,57 @@ class WorkflowMenuScreen(_SpikeScreen):
 
 
 class ConfigMenuScreen(_SpikeScreen):
-    """The Config verbs; Get/Set will get a type-to-filter key list (stubbed here)."""
+    """The Config verbs. Persona is wired (a browser that mutates); the rest are stubs."""
 
     crumb = "gmlw > Config"
 
     def menu_items(self) -> list[_Item]:
         """The Config verbs."""
         return _CONFIG_MENU
+
+    def handle(self, item: _Item) -> None:
+        """Persona opens the switcher; the other Config verbs are stubbed."""
+        if item.action == "cfg:persona":
+            self.spike_app.push_screen(PersonaPickerScreen())
+        else:
+            self._stub(item)
+
+
+class PersonaPickerScreen(_SpikeScreen):
+    """Switch the companion persona: pick one and the config key is written in place.
+
+    A *browser* screen -- unlike the launchers, it stays in the TUI. Selecting a persona
+    calls the injected setter (which persists ``companion.persona``), marks it current, and
+    confirms in the detail panel. No client is launched; no terminal hand-off.
+    """
+
+    crumb = "gmlw > Config > Persona"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per persona; the active one is marked with a filled dot."""
+        current = self.spike_app.current_persona
+        return [
+            _Item(
+                "●" if p.name == current else "○",
+                p.name,
+                p.description,
+                "persona:set",
+                payload=p.name,
+            )
+            for p in self.spike_app.personas
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Persist the picked persona, refresh the dots, and confirm in the detail panel."""
+        if item.action != "persona:set":
+            return
+        message = self.spike_app.set_persona(item.payload)
+        menu = self.query_one("#menu", ListView)
+        menu.clear()
+        menu.extend(_Row(i) for i in self.menu_items())
+        # After the rebuild settles (and its highlight event fires), show the confirmation
+        # so it is not overwritten by the follow-the-cursor detail sync.
+        self.call_after_refresh(lambda: self.query_one("#detail", Static).update(f"✓ {message}"))
 
 
 class JobPickerScreen(_SpikeScreen):
@@ -338,10 +396,34 @@ class SpikeMenuApp(App[MenuChoice | None]):
     """
     TITLE = "gmlw"
 
-    def __init__(self, jobs: list[JobChoice]) -> None:
-        """Bind the injected job list the resume picker reads from."""
+    def __init__(
+        self,
+        jobs: list[JobChoice],
+        *,
+        personas: list[PersonaChoice] | None = None,
+        current_persona: str | None = None,
+        set_persona: Callable[[str], str] | None = None,
+    ) -> None:
+        """Bind the injected data the browsers read from and the callbacks they invoke.
+
+        Args:
+            jobs: The resumable jobs the Resume picker lists.
+            personas: The selectable personas the Persona switcher lists.
+            current_persona: The persona currently set (``None`` when unset).
+            set_persona: Persists a chosen persona and returns a confirmation message;
+                a no-op default keeps the app runnable/testable without wiring.
+        """
         super().__init__()
         self.jobs = jobs
+        self.personas = personas or []
+        self.current_persona = current_persona
+        self._set_persona = set_persona or _no_wiring_set_persona
+
+    def set_persona(self, name: str) -> str:
+        """Persist the chosen persona via the injected setter and mark it current."""
+        message = self._set_persona(name)
+        self.current_persona = name
+        return message
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

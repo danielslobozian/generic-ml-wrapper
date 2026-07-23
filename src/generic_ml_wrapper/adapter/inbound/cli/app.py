@@ -966,11 +966,35 @@ def _tui() -> int:
         return _index()
     from generic_ml_wrapper.adapter.inbound.tui.spike_app import (  # noqa: PLC0415  spike-local
         JobChoice,
+        PersonaChoice,
         SpikeMenuApp,
     )
 
-    jobs = [JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()]
-    choice = SpikeMenuApp(jobs).run()  # blocks; terminal is fully restored on return
+    jobs = [
+        JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
+    ]
+    # Persona switcher (a browser that mutates config in place, no hand-off): fetch the
+    # list and current value, and inject a setter that persists companion.persona. The app
+    # stays pure -- it never imports a use case; the wiring owns every outbound call.
+    config_commands = build_config_commands()
+    personas = [
+        PersonaChoice(name=p.name, description=p.description)
+        for p in build_list_personas().execute()
+    ]
+    current_persona = config_commands.get("companion.persona").value
+
+    def _set_persona(name: str) -> str:
+        # Spike copy stays hardcoded English, like the rest of the menu; the real
+        # front-end localises through i18n.
+        outcome = config_commands.set("companion.persona", name)
+        return f"persona already '{name}'" if not outcome.changed else f"persona set to '{name}'"
+
+    choice = SpikeMenuApp(
+        jobs,
+        personas=personas,
+        current_persona=current_persona if isinstance(current_persona, str) else None,
+        set_persona=_set_persona,
+    ).run()  # blocks; terminal is fully restored on return
     if choice is None or choice.action != "resume" or choice.job is None:
         return 0
     command = StartJobCommand(

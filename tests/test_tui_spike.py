@@ -16,10 +16,15 @@ from textual.pilot import Pilot
 from generic_ml_wrapper.adapter.inbound.tui.spike_app import (
     JobChoice,
     MenuChoice,
+    PersonaChoice,
     SpikeMenuApp,
 )
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
+_PERSONAS = [
+    PersonaChoice(name="mentor", description="steady and instructive"),
+    PersonaChoice(name="coach", description="brisk and demanding"),
+]
 
 
 def _drive(script: Callable[[Pilot], Awaitable[None]]) -> MenuChoice | None:
@@ -75,3 +80,24 @@ def test_escape_at_top_exits() -> None:
         await pilot.press("escape")
 
     assert _drive(script) is None
+
+
+def test_persona_switch_persists_via_the_injected_setter() -> None:
+    """Top → Config → Persona → pick 'coach' → the setter is called with 'coach'."""
+    calls: list[str] = []
+
+    def fake_set(name: str) -> str:
+        calls.append(name)
+        return f"persona set to '{name}'"
+
+    async def scenario() -> None:
+        app = SpikeMenuApp(
+            _JOBS, personas=_PERSONAS, current_persona="mentor", set_persona=fake_set
+        )
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("down", "down", "enter")  # top → Config (3rd row)
+            await pilot.press("down", "down", "down", "enter")  # Config → Persona (4th row)
+            await pilot.press("down", "enter")  # personas: mentor → coach → pick
+
+    asyncio.run(scenario())
+    assert calls == ["coach"]
