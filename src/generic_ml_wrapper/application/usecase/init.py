@@ -6,12 +6,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.axis import ENVIRONMENT_PROMPT, ROLE_PROMPT
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.outbound.layout_seeder import InitSelections
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
     from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
     from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
@@ -41,6 +43,7 @@ class InitUseCase(Init):
         seeder: LayoutSeederPort,
         language_chooser: LanguageChooserPort,
         text_prompt: TextPromptPort,
+        axis_chooser: AxisChooserPort,
         personas: PersonaSourcePort,
         persona_chooser: PersonaChooserPort,
         client_setup: ClientSetupPort,
@@ -58,7 +61,9 @@ class InitUseCase(Init):
             detector: Reports which built-in clients are installed.
             seeder: Persists the interview (full config, or legacy marker) and dirs.
             language_chooser: Picks the language gmlw speaks (step one).
-            text_prompt: Asks the three free-text steps (name, role, environment).
+            text_prompt: Asks the free-text name step.
+            axis_chooser: Offers role and environment as a menu of examples plus a typed
+                option, resolving each to a slug + label + description.
             personas: The source the offered personas come from.
             persona_chooser: Offers the persona choice (declines non-interactively).
             client_setup: Runs the guided client step (choose / update / install+verify).
@@ -74,6 +79,7 @@ class InitUseCase(Init):
         self._seeder = seeder
         self._language_chooser = language_chooser
         self._text_prompt = text_prompt
+        self._axis_chooser = axis_chooser
         self._personas = personas
         self._persona_chooser = persona_chooser
         self._client_setup = client_setup
@@ -95,10 +101,8 @@ class InitUseCase(Init):
         language = self._language_chooser.choose(self._languages, self._default_language)
         i18n = self._localizer_factory(language)
         name = self._text_prompt.ask(i18n.t("init.name.header"), self._default_name, i18n)
-        role = self._text_prompt.ask(i18n.t("init.role.header"), self._default_role, i18n)
-        environment = self._text_prompt.ask(
-            i18n.t("init.environment.header"), self._default_environment, i18n
-        )
+        role = self._axis_chooser.choose(ROLE_PROMPT, self._default_role, i18n)
+        environment = self._axis_chooser.choose(ENVIRONMENT_PROMPT, self._default_environment, i18n)
         persona = self._persona_chooser.choose(self._personas.available(), i18n)
         found = self._detector.available()
         client = self._client_setup.choose(found, i18n)

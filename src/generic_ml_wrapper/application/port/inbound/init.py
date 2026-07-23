@@ -6,6 +6,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.model.axis import AxisSelection
 
 
 @dataclass(frozen=True)
@@ -15,8 +19,8 @@ class InitOutcome:
     Attributes:
         language: The language gmlw will speak to the user.
         name: The name the companion will address the user by.
-        role: The default role chosen (the functional hat).
-        environment: The default environment chosen (the place work happens).
+        role: The default role chosen (slug + label + description).
+        environment: The default environment chosen (slug + label + description).
         persona: The persona chosen, or ``None`` when the companion was left off.
         client: The default client chosen, or ``None`` when none was installed/picked.
         found: The installed clients detected, in canonical order (empty when none).
@@ -29,8 +33,8 @@ class InitOutcome:
 
     language: str
     name: str
-    role: str
-    environment: str
+    role: AxisSelection
+    environment: AxisSelection
     persona: str | None
     client: str | None
     found: list[str]
