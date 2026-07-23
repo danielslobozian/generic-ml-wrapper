@@ -628,6 +628,10 @@ def _announce_init(outcome: InitOutcome) -> None:
     Args:
         outcome: What the init interview decided.
     """
+    # set_active ran at startup off $LANG (config had no language yet). Now that init has
+    # chosen one, re-seed the global active so this narration -- and every user string after
+    # init in this process -- speaks the chosen language, not the OS locale.
+    i18n.set_active(i18n.load_localizer(outcome.language))
     loc = i18n.active()
     if outcome.fresh:
         print(
