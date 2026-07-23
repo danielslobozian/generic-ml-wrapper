@@ -732,6 +732,22 @@ def test_gate_forces_init_when_uninitialised(
     assert "default client 'cursor'" in err
 
 
+def test_init_announcement_speaks_the_chosen_language_not_the_os_locale(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Regression: a French OS locale seeds the startup active localiser, but the user
+    # chose English in init. The closing narration must speak the CHOSEN language, not $LANG.
+    monkeypatch.setattr(app, "build_localizer", lambda: load_localizer("fr"))  # $LANG=fr seed
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), []))  # chose en
+    _stub_jobs(monkeypatch)
+    assert app.main(["jobs"]) == 0
+    err = capsys.readouterr().err
+    assert "set up — speaking en" in err  # English announcement, per the chosen language
+    assert "configuré" not in err  # NOT the French ($LANG) announcement
+    assert app.i18n.active().lang == "en"  # active re-seeded to the chosen language
+
+
 def test_gate_skips_init_when_initialised(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
