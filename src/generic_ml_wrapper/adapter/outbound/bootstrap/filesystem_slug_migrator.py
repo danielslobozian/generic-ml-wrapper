@@ -97,9 +97,5 @@ class FilesystemSlugMigrator(SlugMigratorPort):
     def _created_iso(folder: Path) -> str:
         """The folder's best-effort creation time as ISO-8601 (falls back to now)."""
         ms = created_ms(folder)
-        when = (
-            datetime.fromtimestamp(ms / 1000, tz=UTC)
-            if ms
-            else datetime.now(UTC)
-        )
+        when = datetime.fromtimestamp(ms / 1000, tz=UTC) if ms else datetime.now(UTC)
         return when.astimezone().isoformat()
