@@ -98,6 +98,34 @@ _CONFIG_MENU = [
         "cfg:set",
         "gmlw config set <key> <value>",
     ),
+    _Item(
+        "🎭",
+        "Persona",
+        "Choose the companion persona (from a labelled list)",
+        "cfg:persona",
+        "gmlw config set companion.persona <name>",
+    ),
+    _Item(
+        "🌍",
+        "Environment",
+        "Switch the active environment (by label)",
+        "cfg:environment",
+        "gmlw config set profile.default_environment <slug>",
+    ),
+    _Item(
+        "🎩",
+        "Role",
+        "Switch the active role (by label)",
+        "cfg:role",
+        "gmlw config set profile.default_role <slug>",
+    ),
+    _Item(
+        "🔌",
+        "Clients",
+        "Installed clients and their versions",
+        "cfg:clients",
+        "gmlw config set client.default <name>",
+    ),
     _Item("🔁", "Setup", "Re-run the first-time setup", "cfg:setup", "gmlw init"),
 ]
 _TOP_MENU = [
