@@ -12,12 +12,14 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from textual.pilot import Pilot
+from textual.widgets import ListView
 
 from generic_ml_wrapper.adapter.inbound.tui.spike_app import (
     JobChoice,
     MenuChoice,
     PersonaChoice,
     SpikeMenuApp,
+    _Row,
 )
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
@@ -101,3 +103,24 @@ def test_persona_switch_persists_via_the_injected_setter() -> None:
 
     asyncio.run(scenario())
     assert calls == ["coach"]
+
+
+def test_persona_switch_keeps_the_cursor_in_place() -> None:
+    """Selecting a persona updates the dots in place -- the highlight must not reset."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = SpikeMenuApp(
+            _JOBS, personas=_PERSONAS, current_persona="mentor", set_persona=lambda n: n
+        )
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("down", "down", "enter")  # → Config
+            await pilot.press("down", "down", "down", "enter")  # → Persona picker
+            await pilot.press("down", "enter")  # highlight + pick 'coach' (index 1)
+            await pilot.pause()
+            menu = app.screen.query_one("#menu", ListView)
+            seen["index"] = menu.index
+            seen["icons"] = [row.item.payload for row in menu.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["index"] == 1  # cursor stayed on the row that was picked, not reset to top

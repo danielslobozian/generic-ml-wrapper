@@ -159,8 +159,17 @@ class _Row(ListItem):
     """
 
     def __init__(self, item: _Item) -> None:
-        super().__init__(Label(f"{item.icon}  [b]{item.title}[/b]\n    [dim]{item.subtitle}[/dim]"))
+        self._label = Label(self._markup(item.icon, item))
+        super().__init__(self._label)
         self.item = item
+
+    @staticmethod
+    def _markup(icon: str, item: _Item) -> str:
+        return f"{icon}  [b]{item.title}[/b]\n    [dim]{item.subtitle}[/dim]"
+
+    def set_icon(self, icon: str) -> None:
+        """Re-render the row's leading icon in place (keeps the list cursor put)."""
+        self._label.update(self._markup(icon, self.item))
 
 
 class _SpikeScreen(Screen[None]):
@@ -341,16 +350,17 @@ class PersonaPickerScreen(_SpikeScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Persist the picked persona, refresh the dots, and confirm in the detail panel."""
+        """Persist the picked persona, move the dot in place, and confirm in the panel."""
         if item.action != "persona:set":
             return
         message = self.spike_app.set_persona(item.payload)
-        menu = self.query_one("#menu", ListView)
-        menu.clear()
-        menu.extend(_Row(i) for i in self.menu_items())
-        # After the rebuild settles (and its highlight event fires), show the confirmation
-        # so it is not overwritten by the follow-the-cursor detail sync.
-        self.call_after_refresh(lambda: self.query_one("#detail", Static).update(f"✓ {message}"))
+        current = self.spike_app.current_persona
+        # Update each row's dot in place -- rebuilding the list would reset the cursor to
+        # the top and drop the highlight. Selection doesn't move the cursor, so the detail
+        # update is safe to set directly (no follow-the-cursor sync will overwrite it).
+        for row in self.query_one("#menu", ListView).query(_Row):
+            row.set_icon("●" if row.item.payload == current else "○")
+        self.query_one("#detail", Static).update(f"✓ {message}")
 
 
 class JobPickerScreen(_SpikeScreen):
