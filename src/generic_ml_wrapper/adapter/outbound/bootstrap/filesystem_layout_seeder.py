@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.domain.model.rules import EXAMPLE_RULE
@@ -16,6 +18,7 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
 # The personas/ folder is seeded on demand by the persona source (packaged defaults),
@@ -266,13 +269,16 @@ def _render_config(  # noqa: PLR0913  (one keyword per config placeholder; all o
 class FilesystemLayoutSeeder(LayoutSeederPort):
     """Create the ``~/.gmlw`` profile/rules directories and seed a default config."""
 
-    def __init__(self, home: Path) -> None:
+    def __init__(self, home: Path, *, clock: Callable[[], datetime] | None = None) -> None:
         """Bind the seeder to the runtime home directory.
 
         Args:
             home: The ``~/.gmlw`` root under which the layout is created.
+            clock: Returns "now" for the ``.about.toml`` ``created`` stamp; defaults to
+                the local wall clock. Injected so tests get a fixed time.
         """
         self._home = home
+        self._clock = clock or (lambda: datetime.now(UTC).astimezone())
 
     def ensure(self, default_client: str | None = None, persona: str | None = None) -> None:
         """Create missing ``profile/me``, ``profile/company``, ``rules`` and config.
@@ -314,10 +320,18 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             merge replaced.
         """
         self._ensure_dirs()
-        # The chosen environment's folder — the movie set the migration wraps company into.
-        (self._home / _ENVIRONMENTS / selections.environment).mkdir(parents=True, exist_ok=True)
-        # The chosen role's folder, with an empty rules/ drop-zone (role-scoped reflexes).
-        (self._home / _ROLES / selections.role / "rules").mkdir(parents=True, exist_ok=True)
+        created = self._clock().isoformat()
+        # The chosen environment's slug-folder — the movie set the migration wraps company
+        # into — with its .about.toml recording the human label the slug came from.
+        env_dir = self._home / _ENVIRONMENTS / selections.environment.slug
+        env_dir.mkdir(parents=True, exist_ok=True)
+        write_about(
+            env_dir, selections.environment.label, selections.environment.description, created
+        )
+        # The chosen role's slug-folder, with an empty rules/ drop-zone (role-scoped reflexes).
+        role_dir = self._home / _ROLES / selections.role.slug
+        (role_dir / "rules").mkdir(parents=True, exist_ok=True)
+        write_about(role_dir, selections.role.label, selections.role.description, created)
         config = self._home / _CONFIG
         if config.exists():
             return InitPersist(fresh=False, overwrites=self._merge(config, selections))
@@ -326,8 +340,8 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
                 init_version=selections.version,
                 language=selections.language,
                 name=selections.name,
-                role=selections.role,
-                environment=selections.environment,
+                role=selections.role.slug,
+                environment=selections.environment.slug,
                 client=selections.client,
                 persona=selections.persona,
             ),
@@ -373,8 +387,8 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         settings: tuple[tuple[str, str, str | None], ...] = (
             ("init", "version", selections.version),
             ("language", "code", selections.language),
-            ("profile", "default_role", selections.role),
-            ("profile", "default_environment", selections.environment),
+            ("profile", "default_role", selections.role.slug),
+            ("profile", "default_environment", selections.environment.slug),
             ("companion", "name", selections.name),
             ("companion", "persona", selections.persona),
             ("client", "default", selections.client),

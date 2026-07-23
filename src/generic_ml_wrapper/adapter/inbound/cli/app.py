@@ -39,7 +39,10 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     JobId,
     WorkflowName,
 )
-from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+from generic_ml_wrapper.application.domain.model.migration import (
+    MigrationReport,
+    SlugMigrationReport,
+)
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
@@ -85,6 +88,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_workflows,
     build_localizer,
     build_migrate_layout,
+    build_migrate_slugs,
     build_new_workflow,
     build_render_statusline,
     build_set_credential,
@@ -581,6 +585,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         # migration existed. The `init` command runs its own below (after it writes config).
         if args.command != "init":
             _announce_migration(build_migrate_layout().execute())
+            _announce_slug_migration(build_migrate_slugs().execute())
     try:
         if args.command is None:  # bare `gmlw`: first run → init, thereafter → the index
             return _index()
@@ -589,6 +594,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command == "init":
             _announce_init(build_init().execute())
             _announce_migration(build_migrate_layout().execute())
+            _announce_slug_migration(build_migrate_slugs().execute())
             return 0
         if args.command == "start":
             return _start(args)
@@ -639,8 +645,10 @@ def _announce_init(outcome: InitOutcome) -> None:
                 "init.announce.fresh",
                 language=outcome.language,
                 name=outcome.name,
-                role=outcome.role,
-                environment=outcome.environment,
+                role=outcome.role.label,
+                role_slug=outcome.role.slug,
+                environment=outcome.environment.label,
+                environment_slug=outcome.environment.slug,
             ),
             file=sys.stderr,
         )
@@ -687,6 +695,19 @@ def _announce_migration(report: MigrationReport) -> None:
         )
 
 
+def _announce_slug_migration(report: SlugMigrationReport) -> None:
+    """Narrate the slug migration to stderr, only when it renamed something.
+
+    Args:
+        report: The role/environment folders renamed from raw names to clean slugs.
+    """
+    if not report.did_anything:
+        return
+    loc = i18n.active()
+    items = ", ".join(f"{old} → {new}" for old, new in report.renamed)
+    print(loc.t("migration.slugs", count=len(report.renamed), items=items), file=sys.stderr)
+
+
 def _index() -> int:
     """Bare ``gmlw``: run the forced setup on a fresh install, else show the index.
 
@@ -697,6 +718,7 @@ def _index() -> int:
     if config.init_version() is None:  # first run — funnel through the forced setup
         _announce_init(build_init().execute())
         _announce_migration(build_migrate_layout().execute())
+        _announce_slug_migration(build_migrate_slugs().execute())
         return 0
     print(render_index(i18n.active()))
     return 0

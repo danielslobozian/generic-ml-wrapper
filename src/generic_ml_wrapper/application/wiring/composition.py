@@ -17,12 +17,16 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator im
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_slug_migrator import (
+    FilesystemSlugMigrator,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import HttpClientVersions
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
 from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner import (
     SubprocessCommandRunner,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
@@ -73,6 +77,7 @@ from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
+from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
@@ -93,6 +98,7 @@ from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCa
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
+from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
@@ -366,6 +372,17 @@ def build_migrate_layout() -> MigrateLayout:
     )
 
 
+def build_migrate_slugs() -> MigrateSlugs:
+    """Build the MigrateSlugs use case: rename legacy raw-named role/environment folders.
+
+    Idempotent — a no-op once every folder is already a clean slug.
+
+    Returns:
+        A ready-to-run MigrateSlugs.
+    """
+    return MigrateSlugsUseCase(FilesystemSlugMigrator(paths.HOME))
+
+
 def build_init() -> Init:
     """Build the Init use case wired to the ordered-setup ports and step defaults.
 
@@ -383,6 +400,7 @@ def build_init() -> Init:
         seeder=FilesystemLayoutSeeder(paths.HOME),
         language_chooser=TtyLanguageChooser(seed_i18n),
         text_prompt=TtyTextPrompt(seed_i18n),
+        axis_chooser=TtyAxisChooser(seed_i18n),
         personas=build_persona_source(),
         persona_chooser=TtyPersonaChooser(seed_i18n),
         client_setup=TtyClientSetup(

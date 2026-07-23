@@ -8,6 +8,7 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
+from generic_ml_wrapper.application.domain.model.axis import AxisSelection
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
     InitPersist,
     InitSelections,
@@ -106,8 +107,8 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
             version="0.4.0",
             language="fr",
             name="Daniel",
-            role="engineer",
-            environment="work",
+            role=AxisSelection("engineer", "Engineer", "Engineer"),
+            environment=AxisSelection("work", "Work", "Work"),
             persona="butler",
             client="claude",
         )
@@ -116,6 +117,15 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
     assert persisted.overwrites == ()  # nothing pre-existed to replace
     assert (tmp_path / "environments" / "work").is_dir()  # the chosen environment's folder
     assert (tmp_path / "profile" / "roles" / "engineer" / "rules").is_dir()  # the role's drop-zone
+    # Each slug-folder carries an .about.toml with the human label behind the slug.
+    env_about = tomllib.loads(
+        (tmp_path / "environments" / "work" / ".about.toml").read_text(encoding="utf-8")
+    )
+    assert env_about["label"] == "Work"
+    role_about = tomllib.loads(
+        (tmp_path / "profile" / "roles" / "engineer" / ".about.toml").read_text(encoding="utf-8")
+    )
+    assert role_about["label"] == "Engineer"
     parsed = tomllib.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
     assert parsed["init"] == {"version": "0.4.0"}  # the gate marker
     assert parsed["language"] == {"code": "fr"}
@@ -140,8 +150,8 @@ def test_initialize_merges_every_answer_into_a_legacy_config(tmp_path: Path) -> 
             version="0.4.0",
             language="fr",
             name="Daniel",
-            role="engineer",
-            environment="work",
+            role=AxisSelection("engineer", "Engineer", "Engineer"),
+            environment=AxisSelection("work", "Work", "Work"),
             persona="butler",
             client="claude",
         )
@@ -177,8 +187,8 @@ def test_initialize_does_not_clear_settings_when_persona_or_client_declined(
             version="0.4.0",
             language="en",
             name="Ada",
-            role="default",
-            environment="work",
+            role=AxisSelection("default", "Default", "Default"),
+            environment=AxisSelection("work", "Work", "Work"),
             persona=None,  # declined — must not clear the existing persona
             client=None,  # none chosen — must not clear the existing default
         )

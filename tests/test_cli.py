@@ -12,6 +12,7 @@ import pytest
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.domain.model.axis import AxisSelection
 from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
@@ -224,8 +225,8 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
                 fresh=True,
                 language="en",
                 name="Dan",
-                role="default",
-                environment="work",
+                role=AxisSelection("default", "Default", "Default"),
+                environment=AxisSelection("work", "Work", "Work"),
                 client="claude",
                 persona=None,
                 found=["claude"],
@@ -697,8 +698,8 @@ def _fresh_outcome(
     return InitOutcome(
         language="en",
         name="Ada",
-        role="default",
-        environment="work",
+        role=AxisSelection("default", "Default", "Default"),
+        environment=AxisSelection("work", "Work", "Work"),
         persona=persona,
         client=client,
         found=found if found is not None else (["cursor"] if client else []),
