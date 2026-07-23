@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""SPIKE: prove the Textual menu is drivable and returns a resume choice (Pilot harness).
+"""SPIKE: prove the object-first menu is drivable and hands back a resume choice.
 
-The repo has no pytest-asyncio, so each scenario is wrapped in ``asyncio.run`` — Textual's
+The repo has no pytest-asyncio, so each scenario is wrapped in ``asyncio.run`` -- Textual's
 ``run_test``/``Pilot`` is the only async surface and needs nothing more than an event loop.
 """
 
@@ -27,7 +27,7 @@ def _drive(script: Callable[[Pilot], Awaitable[None]]) -> MenuChoice | None:
 
     async def scenario() -> MenuChoice | None:
         app = SpikeMenuApp(_JOBS)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(90, 30)) as pilot:
             await script(pilot)
         return app.return_value
 
@@ -35,18 +35,19 @@ def _drive(script: Callable[[Pilot], Awaitable[None]]) -> MenuChoice | None:
 
 
 def test_resume_flow_returns_chosen_job() -> None:
-    """Down to 'Resume a job', Enter into the picker, Enter on the first job -> resume alpha."""
+    """Top → Job → Resume → pick the first job → resume alpha."""
 
     async def script(pilot: Pilot) -> None:
-        await pilot.press("down")  # Start -> Resume
-        await pilot.press("enter")  # open the job picker
+        await pilot.press("enter")  # Job (first top-menu row) → Job menu
+        await pilot.press("down")  # New → Resume
+        await pilot.press("enter")  # Resume → job picker
         await pilot.press("enter")  # pick the first job (alpha)
 
     assert _drive(script) == MenuChoice(action="resume", job="alpha")
 
 
-def test_quit_returns_none() -> None:
-    """The 'q' binding exits with no choice, so the wiring launches nothing."""
+def test_quit_from_top_returns_none() -> None:
+    """The 'q' binding at the front door exits with no choice."""
 
     async def script(pilot: Pilot) -> None:
         await pilot.press("q")
@@ -54,13 +55,23 @@ def test_quit_returns_none() -> None:
     assert _drive(script) is None
 
 
-def test_escape_from_picker_goes_back_to_menu() -> None:
-    """Esc in the picker pops back to the menu (navigation back-and-forth), then quit."""
+def test_escape_walks_back_up_the_tree() -> None:
+    """Into Job, into Resume, then Esc twice climbs back to the top, then quit."""
 
     async def script(pilot: Pilot) -> None:
-        await pilot.press("down")  # -> Resume
-        await pilot.press("enter")  # open picker
-        await pilot.press("escape")  # back to menu
-        await pilot.press("q")  # quit from the menu
+        await pilot.press("enter")  # → Job menu
+        await pilot.press("down", "enter")  # → job picker (Resume)
+        await pilot.press("escape")  # back to Job menu
+        await pilot.press("escape")  # back to top
+        await pilot.press("q")  # quit from the top
+
+    assert _drive(script) is None
+
+
+def test_escape_at_top_exits() -> None:
+    """At the front door there is nothing to pop to, so Back leaves gmlw."""
+
+    async def script(pilot: Pilot) -> None:
+        await pilot.press("escape")
 
     assert _drive(script) is None
