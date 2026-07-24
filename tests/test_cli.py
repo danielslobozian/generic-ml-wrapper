@@ -1501,3 +1501,22 @@ def test_environment_new_reports_a_collision_and_exits_2(
 
 def test_build_create_axis_is_wired() -> None:
     assert isinstance(composition.build_create_axis(), CreateAxis)
+
+
+def test_preflight_resume_cwd_passes_when_the_folder_has_no_stored_cwd() -> None:
+    # A pre-folder session (cwd None) resumes in the current directory; nothing to guard.
+    assert app._preflight_resume_cwd(None) is True
+
+
+def test_preflight_resume_cwd_passes_when_the_folder_exists(tmp_path: Path) -> None:
+    assert app._preflight_resume_cwd(str(tmp_path)) is True
+
+
+def test_preflight_resume_cwd_blocks_and_names_a_deleted_folder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gone = tmp_path / "was-here"
+    assert app._preflight_resume_cwd(str(gone)) is False
+    err = capsys.readouterr().err
+    assert str(gone) in err  # the missing folder is named plainly
+    assert "Traceback" not in err

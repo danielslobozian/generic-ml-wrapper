@@ -104,6 +104,7 @@
   "client.guidance.none_installed": "No supported client is installed yet — any of these works:",
   "client.guidance.then_login": "...then log in (see each tool's docs), or run `gmlw init` to be guided.",
   "preflight.cwd_gone": "gmlw: your current directory no longer exists (it was moved or deleted).\n  cd to a directory that exists — e.g. `cd ~` — and try again.",
+  "preflight.resume_cwd_gone": "gmlw: this session's folder no longer exists (it was moved or deleted):\n  {cwd}\ngmlw resumes a session in the folder it ran in. Restore that folder, or start a fresh session instead.",
   "start.needs_job": "gmlw: start needs a job to work on.\n  gmlw <job>          start (or resume) a session on <job>\n  gmlw start <job>    the same, spelled out\nA job groups related sessions; list yours with:  gmlw jobs",
   "run.pick_header": "gmlw: which workflow do you want to run?",
   "run.needs_workflow": "gmlw: run needs a workflow.\n  gmlw run <workflow>   run a workflow directly (the job is named after it)\nList the runnable ones with:  gmlw workflow list",

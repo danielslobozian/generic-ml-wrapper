@@ -16,6 +16,7 @@ import sys
 from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper import __version__
@@ -863,6 +864,22 @@ def _preflight_cwd() -> bool:
     return True
 
 
+def _preflight_resume_cwd(cwd: str | None) -> bool:
+    """Return ``False`` (with guidance) when a resumed session's folder no longer exists.
+
+    A specific session resumes in the folder it was launched in (Claude's resume is scoped
+    to it); if that folder was since deleted, the client would die on ``subprocess.run(
+    cwd=...)`` with a cryptic error. Name the missing folder plainly instead. ``None`` (a
+    pre-folder session) resumes in the current directory, which ``_preflight_cwd`` covers.
+    """
+    if cwd is None:
+        return True
+    if not Path(cwd).is_dir():
+        print(i18n.t("preflight.resume_cwd_gone", cwd=cwd), file=sys.stderr)
+        return False
+    return True
+
+
 _MAX_STATUSLINE_BYTES = 1_000_000  # a client's status payload is small JSON; cap the read
 
 
@@ -985,7 +1002,7 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
-def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its own exit)
+def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each with its own exit)
     """Run the interactive menu, then hand off to the client outside the event loop.
 
     The hand-off lives in the *ordering* here: the Textual app owns the terminal only while
@@ -1095,6 +1112,12 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
     if choice is None or choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"
+    picked_cwd: str | None = None
+    if resume and choice.session is not None:  # a specific session relaunches in its own folder
+        picked = next(
+            (s for s in _sessions_for(choice.job) if s.session_id == choice.session), None
+        )
+        picked_cwd = picked.cwd if picked is not None else None
     command = StartJobCommand(
         job=JobId(choice.job),
         client=client,
@@ -1102,7 +1125,12 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
         resume_session=choice.session,
         workflow=None,
     )
-    if not _preflight_cwd():
+    # Guard the folder the launch will actually use: a resumed session's stored folder, or
+    # the current directory for a new start (or a pre-folder resume, whose cwd is ``None``).
+    if picked_cwd is not None:
+        if not _preflight_resume_cwd(picked_cwd):
+            return 2
+    elif not _preflight_cwd():
         return 2
     if not resume and not _preflight_client(client):  # a new session needs the client installed
         return 2
