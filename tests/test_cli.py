@@ -41,6 +41,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     UsageReport,
 )
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
+from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -154,6 +155,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "jobs": ["jobs"],
         "sessions": ["sessions", "J"],
         "export": ["export", "J"],
+        "clients": ["clients"],
         "statusline": ["statusline"],
         "tui": ["tui"],
         "workflow": ["workflow"],
@@ -459,6 +461,46 @@ def test_jobs_command_json_output(
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
     assert app.main(["jobs", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3}]
+
+
+class _FakeListClients(ListClients):
+    def __init__(self, statuses: list[ClientStatus]) -> None:
+        self._statuses = statuses
+
+    def execute(self) -> list[ClientStatus]:
+        return self._statuses
+
+
+def test_clients_command_prints_the_table(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    statuses = [
+        ClientStatus("claude", "Claude Code", True, "1.2.3", True, True),
+        ClientStatus("codex", "OpenAI Codex CLI", False, None, False, False),
+    ]
+    monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
+    assert app.main(["clients"]) == 0
+    out = capsys.readouterr().out
+    assert "Claude Code" in out
+    assert "1.2.3" in out
+    assert "(default)" in out  # the default marker on claude
+    assert "not installed" in out  # codex absent
+
+
+def test_clients_command_json_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    statuses = [ClientStatus("claude", "Claude Code", True, "1.2.3", True, True)]
+    monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
+    assert app.main(["clients", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["name"] == "claude"
+    assert payload[0]["version"] == "1.2.3"
+    assert payload[0]["is_default"] is True
+
+
+def test_build_list_clients_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_list_clients(), ListClients)
 
 
 def test_jobs_command_json_empty_is_an_empty_array(

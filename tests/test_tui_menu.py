@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import cast
 
 from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
+    ClientRow,
     ConfigCatalog,
     ConfigSetResult,
     ConfigSetting,
@@ -931,3 +933,54 @@ def test_workflow_edit_picks_a_workflow_then_quick() -> None:
     assert result["value"] == MenuChoice(
         action="workflow_edit", workflow="nightly-etl", guided=False
     )
+
+
+# --- Config Clients (worker-loaded DataTable of clients + versions) -----------------------
+
+_CLIENTS = [
+    ClientRow("Claude Code", "1.2.3", "yes", "●"),
+    ClientRow("OpenAI Codex CLI", "not installed", "no", ""),
+]
+
+
+async def _open_config_clients(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Config → Clients (Config row index 6)."""
+    await pilot.press("down", "down", "enter")  # → Config
+    # list get set persona environment role clients(6) setup
+    await pilot.press("down", "down", "down", "down", "down", "down", "enter")
+    await pilot.pause()
+
+
+def test_config_clients_loads_a_table_on_a_worker() -> None:
+    """Config → Clients loads the clients on a worker and fills the DataTable."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, clients=lambda: _CLIENTS)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_config_clients(pilot)
+            await _drain_workers(app)
+            await pilot.pause()
+            table = cast("DataTable[str]", app.screen.query_one("#clients", DataTable))
+            seen["rows"] = table.row_count
+            seen["cells"] = str(list(table.get_row_at(0)))
+
+    asyncio.run(scenario())
+    assert seen["rows"] == 2  # one row per supported client
+    assert "1.2.3" in str(seen["cells"])  # the version cell rendered
+
+
+def test_config_clients_is_stubbed_when_unwired() -> None:
+    """With no clients injected, Config → Clients falls through to the stub."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)  # no clients
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_config_clients(pilot)
+            seen["has_table"] = bool(app.screen.query("#clients"))
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["has_table"] is False  # no screen mounted
+    assert "isn't wired yet" in str(seen["detail"])

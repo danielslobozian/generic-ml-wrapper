@@ -281,5 +281,17 @@
   "export.failed": "Could not read the usage report.",
   "export.saving": "Saving the report…",
   "export.saved": "Saved to {path}",
-  "export.save_failed": "Could not save the report."
+  "export.save_failed": "Could not save the report.",
+  "clients.count": "{count} supported clients:",
+  "clients.row": "  {client}  {version}  resume: {resumable}{default}",
+  "clients.not_installed": "not installed",
+  "clients.version_unknown": "(installed)",
+  "clients.yes": "yes",
+  "clients.no": "no",
+  "clients.default": "  (default)",
+  "clients.default_marker": "●",
+  "clients.col.client": "Client",
+  "clients.col.version": "Version",
+  "clients.col.resumable": "Resumable",
+  "clients.col.default": "Default"
 }

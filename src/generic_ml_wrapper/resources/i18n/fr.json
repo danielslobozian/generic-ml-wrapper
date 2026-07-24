@@ -281,5 +281,17 @@
   "export.failed": "Impossible de lire le rapport d'usage.",
   "export.saving": "Enregistrement du rapport…",
   "export.saved": "Enregistré dans {path}",
-  "export.save_failed": "Impossible d'enregistrer le rapport."
+  "export.save_failed": "Impossible d'enregistrer le rapport.",
+  "clients.count": "{count} clients pris en charge :",
+  "clients.row": "  {client}  {version}  reprise : {resumable}{default}",
+  "clients.not_installed": "non installé",
+  "clients.version_unknown": "(installé)",
+  "clients.yes": "oui",
+  "clients.no": "non",
+  "clients.default": "  (par défaut)",
+  "clients.default_marker": "●",
+  "clients.col.client": "Client",
+  "clients.col.version": "Version",
+  "clients.col.resumable": "Reprise",
+  "clients.col.default": "Par défaut"
 }

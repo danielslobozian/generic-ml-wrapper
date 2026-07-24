@@ -207,6 +207,20 @@ class UsageView:
 
 
 @dataclass(frozen=True)
+class ClientRow:
+    """One supported client's row for the Config Clients table, pre-rendered by the wiring.
+
+    All cells are display strings (``version`` reads "not installed" when absent, ``default``
+    is a marker or empty) so the screen only fills the table.
+    """
+
+    client: str
+    version: str
+    resumable: str
+    default: str
+
+
+@dataclass(frozen=True)
 class _Item:
     """One menu row: an icon, a bold title, a dim subtitle, and what it does.
 
@@ -251,7 +265,7 @@ _CONFIG_MENU = (
         "gmlw config set profile.default_environment <slug>",
     ),
     ("🎩", "tui.cfg.role", "cfg:role", "gmlw config set profile.default_role <slug>"),
-    ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw config set client.default <name>"),
+    ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw clients"),
     ("🔁", "tui.cfg.setup", "cfg:setup", "gmlw init"),
 )
 _TOP_MENU = (
@@ -636,6 +650,8 @@ class ConfigMenuScreen(_MenuScreen):
             self.menu_app.push_screen(SwitcherScreen(key))
         elif mode is not None and self.menu_app.config is not None:
             self.menu_app.push_screen(ConfigPickerScreen(mode))
+        elif item.action == "cfg:clients" and self.menu_app.clients is not None:
+            self.menu_app.push_screen(ClientsScreen())
         else:
             self._stub(item)
 
@@ -1417,6 +1433,64 @@ class SaveReportScreen(Screen[None]):
         self.menu_app.pop_screen()
 
 
+class ClientsScreen(Screen[None]):
+    """The supported clients + versions, loaded on a worker into a DataTable.
+
+    Reads each installed version (a subprocess that can hang), so it loads on a background
+    thread with a spinner, like the Export summary. Read-only; Esc goes back.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the (initially loading) clients table, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.config')} > {t('tui.cfg.clients')}", id="crumb")
+        with Container(id="report"):
+            yield DataTable(id="clients", cursor_type="row", zebra_stripes=True)
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Show the spinner and kick the version reads onto a worker thread."""
+        self.query_one("#report", Container).loading = True
+        self._load()
+
+    @work(thread=True, exclusive=True)
+    def _load(self) -> list[ClientRow]:
+        """Read the clients + versions off the event loop (pushed only when wired)."""
+        clients = self.menu_app.clients
+        return clients() if clients is not None else []
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Fill the table when the reads land; drop the spinner on error."""
+        if event.state is WorkerState.SUCCESS:
+            self._populate(cast("list[ClientRow]", event.worker.result))  # pyright: ignore[reportUnknownMemberType]
+        elif event.state is WorkerState.ERROR:
+            self.query_one("#report", Container).loading = False
+
+    def _populate(self, rows: list[ClientRow]) -> None:
+        """Fill the clients DataTable from the loaded rows."""
+        t = i18n.active().t
+        table = cast("DataTable[str]", self.query_one("#clients", DataTable))
+        table.add_columns(
+            t("clients.col.client"),
+            t("clients.col.version"),
+            t("clients.col.resumable"),
+            t("clients.col.default"),
+        )
+        table.add_rows((row.client, row.version, row.resumable, row.default) for row in rows)
+        self.query_one("#report", Container).loading = False
+
+    def action_back(self) -> None:
+        """Pop back to the Config menu."""
+        self.menu_app.pop_screen()
+
+
 class MenuApp(App[MenuChoice | None]):
     """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
@@ -1437,7 +1511,7 @@ class MenuApp(App[MenuChoice | None]):
     #report  { height: 1fr; padding: 0 1; }
     #summary { height: auto; padding: 1 0; }
     .section { text-style: bold; padding: 1 0 0 0; color: $text-muted; }
-    #models, #sessions { height: auto; max-height: 20; margin: 0 0 1 0; }
+    #models, #sessions, #clients { height: auto; max-height: 20; margin: 0 0 1 0; }
     #status_line { padding: 1 1; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
@@ -1459,6 +1533,7 @@ class MenuApp(App[MenuChoice | None]):
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
         workflows: list[str] | None = None,
+        clients: Callable[[], list[ClientRow]] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
     ) -> None:
@@ -1481,6 +1556,8 @@ class MenuApp(App[MenuChoice | None]):
                 save-to-file Export destination (lazily, per job); defaults to a no-op.
             workflows: The runnable workflow names, for the Workflow Run/List/Edit screens;
                 defaults to none.
+            clients: Lists the supported clients + versions for the Config Clients view (on a
+                worker thread); ``None`` leaves that verb stubbed, so the app runs unwired.
             config: The settings + setter the Config Get/Set browsers read and call; ``None``
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
@@ -1495,6 +1572,7 @@ class MenuApp(App[MenuChoice | None]):
         self.usage_view = usage_view or _no_usage_view
         self.save_usage = save_usage or _no_save
         self.workflows = workflows or []
+        self.clients = clients
         self.config = config
         self.current_client = current_client
 

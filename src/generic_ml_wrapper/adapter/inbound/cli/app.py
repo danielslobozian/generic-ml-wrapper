@@ -64,6 +64,7 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import (
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
+from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -90,6 +91,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_export_usage,
     build_guided_chooser,
     build_init,
+    build_list_clients,
     build_list_jobs,
     build_list_personas,
     build_list_plugins,
@@ -151,6 +153,7 @@ _COMMANDS = frozenset(
         "jobs",
         "sessions",
         "export",
+        "clients",
         "statusline",
         "tui",
         "workflow",
@@ -294,6 +297,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     export = sub.add_parser("export", help="report a job's recorded usage")
     export.add_argument("job", help="the job identifier")
     _add_json_flag(export)
+
+    clients = sub.add_parser("clients", help="list the supported clients and their versions")
+    _add_json_flag(clients)
 
     sub.add_parser("statusline", help="render the status line (called by the client)")
 
@@ -574,6 +580,43 @@ def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> 
     return "\n".join(lines)
 
 
+def _client_version_label(status: ClientStatus, loc: i18n.Localizer) -> str:
+    """Render a client's version cell — shared by the CLI table and the TUI Clients view."""
+    if not status.installed:
+        return loc.t("clients.not_installed")
+    return status.version or loc.t("clients.version_unknown")
+
+
+def format_clients(statuses: list[ClientStatus], loc: i18n.Localizer | None = None) -> str:
+    """Render the supported clients as human-readable lines: version, resume, default.
+
+    Args:
+        statuses: The client statuses to render, in catalog order.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [loc.t("clients.count", count=len(statuses)), ""]
+    versions = [_client_version_label(status, loc) for status in statuses]
+    name_width = max(len(status.display) for status in statuses)
+    version_width = max(len(version) for version in versions)
+    for status, version in zip(statuses, versions, strict=True):
+        resumable = loc.t("clients.yes") if status.resumable else loc.t("clients.no")
+        default = loc.t("clients.default") if status.is_default else ""
+        lines.append(
+            loc.t(
+                "clients.row",
+                client=f"{status.display:<{name_width}}",
+                version=f"{version:<{version_width}}",
+                resumable=resumable,
+                default=default,
+            )
+        )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI, returning a clean exit code instead of dumping a traceback.
 
@@ -794,6 +837,9 @@ def _view(args: argparse.Namespace) -> str | None:
         job = JobId(args.job)
         report = build_export_usage().execute(job)
         return _as_json(asdict(report)) if as_json else format_usage(report)
+    if args.command == "clients":
+        statuses = build_list_clients().execute()
+        return _as_json([asdict(s) for s in statuses]) if as_json else format_clients(statuses)
     return None
 
 
@@ -1016,6 +1062,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return _index()
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
+        ClientRow,
         ConfigCatalog,
         ConfigSetResult,
         ConfigSetting,
@@ -1084,6 +1131,17 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
 
     def _save_usage(job: str) -> str:  # writes the full JSON report; returns the file path
         return str(build_save_usage_report().execute(JobId(job)))
+
+    def _clients() -> list[ClientRow]:  # runs on a worker thread: version reads are subprocesses
+        return [
+            ClientRow(
+                client=status.display,
+                version=_client_version_label(status, loc),
+                resumable=loc.t("clients.yes") if status.resumable else loc.t("clients.no"),
+                default=loc.t("clients.default_marker") if status.is_default else "",
+            )
+            for status in build_list_clients().execute()
+        ]
 
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
     # its options + current value and injects an ``apply`` setter and, for the folder-backed
@@ -1197,6 +1255,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         usage_view=_usage_view,
         save_usage=_save_usage,
         workflows=build_list_workflows().execute(),
+        clients=_clients,
         config=config_catalog,
         current_client=client,
     ).run()  # blocks; terminal restored on return

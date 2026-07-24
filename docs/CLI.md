@@ -15,6 +15,7 @@ gmlw run [workflow] [--client X]         # run a workflow directly (job named af
 gmlw jobs [--json]
 gmlw sessions <job> [--json]
 gmlw export <job> [--json]
+gmlw clients [--json]                    # supported clients + installed versions
 gmlw statusline                          # called by the client, not by hand
 gmlw workflow new [name] [--client X] [--guided|--quick]   # name optional; asks depth if unset
 gmlw workflow list [--json]
@@ -29,8 +30,8 @@ gmlw role new <label> [--description D] [--default]
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
-`workflow list`, `persona list`, and `plugins list`. It prints pretty-printed JSON
-instead of the human-readable text.
+`clients`, `workflow list`, `persona list`, and `plugins list`. It prints pretty-printed
+JSON instead of the human-readable text.
 
 ### Implicit `start`
 
@@ -194,6 +195,25 @@ Example:
 
 ```
 gmlw export billing-api --json
+```
+
+## clients
+
+List the supported clients (Claude Code, Cursor CLI, OpenAI Codex CLI, Mistral Vibe),
+each with its installed on-disk version, whether it can resume a session, and which is
+the configured default. Uninstalled clients are shown as such. Also available in the
+interactive menu under `gmlw tui` → Config → Clients.
+
+```
+gmlw clients [--json]
+```
+
+- `--json` — output as JSON instead of text.
+
+Example:
+
+```
+gmlw clients
 ```
 
 ## statusline

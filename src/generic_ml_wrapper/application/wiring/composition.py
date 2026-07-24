@@ -78,6 +78,7 @@ from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
+from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -102,6 +103,7 @@ from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
@@ -181,6 +183,19 @@ def build_list_personas() -> ListPersonas:
         A ready-to-run ListPersonas.
     """
     return ListPersonasUseCase(build_persona_source())
+
+
+def build_list_clients() -> ListClients:
+    """Build the ListClients use case: PATH detection + version reads + the default setting.
+
+    Returns:
+        A ready-to-run ListClients.
+    """
+    return ListClientsUseCase(
+        detector=PathClientDetector(),
+        version=HttpClientVersions(),
+        default_client=config.default_client,
+    )
 
 
 def build_plugin_source() -> FilesystemPluginSource:
