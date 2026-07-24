@@ -303,5 +303,6 @@
   "clients.col.client": "Client",
   "clients.col.version": "Version",
   "clients.col.resumable": "Resumable",
-  "clients.col.default": "Default"
+  "clients.col.default": "Default",
+  "log.hint_not_recorded": "could not record hint {hint} as seen: {error}"
 }

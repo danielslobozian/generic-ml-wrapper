@@ -1,47 +1,92 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Level-aware, bound-context diagnostic logging to stderr.
+"""The process-wide handle on the wrapper's diagnostics.
 
-A tiny zero-dependency facility for the wrapper's own diagnostics (warnings,
-debug traces). It is separate from command output — results and user-facing
-errors print to stdout; diagnostics go here, to stderr, gated by a threshold.
+Diagnostics are separate from command output: results and user-facing errors print to
+stdout; warnings, traces and caught failures come here, and *where* here is — a rolling
+file, stderr, both, or nowhere — is decided once at the composition root and never at a
+call site::
 
-Levels mirror stdlib logging: ``debug < info < warning < error``. The threshold
-defaults to ``warning`` (quiet), set once at startup from ``[logging] level`` or
-the ``GMLW_LOG_LEVEL`` env var. Context (job, session, …) is bound once and
-inherited, so deep code need not thread it through.
+    from generic_ml_wrapper.common.log import log
+
+    log.warning(i18n.t("log.relay_failed", error=error), client="claude")
+    log.bind(job, session).error(i18n.t("log.gateway_crashed"), exc=error)
+
+The active sink is a
+:class:`~generic_ml_wrapper.application.port.outbound.diagnostics.DiagnosticsPort`,
+installed by :func:`set_active` — the same shape ``i18n.set_active`` already uses for the
+active localiser, and for the same reason: threading a logger through every constructor
+in the app buys nothing when there is exactly one of it per process.
+
+**This module deliberately imports no sink.** The domain imports it (a domain service
+logs), so anything it imports the domain transitively imports too — and the domain may
+not reach an adapter. Hence the default is the no-op below, and the composition root
+installs a real sink as its first act. Nothing logs before that point.
+
+The message handed to a sink is **already localised**: resolving a catalogue key is the
+caller's job (``i18n.t(...)``), so a sink stays a dumb destination.
 """
 
 from __future__ import annotations
 
-import sys
 from dataclasses import dataclass
 
-_LEVELS = {"debug": 10, "info": 20, "warning": 30, "error": 40}
-_DEFAULT = "warning"
-_config = {"threshold": _LEVELS[_DEFAULT]}
+from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 
 
-def configure(level: str | None) -> str:
-    """Set the diagnostic threshold; messages below it are dropped.
+class _NoDiagnostics(Diagnostics):
+    """The pre-wiring default: drop everything, quietly.
+
+    Not a fallback anyone should rely on — it exists so that importing this module has
+    no side effect and no adapter dependency. The composition root replaces it before
+    the first command runs.
+    """
+
+    def debug(self, message: str, **context: object) -> None:
+        """Discard a debug-level diagnostic."""
+
+    def info(self, message: str, **context: object) -> None:
+        """Discard an info-level diagnostic."""
+
+    def warning(self, message: str, **context: object) -> None:
+        """Discard a warning-level diagnostic."""
+
+    def error(self, message: str, exc: BaseException | None = None, **context: object) -> None:
+        """Discard an error-level diagnostic."""
+
+
+_active: Diagnostics = _NoDiagnostics()
+
+
+def set_active(sink: Diagnostics) -> Diagnostics:
+    """Install *sink* as the process-wide diagnostics destination.
 
     Args:
-        level: A level name (``debug``/``info``/``warning``/``error``); an unknown
-            or empty value falls back to the default.
+        sink: The sink every :class:`Log` will emit through from now on.
 
     Returns:
-        The resolved level name.
+        The sink that was active before, so a caller (a test, a scoped command) can
+        restore it.
     """
-    name = (level or _DEFAULT).lower()
-    if name not in _LEVELS:
-        name = _DEFAULT
-    _config["threshold"] = _LEVELS[name]
-    return name
+    global _active  # noqa: PLW0603 — one destination per process, by design
+    previous = _active
+    _active = sink
+    return previous
+
+
+def active() -> Diagnostics:
+    """Return the sink currently installed."""
+    return _active
 
 
 @dataclass(frozen=True)
 class Log:
-    """A logger carrying zero or more bound context labels."""
+    """A logger carrying zero or more bound context labels.
+
+    Labels are rendered as a ``[label]`` prefix on the message, so every sink shows them
+    without needing to know what they mean. They are for the identifiers that would
+    otherwise be repeated into every call in a region — the job and the session.
+    """
 
     context: tuple[str, ...] = ()
 
@@ -56,27 +101,31 @@ class Log:
         """
         return Log(self.context + tuple(label for label in labels if label))
 
-    def debug(self, message: str) -> None:
-        """Emit a debug-level message."""
-        self._emit("debug", message)
+    def debug(self, message: str, **context: object) -> None:
+        """Emit a debug-level diagnostic."""
+        _active.debug(self._prefixed(message), **context)
 
-    def info(self, message: str) -> None:
-        """Emit an info-level message."""
-        self._emit("info", message)
+    def info(self, message: str, **context: object) -> None:
+        """Emit an info-level diagnostic."""
+        _active.info(self._prefixed(message), **context)
 
-    def warning(self, message: str) -> None:
-        """Emit a warning-level message."""
-        self._emit("warning", message)
+    def warning(self, message: str, **context: object) -> None:
+        """Emit a warning-level diagnostic."""
+        _active.warning(self._prefixed(message), **context)
 
-    def error(self, message: str) -> None:
-        """Emit an error-level message."""
-        self._emit("error", message)
+    def error(self, message: str, exc: BaseException | None = None, **context: object) -> None:
+        """Emit an error-level diagnostic.
 
-    def _emit(self, level: str, message: str) -> None:
-        if _LEVELS[level] < _config["threshold"]:
-            return
-        parts = ["gmlw", level.upper(), *(f"[{label}]" for label in self.context), message]
-        print(" ".join(parts), file=sys.stderr)
+        Args:
+            message: The (already localised) message.
+            exc: An optional caught exception whose traceback the sink renders — the
+                supported way to preserve a traceback without printing one.
+            context: Free-form key/value context rendered alongside the message.
+        """
+        _active.error(self._prefixed(message), exc, **context)
+
+    def _prefixed(self, message: str) -> str:
+        return "".join(f"[{label}] " for label in self.context) + message
 
 
 log = Log()

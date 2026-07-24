@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common import config, i18n, paths
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
@@ -44,7 +44,7 @@ def _mark_seen(hint_id: str) -> None:
         with (paths.STATE / "hints-seen").open("a", encoding="utf-8") as handle:
             handle.write(f"{hint_id}\n")
     except OSError as error:
-        log.debug(f"could not record hint {hint_id!r} as seen: {error}")
+        log.debug(i18n.t("log.hint_not_recorded", hint=hint_id, error=error))
 
 
 def next_hint(loc: Localizer) -> str | None:

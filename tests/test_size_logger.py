@@ -2,15 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the reference MessageSizeLogger interceptor."""
 
+from collections.abc import Iterator
+
 import pytest
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import StderrDiagnostics
 from generic_ml_wrapper.adapter.outbound.interceptor.size_logger import MessageSizeLogger
-from generic_ml_wrapper.common.log import configure
+from generic_ml_wrapper.common.log import set_active
 
 
 @pytest.fixture(autouse=True)
-def _reset_threshold() -> None:
-    configure("warning")
+def _stderr_sink() -> Iterator[None]:
+    previous = set_active(StderrDiagnostics(level="warning"))
+    yield
+    set_active(previous)
 
 
 def test_returns_the_text_unchanged() -> None:
@@ -18,7 +23,7 @@ def test_returns_the_text_unchanged() -> None:
 
 
 def test_logs_the_target_and_size(capsys: pytest.CaptureFixture[str]) -> None:
-    configure("info")
+    set_active(StderrDiagnostics(level="info"))
     MessageSizeLogger().intercept("hello", "response")
     err = capsys.readouterr().err
     assert "response" in err
