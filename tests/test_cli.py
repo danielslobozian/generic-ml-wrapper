@@ -41,6 +41,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     UsageReport,
 )
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
+from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -154,6 +155,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "jobs": ["jobs"],
         "sessions": ["sessions", "J"],
         "export": ["export", "J"],
+        "clients": ["clients"],
         "statusline": ["statusline"],
         "tui": ["tui"],
         "workflow": ["workflow"],
@@ -244,6 +246,50 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     monkeypatch.setattr(app, "build_init", lambda: _Init())
     assert app.main([]) == 0
     assert seen == ["init"]
+
+
+class _FreshInit(Init):
+    def execute(self) -> InitOutcome:
+        return InitOutcome(
+            fresh=True,
+            language="en",
+            name="Dan",
+            role=AxisSelection("default", "Default", "Default"),
+            environment=AxisSelection("work", "Work", "Work"),
+            client="claude",
+            persona=None,
+            found=["claude"],
+        )
+
+
+def test_bare_gmlw_on_a_tty_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Initialised install: bare gmlw is the front door — it redirects to the interactive menu
+    # (on a real terminal; off one, _tui itself falls back to the capability index).
+    called: list[str] = []
+    monkeypatch.setattr(app, "_tui", lambda: (called.append("tui"), 0)[1])
+    assert app.main([]) == 0
+    assert called == ["tui"]
+
+
+def test_bare_gmlw_fresh_install_runs_init_not_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # First run must win over the menu redirect: init runs, _tui is never reached.
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    tui_called: list[str] = []
+    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui"))  # must not be called
+    assert app.main([]) == 0
+    assert tui_called == []
+
+
+def test_init_prints_the_reinit_hint(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The end of init tells the user how to re-run setup from the menu.
+    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    assert app.main(["init"]) == 0
+    err = capsys.readouterr().err
+    assert "Config > Setup" in err  # names the specific menu chain
+    assert "gmlw tui" in err
 
 
 def test_help_lists_topics(capsys: pytest.CaptureFixture[str]) -> None:
@@ -461,6 +507,46 @@ def test_jobs_command_json_output(
     assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3}]
 
 
+class _FakeListClients(ListClients):
+    def __init__(self, statuses: list[ClientStatus]) -> None:
+        self._statuses = statuses
+
+    def execute(self) -> list[ClientStatus]:
+        return self._statuses
+
+
+def test_clients_command_prints_the_table(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    statuses = [
+        ClientStatus("claude", "Claude Code", True, "1.2.3", True, True),
+        ClientStatus("codex", "OpenAI Codex CLI", False, None, False, False),
+    ]
+    monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
+    assert app.main(["clients"]) == 0
+    out = capsys.readouterr().out
+    assert "Claude Code" in out
+    assert "1.2.3" in out
+    assert "(default)" in out  # the default marker on claude
+    assert "not installed" in out  # codex absent
+
+
+def test_clients_command_json_output(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    statuses = [ClientStatus("claude", "Claude Code", True, "1.2.3", True, True)]
+    monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
+    assert app.main(["clients", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload[0]["name"] == "claude"
+    assert payload[0]["version"] == "1.2.3"
+    assert payload[0]["is_default"] is True
+
+
+def test_build_list_clients_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_list_clients(), ListClients)
+
+
 def test_jobs_command_json_empty_is_an_empty_array(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -509,7 +595,15 @@ def test_sessions_command_json_output(
 
     monkeypatch.setattr(app, "build_list_sessions", lambda: FakeUseCase())
     assert app.main(["sessions", "JOB-1", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == [{"session_id": "JOB-1_001", "client": "claude"}]
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "session_id": "JOB-1_001",
+            "client": "claude",
+            "cwd": None,
+            "resumable": True,
+            "created_at": None,
+        }
+    ]
 
 
 def test_build_list_sessions_wires_a_real_use_case() -> None:
@@ -1493,3 +1587,22 @@ def test_environment_new_reports_a_collision_and_exits_2(
 
 def test_build_create_axis_is_wired() -> None:
     assert isinstance(composition.build_create_axis(), CreateAxis)
+
+
+def test_preflight_resume_cwd_passes_when_the_folder_has_no_stored_cwd() -> None:
+    # A pre-folder session (cwd None) resumes in the current directory; nothing to guard.
+    assert app._preflight_resume_cwd(None) is True
+
+
+def test_preflight_resume_cwd_passes_when_the_folder_exists(tmp_path: Path) -> None:
+    assert app._preflight_resume_cwd(str(tmp_path)) is True
+
+
+def test_preflight_resume_cwd_blocks_and_names_a_deleted_folder(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gone = tmp_path / "was-here"
+    assert app._preflight_resume_cwd(str(gone)) is False
+    err = capsys.readouterr().err
+    assert str(gone) in err  # the missing folder is named plainly
+    assert "Traceback" not in err

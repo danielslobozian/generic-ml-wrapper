@@ -19,11 +19,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container
+from textual.containers import Container, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Input, Label, ListItem, ListView, Static
+from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
+from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.common import i18n
@@ -34,16 +36,41 @@ def _accept_any_job(_name: str) -> str | None:
     return None
 
 
+def _accept_any_workflow(_name: str) -> str | None:
+    """Default new-workflow-name validator when the app runs unwired (tests): accept anything."""
+    return None
+
+
+def _no_sessions(_job: str) -> list[SessionChoice]:
+    """Default session lister when the app runs unwired (tests): no sessions."""
+    return []
+
+
+def _no_usage_view(job: str) -> UsageView:
+    """Default usage view when the app runs unwired (tests): an empty report."""
+    return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
+
+
+def _no_save(_job: str) -> str:
+    """Default report saver when the app runs unwired (tests): no file written."""
+    return ""
+
+
 @dataclass(frozen=True)
 class MenuChoice:
     """What the user asked the app to do, handed back to the wiring on exit.
 
-    Only ``"resume"`` is produced today (with ``job`` set). A ``None`` return from the app
-    (Quit / Ctrl+C) means "do nothing".
+    Job launchers use ``job`` (and, for ``"resume"``, the specific ``session``). Workflow
+    launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
+    open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
+    new workflow whose name is proposed at the end). A ``None`` return means "do nothing".
     """
 
     action: str
     job: str | None = None
+    session: str | None = None
+    workflow: str | None = None
+    guided: bool = False
 
 
 @dataclass(frozen=True)
@@ -52,6 +79,23 @@ class JobChoice:
 
     job: str
     session_count: int
+
+
+@dataclass(frozen=True)
+class SessionChoice:
+    """A recorded session the resume picker shows: what it was and whether it can resume.
+
+    ``client`` is the client that made it (a resume relaunches on it, not the current
+    default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
+    marks the newest.
+    """
+
+    session_id: str
+    client: str
+    cwd: str | None
+    resumable: bool
+    date: str
+    is_latest: bool
 
 
 @dataclass(frozen=True)
@@ -97,6 +141,85 @@ class Switcher:
     create: Callable[[str], CreateOutcome] | None = None
 
 
+@dataclass
+class ConfigSetting:
+    """One setting the Config Get/Set browsers show: what it is and its current value.
+
+    All display fields are pre-rendered by the wiring (``value``/``default`` already read
+    through the CLI's ``_setting_value``), so the app stays free of formatting concerns.
+    ``value`` is mutable: a successful set patches it in place so the picker reflects the
+    change without a re-read. ``type_name`` (``str`` / ``str?`` / ``bool`` / ``choice``) and
+    ``choices`` pick which value editor Set opens.
+    """
+
+    key: str
+    value: str
+    default: str
+    type_name: str
+    choices: tuple[str, ...] | None
+    description: str
+
+
+@dataclass(frozen=True)
+class ConfigSetResult:
+    """The outcome of a set attempt handed back by the injected ``apply``.
+
+    ``ok`` is ``False`` for a rejected value (the editor keeps the screen and shows
+    ``message``); on success ``value`` is the new rendered value the catalog is patched with.
+    Either way ``message`` is the localised line shown to the user.
+    """
+
+    ok: bool
+    message: str
+    value: str = ""
+
+
+@dataclass
+class ConfigCatalog:
+    """The settings the Config Get/Set browsers read, plus the setter they call.
+
+    A *browser* bundle, injected by the wiring exactly like :class:`Switcher`: the app reads
+    ``settings`` and calls ``apply`` (the only outbound call), so it never imports a use case.
+    ``settings`` is mutable — a successful set patches the matching row's value in place.
+    """
+
+    crumb: str
+    settings: list[ConfigSetting]
+    apply: Callable[[str, str], ConfigSetResult]
+
+
+@dataclass(frozen=True)
+class UsageView:
+    """A job's usage, pre-rendered for the Export summary view.
+
+    Structured so the screen can lay it out as tables without any formatting logic: ``summary``
+    is the totals line (already localised), and ``model_rows``/``session_rows`` are the cells of
+    the by-model and by-session-cost tables (all values pre-rendered to strings by the wiring).
+    ``empty`` means the job has no recorded usage. The full per-turn detail is deliberately not
+    here -- that is what the JSON file export carries.
+    """
+
+    job: str
+    empty: bool
+    summary: str
+    model_rows: tuple[tuple[str, ...], ...]
+    session_rows: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
+class ClientRow:
+    """One supported client's row for the Config Clients table, pre-rendered by the wiring.
+
+    All cells are display strings (``version`` reads "not installed" when absent, ``default``
+    is a marker or empty) so the screen only fills the table.
+    """
+
+    client: str
+    version: str
+    resumable: str
+    default: str
+
+
 @dataclass(frozen=True)
 class _Item:
     """One menu row: an icon, a bold title, a dim subtitle, and what it does.
@@ -111,6 +234,8 @@ class _Item:
     action: str
     example: str = ""
     payload: str = ""
+    note: str = ""  # an extra plain detail line (no "$" prefix), e.g. a resume caveat
+    disabled: bool = False  # shown but not selectable (e.g. a non-resumable session)
 
 
 # The object-first menu tree, built through the active localiser. Each entry is
@@ -140,7 +265,7 @@ _CONFIG_MENU = (
         "gmlw config set profile.default_environment <slug>",
     ),
     ("🎩", "tui.cfg.role", "cfg:role", "gmlw config set profile.default_role <slug>"),
-    ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw config set client.default <name>"),
+    ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw clients"),
     ("🔁", "tui.cfg.setup", "cfg:setup", "gmlw init"),
 )
 _TOP_MENU = (
@@ -169,7 +294,7 @@ class _Row(ListItem):
 
     def __init__(self, item: _Item) -> None:
         self._label = Label(self._markup(item.icon, item))
-        super().__init__(self._label)
+        super().__init__(self._label, disabled=item.disabled)
         self.item = item
 
     @staticmethod
@@ -193,6 +318,8 @@ class _MenuScreen(Screen[None]):
     ]
     crumb: ClassVar[str] = "gmlw"
     show_banner: ClassVar[bool] = False
+    # The i18n key shown when there are no rows; subclasses override for a tailored hint.
+    empty_key: ClassVar[str] = "tui.empty"
     # A one-shot detail message the next detail-sync shows instead of the cursor's row,
     # then clears -- so a confirmation survives a programmatic cursor move.
     _flash: str | None = None
@@ -224,7 +351,7 @@ class _MenuScreen(Screen[None]):
         if items:
             yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
         else:
-            yield Static(i18n.active().t("tui.empty"), id="empty")
+            yield Static(i18n.active().t(self.empty_key), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
             yield Static(i18n.active().t("tui.keys"), id="keys")
@@ -244,8 +371,12 @@ class _MenuScreen(Screen[None]):
         item = self._highlighted()
         if item is None:
             return
-        text = item.subtitle if not item.example else f"{item.subtitle}\n$ {item.example}"
-        self.query_one("#detail", Static).update(text)
+        lines = [item.subtitle]
+        if item.example:
+            lines.append(f"$ {item.example}")
+        if item.note:
+            lines.append(item.note)
+        self.query_one("#detail", Static).update("\n".join(lines))
 
     def _highlighted(self) -> _Item | None:
         try:
@@ -314,17 +445,21 @@ class JobMenuScreen(_MenuScreen):
         return _menu(_JOB_MENU)
 
     def handle(self, item: _Item) -> None:
-        """New and Resume launch; the other Job verbs are stubbed."""
+        """New and Resume launch, List and Export browse; any other Job verb is stubbed."""
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
         elif item.action == "job:new":
             self.menu_app.push_screen(NewJobScreen())
+        elif item.action == "job:list":
+            self.menu_app.push_screen(JobListScreen())
+        elif item.action == "job:export":
+            self.menu_app.push_screen(JobExportScreen())
         else:
             self._stub(item)
 
 
 class WorkflowMenuScreen(_MenuScreen):
-    """The Workflow object's verbs (placeholders until built out)."""
+    """The Workflow object's verbs: Run and List are wired; Create/Edit are stubbed for now."""
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Workflow (localised)."""
@@ -333,6 +468,157 @@ class WorkflowMenuScreen(_MenuScreen):
     def menu_items(self) -> list[_Item]:
         """The Workflow verbs."""
         return _menu(_WORKFLOW_MENU)
+
+    def handle(self, item: _Item) -> None:
+        """Each Workflow verb: Run/Edit pick a workflow, Create names one, List browses."""
+        if item.action == "wf:run":
+            self.menu_app.push_screen(WorkflowPickerScreen("run"))
+        elif item.action == "wf:edit":
+            self.menu_app.push_screen(WorkflowPickerScreen("edit"))
+        elif item.action == "wf:create":
+            self.menu_app.push_screen(NewWorkflowScreen())
+        elif item.action == "wf:list":
+            self.menu_app.push_screen(WorkflowListScreen())
+        else:
+            self._stub(item)
+
+
+class WorkflowListScreen(_MenuScreen):
+    """Read-only list of the runnable workflows (reuses the injected ``workflows``)."""
+
+    empty_key = "tui.wf.none"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow > List."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.workflow')} > {t('tui.wf.list')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per workflow; the detail panel shows how to run it."""
+        return [
+            _Item("📄", name, "", "wf:listrow", example=f"gmlw run {name}")
+            for name in self.menu_app.workflows
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Read-only: selecting a workflow does nothing (the detail panel is the view)."""
+
+
+class WorkflowPickerScreen(_MenuScreen):
+    """Pick a workflow, to run it (``run``) or to edit it (``edit``).
+
+    ``run`` exits the app with a run choice the wiring launches; ``edit`` moves on to the
+    authoring-depth chooser first. An empty list points the user at Create.
+    """
+
+    empty_key = "tui.wf.none"
+
+    def __init__(self, mode: str) -> None:
+        """Bind the picker to its mode (``"run"`` or ``"edit"``)."""
+        super().__init__()
+        self._mode = mode
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow > Run|Edit."""
+        t = i18n.active().t
+        verb = t("tui.wf.run") if self._mode == "run" else t("tui.wf.edit")
+        return f"gmlw > {t('tui.workflow')} > {verb}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per workflow, carrying its name as payload."""
+        return [_Item("⏵", name, "", "wf:pick", payload=name) for name in self.menu_app.workflows]
+
+    def handle(self, item: _Item) -> None:
+        """Run exits with the choice; Edit moves to the authoring-depth chooser."""
+        if item.action != "wf:pick":
+            return
+        if self._mode == "run":
+            self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
+        else:  # edit — choose the authoring depth, then launch the edit session
+            self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
+
+
+class NewWorkflowScreen(Screen[None]):
+    """Name a new workflow (optional), then choose the authoring depth — a text-entry launcher.
+
+    Unlike :class:`NewJobScreen`, an empty name is accepted: the authoring session proposes one
+    at the end. A non-empty name is validated in-form (via the injected ``validate_workflow``)
+    so a bad seed name never tears the menu down only to fail at the prompt. Esc cancels.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the (optional) name input, a status line, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.workflow')} > {t('tui.wf.create')}", id="crumb")
+        yield Input(placeholder=t("tui.wf.new.placeholder"), id="name")
+        with Container(id="status"):
+            yield Static(t("tui.wf.new.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can just start typing (or press Enter to skip naming)."""
+        self.query_one("#name", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Validate the (optional) name, then move to the authoring-depth chooser."""
+        name = event.value.strip()
+        error = self.menu_app.validate_workflow(name)
+        if error is not None:  # a non-empty but unusable name — keep the form so it can be fixed
+            self.query_one("#detail", Static).update(f"✗ {error}")
+            return
+        self.menu_app.push_screen(GuidedChoiceScreen("workflow_new", name or None))
+
+    def action_cancel(self) -> None:
+        """Abandon the form and return to the Workflow menu."""
+        self.menu_app.pop_screen()
+
+
+class GuidedChoiceScreen(_MenuScreen):
+    """Choose the authoring depth (guided vs quick), then exit to launch the session.
+
+    Bound to the authoring action (``workflow_new`` / ``workflow_edit``) and the workflow name
+    (``None`` for a new, unnamed workflow). Picking a depth exits the app with the choice; the
+    wiring then launches the authoring session at that depth, exactly like ``--guided`` /
+    ``--quick`` on the CLI.
+    """
+
+    def __init__(self, action: str, workflow: str | None) -> None:
+        """Bind the chooser to the authoring action and the workflow it applies to."""
+        super().__init__()
+        self._action = action
+        self._workflow = workflow
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow > Create|Edit."""
+        t = i18n.active().t
+        verb = t("tui.wf.create") if self._action == "workflow_new" else t("tui.wf.edit")
+        return f"gmlw > {t('tui.workflow')} > {verb}"
+
+    def menu_items(self) -> list[_Item]:
+        """Two rows: the guided (facilitative) experience or the quick (lean) interview."""
+        t = i18n.active().t
+        return [
+            _Item("✨", t("tui.wf.guided"), t("tui.wf.guided.d"), "guided:yes"),
+            _Item("⏩", t("tui.wf.quick"), t("tui.wf.quick.d"), "guided:no"),
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Exit with the authoring choice at the picked depth."""
+        if item.action in ("guided:yes", "guided:no"):
+            self.menu_app.exit(
+                MenuChoice(
+                    action=self._action,
+                    workflow=self._workflow,
+                    guided=item.action == "guided:yes",
+                )
+            )
 
 
 class ConfigMenuScreen(_MenuScreen):
@@ -353,11 +639,21 @@ class ConfigMenuScreen(_MenuScreen):
         """The Config verbs."""
         return _menu(_CONFIG_MENU)
 
+    # Config verb -> the mode its type-to-filter settings picker opens in.
+    _PICKERS: ClassVar[dict[str, str]] = {"cfg:get": "get", "cfg:set": "set"}
+
     def handle(self, item: _Item) -> None:
-        """A switcher verb opens its picker; the other Config verbs are stubbed."""
+        """A switcher verb opens its picker, Get/Set the settings picker; the rest are stubs."""
         key = self._SWITCHERS.get(item.action)
+        mode = self._PICKERS.get(item.action)
         if key is not None and key in self.menu_app.switchers:
             self.menu_app.push_screen(SwitcherScreen(key))
+        elif mode is not None and self.menu_app.config is not None:
+            self.menu_app.push_screen(ConfigPickerScreen(mode))
+        elif item.action == "cfg:clients" and self.menu_app.clients is not None:
+            self.menu_app.push_screen(ClientsScreen())
+        elif item.action == "cfg:setup":  # a launcher: exit, the wiring re-runs init after teardown
+            self.menu_app.exit(MenuChoice(action="init"))
         else:
             self._stub(item)
 
@@ -495,6 +791,247 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
         self.dismiss(None)
 
 
+class ConfigPickerScreen(_MenuScreen):
+    """Type-to-filter the settings, to Get (read) or Set (change) one.
+
+    The app's first live-filtering list: a focused ``Input`` narrows the settings by key as
+    you type, while ``↑↓`` move the highlight and ``⏎`` acts on it. A *browser* -- it stays in
+    the TUI. In ``get`` mode selecting a row is a no-op (the detail panel already shows the
+    setting -- that *is* the read); in ``set`` mode it opens the value editor for the setting's
+    type (a pick-list for bool/choice, a text field for strings).
+    """
+
+    # The filter Input owns focus so typing always filters; ``q`` must therefore stay typable
+    # (no quit binding here). Up/Down/Enter are *priority* bindings so they act on the list
+    # before the Input can consume them; printable keys fall through to the Input.
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "back", "Back"),
+        Binding("up", "cursor(-1)", "Up", show=False, priority=True),
+        Binding("down", "cursor(1)", "Down", show=False, priority=True),
+        Binding("enter", "pick", "Select", show=False, priority=True),
+    ]
+
+    def __init__(self, mode: str) -> None:
+        """Bind the picker to its mode (``"get"`` reads, ``"set"`` changes)."""
+        super().__init__()
+        self._mode = mode
+        self._filter = ""
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)  # pushed only when wired
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Config > Get|Set."""
+        t = i18n.active().t
+        verb = t("tui.cfg.get") if self._mode == "get" else t("tui.cfg.set")
+        return f"{self._config.crumb} > {verb}"
+
+    def compose(self) -> ComposeResult:
+        """Header, the filter input, the (live) settings list, then detail + key bar."""
+        t = i18n.active().t
+        yield Static(self.header_text(), id="crumb")
+        yield Input(placeholder=t("tui.cfg.filter.placeholder"), id="filter")
+        yield ListView(*(_Row(i) for i in self.menu_items()), id="menu")
+        with Container(id="status"):
+            yield Static("", id="detail")
+            yield Static(t("tui.cfg.filter.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Highlight the first match, prime the detail, and focus the filter for typing."""
+        menu = self.query_one("#menu", ListView)
+        if menu.children:
+            menu.index = 0
+        self._sync_detail()
+        self.query_one("#filter", Input).focus()
+
+    def menu_items(self) -> list[_Item]:
+        """One row per setting whose key contains the filter (case-insensitive; empty = all)."""
+        needle = self._filter.lower()
+        return [
+            _Item("🔧", s.key, s.description, "cfg:pick", payload=s.key, note=self._note(s))
+            for s in self._config.settings
+            if needle in s.key.lower()
+        ]
+
+    @staticmethod
+    def _note(setting: ConfigSetting) -> str:
+        """The detail line for a setting: current value, default, and any allowed values."""
+        t = i18n.active().t
+        note = t("tui.cfg.setting", value=setting.value, default=setting.default)
+        if setting.choices:
+            note += t("tui.cfg.setting.allowed", choices=", ".join(setting.choices))
+        return note
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Refilter the list as the user types."""
+        self._filter = event.value
+        self._rebuild()
+
+    def on_screen_resume(self) -> None:
+        """Returning from a value editor: rebuild (a set may have changed a value), then flash."""
+        self._rebuild()
+        if self._flash is not None:  # a confirmation queued by the editor before it popped
+            message, self._flash = self._flash, None
+            self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
+
+    def _rebuild(self) -> None:
+        """Rebuild the list rows from the current filter and settings, highlighting the first."""
+        menu = self.query_one("#menu", ListView)
+        menu.clear()
+        items = self.menu_items()
+        for item in items:
+            menu.append(_Row(item))
+        menu.index = 0 if items else None
+
+    def flash(self, message: str) -> None:
+        """Queue a one-shot confirmation to show when this picker is next resumed."""
+        self._flash = message
+
+    def action_cursor(self, delta: int) -> None:
+        """Move the highlight within the filtered list (the Input keeps focus)."""
+        menu = self.query_one("#menu", ListView)
+        count = len(menu.children)
+        if count:
+            menu.index = max(0, min(count - 1, (menu.index or 0) + delta))
+
+    def action_pick(self) -> None:
+        """Act on the highlighted row (Enter), if any."""
+        item = self._highlighted()
+        if item is not None:
+            self.handle(item)
+
+    def handle(self, item: _Item) -> None:
+        """Get: no-op (detail is the read). Set: open the value editor for the setting's type."""
+        if item.action != "cfg:pick" or self._mode == "get":
+            return
+        setting = next((s for s in self._config.settings if s.key == item.payload), None)
+        if setting is None:
+            return
+        if setting.choices is not None or setting.type_name == "bool":
+            self.menu_app.push_screen(ConfigChoiceScreen(item.payload))
+        else:
+            self.menu_app.push_screen(ConfigInputScreen(item.payload))
+
+
+class ConfigChoiceScreen(_MenuScreen):
+    """Set a constrained setting by picking a value: a bool (true/false) or a choice.
+
+    A short dotted list (``●`` current, ``○`` others), like the switchers. Enter applies via
+    the injected ``apply``, queues a confirmation on the picker, and pops back to it. A rejected
+    value (defensive -- the options are always valid) shows the reason and stays.
+    """
+
+    def __init__(self, key: str) -> None:
+        """Bind the screen to the setting it sets."""
+        super().__init__()
+        self._key = key
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)
+
+    def _setting(self) -> ConfigSetting:
+        return next(s for s in self._config.settings if s.key == self._key)
+
+    def _options(self) -> tuple[str, ...]:
+        setting = self._setting()
+        return setting.choices if setting.choices is not None else ("true", "false")
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Config > Set > <key>."""
+        return f"{self._config.crumb} > {i18n.active().t('tui.cfg.set')} > {self._key}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per allowed value, the current one dotted."""
+        current = self._setting().value
+        return [
+            _Item("●" if value == current else "○", value, "", "choice:set", payload=value)
+            for value in self._options()
+        ]
+
+    def initial_index(self) -> int:
+        """Open the cursor on the current value."""
+        options = list(self._options())
+        current = self._setting().value
+        return options.index(current) if current in options else 0
+
+    def handle(self, item: _Item) -> None:
+        """Apply the picked value; on success confirm on the picker and pop, else explain."""
+        if item.action != "choice:set":
+            return
+        result = self._config.apply(self._key, item.payload)
+        if not result.ok:
+            self.query_one("#detail", Static).update(f"✗ {result.message}")
+            return
+        self._setting().value = result.value
+        below = self.menu_app.screen_stack[-2]
+        if isinstance(below, ConfigPickerScreen):
+            below.flash(f"✓ {result.message}")
+        self.menu_app.pop_screen()
+
+
+class ConfigInputScreen(Screen[None]):
+    """Set a free-text setting (``str`` / ``str?``) by typing a value, modelled on NewJobScreen.
+
+    The current value and default are shown in the hint (an optional ``str?`` can be cleared
+    with an empty value or ``none``). Enter applies via the injected ``apply``: on success the
+    picker is flashed and this form pops; a rejected value (e.g. an empty required string) keeps
+    the form and shows the reason.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, key: str) -> None:
+        """Bind the form to the setting it sets."""
+        super().__init__()
+        self._key = key
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)
+
+    def _setting(self) -> ConfigSetting:
+        return next(s for s in self._config.settings if s.key == self._key)
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the value input, a status line (current/default hint), and key hints."""
+        t = i18n.active().t
+        setting = self._setting()
+        yield Static(f"{self._config.crumb} > {t('tui.cfg.set')} > {self._key}", id="crumb")
+        yield Input(placeholder=t("tui.cfg.value.placeholder"), id="value")
+        optional = setting.type_name == "str?"
+        hint_key = "tui.cfg.value.hint.optional" if optional else "tui.cfg.value.hint"
+        with Container(id="status"):
+            yield Static(t(hint_key, value=setting.value, default=setting.default), id="detail")
+            yield Static(t("tui.cfg.value.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can just start typing."""
+        self.query_one("#value", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Apply the typed value; confirm and pop on success, explain and stay on failure."""
+        result = self._config.apply(self._key, event.value)
+        if not result.ok:
+            self.query_one("#detail", Static).update(f"✗ {result.message}")
+            return
+        self._setting().value = result.value
+        below = self.menu_app.screen_stack[-2]
+        if isinstance(below, ConfigPickerScreen):
+            below.flash(f"✓ {result.message}")
+        self.menu_app.pop_screen()
+
+    def action_cancel(self) -> None:
+        """Abandon the form without changing anything."""
+        self.menu_app.pop_screen()
+
+
 class NewJobScreen(Screen[None]):
     """Name a new job, then launch a fresh session on it — a text-entry *launcher*.
 
@@ -557,9 +1094,403 @@ class JobPickerScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """A picked job becomes the resume choice handed back to the wiring."""
+        """Picking a job opens its session picker (choose which session to resume)."""
         if item.action == "pick":
-            self.menu_app.exit(MenuChoice(action="resume", job=item.payload))
+            self.menu_app.push_screen(SessionPickerScreen(item.payload))
+
+
+class SessionPickerScreen(_MenuScreen):
+    """Pick which session of a job to resume: date · client · folder, latest marked.
+
+    Rows for non-resumable clients (codex/vibe) are shown but disabled. A session whose
+    client differs from the current default carries a "will launch on <client>" note, since
+    a resume relaunches the session's client, not the default. Selecting one exits the app
+    with a resume choice carrying the specific session id.
+    """
+
+    def __init__(self, job: str) -> None:
+        """Bind the picker to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Resume > <job>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')} > {self._job}"
+
+    def _sessions(self) -> list[SessionChoice]:
+        return self.menu_app.sessions_for(self._job)
+
+    def menu_items(self) -> list[_Item]:
+        """One row per session (newest last); non-resumable rows are disabled.
+
+        Three leading icons make the state glanceable: ``▶`` resume on your current client,
+        ``↪`` resume but switch to the session's client, ``🔒`` cannot resume. On a switch the
+        client is emphasised in-row (broken out of the dim subtitle) so it is seen without
+        reading the footer; the detail panel still spells it out.
+        """
+        t = i18n.active().t
+        current = self.menu_app.current_client
+        items: list[_Item] = []
+        for s in self._sessions():
+            folder = s.cwd if s.cwd else t("tui.resume.no_folder")
+            title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
+            client = s.client
+            if not s.resumable:
+                icon, note = "🔒", t("tui.resume.cannot", client=s.client)
+            elif s.client != current:
+                icon, note = "↪", t("tui.resume.will_launch", client=s.client)
+                client = f"↪ [b]{s.client}[/b]"  # in-row: mark + bold the client it switches to
+            else:
+                icon, note = "▶", ""
+            items.append(
+                _Item(
+                    icon,
+                    title,
+                    f"{s.date} · {client} · {folder}",
+                    "resume:pick",
+                    payload=s.session_id,
+                    note=note,
+                    disabled=not s.resumable,
+                )
+            )
+        return items
+
+    def initial_index(self) -> int:
+        """Open on the latest resumable session, else the first row."""
+        sessions = self._sessions()
+        for i in reversed(range(len(sessions))):
+            if sessions[i].resumable:
+                return i
+        return 0
+
+    def handle(self, item: _Item) -> None:
+        """A picked session exits the app with a resume choice carrying its id."""
+        if item.action == "resume:pick":
+            self.menu_app.exit(MenuChoice(action="resume", job=self._job, session=item.payload))
+
+
+class JobListScreen(_MenuScreen):
+    """Browse the jobs with recorded activity; drill into one to see its sessions.
+
+    A read-only *browser* (a sibling of :class:`JobPickerScreen` without the launch): selecting
+    a job opens its :class:`SessionListScreen`. Reuses the injected ``jobs`` -- no new wiring.
+    """
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > List."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job, carrying the job id as payload (empty -> the base empty state)."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "🗂", j.job, t("tui.sessions", count=j.session_count), "joblist:job", payload=j.job
+            )
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Selecting a job opens its (read-only) session list."""
+        if item.action == "joblist:job":
+            self.menu_app.push_screen(SessionListScreen(item.payload))
+
+
+class SessionListScreen(_MenuScreen):
+    """Read-only view of a job's sessions: date · client · folder, latest marked, resumability.
+
+    Unlike the resume picker, nothing is launched and nothing is disabled -- every session is
+    shown for inspection, with a plain resumable/not-resumable note. The detail panel shows the
+    highlighted row; Enter does nothing, Esc goes back.
+    """
+
+    def __init__(self, job: str) -> None:
+        """Bind the view to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > List > <job>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {self._job}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per session (newest last), each spelling out its metadata read-only."""
+        t = i18n.active().t
+        items: list[_Item] = []
+        for s in self.menu_app.sessions_for(self._job):
+            folder = s.cwd if s.cwd else t("tui.resume.no_folder")
+            title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
+            note = (
+                t("tui.joblist.resumable")
+                if s.resumable
+                else t("tui.joblist.not_resumable", client=s.client)
+            )
+            items.append(
+                _Item(
+                    "📄",
+                    title,
+                    f"{s.date} · {s.client} · {folder}",
+                    "joblist:session",
+                    payload=s.session_id,
+                    note=note,
+                )
+            )
+        return items
+
+    def handle(self, item: _Item) -> None:
+        """Read-only: selecting a session does nothing (the detail panel is the whole view)."""
+
+
+class JobExportScreen(_MenuScreen):
+    """Pick a job to export; selecting one opens the destination chooser.
+
+    A read-only sibling of :class:`JobListScreen` -- reuses the injected ``jobs``, then hands
+    off to :class:`ExportDestScreen` for the chosen job.
+    """
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Export."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.export')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job, carrying the job id as payload (empty -> the base empty state)."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "📊", j.job, t("tui.sessions", count=j.session_count), "export:job", payload=j.job
+            )
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Selecting a job opens the destination chooser (view here / save to file)."""
+        if item.action == "export:job":
+            self.menu_app.push_screen(ExportDestScreen(item.payload))
+
+
+class ExportDestScreen(_MenuScreen):
+    """Choose where a job's usage goes: a summary in the terminal, or the full report to a file.
+
+    The report read is O(turns) and slow on big jobs, so this instant chooser comes *before* any
+    read: pick a destination, then the chosen screen loads under a spinner.
+    """
+
+    def __init__(self, job: str) -> None:
+        """Bind the chooser to the job being exported."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Export > <job>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}"
+
+    def menu_items(self) -> list[_Item]:
+        """Two destinations: view a summary here, or save the full JSON report to a file."""
+        t = i18n.active().t
+        return [
+            _Item("📈", t("export.dest.view"), t("export.dest.view.d"), "export:view"),
+            _Item("💾", t("export.dest.file"), t("export.dest.file.d"), "export:file"),
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Open the summary view, or the save-to-file screen."""
+        if item.action == "export:view":
+            self.menu_app.push_screen(UsageSummaryScreen(self._job))
+        elif item.action == "export:file":
+            self.menu_app.push_screen(SaveReportScreen(self._job))
+
+
+class UsageSummaryScreen(Screen[None]):
+    """A job's usage summary: totals, a by-model table, and a by-session-cost table.
+
+    The slow ledger read runs in a background thread (so the UI never freezes), with a spinner
+    over the report area until it lands. The tables are Textual ``DataTable``s -- virtualized, so
+    they stay responsive no matter how many rows. The full per-turn detail is not shown here; it
+    lives in the JSON file export.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    def __init__(self, job: str) -> None:
+        """Bind the view to the job whose usage it summarises."""
+        super().__init__()
+        self._job = job
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the (initially loading) report area, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
+        with VerticalScroll(id="report"):
+            yield Static("", id="summary")
+            yield Static(t("export.by_model"), classes="section")
+            yield DataTable(id="models", cursor_type="row", zebra_stripes=True)
+            yield Static(t("export.by_session"), classes="section")
+            yield DataTable(id="sessions", cursor_type="row", zebra_stripes=True)
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Show the spinner and kick the read onto a worker thread."""
+        self.query_one("#report", VerticalScroll).loading = True
+        self._load()
+
+    @work(thread=True, exclusive=True)
+    def _load(self) -> UsageView:
+        """Read + aggregate the report off the event loop (returns; never touches widgets)."""
+        return self.menu_app.usage_view(self._job)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Populate the tables when the read lands; show a failure line if it errored."""
+        if event.state is WorkerState.SUCCESS:
+            result = cast("UsageView", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
+            self._populate(result)
+        elif event.state is WorkerState.ERROR:
+            self.query_one("#summary", Static).update(i18n.active().t("export.failed"))
+            self.query_one("#report", VerticalScroll).loading = False
+
+    def _populate(self, view: UsageView) -> None:
+        """Fill the summary line and the two tables from the loaded view."""
+        t = i18n.active().t
+        self.query_one("#summary", Static).update(view.summary)
+        if not view.empty:
+            models = cast("DataTable[str]", self.query_one("#models", DataTable))
+            models.add_columns(
+                t("export.col.model"),
+                t("export.col.calls"),
+                t("export.col.input"),
+                t("export.col.output"),
+                t("export.col.cache"),
+                t("export.col.duration"),
+            )
+            models.add_rows(view.model_rows)
+            sessions = cast("DataTable[str]", self.query_one("#sessions", DataTable))
+            sessions.add_columns(t("export.col.session"), t("export.col.cost"))
+            sessions.add_rows(view.session_rows)
+        self.query_one("#report", VerticalScroll).loading = False
+
+    def action_back(self) -> None:
+        """Pop back to the destination chooser."""
+        self.menu_app.pop_screen()
+
+
+class SaveReportScreen(Screen[None]):
+    """Write a job's full report to a JSON file, off the event loop, then show the path.
+
+    The write (which first reads the whole report) runs in a worker thread under a spinner; on
+    success the saved path is shown, on failure a plain error line. Esc goes back.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    def __init__(self, job: str) -> None:
+        """Bind the screen to the job whose report it saves."""
+        super().__init__()
+        self._job = job
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the status line (spinner, then the saved path), and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
+        with Container(id="report"):
+            yield Static(t("export.saving"), id="status_line")
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Show the spinner and kick the save onto a worker thread."""
+        self.query_one("#report", Container).loading = True
+        self._save()
+
+    @work(thread=True, exclusive=True)
+    def _save(self) -> str:
+        """Write the report off the event loop, returning the path (or ``""`` when unwired)."""
+        return self.menu_app.save_usage(self._job)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Show the saved path on success, or a failure line on error."""
+        status = self.query_one("#status_line", Static)
+        if event.state is WorkerState.SUCCESS:
+            path = cast("str", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
+            status.update(i18n.active().t("export.saved", path=path))
+            self.query_one("#report", Container).loading = False
+        elif event.state is WorkerState.ERROR:
+            status.update(i18n.active().t("export.save_failed"))
+            self.query_one("#report", Container).loading = False
+
+    def action_back(self) -> None:
+        """Pop back to the destination chooser."""
+        self.menu_app.pop_screen()
+
+
+class ClientsScreen(Screen[None]):
+    """The supported clients + versions, loaded on a worker into a DataTable.
+
+    Reads each installed version (a subprocess that can hang), so it loads on a background
+    thread with a spinner, like the Export summary. Read-only; Esc goes back.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the (initially loading) clients table, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.config')} > {t('tui.cfg.clients')}", id="crumb")
+        with Container(id="report"):
+            yield DataTable(id="clients", cursor_type="row", zebra_stripes=True)
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Show the spinner and kick the version reads onto a worker thread."""
+        self.query_one("#report", Container).loading = True
+        self._load()
+
+    @work(thread=True, exclusive=True)
+    def _load(self) -> list[ClientRow]:
+        """Read the clients + versions off the event loop (pushed only when wired)."""
+        clients = self.menu_app.clients
+        return clients() if clients is not None else []
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Fill the table when the reads land; drop the spinner on error."""
+        if event.state is WorkerState.SUCCESS:
+            self._populate(cast("list[ClientRow]", event.worker.result))  # pyright: ignore[reportUnknownMemberType]
+        elif event.state is WorkerState.ERROR:
+            self.query_one("#report", Container).loading = False
+
+    def _populate(self, rows: list[ClientRow]) -> None:
+        """Fill the clients DataTable from the loaded rows."""
+        t = i18n.active().t
+        table = cast("DataTable[str]", self.query_one("#clients", DataTable))
+        table.add_columns(
+            t("clients.col.client"),
+            t("clients.col.version"),
+            t("clients.col.resumable"),
+            t("clients.col.default"),
+        )
+        table.add_rows((row.client, row.version, row.resumable, row.default) for row in rows)
+        self.query_one("#report", Container).loading = False
+
+    def action_back(self) -> None:
+        """Pop back to the Config menu."""
+        self.menu_app.pop_screen()
 
 
 class MenuApp(App[MenuChoice | None]):
@@ -574,11 +1505,16 @@ class MenuApp(App[MenuChoice | None]):
     # size to content -- never fill the viewport.
     CSS = """
     Screen  { background: $background; }
-    #banner { color: cyan; text-style: bold; padding: 1 1 0 1; height: auto; }
+    #banner { padding: 1 1 0 1; height: auto; }  /* the Rich Panel carries its own colour */
     #crumb  { dock: top; padding: 0 1; color: $text-muted; }
     #name   { margin: 1 2; }
     #menu   { height: 1fr; background: transparent; }
     #empty  { height: 1fr; padding: 1 2; color: $text-muted; }
+    #report  { height: 1fr; padding: 0 1; }
+    #summary { height: auto; padding: 1 0; }
+    .section { text-style: bold; padding: 1 0 0 0; color: $text-muted; }
+    #models, #sessions, #clients { height: auto; max-height: 20; margin: 0 0 1 0; }
+    #status_line { padding: 1 1; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
@@ -588,12 +1524,20 @@ class MenuApp(App[MenuChoice | None]):
     """
     TITLE = "gmlw"
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  (the app's injection seam: one kwarg per browser's data)
         self,
         jobs: list[JobChoice],
         *,
         switchers: dict[str, Switcher] | None = None,
         validate_job: Callable[[str], str | None] | None = None,
+        validate_workflow: Callable[[str], str | None] | None = None,
+        sessions_for: Callable[[str], list[SessionChoice]] | None = None,
+        usage_view: Callable[[str], UsageView] | None = None,
+        save_usage: Callable[[str], str] | None = None,
+        workflows: list[str] | None = None,
+        clients: Callable[[], list[ClientRow]] | None = None,
+        config: ConfigCatalog | None = None,
+        current_client: str = "",
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -604,11 +1548,35 @@ class MenuApp(App[MenuChoice | None]):
                 key just leaves that Config verb stubbed, so the app runs unwired in tests.
             validate_job: Validates a typed new-job name, returning an error message or
                 ``None`` when it is acceptable; defaults to accepting anything (tests).
+            validate_workflow: Validates a typed new-workflow name (empty ⇒ named at the end),
+                returning an error message or ``None``; defaults to accepting anything.
+            sessions_for: Lists a job's sessions for the session picker (lazily, per job);
+                defaults to none.
+            usage_view: Builds a job's usage summary (totals + by-model + by-session rows) for
+                the Export view (lazily, per job, on a worker thread); defaults to empty.
+            save_usage: Writes a job's full report to a file and returns the path, for the
+                save-to-file Export destination (lazily, per job); defaults to a no-op.
+            workflows: The runnable workflow names, for the Workflow Run/List/Edit screens;
+                defaults to none.
+            clients: Lists the supported clients + versions for the Config Clients view (on a
+                worker thread); ``None`` leaves that verb stubbed, so the app runs unwired.
+            config: The settings + setter the Config Get/Set browsers read and call; ``None``
+                leaves those two Config verbs stubbed, so the app runs unwired in tests.
+            current_client: The user's default client, to flag when a session's client
+                differs (resuming will launch the session's client, not this one).
         """
         super().__init__()
         self.jobs = jobs
         self.switchers = switchers or {}
         self.validate_job = validate_job or _accept_any_job
+        self.validate_workflow = validate_workflow or _accept_any_workflow
+        self.sessions_for = sessions_for or _no_sessions
+        self.usage_view = usage_view or _no_usage_view
+        self.save_usage = save_usage or _no_save
+        self.workflows = workflows or []
+        self.clients = clients
+        self.config = config
+        self.current_client = current_client
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

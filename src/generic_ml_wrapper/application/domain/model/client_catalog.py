@@ -74,6 +74,10 @@ class ClientInfo:
         install_unix: The recommended install command on macOS / Linux.
         install_windows: The recommended install command on Windows.
         login: How to authenticate once installed.
+        resumable: Whether a session on this client can be resumed by its id — ``True``
+            when the launch can reopen a session we named/identified (Claude, cursor-agent),
+            ``False`` for clients that mint their own id we can't target (Codex, Vibe). The
+            single source of truth for ``CliCaller.can_resume``.
         version_probes: Ordered first-party sources for the latest version.
         update: The dedicated upgrade command; empty means "re-run the installer".
         version_flag: The argument that prints the installed version (``--version``).
@@ -87,6 +91,7 @@ class ClientInfo:
     install_unix: str
     install_windows: str
     login: str
+    resumable: bool = True
     version_probes: tuple[VersionProbe, ...] = field(default_factory=tuple)
     update: str = ""
     version_flag: str = "--version"
@@ -168,6 +173,7 @@ CODEX = ClientInfo(
         'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"'
     ),
     login="codex login   (ChatGPT account or API key)",
+    resumable=False,  # codex mints its own session id; no launch flag to target one
     # No dedicated updater subcommand; re-running the native installer upgrades in place.
     version_probes=(
         VersionProbe(
@@ -191,6 +197,7 @@ VIBE = ClientInfo(
     install_unix="uv tool install mistral-vibe",
     install_windows="uv tool install mistral-vibe",
     login="vibe   (first run opens the setup wizard; or set MISTRAL_API_KEY)",
+    resumable=False,  # vibe mints its own uuid; cannot be told a session id at launch
     update="uv tool upgrade mistral-vibe",
     prereq=UV,
     version_probes=(

@@ -5,9 +5,11 @@
 A connection is opened per operation: WAL mode lets concurrent sessions -- and the
 metering relay's threads -- read and write without a shared, thread-bound
 connection, and transactions give crash-consistency for free (no temp-file dance).
-Pre-1.0 the schema is a single create-from-final-state file; a schema change is a
-full store reset (one user, resets freely), so real per-version migrations wait for
-the 1.0 backwards-compatibility promise. See docs/storage-design.md.
+Pre-1.0 the schema is a single create-from-final-state file (fresh installs), plus a small
+list of **additive, non-destructive** column migrations for existing databases -- adding a
+nullable column must never wipe the session/usage history the wrapper relies on. Complex or
+destructive migrations still wait for the 1.0 backwards-compatibility promise. See
+docs/storage-design.md.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -35,6 +37,8 @@ CREATE TABLE sessions (
     job        TEXT NOT NULL,
     client     TEXT NOT NULL,
     uuid       TEXT,
+    cwd        TEXT,                            -- the folder it was launched in (resume there)
+    resumable  INTEGER NOT NULL DEFAULT 1,      -- 0/1: snapshot of the client's resumability
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_sessions_job ON sessions(job);
@@ -96,9 +100,27 @@ class Ledger:
             connection.close()
 
 
+# Additive, non-destructive migrations keyed by the schema version they bring a DB *to*.
+# Only for existing databases; a fresh DB is created straight from ``_SCHEMA`` (final state).
+_MIGRATIONS: dict[int, tuple[str, ...]] = {
+    2: (
+        "ALTER TABLE sessions ADD COLUMN cwd TEXT",
+        "ALTER TABLE sessions ADD COLUMN resumable INTEGER NOT NULL DEFAULT 1",
+        # Backfill: pre-existing codex/vibe sessions were never resumable (mirrors
+        # client_catalog.resumable). Everything else keeps the DEFAULT 1.
+        "UPDATE sessions SET resumable = 0 WHERE client IN ('codex', 'vibe')",
+    ),
+}
+
+
 def _ensure_schema(connection: sqlite3.Connection) -> None:
     version = int(connection.execute("PRAGMA user_version").fetchone()[0])
     if version >= SCHEMA_VERSION:
         return
-    connection.executescript(_SCHEMA)
+    if version == 0:  # fresh database: create straight from the final-state schema
+        connection.executescript(_SCHEMA)
+    else:  # existing database: apply the additive column migrations, preserving history
+        for target in range(version + 1, SCHEMA_VERSION + 1):
+            for statement in _MIGRATIONS.get(target, ()):
+                connection.execute(statement)
     connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")

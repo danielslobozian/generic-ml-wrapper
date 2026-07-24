@@ -16,12 +16,15 @@ class StartJobCommand:
         job: The job identifier.
         client: The client to launch.
         resume_latest: Resume the job's most recent session instead of minting one.
+        resume_session: Resume this specific session id instead of the latest; takes
+            precedence over ``resume_latest``. ``None`` means "not a specific-session resume".
         workflow: A workflow to run on the job, or ``None`` for the plain wrapper.
     """
 
     job: str
     client: str
     resume_latest: bool = False
+    resume_session: str | None = None
     workflow: str | None = None
 
 

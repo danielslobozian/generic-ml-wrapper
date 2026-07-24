@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -36,6 +37,7 @@ class StartJobUseCase(StartJob):
         workflows: WorkflowSourcePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
+        cwd_factory: Callable[[], str],
         credentials: CredentialsStorePort,
         hooks: HookRunner,
         greeting: Callable[[], str | None],
@@ -48,6 +50,8 @@ class StartJobUseCase(StartJob):
             workflows: Seeds, checks, and compiles workflows.
             callers: Resolves the client caller for a run.
             uuid_factory: Mints a client-side session uuid for new sessions.
+            cwd_factory: Returns the folder a new session is launched in (persisted so a
+                resume can relaunch there -- Claude resume is scoped to it).
             credentials: Resolves a workflow's credentials to export at launch.
             hooks: The lifecycle hooks bracketing the client run.
             greeting: Renders the host greeting, or ``None`` when the companion is off —
@@ -60,6 +64,7 @@ class StartJobUseCase(StartJob):
         self._workflows = workflows
         self._callers = callers
         self._uuid_factory = uuid_factory
+        self._cwd_factory = cwd_factory
         self._credentials = credentials
         self._hooks = hooks
         self._greeting = greeting
@@ -153,24 +158,54 @@ class StartJobUseCase(StartJob):
             env=tuple(self._credentials.resolve(workflow).items()),
         )
 
+    def _resume_target(self, command: StartJobCommand) -> Session | None:
+        """The session to resume: the named one, else the latest, else ``None`` (new session).
+
+        A specific ``resume_session`` wins over ``resume_latest``; an unknown id falls through
+        to minting a new session rather than failing.
+        """
+        if command.resume_session is not None:
+            return next(
+                (
+                    s
+                    for s in self._store.sessions_for_job(command.job)
+                    if s.session_id == command.resume_session
+                ),
+                None,
+            )
+        if command.resume_latest:
+            return self._store.latest_for_job(command.job)
+        return None
+
+    @staticmethod
+    def _resumed_run(session: Session) -> RunContext:
+        """Build the run that reopens a session -- in the folder it was launched in.
+
+        ``cwd`` is the session's stored folder (``None`` for pre-folder sessions, which
+        resume in the current directory as before). Claude's resume is scoped to that folder.
+        """
+        return RunContext(
+            job=session.job,
+            session_id=session.session_id,
+            client=session.client,
+            uuid=session.uuid,
+            resume=True,
+            cwd=session.cwd,
+        )
+
     def _resolve(self, command: StartJobCommand) -> tuple[RunContext, Session | None]:
         """Mint the run (and the session to record, or ``None`` on resume) -- no write yet."""
-        if command.resume_latest:
-            latest = self._store.latest_for_job(command.job)
-            if latest is not None:
-                resumed = RunContext(
-                    job=latest.job,
-                    session_id=latest.session_id,
-                    client=latest.client,
-                    uuid=latest.uuid,
-                    resume=True,
-                )
-                return resumed, None
+        target = self._resume_target(command)
+        if target is not None:
+            return self._resumed_run(target), None
+        info = client_catalog.by_name(command.client)
         session = Session(
             session_id=next_session_id(command.job, self._store.ids_for_job(command.job)),
             job=command.job,
             client=command.client,
             uuid=self._uuid_factory(),
+            cwd=self._cwd_factory(),  # the folder this session runs in (resume relaunches here)
+            resumable=info.resumable if info is not None else False,
         )
         run = RunContext(
             job=session.job,

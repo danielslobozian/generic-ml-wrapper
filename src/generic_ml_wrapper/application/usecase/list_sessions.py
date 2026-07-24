@@ -29,6 +29,12 @@ class ListSessionsUseCase(ListSessions):
             One summary per session, oldest first.
         """
         return [
-            SessionSummary(session_id=session.session_id, client=session.client)
+            SessionSummary(
+                session_id=session.session_id,
+                client=session.client,
+                cwd=session.cwd,
+                resumable=session.resumable,
+                created_at=session.created_at,
+            )
             for session in self._store.sessions_for_job(job)
         ]

@@ -41,3 +41,14 @@ def test_only_vibe_needs_a_prerequisite_and_it_is_uv() -> None:
     assert all(
         info.prereq is None for info in client_catalog.SUPPORTED if info is not client_catalog.VIBE
     )
+
+
+def test_resumable_flag_marks_only_claude_and_cursor() -> None:
+    # The single source of truth for CliCaller.can_resume: claude/cursor can be told a
+    # session id at launch; codex/vibe mint their own and cannot be targeted.
+    assert client_catalog.CLAUDE.resumable is True
+    assert client_catalog.CURSOR.resumable is True
+    assert client_catalog.CODEX.resumable is False
+    assert client_catalog.VIBE.resumable is False
+    resumable = {info.name for info in client_catalog.SUPPORTED if info.resumable}
+    assert resumable == {"claude", "cursor"}

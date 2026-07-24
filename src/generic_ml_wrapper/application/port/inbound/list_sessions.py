@@ -15,10 +15,16 @@ class SessionSummary:
     Attributes:
         session_id: The session's human-readable id.
         client: The client the session runs on.
+        cwd: The folder it was launched in, or ``None`` for a pre-folder session.
+        resumable: Whether this session can be resumed (its client supports it).
+        created_at: When it was first recorded (ISO string), or ``None``.
     """
 
     session_id: str
     client: str
+    cwd: str | None = None
+    resumable: bool = True
+    created_at: str | None = None
 
 
 class ListSessions(ABC):

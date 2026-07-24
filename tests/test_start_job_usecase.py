@@ -23,16 +23,22 @@ from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 
 
 class FakeStore(SessionStorePort):
-    def __init__(self, latest: Session | None = None, ids: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        latest: Session | None = None,
+        ids: list[str] | None = None,
+        sessions: list[Session] | None = None,
+    ) -> None:
         self.recorded: list[Session] = []
         self._latest = latest
         self._ids = ids or []
+        self._sessions = sessions or []
 
     def jobs(self) -> list[str]:
         return []
 
     def sessions_for_job(self, job: str) -> list[Session]:
-        return []
+        return self._sessions
 
     def record(self, session: Session) -> None:
         self.recorded.append(session)
@@ -151,6 +157,7 @@ def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the
         workflows=workflows or FakeWorkflows(),
         callers=provider,
         uuid_factory=lambda: "fixed-uuid",
+        cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
         hooks=hooks or HookRunner(()),
         greeting=lambda: greeting,
@@ -276,6 +283,49 @@ def test_resume_latest_reuses_the_recorded_session() -> None:
     assert provider.run is not None
     assert provider.run.resume is True
     assert provider.run.session_id == "JOB-1_003"
+
+
+def test_resume_session_reopens_the_named_session_in_its_folder() -> None:
+    sessions = [
+        Session("JOB-1_001", "JOB-1", "claude", "uuid-1", cwd="/work/svc-a"),
+        Session("JOB-1_002", "JOB-1", "cursor", "uuid-2", cwd="/work/svc-b"),
+    ]
+    provider = FakeProvider()
+    _use_case(FakeStore(sessions=sessions), provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_session="JOB-1_002")
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is True
+    assert provider.run.session_id == "JOB-1_002"
+    assert provider.run.client == "cursor"  # the session's client, not the command's
+    assert provider.run.cwd == "/work/svc-b"  # relaunch in the session's folder
+
+
+def test_resume_session_wins_over_resume_latest() -> None:
+    sessions = [Session("JOB-1_001", "JOB-1", "claude", "u1", cwd="/a")]
+    latest = Session("JOB-1_009", "JOB-1", "claude", "u9", cwd="/z")
+    provider = FakeProvider()
+    _use_case(FakeStore(latest=latest, sessions=sessions), provider).execute(
+        StartJobCommand(
+            job="JOB-1", client="claude", resume_latest=True, resume_session="JOB-1_001"
+        )
+    )
+
+    assert provider.run is not None
+    assert provider.run.session_id == "JOB-1_001"  # specific id beats "latest"
+
+
+def test_resume_session_unknown_id_falls_back_to_a_new_session() -> None:
+    provider = FakeProvider()
+    store = FakeStore(sessions=[Session("JOB-1_001", "JOB-1", "claude", "u1")])
+    _use_case(store, provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_session="JOB-1_404")
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is False  # unknown id -> mint a new session
+    assert len(store.recorded) == 1
 
 
 def test_resume_latest_falls_back_to_new_when_none_exists() -> None:

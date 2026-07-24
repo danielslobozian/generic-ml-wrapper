@@ -52,6 +52,9 @@ from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import 
 )
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
+from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
+    FilesystemReportExporter,
+)
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
     FilesystemTranscriptStore,
 )
@@ -75,6 +78,7 @@ from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
+from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -85,6 +89,7 @@ from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlu
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
@@ -98,6 +103,7 @@ from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
@@ -108,6 +114,7 @@ from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUse
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
@@ -176,6 +183,19 @@ def build_list_personas() -> ListPersonas:
         A ready-to-run ListPersonas.
     """
     return ListPersonasUseCase(build_persona_source())
+
+
+def build_list_clients() -> ListClients:
+    """Build the ListClients use case: PATH detection + version reads + the default setting.
+
+    Returns:
+        A ready-to-run ListClients.
+    """
+    return ListClientsUseCase(
+        detector=PathClientDetector(),
+        version=HttpClientVersions(),
+        default_client=config.default_client,
+    )
 
 
 def build_plugin_source() -> FilesystemPluginSource:
@@ -273,6 +293,7 @@ def build_start_job() -> StartJob:
             plugins=build_plugin_source(),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
+        cwd_factory=os.getcwd,
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),
@@ -480,6 +501,20 @@ def build_export_usage() -> ExportUsage:
     return ExportUsageUseCase(
         usage=SqliteUsageStore(_ledger()),
         turns=SqlitePerTurnStore(_ledger()),
+    )
+
+
+def build_save_usage_report() -> SaveUsageReport:
+    """Build the SaveUsageReport use case: the report source plus the filesystem JSON writer.
+
+    Returns:
+        A ready-to-run SaveUsageReport writing to ``~/.gmlw/exports``.
+    """
+    return SaveUsageReportUseCase(
+        export=build_export_usage(),
+        exporter=FilesystemReportExporter(
+            paths.EXPORTS, clock=lambda: datetime.now(UTC).astimezone()
+        ),
     )
 
 

@@ -16,6 +16,7 @@ import sys
 from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper import __version__
@@ -63,6 +64,7 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import (
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
+from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -89,6 +91,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_export_usage,
     build_guided_chooser,
     build_init,
+    build_list_clients,
     build_list_jobs,
     build_list_personas,
     build_list_plugins,
@@ -99,6 +102,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_slugs,
     build_new_workflow,
     build_render_statusline,
+    build_save_usage_report,
     build_set_credential,
     build_start_job,
     build_workflow_chooser,
@@ -149,6 +153,7 @@ _COMMANDS = frozenset(
         "jobs",
         "sessions",
         "export",
+        "clients",
         "statusline",
         "tui",
         "workflow",
@@ -292,6 +297,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     export = sub.add_parser("export", help="report a job's recorded usage")
     export.add_argument("job", help="the job identifier")
     _add_json_flag(export)
+
+    clients = sub.add_parser("clients", help="list the supported clients and their versions")
+    _add_json_flag(clients)
 
     sub.add_parser("statusline", help="render the status line (called by the client)")
 
@@ -572,6 +580,43 @@ def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> 
     return "\n".join(lines)
 
 
+def _client_version_label(status: ClientStatus, loc: i18n.Localizer) -> str:
+    """Render a client's version cell — shared by the CLI table and the TUI Clients view."""
+    if not status.installed:
+        return loc.t("clients.not_installed")
+    return status.version or loc.t("clients.version_unknown")
+
+
+def format_clients(statuses: list[ClientStatus], loc: i18n.Localizer | None = None) -> str:
+    """Render the supported clients as human-readable lines: version, resume, default.
+
+    Args:
+        statuses: The client statuses to render, in catalog order.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [loc.t("clients.count", count=len(statuses)), ""]
+    versions = [_client_version_label(status, loc) for status in statuses]
+    name_width = max(len(status.display) for status in statuses)
+    version_width = max(len(version) for version in versions)
+    for status, version in zip(statuses, versions, strict=True):
+        resumable = loc.t("clients.yes") if status.resumable else loc.t("clients.no")
+        default = loc.t("clients.default") if status.is_default else ""
+        lines.append(
+            loc.t(
+                "clients.row",
+                client=f"{status.display:<{name_width}}",
+                version=f"{version:<{version_width}}",
+                resumable=resumable,
+                default=default,
+            )
+        )
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI, returning a clean exit code instead of dumping a traceback.
 
@@ -624,10 +669,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command == "help":
             return _help(args)
         if args.command == "init":
-            _announce_init(build_init().execute())
-            _announce_migration(build_migrate_layout().execute())
-            _announce_slug_migration(build_migrate_slugs().execute())
-            return 0
+            return _run_init()
         if args.command == "start":
             return _start(args)
         if args.command == "run":
@@ -746,18 +788,35 @@ def _announce_slug_migration(report: SlugMigrationReport) -> None:
     print(loc.t("migration.slugs", count=len(report.renamed), items=items), file=sys.stderr)
 
 
-def _index() -> int:
-    """Bare ``gmlw``: run the forced setup on a fresh install, else show the index.
+def _run_init() -> int:
+    """Run the setup interview, then the layout/slug migrations — the ``gmlw init`` flow.
 
-    Mirrors the gate's first-run behaviour (init once, then the layout migration) so a
-    brand-new user is set up; on an initialised install it prints the grouped capability
-    index instead of the raw argparse help.
+    Shared by the ``init`` command, the first-run funnel, and the TUI's Config → Setup verb.
+    Re-running on an initialised install merges the answers into the existing config (never
+    wipes). Returns ``0``.
     """
-    if config.init_version() is None:  # first run — funnel through the forced setup
-        _announce_init(build_init().execute())
-        _announce_migration(build_migrate_layout().execute())
-        _announce_slug_migration(build_migrate_slugs().execute())
-        return 0
+    _announce_init(build_init().execute())
+    _announce_migration(build_migrate_layout().execute())
+    _announce_slug_migration(build_migrate_slugs().execute())
+    print(i18n.t("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
+    return 0
+
+
+def _index() -> int:
+    """Bare ``gmlw``: run the forced setup on a fresh install, else open the interactive menu.
+
+    First run wins over everything — a brand-new user is funnelled through init before any
+    menu. Once initialised, bare ``gmlw`` becomes the front door: on a terminal it opens the
+    ``gmlw tui`` menu; off a terminal ``_tui`` falls back to the plain capability index, so a
+    piped/scripted ``gmlw`` never blocks on a menu.
+    """
+    if config.init_version() is None:  # first run — setup must win over the menu
+        return _run_init()
+    return _tui()
+
+
+def _capability_index() -> int:
+    """Print the grouped capability index — the non-TTY fallback for bare ``gmlw``/``tui``."""
     print(render_index(i18n.active()))
     return 0
 
@@ -792,6 +851,9 @@ def _view(args: argparse.Namespace) -> str | None:
         job = JobId(args.job)
         report = build_export_usage().execute(job)
         return _as_json(asdict(report)) if as_json else format_usage(report)
+    if args.command == "clients":
+        statuses = build_list_clients().execute()
+        return _as_json([asdict(s) for s in statuses]) if as_json else format_clients(statuses)
     return None
 
 
@@ -859,6 +921,22 @@ def _preflight_cwd() -> bool:
         os.getcwd()  # noqa: PTH109  (a probe for a live cwd; Path.cwd() would be equivalent)
     except OSError:
         print(i18n.t("preflight.cwd_gone"), file=sys.stderr)
+        return False
+    return True
+
+
+def _preflight_resume_cwd(cwd: str | None) -> bool:
+    """Return ``False`` (with guidance) when a resumed session's folder no longer exists.
+
+    A specific session resumes in the folder it was launched in (Claude's resume is scoped
+    to it); if that folder was since deleted, the client would die on ``subprocess.run(
+    cwd=...)`` with a cryptic error. Name the missing folder plainly instead. ``None`` (a
+    pre-folder session) resumes in the current directory, which ``_preflight_cwd`` covers.
+    """
+    if cwd is None:
+        return True
+    if not Path(cwd).is_dir():
+        print(i18n.t("preflight.resume_cwd_gone", cwd=cwd), file=sys.stderr)
         return False
     return True
 
@@ -985,7 +1063,7 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
-def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its own exit)
+def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each with its own exit)
     """Run the interactive menu, then hand off to the client outside the event loop.
 
     The hand-off lives in the *ordering* here: the Textual app owns the terminal only while
@@ -996,18 +1074,89 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
     blocks on a menu" contract.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return _index()
+        return _capability_index()  # never the menu off a TTY; never recurse back into _index
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
+        ClientRow,
+        ConfigCatalog,
+        ConfigSetResult,
+        ConfigSetting,
         CreateOutcome,
         JobChoice,
         MenuApp,
+        SessionChoice,
         SwitchChoice,
         Switcher,
+        UsageView,
     )
 
     jobs = [
         JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
     ]
+
+    def _sessions_for(job: str) -> list[SessionChoice]:
+        summaries = build_list_sessions().execute(job)  # oldest-first; the last is the latest
+        return [
+            SessionChoice(
+                session_id=s.session_id,
+                client=s.client,
+                cwd=s.cwd,
+                resumable=s.resumable,
+                date=(s.created_at or "")[:16],  # "YYYY-MM-DD HH:MM"
+                is_latest=(i == len(summaries) - 1),
+            )
+            for i, s in enumerate(summaries)
+        ]
+
+    def _usage_view(job: str) -> UsageView:  # runs on a worker thread: fresh store/connection
+        report = build_export_usage().execute(JobId(job))
+        loc = i18n.active()
+        if report.turn_count == 0 and not report.session_costs:
+            return UsageView(
+                job=job,
+                empty=True,
+                summary=loc.t("usage.none", job=repr(job)),
+                model_rows=(),
+                session_rows=(),
+            )
+        summary = loc.t(
+            "usage.total",
+            count=report.turn_count,
+            tokens=_tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
+            duration=f"{report.duration_s:.1f}",
+            total=f"{report.total_usd:.2f}",
+        )
+        model_rows = tuple(
+            (
+                model.model,
+                str(model.calls),
+                str(model.input_tokens),
+                str(model.output_tokens),
+                str(model.cache_tokens),
+                f"{model.duration_s:.1f}",
+            )
+            for model in report.models
+        )
+        session_rows = tuple(
+            (cost.session_id, f"{cost.cost_usd:.2f}") for cost in report.session_costs
+        )
+        return UsageView(
+            job=job, empty=False, summary=summary, model_rows=model_rows, session_rows=session_rows
+        )
+
+    def _save_usage(job: str) -> str:  # writes the full JSON report; returns the file path
+        return str(build_save_usage_report().execute(JobId(job)))
+
+    def _clients() -> list[ClientRow]:  # runs on a worker thread: version reads are subprocesses
+        return [
+            ClientRow(
+                client=status.display,
+                version=_client_version_label(status, loc),
+                resumable=loc.t("clients.yes") if status.resumable else loc.t("clients.no"),
+                default=loc.t("clients.default_marker") if status.is_default else "",
+            )
+            for status in build_list_clients().execute()
+        ]
+
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
     # its options + current value and injects an ``apply`` setter and, for the folder-backed
     # axes, a ``create``. The app stays pure -- the wiring owns every outbound call.
@@ -1061,6 +1210,39 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
     )
     switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
 
+    # Config Get/Set: the settings snapshot + a setter, injected like the switchers. The picker
+    # reads the snapshot; a set goes through the same ConfigCommands.set the CLI's `config set`
+    # uses (values/defaults pre-rendered through _setting_value so the app stays format-free).
+    loc = i18n.active()
+
+    def _config_settings() -> list[ConfigSetting]:
+        return [
+            ConfigSetting(
+                key=view.key,
+                value=_setting_value(view.value, loc),
+                default=_setting_value(view.default, loc),
+                type_name=view.type_name,
+                choices=view.choices,
+                description=view.description,
+            )
+            for view in config_commands.list()
+        ]
+
+    def _apply_setting(key: str, raw: str) -> ConfigSetResult:
+        try:  # a value out of range keeps the editor open with the localised reason
+            outcome = config_commands.set(key, raw)
+        except settings_registry.InvalidSettingValueError as error:
+            return ConfigSetResult(ok=False, message=i18n.t("error.generic", error=error))
+        return ConfigSetResult(
+            ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
+        )
+
+    config_catalog = ConfigCatalog(
+        crumb=f"gmlw > {t('tui.config')}",
+        settings=_config_settings(),
+        apply=_apply_setting,
+    )
+
     def _validate_job(name: str) -> str | None:  # in-form validation before any teardown
         try:
             JobId(name)
@@ -1068,17 +1250,79 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
             return t("tui.newjob.invalid")
         return None
 
+    def _validate_workflow(name: str) -> str | None:  # empty is fine — named at the end
+        if not name:
+            return None
+        try:
+            WorkflowName(name)
+        except IdentifierError:
+            return t("tui.wf.invalid")
+        return None
+
+    client = _client(None)  # the default client (ignored on resume: the session carries its own)
     choice = MenuApp(
-        jobs, switchers=switchers, validate_job=_validate_job
+        jobs,
+        switchers=switchers,
+        validate_job=_validate_job,
+        validate_workflow=_validate_workflow,
+        sessions_for=_sessions_for,
+        usage_view=_usage_view,
+        save_usage=_save_usage,
+        workflows=build_list_workflows().execute(),
+        clients=_clients,
+        config=config_catalog,
+        current_client=client,
     ).run()  # blocks; terminal restored on return
-    if choice is None or choice.job is None or choice.action not in ("start", "resume"):
+    if choice is None:
+        return 0
+    if choice.action == "init":  # Config → Setup: re-run the interview on the restored terminal
+        return _run_init()
+    if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
+        return _run_workflow(choice.workflow, client)
+    if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
+        return _new_workflow(choice.workflow, client, choice.guided)
+    if choice.action == "workflow_edit" and choice.workflow is not None:
+        return _edit_workflow(choice.workflow, client, choice.guided)
+    if choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"
-    client = _client(None)  # the default client (ignored on resume: the session carries its own)
+    picked_cwd: str | None = None
+    if resume and choice.session is not None:  # a specific session relaunches in its own folder
+        picked = next(
+            (s for s in _sessions_for(choice.job) if s.session_id == choice.session), None
+        )
+        picked_cwd = picked.cwd if picked is not None else None
+    return _tui_launch_job(choice.job, resume, choice.session, picked_cwd, client)
+
+
+def _tui_launch_job(
+    job: str, resume: bool, session: str | None, picked_cwd: str | None, client: str
+) -> int:
+    """Launch (or resume) a job from the TUI's choice — the hand-off after ``run()`` returns.
+
+    Args:
+        job: The job to launch.
+        resume: Whether this reopens an existing session.
+        session: The specific session id to resume, or ``None`` for the latest / a new one.
+        picked_cwd: A resumed session's stored folder to relaunch in, or ``None``.
+        client: The resolved client to wrap.
+
+    Returns:
+        The process exit code.
+    """
     command = StartJobCommand(
-        job=JobId(choice.job), client=client, resume_latest=resume, workflow=None
+        job=JobId(job),
+        client=client,
+        resume_latest=resume and session is None,  # a picked session wins over "latest"
+        resume_session=session,
+        workflow=None,
     )
-    if not _preflight_cwd():
+    # Guard the folder the launch will actually use: a resumed session's stored folder, or
+    # the current directory for a new start (or a pre-folder resume, whose cwd is ``None``).
+    if picked_cwd is not None:
+        if not _preflight_resume_cwd(picked_cwd):
+            return 2
+    elif not _preflight_cwd():
         return 2
     if not resume and not _preflight_client(client):  # a new session needs the client installed
         return 2
@@ -1142,7 +1386,19 @@ def _run(args: argparse.Namespace) -> int:
     workflow = _resolve_workflow(args.workflow)
     if workflow is None:
         return 2
-    client = _client(args.client)
+    return _run_workflow(workflow, _client(args.client))
+
+
+def _run_workflow(workflow: str, client: str) -> int:
+    """Launch the client on a workflow's own job — shared by ``gmlw run`` and the TUI Run verb.
+
+    Args:
+        workflow: The workflow to run (also the job name it accumulates sessions under).
+        client: The resolved client to wrap.
+
+    Returns:
+        The process exit code.
+    """
     command = StartJobCommand(
         job=JobId(workflow),
         client=client,
@@ -1411,11 +1667,23 @@ def _workflow_new(args: argparse.Namespace) -> int:
     after which gmlw deploys the draft. A name given up front is a seed that fails fast
     on a collision. The draft's fate on the return is reported from the result.
     """
-    client = _client(args.client)
+    name = None if args.name is None else str(args.name)
+    return _new_workflow(name, _client(args.client), _resolve_guided(args))
+
+
+def _new_workflow(name: str | None, client: str, guided: bool) -> int:
+    """Author a new workflow — shared by ``gmlw workflow new`` and the TUI Create verb.
+
+    Args:
+        name: A suggested name, or ``None`` to let the session propose one at the end.
+        client: The resolved client to wrap.
+        guided: Whether to use the guided (facilitative) authoring experience.
+
+    Returns:
+        The process exit code.
+    """
     if not _preflight_client(client):
         return 2
-    name = None if args.name is None else str(args.name)
-    guided = _resolve_guided(args)
     try:
         result = build_new_workflow().execute(
             NewWorkflowCommand(name=name, client=client, guided=guided)
@@ -1445,12 +1713,24 @@ def _announce_new_workflow(result: NewWorkflowResult) -> None:
 
 def _workflow_edit(args: argparse.Namespace) -> int:
     """Edit an existing workflow (guide instead of launching when the client isn't ready)."""
-    client = _client(args.client)
+    return _edit_workflow(str(args.name), _client(args.client), _resolve_guided(args))
+
+
+def _edit_workflow(name: str, client: str, guided: bool) -> int:
+    """Edit an existing workflow — shared by ``gmlw workflow edit`` and the TUI Edit verb.
+
+    Args:
+        name: The workflow to edit.
+        client: The resolved client to wrap.
+        guided: Whether to use the guided (facilitative) authoring experience.
+
+    Returns:
+        The process exit code.
+    """
     if not _preflight_client(client):
         return 2
-    guided = _resolve_guided(args)
     try:
-        command = EditWorkflowCommand(name=str(args.name), client=client, guided=guided)
+        command = EditWorkflowCommand(name=name, client=client, guided=guided)
         return build_edit_workflow().execute(command)
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))

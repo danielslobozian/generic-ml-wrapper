@@ -50,18 +50,38 @@ class SqliteSessionStore(SessionStorePort):
                 (session.job, self._kind),
             )
             connection.execute(
-                "INSERT INTO sessions (session_id, job, client, uuid) VALUES (?, ?, ?, ?)",
-                (session.session_id, session.job, session.client, session.uuid),
+                "INSERT INTO sessions (session_id, job, client, uuid, cwd, resumable) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    session.session_id,
+                    session.job,
+                    session.client,
+                    session.uuid,
+                    session.cwd,
+                    int(session.resumable),
+                ),
             )
 
     def sessions_for_job(self, job: str) -> list[Session]:
         """Return the sessions recorded for a job, oldest first."""
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT session_id, job, client, uuid FROM sessions WHERE job = ? ORDER BY id",
+                "SELECT session_id, job, client, uuid, cwd, resumable, created_at "
+                "FROM sessions WHERE job = ? ORDER BY id",
                 (job,),
             ).fetchall()
-        return [Session(row["session_id"], row["job"], row["client"], row["uuid"]) for row in rows]
+        return [
+            Session(
+                row["session_id"],
+                row["job"],
+                row["client"],
+                row["uuid"],
+                row["cwd"],
+                bool(row["resumable"]),
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ]
 
     def ids_for_job(self, job: str) -> list[str]:
         """Return the session ids recorded for a job, oldest first."""

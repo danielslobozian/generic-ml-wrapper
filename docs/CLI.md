@@ -15,6 +15,7 @@ gmlw run [workflow] [--client X]         # run a workflow directly (job named af
 gmlw jobs [--json]
 gmlw sessions <job> [--json]
 gmlw export <job> [--json]
+gmlw clients [--json]                    # supported clients + installed versions
 gmlw statusline                          # called by the client, not by hand
 gmlw workflow new [name] [--client X] [--guided|--quick]   # name optional; asks depth if unset
 gmlw workflow list [--json]
@@ -29,8 +30,8 @@ gmlw role new <label> [--description D] [--default]
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
-`workflow list`, `persona list`, and `plugins list`. It prints pretty-printed JSON
-instead of the human-readable text.
+`clients`, `workflow list`, `persona list`, and `plugins list`. It prints pretty-printed
+JSON instead of the human-readable text.
 
 ### Implicit `start`
 
@@ -196,6 +197,25 @@ Example:
 gmlw export billing-api --json
 ```
 
+## clients
+
+List the supported clients (Claude Code, Cursor CLI, OpenAI Codex CLI, Mistral Vibe),
+each with its installed on-disk version, whether it can resume a session, and which is
+the configured default. Uninstalled clients are shown as such. Also available in the
+interactive menu under `gmlw tui` → Config → Clients.
+
+```
+gmlw clients [--json]
+```
+
+- `--json` — output as JSON instead of text.
+
+Example:
+
+```
+gmlw clients
+```
+
 ## statusline
 
 Render the status line. This command is invoked by the client's status-line hook, not
@@ -211,10 +231,11 @@ status line is installed and parsed.
 
 ## tui
 
-Open the interactive, full-screen menu — an opt-in alternative to the flag CLI. It is
+Open the interactive, full-screen menu — an alternative to the flag CLI. It is
 object-first (**Job · Workflow · Config**), you navigate with the arrow keys, and each row
-shows the equivalent command. Bare `gmlw` is unchanged; the menu is only entered via
-`gmlw tui`.
+shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too** (once
+initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
+capability index.
 
 ```
 gmlw tui
@@ -469,9 +490,11 @@ gmlw help <topic>
 - `topic` (positional, optional) — one of `job-vs-workflow`, `start-vs-run`, `personas`,
   `cost`. Omit to list the topics. An unknown topic exits non-zero with guidance.
 
-Bare `gmlw` (no arguments) is first-run-aware: on a fresh install it runs `init`;
-thereafter it prints a grouped capability index (**launch / inspect / author**) with a
-next-action footer. The flat argparse view is still available via `gmlw --help`.
+Bare `gmlw` (no arguments) is first-run-aware: on a fresh install it runs `init` (which,
+at the end, tells you how to re-run setup from the menu). Once initialised, on a terminal
+it opens the interactive menu (`gmlw tui`); off a terminal (piped/redirected) it prints a
+grouped capability index (**launch / inspect / author**) with a next-action footer. The
+flat argparse view is still available via `gmlw --help`.
 
 ---
 
