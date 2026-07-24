@@ -652,6 +652,8 @@ class ConfigMenuScreen(_MenuScreen):
             self.menu_app.push_screen(ConfigPickerScreen(mode))
         elif item.action == "cfg:clients" and self.menu_app.clients is not None:
             self.menu_app.push_screen(ClientsScreen())
+        elif item.action == "cfg:setup":  # a launcher: exit, the wiring re-runs init after teardown
+            self.menu_app.exit(MenuChoice(action="init"))
         else:
             self._stub(item)
 

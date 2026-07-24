@@ -669,10 +669,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command == "help":
             return _help(args)
         if args.command == "init":
-            _announce_init(build_init().execute())
-            _announce_migration(build_migrate_layout().execute())
-            _announce_slug_migration(build_migrate_slugs().execute())
-            return 0
+            return _run_init()
         if args.command == "start":
             return _start(args)
         if args.command == "run":
@@ -791,6 +788,19 @@ def _announce_slug_migration(report: SlugMigrationReport) -> None:
     print(loc.t("migration.slugs", count=len(report.renamed), items=items), file=sys.stderr)
 
 
+def _run_init() -> int:
+    """Run the setup interview, then the layout/slug migrations — the ``gmlw init`` flow.
+
+    Shared by the ``init`` command, the first-run funnel, and the TUI's Config → Setup verb.
+    Re-running on an initialised install merges the answers into the existing config (never
+    wipes). Returns ``0``.
+    """
+    _announce_init(build_init().execute())
+    _announce_migration(build_migrate_layout().execute())
+    _announce_slug_migration(build_migrate_slugs().execute())
+    return 0
+
+
 def _index() -> int:
     """Bare ``gmlw``: run the forced setup on a fresh install, else show the index.
 
@@ -799,10 +809,7 @@ def _index() -> int:
     index instead of the raw argparse help.
     """
     if config.init_version() is None:  # first run — funnel through the forced setup
-        _announce_init(build_init().execute())
-        _announce_migration(build_migrate_layout().execute())
-        _announce_slug_migration(build_migrate_slugs().execute())
-        return 0
+        return _run_init()
     print(render_index(i18n.active()))
     return 0
 
@@ -1261,6 +1268,8 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
     ).run()  # blocks; terminal restored on return
     if choice is None:
         return 0
+    if choice.action == "init":  # Config → Setup: re-run the interview on the restored terminal
+        return _run_init()
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return _run_workflow(choice.workflow, client)
     if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)

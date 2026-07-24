@@ -984,3 +984,22 @@ def test_config_clients_is_stubbed_when_unwired() -> None:
     asyncio.run(scenario())
     assert seen["has_table"] is False  # no screen mounted
     assert "isn't wired yet" in str(seen["detail"])
+
+
+# --- Config Setup (re-run init) -----------------------------------------------------------
+
+
+def test_config_setup_exits_with_the_init_choice() -> None:
+    """Config → Setup exits the app with an init choice (the wiring re-runs setup)."""
+    result: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("down", "down", "enter")  # → Config
+            # list get set persona environment role clients setup(7)
+            await pilot.press("down", "down", "down", "down", "down", "down", "down", "enter")
+        result["value"] = app.return_value
+
+    asyncio.run(scenario())
+    assert result["value"] == MenuChoice(action="init")
