@@ -273,6 +273,7 @@ def build_start_job() -> StartJob:
             plugins=build_plugin_source(),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
+        cwd_factory=os.getcwd,
         credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),

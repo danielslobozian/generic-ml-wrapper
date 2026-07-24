@@ -151,6 +151,7 @@ def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the
         workflows=workflows or FakeWorkflows(),
         callers=provider,
         uuid_factory=lambda: "fixed-uuid",
+        cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
         hooks=hooks or HookRunner(()),
         greeting=lambda: greeting,
