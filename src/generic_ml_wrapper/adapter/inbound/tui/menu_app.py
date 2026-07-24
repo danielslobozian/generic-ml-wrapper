@@ -34,16 +34,22 @@ def _accept_any_job(_name: str) -> str | None:
     return None
 
 
+def _no_sessions(_job: str) -> list[SessionChoice]:
+    """Default session lister when the app runs unwired (tests): no sessions."""
+    return []
+
+
 @dataclass(frozen=True)
 class MenuChoice:
     """What the user asked the app to do, handed back to the wiring on exit.
 
-    Only ``"resume"`` is produced today (with ``job`` set). A ``None`` return from the app
-    (Quit / Ctrl+C) means "do nothing".
+    ``"resume"`` carries the ``job`` and (from the session picker) the specific ``session``
+    to resume. A ``None`` return from the app (Quit / Ctrl+C) means "do nothing".
     """
 
     action: str
     job: str | None = None
+    session: str | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +58,23 @@ class JobChoice:
 
     job: str
     session_count: int
+
+
+@dataclass(frozen=True)
+class SessionChoice:
+    """A recorded session the resume picker shows: what it was and whether it can resume.
+
+    ``client`` is the client that made it (a resume relaunches on it, not the current
+    default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
+    marks the newest.
+    """
+
+    session_id: str
+    client: str
+    cwd: str | None
+    resumable: bool
+    date: str
+    is_latest: bool
 
 
 @dataclass(frozen=True)
@@ -111,6 +134,8 @@ class _Item:
     action: str
     example: str = ""
     payload: str = ""
+    note: str = ""  # an extra plain detail line (no "$" prefix), e.g. a resume caveat
+    disabled: bool = False  # shown but not selectable (e.g. a non-resumable session)
 
 
 # The object-first menu tree, built through the active localiser. Each entry is
@@ -169,7 +194,7 @@ class _Row(ListItem):
 
     def __init__(self, item: _Item) -> None:
         self._label = Label(self._markup(item.icon, item))
-        super().__init__(self._label)
+        super().__init__(self._label, disabled=item.disabled)
         self.item = item
 
     @staticmethod
@@ -244,8 +269,12 @@ class _MenuScreen(Screen[None]):
         item = self._highlighted()
         if item is None:
             return
-        text = item.subtitle if not item.example else f"{item.subtitle}\n$ {item.example}"
-        self.query_one("#detail", Static).update(text)
+        lines = [item.subtitle]
+        if item.example:
+            lines.append(f"$ {item.example}")
+        if item.note:
+            lines.append(item.note)
+        self.query_one("#detail", Static).update("\n".join(lines))
 
     def _highlighted(self) -> _Item | None:
         try:
@@ -557,9 +586,73 @@ class JobPickerScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """A picked job becomes the resume choice handed back to the wiring."""
+        """Picking a job opens its session picker (choose which session to resume)."""
         if item.action == "pick":
-            self.menu_app.exit(MenuChoice(action="resume", job=item.payload))
+            self.menu_app.push_screen(SessionPickerScreen(item.payload))
+
+
+class SessionPickerScreen(_MenuScreen):
+    """Pick which session of a job to resume: date · client · folder, latest marked.
+
+    Rows for non-resumable clients (codex/vibe) are shown but disabled. A session whose
+    client differs from the current default carries a "will launch on <client>" note, since
+    a resume relaunches the session's client, not the default. Selecting one exits the app
+    with a resume choice carrying the specific session id.
+    """
+
+    def __init__(self, job: str) -> None:
+        """Bind the picker to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Resume > <job>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')} > {self._job}"
+
+    def _sessions(self) -> list[SessionChoice]:
+        return self.menu_app.sessions_for(self._job)
+
+    def menu_items(self) -> list[_Item]:
+        """One row per session (newest last); non-resumable rows are disabled."""
+        t = i18n.active().t
+        current = self.menu_app.current_client
+        items: list[_Item] = []
+        for s in self._sessions():
+            folder = s.cwd if s.cwd else t("tui.resume.no_folder")
+            title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
+            subtitle = f"{s.date} · {s.client} · {folder}"
+            if not s.resumable:
+                note = t("tui.resume.cannot", client=s.client)
+            elif s.client != current:
+                note = t("tui.resume.will_launch", client=s.client)
+            else:
+                note = ""
+            items.append(
+                _Item(
+                    "⏵" if s.resumable else "⊘",
+                    title,
+                    subtitle,
+                    "resume:pick",
+                    payload=s.session_id,
+                    note=note,
+                    disabled=not s.resumable,
+                )
+            )
+        return items
+
+    def initial_index(self) -> int:
+        """Open on the latest resumable session, else the first row."""
+        sessions = self._sessions()
+        for i in reversed(range(len(sessions))):
+            if sessions[i].resumable:
+                return i
+        return 0
+
+    def handle(self, item: _Item) -> None:
+        """A picked session exits the app with a resume choice carrying its id."""
+        if item.action == "resume:pick":
+            self.menu_app.exit(MenuChoice(action="resume", job=self._job, session=item.payload))
 
 
 class MenuApp(App[MenuChoice | None]):
@@ -594,6 +687,8 @@ class MenuApp(App[MenuChoice | None]):
         *,
         switchers: dict[str, Switcher] | None = None,
         validate_job: Callable[[str], str | None] | None = None,
+        sessions_for: Callable[[str], list[SessionChoice]] | None = None,
+        current_client: str = "",
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -604,11 +699,17 @@ class MenuApp(App[MenuChoice | None]):
                 key just leaves that Config verb stubbed, so the app runs unwired in tests.
             validate_job: Validates a typed new-job name, returning an error message or
                 ``None`` when it is acceptable; defaults to accepting anything (tests).
+            sessions_for: Lists a job's sessions for the session picker (lazily, per job);
+                defaults to none.
+            current_client: The user's default client, to flag when a session's client
+                differs (resuming will launch the session's client, not this one).
         """
         super().__init__()
         self.jobs = jobs
         self.switchers = switchers or {}
         self.validate_job = validate_job or _accept_any_job
+        self.sessions_for = sessions_for or _no_sessions
+        self.current_client = current_client
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

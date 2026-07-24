@@ -19,6 +19,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     JobChoice,
     MenuApp,
     MenuChoice,
+    SessionChoice,
     SwitchChoice,
     Switcher,
 )
@@ -55,16 +56,51 @@ def _drive(script: Callable[[Pilot[MenuChoice | None]], Awaitable[None]]) -> Men
     return asyncio.run(scenario())
 
 
-def test_resume_flow_returns_chosen_job() -> None:
-    """Top → Job → Resume → pick the first job → resume alpha."""
+_SESSIONS = [
+    SessionChoice("alpha_001", "claude", "/work/a", True, "2026-07-24 09:00", False),
+    SessionChoice("alpha_002", "codex", "/work/b", False, "2026-07-24 10:00", False),
+    SessionChoice("alpha_003", "cursor", "/work/c", True, "2026-07-24 11:00", True),
+]
 
-    async def script(pilot: Pilot[MenuChoice | None]) -> None:
-        await pilot.press("enter")  # Job (first top-menu row) → Job menu
-        await pilot.press("down")  # New → Resume
-        await pilot.press("enter")  # Resume → job picker
-        await pilot.press("enter")  # pick the first job (alpha)
 
-    assert _drive(script) == MenuChoice(action="resume", job="alpha")
+def _resume_app() -> MenuApp:
+    return MenuApp(_JOBS, sessions_for=lambda _job: _SESSIONS, current_client="claude")
+
+
+async def _open_session_picker(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → Resume → pick the first job → its session picker."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("down", "enter")  # Resume → job picker
+    await pilot.press("enter")  # pick first job (alpha) → session picker
+    await pilot.pause()
+
+
+def test_resume_flow_returns_the_chosen_session() -> None:
+    """The picker opens on the latest resumable session; Enter resumes that specific one."""
+    app = _resume_app()
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            await pilot.press("enter")  # the cursor sits on the latest resumable (alpha_003)
+
+    asyncio.run(scenario())
+    assert app.return_value == MenuChoice(action="resume", job="alpha", session="alpha_003")
+
+
+def test_non_resumable_sessions_are_disabled() -> None:
+    """The codex session is listed but disabled, so it can't be picked."""
+    disabled: dict[str, object] = {}
+    app = _resume_app()
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            rows = app.screen.query_one("#menu", ListView).query(ListItem)
+            disabled["flags"] = [r.disabled for r in rows]
+
+    asyncio.run(scenario())
+    assert disabled["flags"] == [False, True, False]  # only the codex row is disabled
 
 
 def test_quit_from_top_returns_none() -> None:

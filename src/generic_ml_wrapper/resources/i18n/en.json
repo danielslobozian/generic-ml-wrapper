@@ -238,5 +238,9 @@
   "tui.newjob.hint": "Type a name, then Enter to start a session. Esc to cancel.",
   "tui.newjob.keys": "⏎ start · Esc cancel",
   "tui.newjob.empty": "please enter a name",
-  "tui.newjob.invalid": "letters, digits, dashes and underscores only"
+  "tui.newjob.invalid": "letters, digits, dashes and underscores only",
+  "tui.resume.latest": "latest",
+  "tui.resume.no_folder": "(folder unknown)",
+  "tui.resume.cannot": "cannot resume — {client} keeps no session to reopen",
+  "tui.resume.will_launch": "↳ resuming will launch {client}, not your default"
 }

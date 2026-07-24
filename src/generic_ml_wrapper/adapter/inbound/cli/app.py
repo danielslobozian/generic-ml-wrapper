@@ -1001,6 +1001,7 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
         CreateOutcome,
         JobChoice,
         MenuApp,
+        SessionChoice,
         SwitchChoice,
         Switcher,
     )
@@ -1008,6 +1009,21 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
     jobs = [
         JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
     ]
+
+    def _sessions_for(job: str) -> list[SessionChoice]:
+        summaries = build_list_sessions().execute(job)  # oldest-first; the last is the latest
+        return [
+            SessionChoice(
+                session_id=s.session_id,
+                client=s.client,
+                cwd=s.cwd,
+                resumable=s.resumable,
+                date=(s.created_at or "")[:16],  # "YYYY-MM-DD HH:MM"
+                is_latest=(i == len(summaries) - 1),
+            )
+            for i, s in enumerate(summaries)
+        ]
+
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
     # its options + current value and injects an ``apply`` setter and, for the folder-backed
     # axes, a ``create``. The app stays pure -- the wiring owns every outbound call.
@@ -1068,15 +1084,23 @@ def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its 
             return t("tui.newjob.invalid")
         return None
 
+    client = _client(None)  # the default client (ignored on resume: the session carries its own)
     choice = MenuApp(
-        jobs, switchers=switchers, validate_job=_validate_job
+        jobs,
+        switchers=switchers,
+        validate_job=_validate_job,
+        sessions_for=_sessions_for,
+        current_client=client,
     ).run()  # blocks; terminal restored on return
     if choice is None or choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"
-    client = _client(None)  # the default client (ignored on resume: the session carries its own)
     command = StartJobCommand(
-        job=JobId(choice.job), client=client, resume_latest=resume, workflow=None
+        job=JobId(choice.job),
+        client=client,
+        resume_latest=resume and choice.session is None,  # a picked session wins over "latest"
+        resume_session=choice.session,
+        workflow=None,
     )
     if not _preflight_cwd():
         return 2
