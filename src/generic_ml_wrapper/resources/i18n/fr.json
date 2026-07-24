@@ -304,5 +304,10 @@
   "clients.col.version": "Version",
   "clients.col.resumable": "Reprise",
   "clients.col.default": "Par défaut",
-  "log.hint_not_recorded": "impossible d'enregistrer l'astuce {hint} comme vue : {error}"
+  "log.hint_not_recorded": "impossible d'enregistrer l'astuce {hint} comme vue : {error}",
+  "log.gateway_request_failed": "échec de la requête relais ({method} {path}) ; 502 renvoyé au client",
+  "log.gateway_handler_crashed": "plantage du thread de traitement du relais (client {client})",
+  "log.gateway_stream_interrupted": "flux amont interrompu prématurément ({error}) ; conservation de ce qui a été capturé",
+  "log.gateway_record_failed": "impossible d'enregistrer le tour pour {path} ({error}) ; le tour lui-même n'a pas été affecté",
+  "log.gateway_stopped": "le relais de mesure a cessé de répondre ({error}) ; les tours de cette session ne sont plus enregistrés"
 }

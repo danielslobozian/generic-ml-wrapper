@@ -48,6 +48,35 @@ GMLW_LOG_LEVEL=debug gmlw start <job> --client <client>
 or set `[logging] level = "debug"` in `~/.gmlw/config.toml`. See
 [CONFIGURATION.md](CONFIGURATION.md).
 
+## Where do I look when something goes wrong *during* a session?
+
+`~/.gmlw/logs/gmlw.log`.
+
+While a client is running it owns the terminal, so the wrapper cannot report anything
+to the screen without corrupting the client's display — and anything it did write
+would be painted over on the next redraw. Diagnostics for those commands (`start`,
+`run`, `tui`, `workflow new/edit`) therefore go **only** to the log file:
+
+```
+tail -f ~/.gmlw/logs/gmlw.log
+```
+
+Caught failures are recorded there with their full traceback, so a relay or upstream
+error that happened ten minutes ago is still there to read. The file rolls at 1 MiB
+and keeps 5 backups; API keys, tokens and e-mail addresses are redacted as it is
+written. Utility commands (`gmlw jobs`, `gmlw config list`, …) log to the file *and*
+to stderr, since nothing else is using the screen.
+
+## A Python traceback appeared over my client's UI
+
+Fixed in 0.8.0. The metering relay had no error boundary, so a TLS error in a request
+thread was printed as a raw traceback to a `stderr` shared with the client's TUI —
+unreadable, uncopyable, and saved nowhere.
+
+Now such a failure returns a clean `502` to the client (which retries), and the
+traceback goes to `~/.gmlw/logs/gmlw.log`. If you still see one, it is a bug worth
+reporting — please include the log file's tail.
+
 ## How are client status-line settings restored after exit or crash?
 
 The wrapper snapshots your client status-line settings before launch and restores them
