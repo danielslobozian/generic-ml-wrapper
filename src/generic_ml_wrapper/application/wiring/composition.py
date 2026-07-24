@@ -87,6 +87,7 @@ from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGr
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
+from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
@@ -375,6 +376,15 @@ def build_create_axis() -> CreateAxis:
         config_file=config.config_path,
         clock=lambda: datetime.now(UTC).astimezone(),
     )
+
+
+def build_axis_catalog() -> AxisCatalogPort:
+    """Build the role/environment catalog reader over ``~/.gmlw``.
+
+    Returns:
+        A ready-to-use :class:`AxisCatalogPort` for listing the axis slug-folders.
+    """
+    return FilesystemAxisCatalog(paths.HOME)
 
 
 def build_migrate_layout() -> MigrateLayout:

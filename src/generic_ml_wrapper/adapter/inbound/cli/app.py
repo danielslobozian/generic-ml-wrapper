@@ -80,6 +80,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring.composition import (
+    build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
     build_config_commands,
@@ -149,6 +150,7 @@ _COMMANDS = frozenset(
         "sessions",
         "export",
         "statusline",
+        "tui",
         "workflow",
         "persona",
         "plugins",
@@ -229,7 +231,7 @@ def _version_string() -> str:
     return f"gmlw {__version__} (build {build_id})"
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative parser wiring)
     """Build the top-level argument parser.
 
     Returns:
@@ -292,6 +294,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json_flag(export)
 
     sub.add_parser("statusline", help="render the status line (called by the client)")
+
+    sub.add_parser("tui", help="interactive menu (SPIKE — throwaway hand-off proof)")
 
     workflow = sub.add_parser("workflow", help="author/list workflows")
     workflow_sub = workflow.add_subparsers(dest="workflow_command", metavar="<action>")
@@ -630,6 +634,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _run(args)
         if args.command == "statusline":
             return _statusline()
+        if args.command == "tui":
+            return _tui()
         if args.command == "workflow":
             return _workflow(args)
         if args.command == "persona":
@@ -977,6 +983,110 @@ def _farewell() -> str | None:
     if settings.persona is None:
         return None
     return i18n.t("farewell", name=settings.name or getpass.getuser())
+
+
+def _tui() -> int:
+    """SPIKE: run the interactive menu, then hand off to the client outside the event loop.
+
+    The whole point of the spike lives in the *ordering* here: the Textual app owns the
+    terminal only while ``run()`` blocks. When the user picks a job, the app calls
+    ``exit(choice)``; Textual restores the terminal as ``run()`` returns; and only *then*
+    do we launch the client through the same ``build_start_job`` path every other command
+    uses. Off a TTY we never build the app -- we fall back to the plain capability index,
+    honouring the "non-TTY never blocks on a menu" contract.
+    """
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return _index()
+    from generic_ml_wrapper.adapter.inbound.tui.spike_app import (  # noqa: PLC0415  spike-local
+        CreateOutcome,
+        JobChoice,
+        SpikeMenuApp,
+        SwitchChoice,
+        Switcher,
+    )
+
+    jobs = [
+        JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
+    ]
+    # The config switchers (browsers that mutate config in place, no hand-off): each fetches
+    # its options + current value and injects an ``apply`` setter and, for the folder-backed
+    # axes, a ``create``. The app stays pure -- the wiring owns every outbound call.
+    config_commands = build_config_commands()
+    catalog = build_axis_catalog()
+
+    def _switcher(
+        crumb: str, key: str, noun: str, choices: list[SwitchChoice], kind: AxisKind | None = None
+    ) -> Switcher:
+        current = config_commands.get(key).value
+
+        def apply(value: str) -> str:  # spike copy is English, like the rest of the menu
+            changed = config_commands.set(key, value).changed
+            return f"{noun} set to '{value}'" if changed else f"{noun} already '{value}'"
+
+        def create(label: str) -> CreateOutcome:
+            try:  # create + make it the default, so "New" from the switcher also switches
+                result = build_create_axis().execute(
+                    CreateAxisCommand(kind=cast(AxisKind, kind), label=label, make_default=True)
+                )
+            except AxisLabelError:
+                return CreateOutcome(None, "please enter a usable name")
+            except AxisExistsError:
+                return CreateOutcome(None, f"a {noun} named that already exists")
+            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), f"created '{label}'")
+
+        return Switcher(
+            crumb=crumb,
+            choices=choices,
+            current=current if isinstance(current, str) else None,
+            apply=apply,
+            create=None if kind is None else create,
+        )
+
+    personas = [
+        SwitchChoice(p.name, p.name, p.description) for p in build_list_personas().execute()
+    ]
+    environments = [
+        SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ENVIRONMENT)
+    ]
+    roles = [SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ROLE)]
+
+    switchers: dict[str, Switcher] = {}
+    if personas:
+        switchers["persona"] = _switcher(
+            "gmlw > Config > Persona", "companion.persona", "persona", personas
+        )
+    switchers["environment"] = _switcher(
+        "gmlw > Config > Environment",
+        "profile.default_environment",
+        "environment",
+        environments,
+        AxisKind.ENVIRONMENT,
+    )
+    switchers["role"] = _switcher(
+        "gmlw > Config > Role", "profile.default_role", "role", roles, AxisKind.ROLE
+    )
+
+    choice = SpikeMenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
+    if choice is None or choice.action != "resume" or choice.job is None:
+        return 0
+    command = StartJobCommand(
+        job=JobId(choice.job),
+        client=_client(None),  # ignored on resume: the stored latest session carries its client
+        resume_latest=True,
+        workflow=None,
+    )
+    if not _preflight_cwd():
+        return 2
+    with _client_owns_interrupts():
+        try:
+            result = build_start_job().execute(command)
+        except _Terminated:
+            return 143
+        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+            print(i18n.t("error.generic", error=error), file=sys.stderr)
+            return 2
+    _print_exit_receipt(result)
+    return result.exit_code
 
 
 def _start(args: argparse.Namespace) -> int:
