@@ -233,5 +233,10 @@
   "tui.switch.unchanged": "déjà « {value} »",
   "tui.create.bad": "veuillez saisir un nom valide",
   "tui.create.exists": "ce nom existe déjà",
-  "tui.sessions": "{count} sessions"
+  "tui.sessions": "{count} sessions",
+  "tui.newjob.placeholder": "nom du nouveau job (lettres, chiffres, - _)",
+  "tui.newjob.hint": "Tapez un nom, puis Entrée pour démarrer une session. Échap pour annuler.",
+  "tui.newjob.keys": "⏎ démarrer · Échap annuler",
+  "tui.newjob.empty": "veuillez saisir un nom",
+  "tui.newjob.invalid": "lettres, chiffres, tirets et underscores uniquement"
 }
