@@ -148,9 +148,9 @@ costume and makeup, briefs the director, then cedes the screen ([[wrapper-not-st
 
 Deferred but homed: a detached model call to synthesise a `role.md` for an unfamiliar role
 (e.g. product owner) is a natural future consumer of the 0.3.0 `pre-launch` seam — parked,
-not built. **Persona *previews* moved to 0.9.0** — sample lines are only worth shipping once
+not built. **Persona *previews* moved to 0.10.0** — sample lines are only worth shipping once
 the personas behind them are proven to actually differ, and doing them in French requires
-localising persona content, which is the same job (see 0.9.0).
+localising persona content, which is the same job (see 0.10.0).
 
 ### 0.5.0 — discoverability & progressive disclosure
 Reframed around the real metric for a new user: **time to a first live session**, and then
@@ -266,7 +266,75 @@ than only configurable — plus a round of data-screen and localisation fixes.
 
 ## Planned
 
-### 0.8.0 — TUI refactoring: the terminal UX as one system
+### 0.8.0 — every string a key, every log a file
+Two passes over the *whole* application, both about the same thing: gmlw currently says
+things in the wrong language and writes them to the wrong place. Neither is a feature —
+each is a sweep that ends with a guard so the debt cannot silently return.
+
+#### 1. Localisation, finished
+0.5.0 built the mechanism (a keyed JSON catalogue, a process-global active localiser,
+English-fallback, an EN/FR key-parity guard) and localised the surfaces it touched. The app
+has grown four releases since — `config` commands, the TUI, `sessions`, `CreateAxis` — and
+the drift is measurable: of 67 `print` sites ~30 still carry English literals, ~49 argparse
+`help=`/`description=` strings are raw, and a couple of `log.*` calls slipped through. 0.7.0
+introduced codes and labels for the TUI, but only for the TUI.
+
+- **One rule, no exceptions: no message is a literal at its call site.** Every string a human
+  can ever read — command output, prompts, errors, argparse help, TUI labels, **and every
+  technical log line** — is a key resolved through the catalogue, with EN *and* FR authored.
+- **Technical logs included, deliberately.** This restates the 0.5.0 call rather than softening
+  it: the convention is English-only logs, and we are choosing against it. A French user
+  reading their own log file (or pasting one into an issue) is the case that decides it — the
+  logs are part of the product's voice, not an internal channel.
+- **A drift guard that fails CI.** The key-parity check keeps EN and FR aligned; the missing
+  half is a check that rejects a *new* literal at a message call site (`print`, `log.*`,
+  argparse `help=`/`description=`, TUI label constructors). This is mechanically enforceable,
+  so it ships as a check the build runs, not as a note in CONTRIBUTING.
+- **Catalogue hygiene.** At 305 keys and climbing, the flat namespace needs a convention
+  (surface-prefixed keys) and a dead-key sweep, so the catalogue stays navigable for whoever
+  authors the next language.
+
+#### 2. Logging as a real subsystem — a diagnostics port, modelled on generic-ml-cache
+`common/log.py` is 83 lines that print to `stderr`. During a wrapped session `stderr` **is the
+client's screen** — so gmlw's diagnostics either collide with the client's TUI or are simply
+never written anywhere. generic-ml-cache already solved this properly, and its shape is the
+one to copy rather than reinvent.
+
+- **Port in core, adapter at the edge.** A `DiagnosticsPort` (`debug`/`info`/`warn`/`error`,
+  plus free-form keyword context) that core emits through and never a logging library it
+  imports directly. The composition root resolves level + destination from flags/env/config
+  and builds the concrete adapter — mirroring the cache's `build_diagnostics`. A null adapter
+  makes "quiet" a wiring choice rather than a branch in every call site.
+- **The hard contract: an adapter must never raise.** A diagnostics failure must not break or
+  alter a run. Non-negotiable, and tested.
+- **A rolling file sink under the app folder** — `~/.gmlw/logs/`, rotating, appended across
+  restarts, so a wrapped session's diagnostics land in a file the user can open *afterwards*
+  instead of being painted over by the client mid-session.
+- **A structured line format** — timestamp, thread, caller (`Class.method:lineno`), level,
+  message, `k=v` context — human-readable text by default, newline-delimited JSON as an
+  option. Same convention as the cache, so the two products' logs read alike.
+- **PII scrubbing in the sink, not at the call site.** A wrapper's logs pass API keys, bearer
+  tokens, e-mail addresses and context derived from the user's own journal. Adopt the cache's
+  posture: redact by sensitive key name *and* by pattern, and deliberately avoid
+  over-redacting (silently destroyed logs are their own bug).
+- **Error boundaries — [#59](https://github.com/danielslobozian/generic-ml-wrapper/issues/59).**
+  The relay's `_proxy` has no outer `try/except`, so an `ssl.SSLError` in a handler thread
+  reaches `socketserver`'s default `handle_error`, which prints a raw traceback to `stderr` —
+  onto the live client's screen, uncopyable, and into no log file at all. The fix is four
+  parts: an error boundary that returns a clean `502`, a `handle_error` override routed
+  through the port, a guard on the upstream **read** (today only the client *write* is
+  guarded), and the file sink above so this can never reach the screen again. Then generalise:
+  audit every long-lived thread and subprocess seam for the same missing-boundary shape.
+- **Log generously, now that it's safe to.** The reason gmlw logs so little is that logging
+  meant shouting at the user. With a file sink that constraint lifts — the launch sequence,
+  hooks, interceptors, relay turns, and config resolution should all leave a trace worth
+  reading when something goes wrong.
+
+**Order matters.** Strings first, then logging: the logging pass *creates* new messages, so the
+drift guard has to exist before those lines are written, or the second pass rebuilds the debt
+the first one just cleared.
+
+### 0.9.0 — TUI refactoring: the terminal UX as one system
 The discoverability surfaces landed piecemeal across 0.4.0–0.6.0 — the first-run chooser, the
 bare-`gmlw` index, `help` topics, `config list`, the exit receipt, the ambient card, the
 pre-launch workflow chooser. Each was built when its feature needed it. This release stops
@@ -300,7 +368,7 @@ as a persistent UI over a live session.
   status-of vs manual split (statusline = ambient *state*; card = ambient *manual*) applied
   uniformly, so the surfaces look like one product rather than several sittings.
 
-### 0.9.0 — personas, proven (and multilingual)
+### 0.10.0 — personas, proven (and multilingual)
 Today "personas shape tone" is an **untested claim**. A persona ships a tone block, but
 nothing demonstrates that `mentor` and `terse` actually answer differently — and the tone
 block is injected *on top of* each client's own system prompt, which may simply swamp it.
@@ -352,7 +420,7 @@ is an evaluation loop, not a feature.
 
 **Sequencing, resolved:** *per-workflow persona* used to sit in 0.6.0, ahead of the release
 that proves personas are distinct at all — building composition on an unproven foundation. It
-now lives here in 0.9.0, after the harness and the tuning, so the composition follows the
+now lives here in 0.10.0, after the harness and the tuning, so the composition follows the
 proof. If the matrix shows personas collapse even after tuning, per-workflow persona is
 reconsidered in place rather than shipped on sand.
 
