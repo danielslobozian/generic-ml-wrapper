@@ -44,6 +44,12 @@ from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import Tom
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
 )
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.rolling_file_diagnostics import (
+    RollingFileDiagnostics,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import StderrDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.tee_diagnostics import TeeDiagnostics
 from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
     FilesystemPersonaSource,
 )
@@ -94,6 +100,7 @@ from generic_ml_wrapper.application.port.inbound.set_credential import SetCreden
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
@@ -589,3 +596,49 @@ def build_edit_workflow() -> EditWorkflow:
         uuid_factory=lambda: str(uuid.uuid4()),
         hooks=_hook_runner(),
     )
+
+
+def build_diagnostics(
+    *,
+    quiet: bool = False,
+    to_stderr: bool = True,
+    path: Path | None = None,
+) -> DiagnosticsPort:
+    """Build the diagnostics sink from the resolved logging policy.
+
+    Level comes from ``GMLW_LOG_LEVEL`` or ``[logging] level``; the file destination and
+    its rotation from ``[logging] to_file / max_bytes / backup_count``. Nothing below the
+    threshold is written, and every sink honours the never-raises contract, so a broken
+    logging setup degrades to silence rather than to a failed run.
+
+    Args:
+        quiet: Discard everything. For the statusline: it renders into another program's
+            prompt many times a session, from a short-lived subprocess, so it must neither
+            write a byte to the shared stream nor race the others for the rolling file.
+        to_stderr: Also write to stderr. True for a utility command a person is watching;
+            **false for any command that hands the terminal to a client** — there stderr
+            is the client's own screen, and a line written to it corrupts the client's
+            display and is lost on the next redraw (issue #59).
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The sink to install with ``log.set_active``.
+    """
+    if quiet:
+        return NullDiagnostics()
+    level = os.environ.get("GMLW_LOG_LEVEL") or config.log_level(path)
+    sinks: list[DiagnosticsPort] = []
+    if config.log_to_file(path):
+        sinks.append(
+            RollingFileDiagnostics(
+                paths.LOG_FILE,
+                level=level,
+                max_bytes=config.log_max_bytes(path),
+                backup_count=config.log_backup_count(path),
+            )
+        )
+    if to_stderr:
+        sinks.append(StderrDiagnostics(level=level))
+    if not sinks:
+        return NullDiagnostics()
+    return sinks[0] if len(sinks) == 1 else TeeDiagnostics(*sinks)

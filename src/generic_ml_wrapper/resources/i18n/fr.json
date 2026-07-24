@@ -303,5 +303,6 @@
   "clients.col.client": "Client",
   "clients.col.version": "Version",
   "clients.col.resumable": "Reprise",
-  "clients.col.default": "Par défaut"
+  "clients.col.default": "Par défaut",
+  "log.hint_not_recorded": "impossible d'enregistrer l'astuce {hint} comme vue : {error}"
 }

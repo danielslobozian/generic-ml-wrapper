@@ -87,6 +87,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_check_client_ready,
     build_config_commands,
     build_create_axis,
+    build_diagnostics,
     build_edit_workflow,
     build_export_usage,
     build_guided_chooser,
@@ -108,8 +109,8 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_workflow_chooser,
 )
 from generic_ml_wrapper.common import config, i18n, paths, settings_registry
-from generic_ml_wrapper.common.log import configure as configure_logging
 from generic_ml_wrapper.common.log import log
+from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
 
 if TYPE_CHECKING:
@@ -645,10 +646,40 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+#: Commands after which another program owns the terminal — a client takes it over, or
+#: the TUI paints a full-screen surface. Diagnostics must not go to stderr for these:
+#: stderr is that program's screen, so a line written there corrupts its display and is
+#: gone on the next redraw. They go to the rolling log file only (issue #59).
+_HANDOVER_COMMANDS = frozenset({"start", "run", "tui"})
+#: The same, for `workflow <action>` — authoring launches a client just as `start` does.
+_HANDOVER_WORKFLOW_ACTIONS = frozenset({"new", "edit"})
+
+
+def _hands_over_the_terminal(args: argparse.Namespace) -> bool:
+    """Report whether this command cedes the terminal to another program.
+
+    Args:
+        args: The parsed arguments.
+
+    Returns:
+        True when a client (or the full-screen menu) will own the screen.
+    """
+    if args.command in _HANDOVER_COMMANDS:
+        return True
+    return args.command == "workflow" and (
+        getattr(args, "workflow_command", None) in _HANDOVER_WORKFLOW_ACTIONS
+    )
+
+
 def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-command dispatcher)
     parser = build_parser()
     args = parser.parse_args(_implicit_start(resolved))
-    configure_logging(os.environ.get("GMLW_LOG_LEVEL") or config.log_level())
+    set_active_diagnostics(
+        build_diagnostics(
+            quiet=args.command == "statusline",
+            to_stderr=not _hands_over_the_terminal(args),
+        )
+    )
     # Bind the language the whole app speaks: every user string and log line renders
     # through this active localiser (seeded to English until now).
     i18n.set_active(build_localizer())

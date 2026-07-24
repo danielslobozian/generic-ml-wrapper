@@ -26,6 +26,9 @@ _DEFAULT_CLIENT = cast("str", settings_registry.default_for("client.default"))
 _DEFAULT_ROLE = cast("str", settings_registry.default_for("profile.default_role"))
 _DEFAULT_ENVIRONMENT = cast("str", settings_registry.default_for("profile.default_environment"))
 _DEFAULT_LOG_LEVEL = cast("str", settings_registry.default_for("logging.level"))
+_DEFAULT_LOG_TO_FILE = cast("bool", settings_registry.default_for("logging.to_file"))
+_DEFAULT_LOG_MAX_BYTES = cast("int", settings_registry.default_for("logging.max_bytes"))
+_DEFAULT_LOG_BACKUP_COUNT = cast("int", settings_registry.default_for("logging.backup_count"))
 _DEFAULT_COMPRESS_ADAPTER = cast("str", settings_registry.default_for("compress.adapter"))
 _DEFAULT_COMPRESS_MODEL = cast("str", settings_registry.default_for("compress.model"))
 _DEFAULT_COMPRESS_EFFORT = cast("str", settings_registry.default_for("compress.effort"))
@@ -66,6 +69,9 @@ def current_values(path: Path | None = None) -> dict[str, object]:
         "profile.default_role": default_role(path),
         "profile.default_environment": default_environment(path),
         "logging.level": log_level(path),
+        "logging.to_file": log_to_file(path),
+        "logging.max_bytes": log_max_bytes(path),
+        "logging.backup_count": log_backup_count(path),
         "companion.persona": companion_settings.persona,
         "companion.name": companion_settings.name,
         "transcript.enabled": transcript_settings.enabled,
@@ -230,6 +236,52 @@ def log_level(path: Path | None = None) -> str:
     """
     value = _table(_load(path), "logging").get("level")
     return value if isinstance(value, str) and value else _DEFAULT_LOG_LEVEL
+
+
+def log_to_file(path: Path | None = None) -> bool:
+    """Return whether diagnostics are written to the rolling log file (``[logging] to_file``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[logging] to_file`` value, or the built-in default.
+    """
+    value = _table(_load(path), "logging").get("to_file")
+    return value if isinstance(value, bool) else _DEFAULT_LOG_TO_FILE
+
+
+def log_max_bytes(path: Path | None = None) -> int:
+    """Return the log file's size cap before it rolls (``[logging] max_bytes``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[logging] max_bytes`` value, or the built-in default. A non-positive or
+        ill-typed value falls back rather than raising — a bad rotation setting must not
+        be the thing that stops a run.
+    """
+    value = _table(_load(path), "logging").get("max_bytes")
+    # `bool` is an `int` in Python; exclude it so `max_bytes = true` reads as malformed.
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return _DEFAULT_LOG_MAX_BYTES
+
+
+def log_backup_count(path: Path | None = None) -> int:
+    """Return how many rolled log files to keep (``[logging] backup_count``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[logging] backup_count`` value, or the built-in default.
+    """
+    value = _table(_load(path), "logging").get("backup_count")
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return _DEFAULT_LOG_BACKUP_COUNT
 
 
 def interceptors(path: Path | None = None) -> list[tuple[str, str]]:

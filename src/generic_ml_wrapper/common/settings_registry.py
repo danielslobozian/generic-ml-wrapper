@@ -84,6 +84,18 @@ class LoggingSettings(_Section):
         Literal["debug", "info", "warning", "error"],
         Field(description="Diagnostic log verbosity (debug < info < warning < error)."),
     ] = "warning"
+    to_file: Annotated[
+        bool,
+        Field(description="Write diagnostics to the rolling log file under ~/.gmlw/logs/."),
+    ] = True
+    max_bytes: Annotated[
+        int,
+        Field(gt=0, description="Roll the log file once it grows past this many bytes."),
+    ] = 1_048_576
+    backup_count: Annotated[
+        int,
+        Field(ge=0, description="How many rolled log files to keep."),
+    ] = 5
 
 
 class CompanionSettings(_Section):

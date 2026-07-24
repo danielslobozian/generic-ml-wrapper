@@ -277,16 +277,42 @@ root = "/some/dir"   # optional; defaults to ~/.gmlw/transcripts
 
 ## `[logging]`
 
-Controls diagnostic verbosity on stderr.
+Controls the wrapper's own diagnostics — what is written, and how much of it is kept.
 
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `level` | `debug` \| `info` \| `warning` \| `error` | `warning` |
+| `to_file` | write diagnostics to `~/.gmlw/logs/gmlw.log` | `true` |
+| `max_bytes` | roll the log file once it grows past this size | `1048576` |
+| `backup_count` | how many rolled log files to keep | `5` |
 
-The environment variable `GMLW_LOG_LEVEL` sets the same value and is handy for a
+The environment variable `GMLW_LOG_LEVEL` sets the level too, and is handy for a
 one-off run without editing the file.
+
+**Where diagnostics go depends on the command.** A utility command (`gmlw jobs`,
+`gmlw config list`, …) writes them to the log file *and* to stderr, so you see a
+warning while you are watching. A command that hands the terminal to a client
+(`start`, `run`, `tui`, `workflow new/edit`) writes to the **log file only** — there,
+stderr is the client's own screen, so a diagnostic printed to it would corrupt the
+client's display and be gone on the next redraw. `gmlw statusline` logs nothing at
+all: it renders into another program's prompt many times a session.
+
+So when something goes wrong *during* a wrapped session, the log file is where to
+look:
+
+```console
+$ tail -f ~/.gmlw/logs/gmlw.log
+```
+
+Caught exceptions are recorded there with their full traceback, which is why a
+failure inside the metering relay no longer has to reach your screen to be diagnosed.
+Secrets and PII (API keys, bearer tokens, e-mail addresses) are redacted as records
+are written.
 
 ```toml
 [logging]
 level = "warning"
+to_file = true
+max_bytes = 1048576
+backup_count = 5
 ```
