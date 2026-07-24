@@ -650,6 +650,8 @@ class ConfigMenuScreen(_MenuScreen):
             self.menu_app.push_screen(SwitcherScreen(key))
         elif mode is not None and self.menu_app.config is not None:
             self.menu_app.push_screen(ConfigPickerScreen(mode))
+        elif item.action == "cfg:list" and self.menu_app.config is not None:
+            self.menu_app.push_screen(ConfigListScreen())
         elif item.action == "cfg:clients" and self.menu_app.clients is not None:
             self.menu_app.push_screen(ClientsScreen())
         elif item.action == "cfg:setup":  # a launcher: exit, the wiring re-runs init after teardown
@@ -1198,50 +1200,54 @@ class JobListScreen(_MenuScreen):
             self.menu_app.push_screen(SessionListScreen(item.payload))
 
 
-class SessionListScreen(_MenuScreen):
-    """Read-only view of a job's sessions: date · client · folder, latest marked, resumability.
+class SessionListScreen(Screen[None]):
+    """Read-only table of a job's sessions: session · date · client · folder · resumable.
 
     Unlike the resume picker, nothing is launched and nothing is disabled -- every session is
-    shown for inspection, with a plain resumable/not-resumable note. The detail panel shows the
-    highlighted row; Enter does nothing, Esc goes back.
+    shown for inspection in a DataTable. The rows are already in memory (via ``sessions_for``),
+    so it fills synchronously (no worker). Read-only; Esc goes back.
     """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
 
     def __init__(self, job: str) -> None:
         """Bind the view to the job whose sessions it lists."""
         super().__init__()
         self._job = job
 
-    def header_text(self) -> str:
-        """Breadcrumb: gmlw > Job > List > <job>."""
-        t = i18n.active().t
-        return f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {self._job}"
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
-    def menu_items(self) -> list[_Item]:
-        """One row per session (newest last), each spelling out its metadata read-only."""
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the sessions table, and the key hints."""
         t = i18n.active().t
-        items: list[_Item] = []
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {self._job}", id="crumb")
+        with Container(id="report"):
+            yield DataTable(id="session_table", cursor_type="row", zebra_stripes=True)
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Fill the sessions table (newest last), latest marked, resumable as yes/no."""
+        t = i18n.active().t
+        table = cast("DataTable[str]", self.query_one("#session_table", DataTable))
+        table.add_columns(
+            t("tui.joblist.col.session"),
+            t("tui.joblist.col.date"),
+            t("tui.joblist.col.client"),
+            t("tui.joblist.col.folder"),
+            t("tui.joblist.col.resumable"),
+        )
         for s in self.menu_app.sessions_for(self._job):
+            session = f"{s.session_id} · {t('tui.resume.latest')}" if s.is_latest else s.session_id
             folder = s.cwd if s.cwd else t("tui.resume.no_folder")
-            title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
-            note = (
-                t("tui.joblist.resumable")
-                if s.resumable
-                else t("tui.joblist.not_resumable", client=s.client)
-            )
-            items.append(
-                _Item(
-                    "📄",
-                    title,
-                    f"{s.date} · {s.client} · {folder}",
-                    "joblist:session",
-                    payload=s.session_id,
-                    note=note,
-                )
-            )
-        return items
+            resumable = t("clients.yes") if s.resumable else t("clients.no")
+            table.add_row(session, s.date, s.client, folder, resumable)
 
-    def handle(self, item: _Item) -> None:
-        """Read-only: selecting a session does nothing (the detail panel is the whole view)."""
+    def action_back(self) -> None:
+        """Pop back to the job picker."""
+        self.menu_app.pop_screen()
 
 
 class JobExportScreen(_MenuScreen):
@@ -1493,6 +1499,50 @@ class ClientsScreen(Screen[None]):
         self.menu_app.pop_screen()
 
 
+class ConfigListScreen(Screen[None]):
+    """Read-only table of every setting: key · value · default · type.
+
+    The bulk overview ``gmlw config list`` prints, as a DataTable — complements Get's
+    filter-to-one. Reads the already-injected settings synchronously (no worker). Esc goes back.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)  # pushed only when wired
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the settings table, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"{self._config.crumb} > {t('tui.cfg.list')}", id="crumb")
+        with Container(id="report"):
+            yield DataTable(id="settings", cursor_type="row", zebra_stripes=True)
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Fill the settings table from the injected config catalog."""
+        t = i18n.active().t
+        table = cast("DataTable[str]", self.query_one("#settings", DataTable))
+        table.add_columns(
+            t("tui.cfg.col.key"),
+            t("tui.cfg.col.value"),
+            t("tui.cfg.col.default"),
+            t("tui.cfg.col.type"),
+        )
+        for setting in self._config.settings:
+            table.add_row(setting.key, setting.value, setting.default, setting.type_name)
+
+    def action_back(self) -> None:
+        """Pop back to the Config menu."""
+        self.menu_app.pop_screen()
+
+
 class MenuApp(App[MenuChoice | None]):
     """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
@@ -1513,7 +1563,8 @@ class MenuApp(App[MenuChoice | None]):
     #report  { height: 1fr; padding: 0 1; }
     #summary { height: auto; padding: 1 0; }
     .section { text-style: bold; padding: 1 0 0 0; color: $text-muted; }
-    #models, #sessions, #clients { height: auto; max-height: 20; margin: 0 0 1 0; }
+    #models, #sessions, #clients,
+    #settings, #session_table { height: auto; max-height: 20; margin: 0 0 1 0; }
     #status_line { padding: 1 1; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }

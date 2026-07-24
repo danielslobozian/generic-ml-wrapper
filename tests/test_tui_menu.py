@@ -604,46 +604,50 @@ def test_job_list_shows_one_row_per_job() -> None:
 
 
 def test_job_list_drills_into_a_jobs_sessions() -> None:
-    """Selecting a job opens its (read-only) session list, one row per session."""
+    """Selecting a job opens its (read-only) session table, one row per session."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
         app = MenuApp(_JOBS, sessions_for=lambda _job: _SESSIONS, current_client="claude")
-        async with app.run_test(size=(90, 30)) as pilot:
+        async with app.run_test(size=(100, 30)) as pilot:
             await _open_job_list(pilot)
             await pilot.press("enter")  # drill into alpha
             await pilot.pause()
-            seen["titles"] = " | ".join(str(r.item.title) for r in app.screen.query(_Row))
-            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            table = cast("DataTable[str]", app.screen.query_one("#session_table", DataTable))
+            seen["rows"] = table.row_count
+            seen["cells"] = " | ".join(
+                " ".join(table.get_row_at(i)) for i in range(table.row_count)
+            )
 
     asyncio.run(scenario())
-    titles = str(seen["titles"])
-    assert "alpha_001" in titles
-    assert "alpha_003" in titles  # newest present
-    assert "latest" in titles  # and marked as latest
-    assert "/work/a" in str(seen["detail"])  # first session's folder in the detail panel
+    assert seen["rows"] == 3  # one row per session
+    cells = str(seen["cells"])
+    assert "alpha_001" in cells
+    assert "alpha_003" in cells  # newest present
+    assert "latest" in cells  # and marked as latest
+    assert "/work/a" in cells  # the folder column
 
 
 def test_job_list_session_view_is_read_only() -> None:
-    """Enter on a session neither launches nor exits the app; Esc walks back out."""
+    """Enter on a session row neither launches nor exits the app; Esc walks back out."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
         app = MenuApp(_JOBS, sessions_for=lambda _job: _SESSIONS, current_client="claude")
-        async with app.run_test(size=(90, 30)) as pilot:
+        async with app.run_test(size=(100, 30)) as pilot:
             await _open_job_list(pilot)
             await pilot.press("enter")  # drill into alpha
             await pilot.pause()
-            await pilot.press("enter")  # select a session — read-only, must do nothing
+            await pilot.press("enter")  # activate a session row — read-only, must do nothing
             await pilot.pause()
             seen["running"] = app.is_running
             seen["return"] = app.return_value
-            seen["on_sessions"] = bool(app.screen.query("#menu"))
+            seen["on_table"] = bool(app.screen.query("#session_table"))
 
     asyncio.run(scenario())
     assert seen["running"] is True  # not exited
     assert seen["return"] is None  # no choice handed back
-    assert seen["on_sessions"] is True  # still on the session list
+    assert seen["on_table"] is True  # still on the session table
 
 
 def test_job_list_empty_when_no_jobs() -> None:
@@ -983,6 +987,47 @@ def test_config_clients_is_stubbed_when_unwired() -> None:
 
     asyncio.run(scenario())
     assert seen["has_table"] is False  # no screen mounted
+    assert "isn't wired yet" in str(seen["detail"])
+
+
+def test_config_list_shows_a_settings_table() -> None:
+    """Config → List renders every setting as a DataTable row (key/value/default/type)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog())
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.press("down", "down", "enter")  # → Config
+            await pilot.press("enter")  # List (row 0)
+            await pilot.pause()
+            table = cast("DataTable[str]", app.screen.query_one("#settings", DataTable))
+            seen["rows"] = table.row_count
+            seen["cells"] = " | ".join(
+                " ".join(table.get_row_at(i)) for i in range(table.row_count)
+            )
+
+    asyncio.run(scenario())
+    assert seen["rows"] == len(_SETTINGS)  # one row per setting
+    cells = str(seen["cells"])
+    assert "logging.level" in cells
+    assert "warning" in cells  # the value column
+
+
+def test_config_list_is_stubbed_when_unwired() -> None:
+    """With no config injected, Config → List falls through to the stub."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)  # no config
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.press("down", "down", "enter")  # → Config
+            await pilot.press("enter")  # List (stubbed)
+            await pilot.pause()
+            seen["has_table"] = bool(app.screen.query("#settings"))
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["has_table"] is False
     assert "isn't wired yet" in str(seen["detail"])
 
 
