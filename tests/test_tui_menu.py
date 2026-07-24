@@ -569,3 +569,88 @@ def test_config_get_set_are_stubbed_when_unwired() -> None:
     asyncio.run(scenario())
     assert seen["has_filter"] is False
     assert "isn't wired yet" in str(seen["detail"])
+
+
+# --- Job List (read-only browse of jobs and their sessions) ------------------------------
+
+
+async def _open_job_list(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → List (Job row index 2)."""
+    await pilot.press("enter")  # → Job menu
+    await pilot.press("down", "down", "enter")  # New(0) Resume(1) → List(2)
+    await pilot.pause()
+
+
+def test_job_list_shows_one_row_per_job() -> None:
+    """Job → List lists every job with recorded activity."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_list(pilot)
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["titles"] == ["alpha", "beta"]
+
+
+def test_job_list_drills_into_a_jobs_sessions() -> None:
+    """Selecting a job opens its (read-only) session list, one row per session."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, sessions_for=lambda _job: _SESSIONS, current_client="claude")
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_list(pilot)
+            await pilot.press("enter")  # drill into alpha
+            await pilot.pause()
+            seen["titles"] = " | ".join(str(r.item.title) for r in app.screen.query(_Row))
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    titles = str(seen["titles"])
+    assert "alpha_001" in titles
+    assert "alpha_003" in titles  # newest present
+    assert "latest" in titles  # and marked as latest
+    assert "/work/a" in str(seen["detail"])  # first session's folder in the detail panel
+
+
+def test_job_list_session_view_is_read_only() -> None:
+    """Enter on a session neither launches nor exits the app; Esc walks back out."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, sessions_for=lambda _job: _SESSIONS, current_client="claude")
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_list(pilot)
+            await pilot.press("enter")  # drill into alpha
+            await pilot.pause()
+            await pilot.press("enter")  # select a session — read-only, must do nothing
+            await pilot.pause()
+            seen["running"] = app.is_running
+            seen["return"] = app.return_value
+            seen["on_sessions"] = bool(app.screen.query("#menu"))
+
+    asyncio.run(scenario())
+    assert seen["running"] is True  # not exited
+    assert seen["return"] is None  # no choice handed back
+    assert seen["on_sessions"] is True  # still on the session list
+
+
+def test_job_list_empty_when_no_jobs() -> None:
+    """With no recorded jobs, Job → List shows the empty state, not a crash."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp([])  # no jobs
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_list(pilot)
+            seen["rows"] = len(app.screen.query(_Row))
+            seen["empty"] = bool(app.screen.query("#empty"))
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert seen["rows"] == 0
+    assert seen["empty"] is True
+    assert seen["running"] is True

@@ -251,5 +251,7 @@
   "tui.resume.latest": "latest",
   "tui.resume.no_folder": "(folder unknown)",
   "tui.resume.cannot": "cannot resume — {client} keeps no session to reopen",
-  "tui.resume.will_launch": "↳ resuming will launch {client}, not your default"
+  "tui.resume.will_launch": "↳ resuming will launch {client}, not your default",
+  "tui.joblist.resumable": "can be resumed",
+  "tui.joblist.not_resumable": "cannot be resumed ({client} keeps no session to reopen)"
 }

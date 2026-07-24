@@ -390,11 +390,13 @@ class JobMenuScreen(_MenuScreen):
         return _menu(_JOB_MENU)
 
     def handle(self, item: _Item) -> None:
-        """New and Resume launch; the other Job verbs are stubbed."""
+        """New and Resume launch, List browses; the other Job verbs are stubbed."""
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
         elif item.action == "job:new":
             self.menu_app.push_screen(NewJobScreen())
+        elif item.action == "job:list":
+            self.menu_app.push_screen(JobListScreen())
         else:
             self._stub(item)
 
@@ -954,6 +956,80 @@ class SessionPickerScreen(_MenuScreen):
         """A picked session exits the app with a resume choice carrying its id."""
         if item.action == "resume:pick":
             self.menu_app.exit(MenuChoice(action="resume", job=self._job, session=item.payload))
+
+
+class JobListScreen(_MenuScreen):
+    """Browse the jobs with recorded activity; drill into one to see its sessions.
+
+    A read-only *browser* (a sibling of :class:`JobPickerScreen` without the launch): selecting
+    a job opens its :class:`SessionListScreen`. Reuses the injected ``jobs`` -- no new wiring.
+    """
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > List."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job, carrying the job id as payload (empty -> the base empty state)."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "🗂", j.job, t("tui.sessions", count=j.session_count), "joblist:job", payload=j.job
+            )
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Selecting a job opens its (read-only) session list."""
+        if item.action == "joblist:job":
+            self.menu_app.push_screen(SessionListScreen(item.payload))
+
+
+class SessionListScreen(_MenuScreen):
+    """Read-only view of a job's sessions: date · client · folder, latest marked, resumability.
+
+    Unlike the resume picker, nothing is launched and nothing is disabled -- every session is
+    shown for inspection, with a plain resumable/not-resumable note. The detail panel shows the
+    highlighted row; Enter does nothing, Esc goes back.
+    """
+
+    def __init__(self, job: str) -> None:
+        """Bind the view to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > List > <job>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {self._job}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per session (newest last), each spelling out its metadata read-only."""
+        t = i18n.active().t
+        items: list[_Item] = []
+        for s in self.menu_app.sessions_for(self._job):
+            folder = s.cwd if s.cwd else t("tui.resume.no_folder")
+            title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
+            note = (
+                t("tui.joblist.resumable")
+                if s.resumable
+                else t("tui.joblist.not_resumable", client=s.client)
+            )
+            items.append(
+                _Item(
+                    "📄",
+                    title,
+                    f"{s.date} · {s.client} · {folder}",
+                    "joblist:session",
+                    payload=s.session_id,
+                    note=note,
+                )
+            )
+        return items
+
+    def handle(self, item: _Item) -> None:
+        """Read-only: selecting a session does nothing (the detail panel is the whole view)."""
 
 
 class MenuApp(App[MenuChoice | None]):
