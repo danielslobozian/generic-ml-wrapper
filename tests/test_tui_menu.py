@@ -12,7 +12,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from textual.pilot import Pilot
-from textual.widgets import Input, ListItem, ListView, Static
+from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     ConfigCatalog,
@@ -25,10 +25,16 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     SessionChoice,
     SwitchChoice,
     Switcher,
+    UsageView,
     _Row,
 )
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
+
+
+async def _drain_workers(app: MenuApp) -> None:
+    """Await all background workers (the Export screens load their report on a worker thread)."""
+    await app.workers.wait_for_complete()  # pyright: ignore[reportUnknownMemberType]
 
 
 def _persona_switcher(
@@ -656,81 +662,124 @@ def test_job_list_empty_when_no_jobs() -> None:
     assert seen["running"] is True
 
 
-# --- Job Export (a job's usage report, scrollable and read-only) --------------------------
+# --- Job Export v2 (destination chooser, worker-loaded DataTable summary, file save) ------
+
+_USAGE = UsageView(
+    job="alpha",
+    empty=False,
+    summary="3 turns · $1.23",
+    model_rows=(("claude", "2", "100", "50", "10", "1.0"), ("codex", "1", "20", "5", "0", "0.5")),
+    session_rows=(("alpha_001", "0.80"), ("alpha_002", "0.43")),
+)
 
 
-async def _open_job_export(pilot: Pilot[MenuChoice | None]) -> None:
-    """Top → Job → Export (Job row index 3)."""
+async def _open_export_dest(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → Export → pick the first job → its destination chooser."""
     await pilot.press("enter")  # → Job menu
     await pilot.press("down", "down", "down", "enter")  # New(0) Resume(1) List(2) → Export(3)
+    await pilot.press("enter")  # pick first job (alpha) → destination chooser
     await pilot.pause()
 
 
-def test_job_export_lists_one_row_per_job() -> None:
-    """Job → Export lists every job to pick from."""
+def test_job_export_offers_a_destination_chooser() -> None:
+    """Picking a job offers 'view here' and 'save to file' before any (slow) read."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
         app = MenuApp(_JOBS)
         async with app.run_test(size=(90, 30)) as pilot:
-            await _open_job_export(pilot)
-            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+            await _open_export_dest(pilot)
+            rows = app.screen.query(_Row)
+            seen["count"] = len(rows)
+            seen["titles"] = " | ".join(str(r.item.title) for r in rows).lower()
 
     asyncio.run(scenario())
-    assert seen["titles"] == ["alpha", "beta"]
+    assert seen["count"] == 2  # view + file
+    assert "file" in str(seen["titles"])
 
 
-def test_job_export_shows_the_usage_report_for_the_picked_job() -> None:
-    """Selecting a job renders its report (from the injected usage_text) in the scroll view."""
+def test_job_export_view_renders_the_summary_tables() -> None:
+    """'View' loads the report on a worker and fills the summary + by-model/by-session tables."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
-        app = MenuApp(_JOBS, usage_text=lambda job: f"REPORT for {job} :: 42 turns")
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_job_export(pilot)
-            await pilot.press("enter")  # pick alpha
-            await pilot.pause()
-            seen["usage"] = str(app.screen.query_one("#usage", Static).render())
+        app = MenuApp(_JOBS, usage_view=lambda _job: _USAGE)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_export_dest(pilot)
+            await pilot.press("enter")  # choose "View summary here"
+            await _drain_workers(app)  # await the worker thread
+            await pilot.pause()  # let the SUCCESS handler populate the tables
+            seen["summary"] = str(app.screen.query_one("#summary", Static).render())
+            seen["models"] = app.screen.query_one("#models", DataTable).row_count
+            seen["sessions"] = app.screen.query_one("#sessions", DataTable).row_count
 
     asyncio.run(scenario())
-    assert "REPORT for alpha :: 42 turns" in str(seen["usage"])
+    assert "3 turns" in str(seen["summary"])
+    assert seen["models"] == 2  # two model rows
+    assert seen["sessions"] == 2  # two session rows
 
 
-def test_job_export_report_is_read_only_and_esc_returns() -> None:
-    """The report view doesn't exit the app; Esc walks back to the job picker."""
+def test_job_export_view_empty_report_has_no_rows() -> None:
+    """A job with no usage shows the summary line but no table rows (no crash)."""
+    empty = UsageView(job="alpha", empty=True, summary="no usage", model_rows=(), session_rows=())
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
-        app = MenuApp(_JOBS, usage_text=lambda job: f"REPORT {job}")
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_job_export(pilot)
-            await pilot.press("enter")  # into the report
+        app = MenuApp(_JOBS, usage_view=lambda _job: empty)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_export_dest(pilot)
+            await pilot.press("enter")  # View
+            await _drain_workers(app)
             await pilot.pause()
-            seen["running_in_report"] = app.is_running
-            await pilot.press("escape")  # back to the job picker
+            seen["models"] = app.screen.query_one("#models", DataTable).row_count
+            seen["summary"] = str(app.screen.query_one("#summary", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["models"] == 0
+    assert "no usage" in str(seen["summary"])
+
+
+def test_job_export_save_writes_and_shows_the_path() -> None:
+    """'Save to file' runs the injected save on a worker and shows the returned path."""
+    calls: list[str] = []
+    seen: dict[str, object] = {}
+
+    def save(job: str) -> str:
+        calls.append(job)
+        return "/home/u/.gmlw/exports/alpha-20260724-101500.json"
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, save_usage=save)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_export_dest(pilot)
+            await pilot.press("down", "enter")  # choose "Save full report to a file"
+            await _drain_workers(app)
+            await pilot.pause()
+            seen["status"] = str(app.screen.query_one("#status_line", Static).render())
+
+    asyncio.run(scenario())
+    assert calls == ["alpha"]
+    assert "alpha-20260724-101500.json" in str(seen["status"])
+
+
+def test_job_export_view_is_read_only_and_esc_returns() -> None:
+    """The summary view never exits the app; Esc walks back to the destination chooser."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, usage_view=lambda _job: _USAGE)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_export_dest(pilot)
+            await pilot.press("enter")  # View
+            await _drain_workers(app)
+            await pilot.pause()
+            seen["running"] = app.is_running
+            await pilot.press("escape")  # back to the chooser
             await pilot.pause()
             seen["return"] = app.return_value
-            seen["back_on_jobs"] = bool(app.screen.query("#menu"))
+            seen["back_on_chooser"] = bool(app.screen.query("#menu"))
 
     asyncio.run(scenario())
-    assert seen["running_in_report"] is True
-    assert seen["return"] is None  # never handed back a choice
-    assert seen["back_on_jobs"] is True  # returned to the job list
-
-
-def test_job_export_unwired_shows_an_empty_report() -> None:
-    """With no usage_text injected, the report view opens empty (no crash)."""
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS)  # no usage_text
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_job_export(pilot)
-            await pilot.press("enter")  # pick alpha
-            await pilot.pause()
-            seen["has_usage"] = bool(app.screen.query("#usage"))
-            seen["running"] = app.is_running
-
-    asyncio.run(scenario())
-    assert seen["has_usage"] is True  # the report screen mounted
     assert seen["running"] is True
+    assert seen["return"] is None
+    assert seen["back_on_chooser"] is True

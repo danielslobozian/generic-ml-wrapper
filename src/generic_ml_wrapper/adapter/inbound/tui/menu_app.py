@@ -19,11 +19,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import ClassVar, cast
 
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Input, Label, ListItem, ListView, Static
+from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
+from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.common import i18n
@@ -39,8 +41,13 @@ def _no_sessions(_job: str) -> list[SessionChoice]:
     return []
 
 
-def _no_usage(_job: str) -> str:
-    """Default usage renderer when the app runs unwired (tests): an empty report."""
+def _no_usage_view(job: str) -> UsageView:
+    """Default usage view when the app runs unwired (tests): an empty report."""
+    return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
+
+
+def _no_save(_job: str) -> str:
+    """Default report saver when the app runs unwired (tests): no file written."""
     return ""
 
 
@@ -170,6 +177,24 @@ class ConfigCatalog:
     crumb: str
     settings: list[ConfigSetting]
     apply: Callable[[str, str], ConfigSetResult]
+
+
+@dataclass(frozen=True)
+class UsageView:
+    """A job's usage, pre-rendered for the Export summary view.
+
+    Structured so the screen can lay it out as tables without any formatting logic: ``summary``
+    is the totals line (already localised), and ``model_rows``/``session_rows`` are the cells of
+    the by-model and by-session-cost tables (all values pre-rendered to strings by the wiring).
+    ``empty`` means the job has no recorded usage. The full per-turn detail is deliberately not
+    here -- that is what the JSON file export carries.
+    """
+
+    job: str
+    empty: bool
+    summary: str
+    model_rows: tuple[tuple[str, ...], ...]
+    session_rows: tuple[tuple[str, ...], ...]
 
 
 @dataclass(frozen=True)
@@ -1040,10 +1065,10 @@ class SessionListScreen(_MenuScreen):
 
 
 class JobExportScreen(_MenuScreen):
-    """Pick a job to see its recorded usage; selecting one opens the report.
+    """Pick a job to export; selecting one opens the destination chooser.
 
     A read-only sibling of :class:`JobListScreen` -- reuses the injected ``jobs``, then hands
-    off to :class:`UsageScreen` for the chosen job.
+    off to :class:`ExportDestScreen` for the chosen job.
     """
 
     def header_text(self) -> str:
@@ -1062,23 +1087,57 @@ class JobExportScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Selecting a job opens its usage report."""
+        """Selecting a job opens the destination chooser (view here / save to file)."""
         if item.action == "export:job":
-            self.menu_app.push_screen(UsageScreen(item.payload))
+            self.menu_app.push_screen(ExportDestScreen(item.payload))
 
 
-class UsageScreen(Screen[None]):
-    """A job's recorded usage, as a scrollable read-only report.
+class ExportDestScreen(_MenuScreen):
+    """Choose where a job's usage goes: a summary in the terminal, or the full report to a file.
 
-    Shows the exact text the CLI's ``gmlw export`` prints (rendered by the injected
-    ``usage_text``, i.e. the shared ``format_usage``) inside a scroll view -- one renderer, one
-    report format. Esc goes back.
+    The report read is O(turns) and slow on big jobs, so this instant chooser comes *before* any
+    read: pick a destination, then the chosen screen loads under a spinner.
+    """
+
+    def __init__(self, job: str) -> None:
+        """Bind the chooser to the job being exported."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Export > <job>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}"
+
+    def menu_items(self) -> list[_Item]:
+        """Two destinations: view a summary here, or save the full JSON report to a file."""
+        t = i18n.active().t
+        return [
+            _Item("📈", t("export.dest.view"), t("export.dest.view.d"), "export:view"),
+            _Item("💾", t("export.dest.file"), t("export.dest.file.d"), "export:file"),
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Open the summary view, or the save-to-file screen."""
+        if item.action == "export:view":
+            self.menu_app.push_screen(UsageSummaryScreen(self._job))
+        elif item.action == "export:file":
+            self.menu_app.push_screen(SaveReportScreen(self._job))
+
+
+class UsageSummaryScreen(Screen[None]):
+    """A job's usage summary: totals, a by-model table, and a by-session-cost table.
+
+    The slow ledger read runs in a background thread (so the UI never freezes), with a spinner
+    over the report area until it lands. The tables are Textual ``DataTable``s -- virtualized, so
+    they stay responsive no matter how many rows. The full per-turn detail is not shown here; it
+    lives in the JSON file export.
     """
 
     BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
 
     def __init__(self, job: str) -> None:
-        """Bind the view to the job whose usage it reports."""
+        """Bind the view to the job whose usage it summarises."""
         super().__init__()
         self._job = job
 
@@ -1088,15 +1147,111 @@ class UsageScreen(Screen[None]):
         return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
     def compose(self) -> ComposeResult:
-        """A breadcrumb, the scrollable report, and the key hints."""
+        """A breadcrumb, the (initially loading) report area, and the key hints."""
         t = i18n.active().t
         yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
         with VerticalScroll(id="report"):
-            yield Static(self.menu_app.usage_text(self._job), id="usage")
+            yield Static("", id="summary")
+            yield Static(t("export.by_model"), classes="section")
+            yield DataTable(id="models", cursor_type="row", zebra_stripes=True)
+            yield Static(t("export.by_session"), classes="section")
+            yield DataTable(id="sessions", cursor_type="row", zebra_stripes=True)
         yield Static(t("tui.export.keys"), id="keys")
 
+    def on_mount(self) -> None:
+        """Show the spinner and kick the read onto a worker thread."""
+        self.query_one("#report", VerticalScroll).loading = True
+        self._load()
+
+    @work(thread=True, exclusive=True)
+    def _load(self) -> UsageView:
+        """Read + aggregate the report off the event loop (returns; never touches widgets)."""
+        return self.menu_app.usage_view(self._job)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Populate the tables when the read lands; show a failure line if it errored."""
+        if event.state is WorkerState.SUCCESS:
+            result = cast("UsageView", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
+            self._populate(result)
+        elif event.state is WorkerState.ERROR:
+            self.query_one("#summary", Static).update(i18n.active().t("export.failed"))
+            self.query_one("#report", VerticalScroll).loading = False
+
+    def _populate(self, view: UsageView) -> None:
+        """Fill the summary line and the two tables from the loaded view."""
+        t = i18n.active().t
+        self.query_one("#summary", Static).update(view.summary)
+        if not view.empty:
+            models = cast("DataTable[str]", self.query_one("#models", DataTable))
+            models.add_columns(
+                t("export.col.model"),
+                t("export.col.calls"),
+                t("export.col.input"),
+                t("export.col.output"),
+                t("export.col.cache"),
+                t("export.col.duration"),
+            )
+            models.add_rows(view.model_rows)
+            sessions = cast("DataTable[str]", self.query_one("#sessions", DataTable))
+            sessions.add_columns(t("export.col.session"), t("export.col.cost"))
+            sessions.add_rows(view.session_rows)
+        self.query_one("#report", VerticalScroll).loading = False
+
     def action_back(self) -> None:
-        """Pop back to the job picker."""
+        """Pop back to the destination chooser."""
+        self.menu_app.pop_screen()
+
+
+class SaveReportScreen(Screen[None]):
+    """Write a job's full report to a JSON file, off the event loop, then show the path.
+
+    The write (which first reads the whole report) runs in a worker thread under a spinner; on
+    success the saved path is shown, on failure a plain error line. Esc goes back.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    def __init__(self, job: str) -> None:
+        """Bind the screen to the job whose report it saves."""
+        super().__init__()
+        self._job = job
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the status line (spinner, then the saved path), and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
+        with Container(id="report"):
+            yield Static(t("export.saving"), id="status_line")
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Show the spinner and kick the save onto a worker thread."""
+        self.query_one("#report", Container).loading = True
+        self._save()
+
+    @work(thread=True, exclusive=True)
+    def _save(self) -> str:
+        """Write the report off the event loop, returning the path (or ``""`` when unwired)."""
+        return self.menu_app.save_usage(self._job)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Show the saved path on success, or a failure line on error."""
+        status = self.query_one("#status_line", Static)
+        if event.state is WorkerState.SUCCESS:
+            path = cast("str", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
+            status.update(i18n.active().t("export.saved", path=path))
+            self.query_one("#report", Container).loading = False
+        elif event.state is WorkerState.ERROR:
+            status.update(i18n.active().t("export.save_failed"))
+            self.query_one("#report", Container).loading = False
+
+    def action_back(self) -> None:
+        """Pop back to the destination chooser."""
         self.menu_app.pop_screen()
 
 
@@ -1117,8 +1272,11 @@ class MenuApp(App[MenuChoice | None]):
     #name   { margin: 1 2; }
     #menu   { height: 1fr; background: transparent; }
     #empty  { height: 1fr; padding: 1 2; color: $text-muted; }
-    #report { height: 1fr; padding: 0 1; }
-    #usage  { height: auto; }
+    #report  { height: 1fr; padding: 0 1; }
+    #summary { height: auto; padding: 1 0; }
+    .section { text-style: bold; padding: 1 0 0 0; color: $text-muted; }
+    #models, #sessions { height: auto; max-height: 20; margin: 0 0 1 0; }
+    #status_line { padding: 1 1; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
@@ -1135,7 +1293,8 @@ class MenuApp(App[MenuChoice | None]):
         switchers: dict[str, Switcher] | None = None,
         validate_job: Callable[[str], str | None] | None = None,
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
-        usage_text: Callable[[str], str] | None = None,
+        usage_view: Callable[[str], UsageView] | None = None,
+        save_usage: Callable[[str], str] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
     ) -> None:
@@ -1150,8 +1309,10 @@ class MenuApp(App[MenuChoice | None]):
                 ``None`` when it is acceptable; defaults to accepting anything (tests).
             sessions_for: Lists a job's sessions for the session picker (lazily, per job);
                 defaults to none.
-            usage_text: Renders a job's usage report (the shared ``format_usage``) for the
-                Export view (lazily, per job); defaults to an empty report.
+            usage_view: Builds a job's usage summary (totals + by-model + by-session rows) for
+                the Export view (lazily, per job, on a worker thread); defaults to empty.
+            save_usage: Writes a job's full report to a file and returns the path, for the
+                save-to-file Export destination (lazily, per job); defaults to a no-op.
             config: The settings + setter the Config Get/Set browsers read and call; ``None``
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
@@ -1162,7 +1323,8 @@ class MenuApp(App[MenuChoice | None]):
         self.switchers = switchers or {}
         self.validate_job = validate_job or _accept_any_job
         self.sessions_for = sessions_for or _no_sessions
-        self.usage_text = usage_text or _no_usage
+        self.usage_view = usage_view or _no_usage_view
+        self.save_usage = save_usage or _no_save
         self.config = config
         self.current_client = current_client
 

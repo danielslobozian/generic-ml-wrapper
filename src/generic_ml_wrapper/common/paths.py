@@ -41,3 +41,6 @@ DRAFTS = HOME / "drafts"
 COMPRESS_CACHE = HOME / "compress-cache"
 # Small bits of local UI state (e.g. which one-time exit-receipt hints have been shown).
 STATE = HOME / "state"
+# User-facing usage report exports, one JSON file per save (exports/<job>-<timestamp>.json),
+# written by the TUI's Export → save-to-file destination.
+EXPORTS = HOME / "exports"

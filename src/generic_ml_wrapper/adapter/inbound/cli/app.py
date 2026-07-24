@@ -100,6 +100,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_slugs,
     build_new_workflow,
     build_render_statusline,
+    build_save_usage_report,
     build_set_credential,
     build_start_job,
     build_workflow_chooser,
@@ -1024,6 +1025,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         SessionChoice,
         SwitchChoice,
         Switcher,
+        UsageView,
     )
 
     jobs = [
@@ -1044,8 +1046,44 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             for i, s in enumerate(summaries)
         ]
 
-    def _usage_text(job: str) -> str:  # the Export view reuses the CLI's report renderer verbatim
-        return format_usage(build_export_usage().execute(JobId(job)))
+    def _usage_view(job: str) -> UsageView:  # runs on a worker thread: fresh store/connection
+        report = build_export_usage().execute(JobId(job))
+        loc = i18n.active()
+        if report.turn_count == 0 and not report.session_costs:
+            return UsageView(
+                job=job,
+                empty=True,
+                summary=loc.t("usage.none", job=repr(job)),
+                model_rows=(),
+                session_rows=(),
+            )
+        summary = loc.t(
+            "usage.total",
+            count=report.turn_count,
+            tokens=_tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
+            duration=f"{report.duration_s:.1f}",
+            total=f"{report.total_usd:.2f}",
+        )
+        model_rows = tuple(
+            (
+                model.model,
+                str(model.calls),
+                str(model.input_tokens),
+                str(model.output_tokens),
+                str(model.cache_tokens),
+                f"{model.duration_s:.1f}",
+            )
+            for model in report.models
+        )
+        session_rows = tuple(
+            (cost.session_id, f"{cost.cost_usd:.2f}") for cost in report.session_costs
+        )
+        return UsageView(
+            job=job, empty=False, summary=summary, model_rows=model_rows, session_rows=session_rows
+        )
+
+    def _save_usage(job: str) -> str:  # writes the full JSON report; returns the file path
+        return str(build_save_usage_report().execute(JobId(job)))
 
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
     # its options + current value and injects an ``apply`` setter and, for the folder-backed
@@ -1146,7 +1184,8 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         switchers=switchers,
         validate_job=_validate_job,
         sessions_for=_sessions_for,
-        usage_text=_usage_text,
+        usage_view=_usage_view,
+        save_usage=_save_usage,
         config=config_catalog,
         current_client=client,
     ).run()  # blocks; terminal restored on return
