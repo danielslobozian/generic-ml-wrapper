@@ -28,12 +28,15 @@ def test_banner_shows_derived_version_and_every_client() -> None:
         assert info.name in text
 
 
-def test_banner_is_a_closed_rounded_box_with_aligned_rows() -> None:
+def test_banner_is_a_closed_box_with_aligned_rows() -> None:
     lines = _render()
-    assert lines[0].startswith("╭")
-    assert lines[0].endswith("╮")
-    assert lines[-1].startswith("╰")
-    assert lines[-1].endswith("╯")
+    # Rich substitutes rounded corners (╭╮╰╯) for square ones (┌┐└┘) on a legacy Windows
+    # console, so accept either style: the invariant is a closed, aligned frame — not the
+    # exact corner glyph.
+    assert lines[0][0] in "╭┌"
+    assert lines[0][-1] in "╮┐"
+    assert lines[-1][0] in "╰└"
+    assert lines[-1][-1] in "╯┘"
     assert len({len(line) for line in lines}) == 1  # every row the same width -> a straight frame
 
 
