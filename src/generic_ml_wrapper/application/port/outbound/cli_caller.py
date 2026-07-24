@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.run import RunContext
 
 
@@ -53,19 +54,19 @@ class CliCaller(ABC):
         return False
 
     def can_resume(self) -> bool:
-        """Whether this client can resume a prior session.
+        """Whether this client can resume a prior session, from the client catalog.
 
-        ``True`` for clients whose launch can reopen a named/identified session
-        (Claude ``--resume``, cursor-agent ``--resume``, vibe ``--resume``);
-        ``False`` for clients with no usable resume path (Codex mints a fresh
-        conversation and exposes no session id we can target without scanning its
-        local store). ``--resume-latest`` is refused when this is ``False`` rather
-        than silently starting a new session. Default: ``True``.
+        ``True`` for clients whose launch can reopen a session we named/identified
+        (Claude / cursor-agent ``--resume``); ``False`` for those that mint their own id
+        we can't target (Codex, Vibe). ``--resume-latest`` is refused when this is
+        ``False`` rather than silently starting a new session. The catalog's
+        ``resumable`` flag is the single source of truth.
 
         Returns:
             ``True`` if this caller can resume a prior session.
         """
-        return True
+        info = client_catalog.by_name(self.run.client)
+        return info is not None and info.resumable
 
     def start_metering(self) -> None:  # noqa: B027  (optional hook; default no-op by design)
         """Set up metering before launch. Default: do nothing."""

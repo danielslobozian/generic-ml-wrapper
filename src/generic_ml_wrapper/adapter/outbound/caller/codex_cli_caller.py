@@ -60,15 +60,6 @@ class CodexCliCaller(CliCaller):
         self._transcript = transcript
         self._relay: MeteringRelay | None = None
 
-    def can_resume(self) -> bool:
-        """Codex mints a fresh conversation and exposes no session id to resume.
-
-        Resuming would require scanning ``~/.codex`` for the local rollout, which
-        the wrapper deliberately does not do; ``--resume-latest`` is refused for
-        codex rather than silently starting a new session.
-        """
-        return False
-
     def can_meter_per_call(self) -> bool:
         """This caller records per-turn usage via its metering relay."""
         return True
