@@ -6,6 +6,44 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-24
+
+The interactive release — a full-screen TUI over every verb, roles and environments you
+can create rather than only configure, and data screens that render as real tables.
+
+### Added
+- **Interactive TUI menu (`gmlw tui`).** An additive, opt-in full-screen menu that fronts
+  **every Job / Workflow / Config verb** — including launching a fresh session (Job → New)
+  and resuming a *specific* named session, not just the latest. It never replaces the
+  argv path: the CLI stays the fast lane and the menu is there when you want to browse.
+  The copy is localised, and the menu was de-spiked into its final shape before the
+  remaining verbs were wired in.
+- **Create a role or environment (`CreateAxis`).** Roles and environments are now
+  first-class **slug-folders** — a stable slug id plus a human label and description —
+  and there is a use case and CLI to **create a new one**, not just select among seeded
+  ones. The movie-set axes (`default_role` / `default_environment`) are authored, not
+  only configured.
+- **`gmlw sessions` text render.** The text view now shows each session's **folder,
+  date, and whether it is resumable**, so the plain listing carries what you need to pick
+  one to resume without dropping to `--json`.
+
+### Changed
+- **Status line token compaction.** Token counts render compacted (`k` / `M` / `G`) so a
+  busy status line stays readable, and the remaining data screens now render through a
+  shared **DataTable**, giving the listings one consistent, aligned presentation.
+
+### Fixed
+- **init announcement speaks the chosen language.** The first-run init announcement now
+  renders in the language you chose during the interview, not the OS locale — matching the
+  rest of the localised init flow.
+
+### Engineering
+- **Release trigger.** Publishing to PyPI now reacts to a **published GitHub Release**
+  rather than a bare tag push, making the Release the single front door for a version (it
+  carries the notes and mints the tag). Trusted Publishing is keyed on the workflow
+  filename + environment, so no PyPI-side change was needed; the guard job still fails
+  fast when the Release's tag does not match `VERSION`.
+
 ## [0.6.0] - 2026-07-19
 
 The workflow, made first-class — a direct way to run one, name-at-the-end authoring, and
@@ -258,7 +296,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.3.0...v0.4.0

@@ -148,9 +148,9 @@ costume and makeup, briefs the director, then cedes the screen ([[wrapper-not-st
 
 Deferred but homed: a detached model call to synthesise a `role.md` for an unfamiliar role
 (e.g. product owner) is a natural future consumer of the 0.3.0 `pre-launch` seam — parked,
-not built. **Persona *previews* moved to 0.8.0** — sample lines are only worth shipping once
+not built. **Persona *previews* moved to 0.9.0** — sample lines are only worth shipping once
 the personas behind them are proven to actually differ, and doing them in French requires
-localising persona content, which is the same job (see 0.8.0).
+localising persona content, which is the same job (see 0.9.0).
 
 ### 0.5.0 — discoverability & progressive disclosure
 Reframed around the real metric for a new user: **time to a first live session**, and then
@@ -192,8 +192,6 @@ context pushed *into* the client — never a persistent UI over a live session.
 - **Already shipped earlier, verified here:** **`--version`** (surfaces the running version)
   and **robustness** (clean Ctrl+C / SIGTERM interrupt-exit) were already present; their few
   strings were folded into the app-wide localisation pass.
-
-## Planned
 
 ### 0.6.0 — the workflow, first-class
 Two ways people relate to a workflow: *applied to a job* (a ticket it treats), or *the
@@ -246,7 +244,29 @@ degrades honestly rather than fabricating a denominator.
   cost (tools · mcp · skills), and a note when the baseline drifts upward across a client
   auto-update. Softer than the two above; carried as a candidate, not a commitment.
 
-### 0.7.0 — TUI refactoring: the terminal UX as one system
+### 0.7.0 — bug fixes & the interactive TUI menu
+An additive, opt-in terminal menu, and the role/environment axes made *authorable* rather
+than only configurable — plus a round of data-screen and localisation fixes.
+
+- **Interactive TUI menu (`gmlw tui`)** — an opt-in menu that fronts **every Job / Workflow
+  / Config verb**, including launching a fresh session (Job → New) and resuming a *specific*
+  named session, not just the latest. It never replaces argv: the CLI stays the fast lane and
+  the menu is there to browse. Built additively, de-spiked into shape, and localised.
+  (Distinct from the text-UX consistency pass, which stays its own release below.)
+- **Create a role or environment (`CreateAxis`)** — the movie-set axes introduced in 0.4.0
+  become **first-class slug-folders** (a stable slug plus a human label and description), with
+  a use case and CLI to *create* a new role or environment, not only select among the seeded
+  ones. `default_role` / `default_environment` are now authored, not just configured.
+- **`gmlw sessions` text render** — the plain listing shows each session's folder, date, and
+  whether it is resumable, so you can pick one to resume without dropping to `--json`.
+- **Statusline token compaction + DataTable** — token counts render compacted (k / M / G),
+  and the remaining data screens render through a shared table for one consistent, aligned
+  presentation.
+- **Fixes** — the first-run init announcement speaks the chosen language, not the OS locale.
+
+## Planned
+
+### 0.8.0 — TUI refactoring: the terminal UX as one system
 The discoverability surfaces landed piecemeal across 0.4.0–0.6.0 — the first-run chooser, the
 bare-`gmlw` index, `help` topics, `config list`, the exit receipt, the ambient card, the
 pre-launch workflow chooser. Each was built when its feature needed it. This release stops
@@ -280,7 +300,7 @@ as a persistent UI over a live session.
   status-of vs manual split (statusline = ambient *state*; card = ambient *manual*) applied
   uniformly, so the surfaces look like one product rather than several sittings.
 
-### 0.8.0 — personas, proven (and multilingual)
+### 0.9.0 — personas, proven (and multilingual)
 Today "personas shape tone" is an **untested claim**. A persona ships a tone block, but
 nothing demonstrates that `mentor` and `terse` actually answer differently — and the tone
 block is injected *on top of* each client's own system prompt, which may simply swamp it.
@@ -332,7 +352,7 @@ is an evaluation loop, not a feature.
 
 **Sequencing, resolved:** *per-workflow persona* used to sit in 0.6.0, ahead of the release
 that proves personas are distinct at all — building composition on an unproven foundation. It
-now lives here in 0.8.0, after the harness and the tuning, so the composition follows the
+now lives here in 0.9.0, after the harness and the tuning, so the composition follows the
 proof. If the matrix shows personas collapse even after tuning, per-workflow persona is
 reconsidered in place rather than shipped on sand.
 
