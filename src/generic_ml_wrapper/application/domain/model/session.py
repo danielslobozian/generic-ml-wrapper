@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -21,6 +21,9 @@ class Session:
             must relaunch there.
         resumable: Whether this session can be resumed — snapshotted from the client's
             capability at creation (claude/cursor yes; codex/vibe no).
+        created_at: When the session was first recorded (ISO string), populated on read
+            from the store; ``None`` for a freshly-minted, not-yet-persisted session.
+            Excluded from equality, being store-assigned rather than app-provided.
     """
 
     session_id: str
@@ -29,3 +32,4 @@ class Session:
     uuid: str | None
     cwd: str | None = None
     resumable: bool = True
+    created_at: str | None = field(default=None, compare=False)

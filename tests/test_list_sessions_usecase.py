@@ -43,3 +43,23 @@ def test_each_session_is_summarised() -> None:
         SessionSummary(session_id="JOB-1_001", client="claude"),
         SessionSummary(session_id="JOB-1_002", client="claude"),
     ]
+
+
+def test_summary_carries_folder_resumability_and_date() -> None:
+    store = FakeStore(
+        [
+            Session(
+                "JOB-1_001",
+                "JOB-1",
+                "codex",
+                "u-1",
+                cwd="/work/svc-a",
+                resumable=False,
+                created_at="2026-07-24T09:30:00",
+            ),
+        ]
+    )
+    (summary,) = ListSessionsUseCase(store).execute("JOB-1")
+    assert summary.cwd == "/work/svc-a"
+    assert summary.resumable is False
+    assert summary.created_at == "2026-07-24T09:30:00"

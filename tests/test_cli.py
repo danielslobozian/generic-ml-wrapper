@@ -509,7 +509,15 @@ def test_sessions_command_json_output(
 
     monkeypatch.setattr(app, "build_list_sessions", lambda: FakeUseCase())
     assert app.main(["sessions", "JOB-1", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == [{"session_id": "JOB-1_001", "client": "claude"}]
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "session_id": "JOB-1_001",
+            "client": "claude",
+            "cwd": None,
+            "resumable": True,
+            "created_at": None,
+        }
+    ]
 
 
 def test_build_list_sessions_wires_a_real_use_case() -> None:

@@ -66,7 +66,7 @@ class SqliteSessionStore(SessionStorePort):
         """Return the sessions recorded for a job, oldest first."""
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT session_id, job, client, uuid, cwd, resumable "
+                "SELECT session_id, job, client, uuid, cwd, resumable, created_at "
                 "FROM sessions WHERE job = ? ORDER BY id",
                 (job,),
             ).fetchall()
@@ -78,6 +78,7 @@ class SqliteSessionStore(SessionStorePort):
                 row["uuid"],
                 row["cwd"],
                 bool(row["resumable"]),
+                created_at=row["created_at"],
             )
             for row in rows
         ]
