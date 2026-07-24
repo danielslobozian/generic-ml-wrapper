@@ -220,11 +220,12 @@ shows the equivalent command. Bare `gmlw` is unchanged; the menu is only entered
 gmlw tui
 ```
 
-Wired actions today: **Job → Resume** (pick a job; gmlw tears the menu down and relaunches
-its latest session — the same launch path as `gmlw start <job> --resume-latest`), and the
-**Config** switchers **Persona / Environment / Role**, including creating a new environment
-or role from a name (the `gmlw environment new` / `gmlw role new` path). Other verbs are
-placeholders until they are built out.
+Wired actions today: **Job → New** (type a name; gmlw launches a fresh session — the
+`gmlw start <job>` path) and **Job → Resume** (pick a job; it relaunches the latest session
+— the `gmlw start <job> --resume-latest` path), and the **Config** switchers **Persona /
+Environment / Role**, including creating a new environment or role from a name (the
+`gmlw environment new` / `gmlw role new` path). Other verbs are placeholders until they are
+built out.
 
 Off a TTY (piped/redirected) it never blocks: it falls back to the capability index,
 exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the flag CLI

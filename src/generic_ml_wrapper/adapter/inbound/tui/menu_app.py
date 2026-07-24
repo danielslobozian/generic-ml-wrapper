@@ -29,6 +29,11 @@ from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.common import i18n
 
 
+def _accept_any_job(_name: str) -> str | None:
+    """Default new-job-name validator when the app runs unwired (tests): accept anything."""
+    return None
+
+
 @dataclass(frozen=True)
 class MenuChoice:
     """What the user asked the app to do, handed back to the wiring on exit.
@@ -309,9 +314,11 @@ class JobMenuScreen(_MenuScreen):
         return _menu(_JOB_MENU)
 
     def handle(self, item: _Item) -> None:
-        """Resume launches; the other Job verbs are stubbed."""
+        """New and Resume launch; the other Job verbs are stubbed."""
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
+        elif item.action == "job:new":
+            self.menu_app.push_screen(NewJobScreen())
         else:
             self._stub(item)
 
@@ -488,6 +495,51 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
         self.dismiss(None)
 
 
+class NewJobScreen(Screen[None]):
+    """Name a new job, then launch a fresh session on it — a text-entry *launcher*.
+
+    Unlike the create form (a browser that stays in the TUI), a valid name exits the whole
+    app with a ``start`` choice; the CLI wiring then launches the client, exactly like
+    ``gmlw start <job>``. The name is validated in-form (via the injected ``validate_job``)
+    so an unusable name never tears the menu down only to fail at the prompt. Esc cancels.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the name input, a status line, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.new')}", id="crumb")
+        yield Input(placeholder=t("tui.newjob.placeholder"), id="name")
+        with Container(id="status"):
+            yield Static(t("tui.newjob.hint"), id="detail")
+            yield Static(t("tui.newjob.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can just start typing."""
+        self.query_one("#name", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Validate the typed name; launch on success, explain and stay on failure."""
+        name = event.value.strip()
+        error = (
+            i18n.active().t("tui.newjob.empty") if not name else self.menu_app.validate_job(name)
+        )
+        if error is not None:
+            self.query_one("#detail", Static).update(f"✗ {error}")
+            return
+        self.menu_app.exit(MenuChoice(action="start", job=name))
+
+    def action_cancel(self) -> None:
+        """Abandon the form and return to the Job menu."""
+        self.menu_app.pop_screen()
+
+
 class JobPickerScreen(_MenuScreen):
     """Resume step: pick a job; selecting one hands the resume choice back to the wiring."""
 
@@ -541,6 +593,7 @@ class MenuApp(App[MenuChoice | None]):
         jobs: list[JobChoice],
         *,
         switchers: dict[str, Switcher] | None = None,
+        validate_job: Callable[[str], str | None] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -549,10 +602,13 @@ class MenuApp(App[MenuChoice | None]):
             switchers: The config switchers, keyed by ``persona`` / ``environment`` /
                 ``role``. Each carries its options, current value, and a setter. A missing
                 key just leaves that Config verb stubbed, so the app runs unwired in tests.
+            validate_job: Validates a typed new-job name, returning an error message or
+                ``None`` when it is acceptable; defaults to accepting anything (tests).
         """
         super().__init__()
         self.jobs = jobs
         self.switchers = switchers or {}
+        self.validate_job = validate_job or _accept_any_job
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

@@ -985,7 +985,7 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
-def _tui() -> int:
+def _tui() -> int:  # noqa: PLR0911  (menu + preflights + launch, each with its own exit)
     """Run the interactive menu, then hand off to the client outside the event loop.
 
     The hand-off lives in the *ordering* here: the Textual app owns the terminal only while
@@ -1061,16 +1061,26 @@ def _tui() -> int:
     )
     switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
 
-    choice = MenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
-    if choice is None or choice.action != "resume" or choice.job is None:
+    def _validate_job(name: str) -> str | None:  # in-form validation before any teardown
+        try:
+            JobId(name)
+        except IdentifierError:
+            return t("tui.newjob.invalid")
+        return None
+
+    choice = MenuApp(
+        jobs, switchers=switchers, validate_job=_validate_job
+    ).run()  # blocks; terminal restored on return
+    if choice is None or choice.job is None or choice.action not in ("start", "resume"):
         return 0
+    resume = choice.action == "resume"
+    client = _client(None)  # the default client (ignored on resume: the session carries its own)
     command = StartJobCommand(
-        job=JobId(choice.job),
-        client=_client(None),  # ignored on resume: the stored latest session carries its client
-        resume_latest=True,
-        workflow=None,
+        job=JobId(choice.job), client=client, resume_latest=resume, workflow=None
     )
     if not _preflight_cwd():
+        return 2
+    if not resume and not _preflight_client(client):  # a new session needs the client installed
         return 2
     with _client_owns_interrupts():
         try:

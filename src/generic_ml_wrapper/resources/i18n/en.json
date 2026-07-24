@@ -233,5 +233,10 @@
   "tui.switch.unchanged": "already '{value}'",
   "tui.create.bad": "please enter a usable name",
   "tui.create.exists": "that name already exists",
-  "tui.sessions": "{count} sessions"
+  "tui.sessions": "{count} sessions",
+  "tui.newjob.placeholder": "new job name (letters, digits, - _)",
+  "tui.newjob.hint": "Type a name, then Enter to start a session. Esc to cancel.",
+  "tui.newjob.keys": "⏎ start · Esc cancel",
+  "tui.newjob.empty": "please enter a name",
+  "tui.newjob.invalid": "letters, digits, dashes and underscores only"
 }

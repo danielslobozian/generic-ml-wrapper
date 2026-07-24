@@ -260,3 +260,66 @@ def test_persona_switcher_has_no_new_row() -> None:
 
     asyncio.run(scenario())
     assert count["rows"] == 2  # two personas, no create row
+
+
+def _reject_spaces(name: str) -> str | None:
+    """A test validator: reject names with spaces (stands in for the JobId pattern)."""
+    return "invalid" if " " in name else None
+
+
+def test_new_job_valid_name_returns_a_start_choice() -> None:
+    """Job → New → type a valid name → the app exits with a start choice."""
+    result: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, validate_job=_reject_spaces)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("enter")  # Job menu
+            await pilot.press("enter")  # New → form
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "billing-api"
+            await pilot.press("enter")
+            await pilot.pause()
+        result["value"] = app.return_value
+
+    asyncio.run(scenario())
+    assert result["value"] == MenuChoice(action="start", job="billing-api")
+
+
+def test_new_job_invalid_name_keeps_the_form_open() -> None:
+    """An unusable name is rejected in-form; the app keeps running (no launch)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, validate_job=_reject_spaces)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("enter", "enter")  # Job → New form
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "My Job"
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["running"] = app.is_running
+            seen["on_form"] = bool(app.screen.query("#name"))
+
+    asyncio.run(scenario())
+    assert seen["running"] is True  # not launched
+    assert seen["on_form"] is True  # form still up
+
+
+def test_new_job_cancel_returns_to_the_job_menu() -> None:
+    """Esc in the New form returns to the Job menu without launching."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, validate_job=_reject_spaces)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("enter", "enter")  # Job → New form
+            await pilot.pause()
+            await pilot.press("escape")  # cancel
+            await pilot.pause()
+            seen["running"] = app.is_running
+            seen["has_menu"] = bool(app.screen.query("#menu"))  # back on a list screen
+
+    asyncio.run(scenario())
+    assert seen["running"] is True
+    assert seen["has_menu"] is True
