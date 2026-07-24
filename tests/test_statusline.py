@@ -175,8 +175,16 @@ def test_render_git_without_repo_name() -> None:
 def test_render_usage_row_with_turns() -> None:
     assert (
         render_usage_row("job", "JOB-1", 3, 45194, 0.43)
-        == "  job JOB-1 · 3 turns · 45194 tok · $0.43"
+        == "  job JOB-1 · 3 turns · 45.2k tok · $0.43"
     )
+
+
+def test_render_usage_row_compacts_large_totals_to_k_m_g() -> None:
+    # A heavy job's cache-dominated total stays scannable: k -> M -> G.
+    assert "45.2k tok" in render_usage_row("job", "J", 3, 45_194, 1.0)
+    assert "487M tok" in render_usage_row("job", "J", 900, 487_000_000, 1.0)
+    assert "8.5G tok" in render_usage_row("job", "wrapper", 3251, 8_472_936_150, 663.70)
+    assert "999 tok" in render_usage_row("job", "J", 1, 999, 1.0)  # below 1000 stays exact
 
 
 def test_render_usage_row_without_turns_shows_only_cost() -> None:
@@ -220,7 +228,7 @@ def test_use_case_shows_only_the_session_row_for_a_single_session() -> None:
     )
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
     # one session → just the current-session row (no separate job total)
-    assert out == "  session JOB-1_001 · 1 turns · 45194 tok · $0.00"
+    assert out == "  session JOB-1_001 · 1 turns · 45.2k tok · $0.00"
 
 
 def test_use_case_shows_session_then_job_row_across_sessions() -> None:

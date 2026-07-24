@@ -59,12 +59,20 @@ def _context(status: ClientStatus) -> str | None:
     return None if pct is None else f"ctx {pct}%"
 
 
+_BILLION = 1_000_000_000
 _MILLION = 1_000_000
 _THOUSAND = 1_000
 
 
 def _compact(tokens: int) -> str:
-    """A compact token count: ``200000`` -> ``200k``, ``1000000`` -> ``1M``."""
+    """A compact token count in SI units: ``200000`` -> ``200k``, ``1.2e9`` -> ``1.2G``.
+
+    Scales through ``k`` (thousand), ``M`` (million), ``G`` (billion) so a heavy job's
+    cache-dominated total stays scannable instead of a ten-digit run. Below 1000 the raw
+    count is exact.
+    """
+    if tokens >= _BILLION:
+        return _trim(tokens / _BILLION) + "G"
     if tokens >= _MILLION:
         return _trim(tokens / _MILLION) + "M"
     if tokens >= _THOUSAND:
@@ -98,7 +106,7 @@ def render_usage_row(label: str, name: str, turns: int, tokens: int, cost_usd: f
     parts = [f"{label} {name}"]
     if turns:
         parts.append(f"{turns} turns")
-        parts.append(f"{tokens} tok")
+        parts.append(f"{_compact(tokens)} tok")  # k/M/G so a heavy job's total stays scannable
     parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
 
