@@ -24,6 +24,8 @@ gmlw creds set <workflow> <ENV_VAR_NAME>
 gmlw config list [--json]
 gmlw config get <key> [--json]
 gmlw config set <key> <value>
+gmlw environment new <label> [--description D] [--default]
+gmlw role new <label> [--description D] [--default]
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
@@ -38,7 +40,7 @@ subcommand or a leading flag is left untouched.
 
 ### Incomplete sub-commands
 
-`workflow`, `persona`, `plugins`, and `creds` do their real work in a sub-action.
+`workflow`, `persona`, `plugins`, `creds`, `environment`, and `role` do their real work in a sub-action.
 Invoked without one (e.g. `gmlw workflow`), the command re-parses itself as `-h` and
 prints its own help, then exits 0.
 
@@ -411,6 +413,42 @@ gmlw config get client.default
 ```
 
 The home for changing `default_role` / `default_environment` after `init`.
+
+## environment
+
+Create and manage environments (the place work happens). Invoked with no action, prints
+its own help.
+
+```
+gmlw environment new <label> [--description D] [--default]
+```
+
+- `new <label>` — create a new environment. `label` is the human name you type; a
+  kebab-case `slug` is derived from it (`slugify`), and that slug is the folder name under
+  `~/.gmlw/environments/<slug>/` and the value stored in `profile.default_environment`. The
+  typed label and `--description` are saved to the folder's `.about.toml`.
+- `--default` — also point `profile.default_environment` at the new slug.
+
+An empty/unusable label, or a slug that already exists, prints an error and exits 2 (the
+existing folder is never overwritten).
+
+```
+gmlw environment new "Client Project" --default
+```
+
+## role
+
+Create and manage roles (the functional hat, a lens over *you*). Same shape as
+`environment`; the folder lives under `~/.gmlw/profile/roles/<slug>/` (with an empty
+`rules/` drop-zone) and the value is stored in `profile.default_role`.
+
+```
+gmlw role new <label> [--description D] [--default]
+```
+
+```
+gmlw role new "Code Reviewer" --default
+```
 
 ---
 

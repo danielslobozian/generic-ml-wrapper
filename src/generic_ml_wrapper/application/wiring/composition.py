@@ -7,10 +7,13 @@ from __future__ import annotations
 import getpass
 import os
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
+    FilesystemAxisCatalog,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator import (
     FilesystemLayoutMigrator,
 )
@@ -68,6 +71,7 @@ from generic_ml_wrapper.application.domain.service.interceptor_chain import Inte
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
@@ -89,6 +93,7 @@ from generic_ml_wrapper.application.port.outbound.interceptor import Interceptor
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
+from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
@@ -355,6 +360,21 @@ def build_config_commands() -> ConfigCommands:
         A ready-to-run ConfigCommands, writing to ``~/.gmlw/config.toml``.
     """
     return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
+
+
+def build_create_axis() -> CreateAxis:
+    """Build the CreateAxis use case wired to the filesystem catalog and config writer.
+
+    Returns:
+        A ready-to-run CreateAxis, creating folders under ``~/.gmlw`` and, when asked,
+        pointing ``profile.default_<kind>`` at the new slug in ``config.toml``.
+    """
+    return CreateAxisUseCase(
+        catalog=FilesystemAxisCatalog(paths.HOME),
+        writer=TomlkitConfigWriter(),
+        config_file=config.config_path,
+        clock=lambda: datetime.now(UTC).astimezone(),
+    )
 
 
 def build_migrate_layout() -> MigrateLayout:

@@ -35,6 +35,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
     CredentialsUnreadableError,
 )
 from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.domain.model.axis import AxisKind
 from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
     IdentifierError,
@@ -52,6 +53,11 @@ from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
     SetOutcome,
     SettingView,
+)
+from generic_ml_wrapper.application.port.inbound.create_axis import (
+    AxisExistsError,
+    AxisLabelError,
+    CreateAxisCommand,
 )
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflowCommand,
@@ -79,6 +85,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
     build_config_commands,
+    build_create_axis,
     build_edit_workflow,
     build_export_usage,
     build_guided_chooser,
@@ -150,6 +157,8 @@ _COMMANDS = frozenset(
         "plugins",
         "creds",
         "config",
+        "environment",
+        "role",
         "help",
     }
 )
@@ -162,6 +171,8 @@ _SUBACTIONS = {
     "plugins": "plugins_command",
     "creds": "creds_command",
     "config": "config_command",
+    "environment": "environment_command",
+    "role": "role_command",
 }
 
 
@@ -330,8 +341,25 @@ def build_parser() -> argparse.ArgumentParser:
     creds_set.add_argument("name", help="the environment-variable name to export at launch")
 
     _add_config_parser(sub)
+    _add_axis_parsers(sub)
     _add_help_parser(sub)
     return parser
+
+
+def _add_axis_parsers(sub: _SubParsers) -> None:
+    """Add the ``environment`` and ``role`` commands (each with a ``new`` action)."""
+    for command, noun in (("environment", "environment"), ("role", "role")):
+        parser = sub.add_parser(command, help=f"create and manage {noun}s")
+        action = parser.add_subparsers(dest=f"{command}_command", metavar="<action>")
+        new = action.add_parser("new", help=f"create a new {noun}")
+        new.add_argument("label", help="the human name (a slug is derived from it)")
+        new.add_argument("--description", default="", help="a fuller line saved to its .about.toml")
+        new.add_argument(
+            "--default",
+            action="store_true",
+            dest="make_default",
+            help=f"also make it the default {noun}",
+        )
 
 
 def _add_config_parser(sub: _SubParsers) -> None:
@@ -619,6 +647,10 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _creds(args)
         if args.command == "config":
             return _config(args)
+        if args.command == "environment":
+            return _axis(AxisKind.ENVIRONMENT, args.environment_command, args)
+        if args.command == "role":
+            return _axis(AxisKind.ROLE, args.role_command, args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
     except (
         IdentifierError,
@@ -1204,6 +1236,38 @@ def _read_secret() -> str:
     if sys.stdin.isatty():
         return getpass.getpass("value: ")
     return sys.stdin.readline().rstrip("\n")
+
+
+def _axis(kind: AxisKind, subcommand: str | None, args: argparse.Namespace) -> int:
+    """Create a role/environment from a typed label (``environment new`` / ``role new``).
+
+    Args:
+        kind: Which axis this command creates.
+        subcommand: The chosen sub-action (only ``new`` today; ``None`` is handled upstream
+            by the incomplete-command help).
+        args: The parsed arguments (label, description, make_default).
+
+    Returns:
+        ``0`` on success, ``2`` on a bad label or an existing slug.
+    """
+    if subcommand != "new":
+        return 0
+    try:
+        result = build_create_axis().execute(
+            CreateAxisCommand(
+                kind=kind,
+                label=args.label,
+                description=args.description,
+                make_default=bool(args.make_default),
+            )
+        )
+    except (AxisLabelError, AxisExistsError) as error:
+        print(i18n.t("error.generic", error=error), file=sys.stderr)
+        return 2
+    print(i18n.t("axis.created", kind=kind.value, label=result.label, slug=result.slug))
+    if result.made_default:
+        print(i18n.t("axis.made_default", kind=kind.value, slug=result.slug))
+    return 0
 
 
 def _creds(args: argparse.Namespace) -> int:
