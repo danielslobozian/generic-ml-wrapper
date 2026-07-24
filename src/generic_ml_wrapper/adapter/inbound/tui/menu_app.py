@@ -36,6 +36,11 @@ def _accept_any_job(_name: str) -> str | None:
     return None
 
 
+def _accept_any_workflow(_name: str) -> str | None:
+    """Default new-workflow-name validator when the app runs unwired (tests): accept anything."""
+    return None
+
+
 def _no_sessions(_job: str) -> list[SessionChoice]:
     """Default session lister when the app runs unwired (tests): no sessions."""
     return []
@@ -451,9 +456,13 @@ class WorkflowMenuScreen(_MenuScreen):
         return _menu(_WORKFLOW_MENU)
 
     def handle(self, item: _Item) -> None:
-        """Run launches on a chosen workflow, List browses; the rest are stubbed."""
+        """Each Workflow verb: Run/Edit pick a workflow, Create names one, List browses."""
         if item.action == "wf:run":
             self.menu_app.push_screen(WorkflowPickerScreen("run"))
+        elif item.action == "wf:edit":
+            self.menu_app.push_screen(WorkflowPickerScreen("edit"))
+        elif item.action == "wf:create":
+            self.menu_app.push_screen(NewWorkflowScreen())
         elif item.action == "wf:list":
             self.menu_app.push_screen(WorkflowListScreen())
         else:
@@ -511,6 +520,91 @@ class WorkflowPickerScreen(_MenuScreen):
             return
         if self._mode == "run":
             self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
+        else:  # edit — choose the authoring depth, then launch the edit session
+            self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
+
+
+class NewWorkflowScreen(Screen[None]):
+    """Name a new workflow (optional), then choose the authoring depth — a text-entry launcher.
+
+    Unlike :class:`NewJobScreen`, an empty name is accepted: the authoring session proposes one
+    at the end. A non-empty name is validated in-form (via the injected ``validate_workflow``)
+    so a bad seed name never tears the menu down only to fail at the prompt. Esc cancels.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the (optional) name input, a status line, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.workflow')} > {t('tui.wf.create')}", id="crumb")
+        yield Input(placeholder=t("tui.wf.new.placeholder"), id="name")
+        with Container(id="status"):
+            yield Static(t("tui.wf.new.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can just start typing (or press Enter to skip naming)."""
+        self.query_one("#name", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Validate the (optional) name, then move to the authoring-depth chooser."""
+        name = event.value.strip()
+        error = self.menu_app.validate_workflow(name)
+        if error is not None:  # a non-empty but unusable name — keep the form so it can be fixed
+            self.query_one("#detail", Static).update(f"✗ {error}")
+            return
+        self.menu_app.push_screen(GuidedChoiceScreen("workflow_new", name or None))
+
+    def action_cancel(self) -> None:
+        """Abandon the form and return to the Workflow menu."""
+        self.menu_app.pop_screen()
+
+
+class GuidedChoiceScreen(_MenuScreen):
+    """Choose the authoring depth (guided vs quick), then exit to launch the session.
+
+    Bound to the authoring action (``workflow_new`` / ``workflow_edit``) and the workflow name
+    (``None`` for a new, unnamed workflow). Picking a depth exits the app with the choice; the
+    wiring then launches the authoring session at that depth, exactly like ``--guided`` /
+    ``--quick`` on the CLI.
+    """
+
+    def __init__(self, action: str, workflow: str | None) -> None:
+        """Bind the chooser to the authoring action and the workflow it applies to."""
+        super().__init__()
+        self._action = action
+        self._workflow = workflow
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow > Create|Edit."""
+        t = i18n.active().t
+        verb = t("tui.wf.create") if self._action == "workflow_new" else t("tui.wf.edit")
+        return f"gmlw > {t('tui.workflow')} > {verb}"
+
+    def menu_items(self) -> list[_Item]:
+        """Two rows: the guided (facilitative) experience or the quick (lean) interview."""
+        t = i18n.active().t
+        return [
+            _Item("✨", t("tui.wf.guided"), t("tui.wf.guided.d"), "guided:yes"),
+            _Item("⏩", t("tui.wf.quick"), t("tui.wf.quick.d"), "guided:no"),
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Exit with the authoring choice at the picked depth."""
+        if item.action in ("guided:yes", "guided:no"):
+            self.menu_app.exit(
+                MenuChoice(
+                    action=self._action,
+                    workflow=self._workflow,
+                    guided=item.action == "guided:yes",
+                )
+            )
 
 
 class ConfigMenuScreen(_MenuScreen):
@@ -1360,6 +1454,7 @@ class MenuApp(App[MenuChoice | None]):
         *,
         switchers: dict[str, Switcher] | None = None,
         validate_job: Callable[[str], str | None] | None = None,
+        validate_workflow: Callable[[str], str | None] | None = None,
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
@@ -1376,6 +1471,8 @@ class MenuApp(App[MenuChoice | None]):
                 key just leaves that Config verb stubbed, so the app runs unwired in tests.
             validate_job: Validates a typed new-job name, returning an error message or
                 ``None`` when it is acceptable; defaults to accepting anything (tests).
+            validate_workflow: Validates a typed new-workflow name (empty ⇒ named at the end),
+                returning an error message or ``None``; defaults to accepting anything.
             sessions_for: Lists a job's sessions for the session picker (lazily, per job);
                 defaults to none.
             usage_view: Builds a job's usage summary (totals + by-model + by-session rows) for
@@ -1393,6 +1490,7 @@ class MenuApp(App[MenuChoice | None]):
         self.jobs = jobs
         self.switchers = switchers or {}
         self.validate_job = validate_job or _accept_any_job
+        self.validate_workflow = validate_workflow or _accept_any_workflow
         self.sessions_for = sessions_for or _no_sessions
         self.usage_view = usage_view or _no_usage_view
         self.save_usage = save_usage or _no_save

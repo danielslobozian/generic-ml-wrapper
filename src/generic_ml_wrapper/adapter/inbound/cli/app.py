@@ -1178,11 +1178,21 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             return t("tui.newjob.invalid")
         return None
 
+    def _validate_workflow(name: str) -> str | None:  # empty is fine — named at the end
+        if not name:
+            return None
+        try:
+            WorkflowName(name)
+        except IdentifierError:
+            return t("tui.wf.invalid")
+        return None
+
     client = _client(None)  # the default client (ignored on resume: the session carries its own)
     choice = MenuApp(
         jobs,
         switchers=switchers,
         validate_job=_validate_job,
+        validate_workflow=_validate_workflow,
         sessions_for=_sessions_for,
         usage_view=_usage_view,
         save_usage=_save_usage,
@@ -1194,6 +1204,10 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         return 0
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return _run_workflow(choice.workflow, client)
+    if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
+        return _new_workflow(choice.workflow, client, choice.guided)
+    if choice.action == "workflow_edit" and choice.workflow is not None:
+        return _edit_workflow(choice.workflow, client, choice.guided)
     if choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"
@@ -1203,11 +1217,29 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             (s for s in _sessions_for(choice.job) if s.session_id == choice.session), None
         )
         picked_cwd = picked.cwd if picked is not None else None
+    return _tui_launch_job(choice.job, resume, choice.session, picked_cwd, client)
+
+
+def _tui_launch_job(
+    job: str, resume: bool, session: str | None, picked_cwd: str | None, client: str
+) -> int:
+    """Launch (or resume) a job from the TUI's choice — the hand-off after ``run()`` returns.
+
+    Args:
+        job: The job to launch.
+        resume: Whether this reopens an existing session.
+        session: The specific session id to resume, or ``None`` for the latest / a new one.
+        picked_cwd: A resumed session's stored folder to relaunch in, or ``None``.
+        client: The resolved client to wrap.
+
+    Returns:
+        The process exit code.
+    """
     command = StartJobCommand(
-        job=JobId(choice.job),
+        job=JobId(job),
         client=client,
-        resume_latest=resume and choice.session is None,  # a picked session wins over "latest"
-        resume_session=choice.session,
+        resume_latest=resume and session is None,  # a picked session wins over "latest"
+        resume_session=session,
         workflow=None,
     )
     # Guard the folder the launch will actually use: a resumed session's stored folder, or
@@ -1560,11 +1592,23 @@ def _workflow_new(args: argparse.Namespace) -> int:
     after which gmlw deploys the draft. A name given up front is a seed that fails fast
     on a collision. The draft's fate on the return is reported from the result.
     """
-    client = _client(args.client)
+    name = None if args.name is None else str(args.name)
+    return _new_workflow(name, _client(args.client), _resolve_guided(args))
+
+
+def _new_workflow(name: str | None, client: str, guided: bool) -> int:
+    """Author a new workflow — shared by ``gmlw workflow new`` and the TUI Create verb.
+
+    Args:
+        name: A suggested name, or ``None`` to let the session propose one at the end.
+        client: The resolved client to wrap.
+        guided: Whether to use the guided (facilitative) authoring experience.
+
+    Returns:
+        The process exit code.
+    """
     if not _preflight_client(client):
         return 2
-    name = None if args.name is None else str(args.name)
-    guided = _resolve_guided(args)
     try:
         result = build_new_workflow().execute(
             NewWorkflowCommand(name=name, client=client, guided=guided)
@@ -1594,12 +1638,24 @@ def _announce_new_workflow(result: NewWorkflowResult) -> None:
 
 def _workflow_edit(args: argparse.Namespace) -> int:
     """Edit an existing workflow (guide instead of launching when the client isn't ready)."""
-    client = _client(args.client)
+    return _edit_workflow(str(args.name), _client(args.client), _resolve_guided(args))
+
+
+def _edit_workflow(name: str, client: str, guided: bool) -> int:
+    """Edit an existing workflow — shared by ``gmlw workflow edit`` and the TUI Edit verb.
+
+    Args:
+        name: The workflow to edit.
+        client: The resolved client to wrap.
+        guided: Whether to use the guided (facilitative) authoring experience.
+
+    Returns:
+        The process exit code.
+    """
     if not _preflight_client(client):
         return 2
-    guided = _resolve_guided(args)
     try:
-        command = EditWorkflowCommand(name=str(args.name), client=client, guided=guided)
+        command = EditWorkflowCommand(name=name, client=client, guided=guided)
         return build_edit_workflow().execute(command)
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))

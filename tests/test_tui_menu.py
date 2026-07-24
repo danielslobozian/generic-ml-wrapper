@@ -845,3 +845,89 @@ def test_workflow_run_empty_shows_the_create_hint() -> None:
     asyncio.run(scenario())
     assert seen["rows"] == 0
     assert "create" in str(seen["empty"]).lower()
+
+
+# --- Workflow Create + Edit (name entry + guided/quick authoring depth) --------------------
+
+
+def test_workflow_create_named_then_guided_exits_with_the_choice() -> None:
+    """Workflow → Create → type a name → pick Guided → exits with a guided new-workflow choice."""
+    result: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("down", "enter")  # Create (row 1) → name form
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "etl-nightly"
+            await pilot.press("enter")  # → guided chooser
+            await pilot.pause()
+            await pilot.press("enter")  # pick Guided (row 0)
+        result["value"] = app.return_value
+
+    asyncio.run(scenario())
+    assert result["value"] == MenuChoice(action="workflow_new", workflow="etl-nightly", guided=True)
+
+
+def test_workflow_create_empty_name_is_allowed_and_quick() -> None:
+    """An empty name is accepted (proposed at the end); Quick sets guided False."""
+    result: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("down", "enter")  # Create → name form
+            await pilot.pause()
+            await pilot.press("enter")  # empty name → guided chooser
+            await pilot.pause()
+            await pilot.press("down", "enter")  # pick Quick (row 1)
+        result["value"] = app.return_value
+
+    asyncio.run(scenario())
+    assert result["value"] == MenuChoice(action="workflow_new", workflow=None, guided=False)
+
+
+def test_workflow_create_rejects_a_bad_name_and_keeps_the_form() -> None:
+    """A non-empty invalid name keeps the form open with the reason (no teardown)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, validate_workflow=lambda name: "bad name" if name else None)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("down", "enter")  # Create → name form
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "Bad Name!"
+            await pilot.press("enter")  # rejected
+            await pilot.pause()
+            seen["on_form"] = bool(app.screen.query("#name"))
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert seen["on_form"] is True  # did not tear down
+    assert "bad name" in str(seen["detail"])
+    assert seen["running"] is True
+
+
+def test_workflow_edit_picks_a_workflow_then_quick() -> None:
+    """Workflow → Edit → pick a workflow → pick Quick → exits with an edit choice."""
+    result: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("down", "down", "enter")  # Edit (row 2) → workflow picker
+            await pilot.pause()
+            await pilot.press("enter")  # pick 'nightly-etl' → guided chooser
+            await pilot.pause()
+            await pilot.press("down", "enter")  # pick Quick
+        result["value"] = app.return_value
+
+    asyncio.run(scenario())
+    assert result["value"] == MenuChoice(
+        action="workflow_edit", workflow="nightly-etl", guided=False
+    )
