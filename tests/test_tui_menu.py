@@ -22,6 +22,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     SessionChoice,
     SwitchChoice,
     Switcher,
+    _Row,
 )
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
@@ -101,6 +102,22 @@ def test_non_resumable_sessions_are_disabled() -> None:
 
     asyncio.run(scenario())
     assert disabled["flags"] == [False, True, False]  # only the codex row is disabled
+
+
+def test_session_rows_use_three_state_icons() -> None:
+    """Leading icon per state: ▶ resume-on-current, 🔒 non-resumable, ↪ switches client."""
+    icons: dict[str, object] = {}
+    # default client claude; sessions are claude (current), codex (locked), cursor (switch).
+    app = _resume_app()
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            rows = app.screen.query_one("#menu", ListView).query(_Row)
+            icons["seq"] = [r.item.icon for r in rows]
+
+    asyncio.run(scenario())
+    assert icons["seq"] == ["▶", "🔒", "↪"]
 
 
 def test_quit_from_top_returns_none() -> None:

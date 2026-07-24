@@ -614,25 +614,32 @@ class SessionPickerScreen(_MenuScreen):
         return self.menu_app.sessions_for(self._job)
 
     def menu_items(self) -> list[_Item]:
-        """One row per session (newest last); non-resumable rows are disabled."""
+        """One row per session (newest last); non-resumable rows are disabled.
+
+        Three leading icons make the state glanceable: ``▶`` resume on your current client,
+        ``↪`` resume but switch to the session's client, ``🔒`` cannot resume. On a switch the
+        client is emphasised in-row (broken out of the dim subtitle) so it is seen without
+        reading the footer; the detail panel still spells it out.
+        """
         t = i18n.active().t
         current = self.menu_app.current_client
         items: list[_Item] = []
         for s in self._sessions():
             folder = s.cwd if s.cwd else t("tui.resume.no_folder")
             title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
-            subtitle = f"{s.date} · {s.client} · {folder}"
+            client = s.client
             if not s.resumable:
-                note = t("tui.resume.cannot", client=s.client)
+                icon, note = "🔒", t("tui.resume.cannot", client=s.client)
             elif s.client != current:
-                note = t("tui.resume.will_launch", client=s.client)
+                icon, note = "↪", t("tui.resume.will_launch", client=s.client)
+                client = f"↪ [b]{s.client}[/b]"  # in-row: mark + bold the client it switches to
             else:
-                note = ""
+                icon, note = "▶", ""
             items.append(
                 _Item(
-                    "⏵" if s.resumable else "⊘",
+                    icon,
                     title,
-                    subtitle,
+                    f"{s.date} · {client} · {folder}",
                     "resume:pick",
                     payload=s.session_id,
                     note=note,
