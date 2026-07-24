@@ -568,10 +568,32 @@ def test_format_sessions_empty() -> None:
 
 
 def test_format_sessions_lists_each() -> None:
-    text = app.format_sessions("JOB-1", [SessionSummary("JOB-1_001", "claude")])
+    text = app.format_sessions(
+        "JOB-1",
+        [
+            SessionSummary(
+                "JOB-1_001",
+                "claude",
+                cwd="/work/a",
+                resumable=True,
+                created_at="2026-07-24 09:00:00",
+            )
+        ],
+    )
     assert "JOB-1 — 1 session(s):" in text
     assert "JOB-1_001" in text
     assert "claude" in text
+    assert "/work/a" in text  # folder
+    assert "2026-07-24 09:00" in text  # date, trimmed to the minute
+    assert "yes" in text  # resumable
+
+
+def test_format_sessions_shows_folder_fallback_and_not_resumable() -> None:
+    text = app.format_sessions(
+        "JOB-1", [SessionSummary("JOB-1_002", "codex", cwd=None, resumable=False)]
+    )
+    assert "(folder unknown)" in text  # no stored folder
+    assert "no" in text  # not resumable
 
 
 def test_sessions_command_prints_them(
