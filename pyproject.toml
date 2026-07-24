@@ -43,9 +43,10 @@ dependencies = [
   # pydantic (a compiled core) — a deliberate, load-bearing exception to the thin-dep
   # rule for the one place that benefits from real schema + validation.
   "pydantic-settings>=2",
-  # SPIKE ONLY (throwaway branch spike/tui-handoff): Textual for the interactive-menu
-  # front-end proof. Pure-Python, ships a run_test/Pilot harness. Not to be merged as-is
-  # without the library decision (Textual vs questionary vs choose_number) being made.
+  # textual (MIT) powers the interactive `gmlw tui` menu — a full-screen, cross-platform,
+  # pure-Python front-end with a real run_test/Pilot harness (so the TUI is testable in CI).
+  # A deliberate exception to the thin-dep rule, like pydantic above: it is used only by the
+  # opt-in tui adapter, imported lazily, and never on the flag-CLI / statusline hot paths.
   "textual>=0.60",
 ]
 

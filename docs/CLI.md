@@ -211,20 +211,24 @@ status line is installed and parsed.
 
 ## tui
 
-> **SPIKE** (branch `spike/tui-handoff`) — a throwaway proof of the interactive-menu
-> front-end and, above all, the client hand-off. Not a committed feature.
-
-Opens a full-screen interactive menu (Start · Resume · Config · Quit). Pick **Resume**,
-choose a job, and gmlw tears the menu down and relaunches that job's latest session on
-its client — the same launch path as `gmlw start <job> --resume-latest`.
+Open the interactive, full-screen menu — an opt-in alternative to the flag CLI. It is
+object-first (**Job · Workflow · Config**), you navigate with the arrow keys, and each row
+shows the equivalent command. Bare `gmlw` is unchanged; the menu is only entered via
+`gmlw tui`.
 
 ```
 gmlw tui
 ```
 
+Wired actions today: **Job → Resume** (pick a job; gmlw tears the menu down and relaunches
+its latest session — the same launch path as `gmlw start <job> --resume-latest`), and the
+**Config** switchers **Persona / Environment / Role**, including creating a new environment
+or role from a name (the `gmlw environment new` / `gmlw role new` path). Other verbs are
+placeholders until they are built out.
+
 Off a TTY (piped/redirected) it never blocks: it falls back to the capability index,
-exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the arg
-CLI remains the scripting path.
+exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the flag CLI
+remains the scripting path.
 
 ## workflow
 

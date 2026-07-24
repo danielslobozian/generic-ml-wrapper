@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""SPIKE ONLY (branch ``spike/tui-handoff``): the interactive menu, as a pure Textual app.
+"""The interactive ``gmlw tui`` menu, as a pure Textual app.
 
 Deliberately free of any use case, port, or composition import: the app navigates menus
-and *returns a choice*. It never launches a client itself -- the wiring does that, after
-``run()`` returns and the terminal is restored. That separation is the whole point of the
-spike: the risky teardown -> subprocess hand-off lives outside the event loop, and this app
-stays trivially drivable by Textual's ``run_test``/``Pilot``.
+and *returns a choice*. It never launches a client itself -- the CLI wiring does that, after
+``run()`` returns and the terminal is restored. That separation keeps the risky teardown ->
+subprocess hand-off outside the event loop, and keeps this app trivially drivable by
+Textual's ``run_test``/``Pilot``.
 
-The structure is object-first (Job / Workflow / Config), then a verb -- the IA we agreed on.
-Only the Job > Resume path is wired to actually launch; every other verb is a stub that
-updates the detail panel, so the shape and feel are real without the plumbing.
+The structure is object-first (Job / Workflow / Config), then a verb. Job > Resume and the
+Config switchers (Persona / Environment / Role, incl. creating one) are wired; the remaining
+verbs are placeholders that update the detail panel until they are built out.
 """
 
 from __future__ import annotations
@@ -202,7 +202,7 @@ class _Row(ListItem):
         self._label.update(self._markup(icon, self.item))
 
 
-class _SpikeScreen(Screen[None]):
+class _MenuScreen(Screen[None]):
     """A menu screen: a header, a rich list, a live detail panel, and a key-hints bar.
 
     Subclasses supply the header and rows and override ``handle`` to act on a selection.
@@ -219,9 +219,9 @@ class _SpikeScreen(Screen[None]):
     _flash: str | None = None
 
     @property
-    def spike_app(self) -> SpikeMenuApp:
-        """The owning app, narrowed from Textual's generic ``App`` to :class:`SpikeMenuApp`."""
-        return cast("SpikeMenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
     def menu_items(self) -> list[_Item]:
         """The rows for this screen (overridden by dynamic screens like the job picker)."""
@@ -287,20 +287,20 @@ class _SpikeScreen(Screen[None]):
 
     def _stub(self, item: _Item) -> None:
         self.query_one("#detail", Static).update(
-            f"'{item.title}' isn't wired in this spike — try Job > Resume (the live path)."
+            f"'{item.title}' isn't wired yet — try Job > Resume, or a Config switcher."
         )
-        self.spike_app.bell()
+        self.menu_app.bell()
 
     def action_back(self) -> None:
         """Pop back to the previous screen."""
-        self.spike_app.pop_screen()
+        self.menu_app.pop_screen()
 
     def action_quit_app(self) -> None:
         """Leave gmlw with no choice."""
-        self.spike_app.exit(None)
+        self.menu_app.exit(None)
 
 
-class TopMenuScreen(_SpikeScreen):
+class TopMenuScreen(_MenuScreen):
     """The front door: Job · Workflow · Config · Quit, under the banner."""
 
     show_banner = True
@@ -312,20 +312,20 @@ class TopMenuScreen(_SpikeScreen):
     def handle(self, item: _Item) -> None:
         """Quit, or open the Job/Workflow/Config sub-menu."""
         if item.action == "quit":
-            self.spike_app.exit(None)
+            self.menu_app.exit(None)
         elif item.action == "menu:job":
-            self.spike_app.push_screen(JobMenuScreen())
+            self.menu_app.push_screen(JobMenuScreen())
         elif item.action == "menu:workflow":
-            self.spike_app.push_screen(WorkflowMenuScreen())
+            self.menu_app.push_screen(WorkflowMenuScreen())
         elif item.action == "menu:config":
-            self.spike_app.push_screen(ConfigMenuScreen())
+            self.menu_app.push_screen(ConfigMenuScreen())
 
     def action_back(self) -> None:
         """At the front door, Back leaves gmlw (there is nothing to pop to)."""
-        self.spike_app.exit(None)
+        self.menu_app.exit(None)
 
 
-class JobMenuScreen(_SpikeScreen):
+class JobMenuScreen(_MenuScreen):
     """The Job object's verbs. Resume is the one wired to launch."""
 
     crumb = "gmlw > Job"
@@ -337,13 +337,13 @@ class JobMenuScreen(_SpikeScreen):
     def handle(self, item: _Item) -> None:
         """Resume launches; the other Job verbs are stubbed."""
         if item.action == "job:resume":
-            self.spike_app.push_screen(JobPickerScreen())
+            self.menu_app.push_screen(JobPickerScreen())
         else:
             self._stub(item)
 
 
-class WorkflowMenuScreen(_SpikeScreen):
-    """The Workflow object's verbs (all stubbed in the spike)."""
+class WorkflowMenuScreen(_MenuScreen):
+    """The Workflow object's verbs (placeholders until built out)."""
 
     crumb = "gmlw > Workflow"
 
@@ -352,7 +352,7 @@ class WorkflowMenuScreen(_SpikeScreen):
         return _WORKFLOW_MENU
 
 
-class ConfigMenuScreen(_SpikeScreen):
+class ConfigMenuScreen(_MenuScreen):
     """The Config verbs. The switchers (Persona/Environment/Role) are wired; rest are stubs."""
 
     crumb = "gmlw > Config"
@@ -371,13 +371,13 @@ class ConfigMenuScreen(_SpikeScreen):
     def handle(self, item: _Item) -> None:
         """A switcher verb opens its picker; the other Config verbs are stubbed."""
         key = self._SWITCHERS.get(item.action)
-        if key is not None and key in self.spike_app.switchers:
-            self.spike_app.push_screen(SwitcherScreen(key))
+        if key is not None and key in self.menu_app.switchers:
+            self.menu_app.push_screen(SwitcherScreen(key))
         else:
             self._stub(item)
 
 
-class SwitcherScreen(_SpikeScreen):
+class SwitcherScreen(_MenuScreen):
     """Generic "pick one, set a config key" browser (Persona / Environment / Role).
 
     A *browser* -- unlike the launchers, it stays in the TUI. Selecting a row calls the
@@ -393,7 +393,7 @@ class SwitcherScreen(_SpikeScreen):
 
     @property
     def _switcher(self) -> Switcher:
-        return self.spike_app.switchers[self._key]
+        return self.menu_app.switchers[self._key]
 
     def header_text(self) -> str:
         """The switcher's own breadcrumb (e.g. ``gmlw > Config > Environment``)."""
@@ -426,7 +426,7 @@ class SwitcherScreen(_SpikeScreen):
     def handle(self, item: _Item) -> None:
         """Set the picked value, or open the create form for the "New…" row."""
         if item.action == "switch:new":
-            self.spike_app.push_screen(CreateAxisScreen(self._key), self._on_created)
+            self.menu_app.push_screen(CreateAxisScreen(self._key), self._on_created)
             return
         if item.action != "switch:set":
             return
@@ -448,10 +448,10 @@ class SwitcherScreen(_SpikeScreen):
         switcher = self._switcher
         switcher.choices.append(choice)
         switcher.current = choice.value
-        self.spike_app.pop_screen()
+        self.menu_app.pop_screen()
         reopened = SwitcherScreen(self._key)
         reopened._flash = f"✓ created and switched to '{choice.label}'"
-        self.spike_app.push_screen(reopened)
+        self.menu_app.push_screen(reopened)
 
     def _mark_current(self) -> None:
         """Refresh every option row's dot to reflect the current value (in place)."""
@@ -478,7 +478,7 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
 
     @property
     def _switcher(self) -> Switcher:
-        return cast("SpikeMenuApp", self.app).switchers[self._key]  # pyright: ignore[reportUnknownMemberType]
+        return cast("MenuApp", self.app).switchers[self._key]  # pyright: ignore[reportUnknownMemberType]
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the name input, a status line, and the key hints."""
@@ -508,7 +508,7 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
         self.dismiss(None)
 
 
-class JobPickerScreen(_SpikeScreen):
+class JobPickerScreen(_MenuScreen):
     """Resume step: pick a job; selecting one hands the resume choice back to the wiring."""
 
     crumb = "gmlw > Job > Resume"
@@ -517,17 +517,17 @@ class JobPickerScreen(_SpikeScreen):
         """One row per resumable job, carrying the job id as payload."""
         return [
             _Item("⏵", j.job, f"{j.session_count} sessions", "pick", payload=j.job)
-            for j in self.spike_app.jobs
+            for j in self.menu_app.jobs
         ]
 
     def handle(self, item: _Item) -> None:
         """A picked job becomes the resume choice handed back to the wiring."""
         if item.action == "pick":
-            self.spike_app.exit(MenuChoice(action="resume", job=item.payload))
+            self.menu_app.exit(MenuChoice(action="resume", job=item.payload))
 
 
-class SpikeMenuApp(App[MenuChoice | None]):
-    """The spike front-end. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
+class MenuApp(App[MenuChoice | None]):
+    """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
     The job list is injected (not read from a store) so the app has no outbound dependency
     and tests can drive it with a fixture list.

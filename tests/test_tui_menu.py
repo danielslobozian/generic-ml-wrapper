@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""SPIKE: prove the object-first menu is drivable and hands back a resume choice.
+"""Tests for the object-first ``gmlw tui`` menu (Pilot-driven).
 
 The repo has no pytest-asyncio, so each scenario is wrapped in ``asyncio.run`` -- Textual's
 ``run_test``/``Pilot`` is the only async surface and needs nothing more than an event loop.
@@ -14,11 +14,11 @@ from collections.abc import Awaitable, Callable
 from textual.pilot import Pilot
 from textual.widgets import Input, ListItem, ListView, Static
 
-from generic_ml_wrapper.adapter.inbound.tui.spike_app import (
+from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     CreateOutcome,
     JobChoice,
+    MenuApp,
     MenuChoice,
-    SpikeMenuApp,
     SwitchChoice,
     Switcher,
 )
@@ -44,10 +44,10 @@ def _persona_switcher(
 
 
 def _drive(script: Callable[[Pilot[MenuChoice | None]], Awaitable[None]]) -> MenuChoice | None:
-    """Run the spike app under Pilot, apply ``script``, return the app's exit value."""
+    """Run the menu app under Pilot, apply ``script``, return the app's exit value."""
 
     async def scenario() -> MenuChoice | None:
-        app = SpikeMenuApp(_JOBS)
+        app = MenuApp(_JOBS)
         async with app.run_test(size=(90, 30)) as pilot:
             await script(pilot)
         return app.return_value
@@ -104,7 +104,7 @@ def test_switcher_persists_via_the_injected_apply() -> None:
     switchers = _persona_switcher(apply=lambda value: (calls.append(value), f"set {value}")[1])
 
     async def scenario() -> None:
-        app = SpikeMenuApp(_JOBS, switchers=switchers)
+        app = MenuApp(_JOBS, switchers=switchers)
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # top → Config (3rd row)
             await pilot.press("down", "down", "down", "enter")  # Config → Persona (4th row)
@@ -120,7 +120,7 @@ def test_switcher_keeps_the_cursor_in_place() -> None:
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
-        app = SpikeMenuApp(_JOBS, switchers=_persona_switcher(current="mentor"))
+        app = MenuApp(_JOBS, switchers=_persona_switcher(current="mentor"))
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # → Config
             await pilot.press("down", "down", "down", "enter")  # → Persona picker
@@ -138,7 +138,7 @@ def test_switcher_menu_opens_on_the_active_option() -> None:
 
     async def scenario() -> None:
         # current 'coach' is the second of the two options (index 1).
-        app = SpikeMenuApp(_JOBS, switchers=_persona_switcher(current="coach"))
+        app = MenuApp(_JOBS, switchers=_persona_switcher(current="coach"))
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # → Config
             await pilot.press("down", "down", "down", "enter")  # → Persona picker
@@ -182,7 +182,7 @@ def test_create_new_environment_adds_and_selects_it() -> None:
     switchers = _env_switcher(create)
 
     async def scenario() -> None:
-        app = SpikeMenuApp(_JOBS, switchers=switchers)
+        app = MenuApp(_JOBS, switchers=switchers)
         async with app.run_test(size=(90, 30)) as pilot:
             await _open_env_switcher(pilot)
             await pilot.press("down", "enter")  # onto the New row, open the form
@@ -209,7 +209,7 @@ def test_create_cancel_leaves_the_switcher_unchanged() -> None:
     switchers = _env_switcher(create)
 
     async def scenario() -> None:
-        app = SpikeMenuApp(_JOBS, switchers=switchers)
+        app = MenuApp(_JOBS, switchers=switchers)
         async with app.run_test(size=(90, 30)) as pilot:
             await _open_env_switcher(pilot)
             await pilot.press("down", "enter")  # open the form
@@ -230,7 +230,7 @@ def test_create_failure_keeps_the_form_open() -> None:
         return CreateOutcome(None, "already exists")
 
     async def scenario() -> None:
-        app = SpikeMenuApp(_JOBS, switchers=_env_switcher(create))
+        app = MenuApp(_JOBS, switchers=_env_switcher(create))
         async with app.run_test(size=(90, 30)) as pilot:
             await _open_env_switcher(pilot)
             await pilot.press("down", "enter")  # open the form
@@ -251,7 +251,7 @@ def test_persona_switcher_has_no_new_row() -> None:
     count: dict[str, int] = {}
 
     async def scenario() -> None:
-        app = SpikeMenuApp(_JOBS, switchers=_persona_switcher())
+        app = MenuApp(_JOBS, switchers=_persona_switcher())
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # → Config
             await pilot.press("down", "down", "down", "enter")  # → Persona switcher (row 3)

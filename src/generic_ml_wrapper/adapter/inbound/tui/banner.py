@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""SPIKE: the launch banner for the interactive menu.
+"""The launch banner for the interactive menu.
 
 The gmlw logo (figlet "small", the same font ``bmlw`` uses) framed in a rounded box,
 with the supported clients on the left and the version on the right. Both the version and
