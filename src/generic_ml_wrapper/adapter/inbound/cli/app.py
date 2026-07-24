@@ -1044,6 +1044,9 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             for i, s in enumerate(summaries)
         ]
 
+    def _usage_text(job: str) -> str:  # the Export view reuses the CLI's report renderer verbatim
+        return format_usage(build_export_usage().execute(JobId(job)))
+
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
     # its options + current value and injects an ``apply`` setter and, for the folder-backed
     # axes, a ``create``. The app stays pure -- the wiring owns every outbound call.
@@ -1143,6 +1146,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         switchers=switchers,
         validate_job=_validate_job,
         sessions_for=_sessions_for,
+        usage_text=_usage_text,
         config=config_catalog,
         current_client=client,
     ).run()  # blocks; terminal restored on return

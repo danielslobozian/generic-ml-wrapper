@@ -253,5 +253,6 @@
   "tui.resume.cannot": "reprise impossible — {client} ne conserve pas de session",
   "tui.resume.will_launch": "↳ la reprise lancera {client}, pas votre client par défaut",
   "tui.joblist.resumable": "peut être reprise",
-  "tui.joblist.not_resumable": "ne peut pas être reprise ({client} ne conserve pas de session)"
+  "tui.joblist.not_resumable": "ne peut pas être reprise ({client} ne conserve pas de session)",
+  "tui.export.keys": "↑↓ PgHaut/PgBas défiler · Échap retour"
 }

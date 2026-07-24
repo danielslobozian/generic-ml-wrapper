@@ -654,3 +654,83 @@ def test_job_list_empty_when_no_jobs() -> None:
     assert seen["rows"] == 0
     assert seen["empty"] is True
     assert seen["running"] is True
+
+
+# --- Job Export (a job's usage report, scrollable and read-only) --------------------------
+
+
+async def _open_job_export(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → Export (Job row index 3)."""
+    await pilot.press("enter")  # → Job menu
+    await pilot.press("down", "down", "down", "enter")  # New(0) Resume(1) List(2) → Export(3)
+    await pilot.pause()
+
+
+def test_job_export_lists_one_row_per_job() -> None:
+    """Job → Export lists every job to pick from."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_export(pilot)
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["titles"] == ["alpha", "beta"]
+
+
+def test_job_export_shows_the_usage_report_for_the_picked_job() -> None:
+    """Selecting a job renders its report (from the injected usage_text) in the scroll view."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, usage_text=lambda job: f"REPORT for {job} :: 42 turns")
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_export(pilot)
+            await pilot.press("enter")  # pick alpha
+            await pilot.pause()
+            seen["usage"] = str(app.screen.query_one("#usage", Static).render())
+
+    asyncio.run(scenario())
+    assert "REPORT for alpha :: 42 turns" in str(seen["usage"])
+
+
+def test_job_export_report_is_read_only_and_esc_returns() -> None:
+    """The report view doesn't exit the app; Esc walks back to the job picker."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, usage_text=lambda job: f"REPORT {job}")
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_export(pilot)
+            await pilot.press("enter")  # into the report
+            await pilot.pause()
+            seen["running_in_report"] = app.is_running
+            await pilot.press("escape")  # back to the job picker
+            await pilot.pause()
+            seen["return"] = app.return_value
+            seen["back_on_jobs"] = bool(app.screen.query("#menu"))
+
+    asyncio.run(scenario())
+    assert seen["running_in_report"] is True
+    assert seen["return"] is None  # never handed back a choice
+    assert seen["back_on_jobs"] is True  # returned to the job list
+
+
+def test_job_export_unwired_shows_an_empty_report() -> None:
+    """With no usage_text injected, the report view opens empty (no crash)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)  # no usage_text
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_export(pilot)
+            await pilot.press("enter")  # pick alpha
+            await pilot.pause()
+            seen["has_usage"] = bool(app.screen.query("#usage"))
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert seen["has_usage"] is True  # the report screen mounted
+    assert seen["running"] is True

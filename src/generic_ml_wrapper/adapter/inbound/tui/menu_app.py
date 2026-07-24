@@ -21,7 +21,7 @@ from typing import ClassVar, cast
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Container
+from textual.containers import Container, VerticalScroll
 from textual.screen import Screen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
@@ -37,6 +37,11 @@ def _accept_any_job(_name: str) -> str | None:
 def _no_sessions(_job: str) -> list[SessionChoice]:
     """Default session lister when the app runs unwired (tests): no sessions."""
     return []
+
+
+def _no_usage(_job: str) -> str:
+    """Default usage renderer when the app runs unwired (tests): an empty report."""
+    return ""
 
 
 @dataclass(frozen=True)
@@ -390,13 +395,15 @@ class JobMenuScreen(_MenuScreen):
         return _menu(_JOB_MENU)
 
     def handle(self, item: _Item) -> None:
-        """New and Resume launch, List browses; the other Job verbs are stubbed."""
+        """New and Resume launch, List and Export browse; any other Job verb is stubbed."""
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
         elif item.action == "job:new":
             self.menu_app.push_screen(NewJobScreen())
         elif item.action == "job:list":
             self.menu_app.push_screen(JobListScreen())
+        elif item.action == "job:export":
+            self.menu_app.push_screen(JobExportScreen())
         else:
             self._stub(item)
 
@@ -1032,6 +1039,67 @@ class SessionListScreen(_MenuScreen):
         """Read-only: selecting a session does nothing (the detail panel is the whole view)."""
 
 
+class JobExportScreen(_MenuScreen):
+    """Pick a job to see its recorded usage; selecting one opens the report.
+
+    A read-only sibling of :class:`JobListScreen` -- reuses the injected ``jobs``, then hands
+    off to :class:`UsageScreen` for the chosen job.
+    """
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Export."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.export')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job, carrying the job id as payload (empty -> the base empty state)."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "📊", j.job, t("tui.sessions", count=j.session_count), "export:job", payload=j.job
+            )
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Selecting a job opens its usage report."""
+        if item.action == "export:job":
+            self.menu_app.push_screen(UsageScreen(item.payload))
+
+
+class UsageScreen(Screen[None]):
+    """A job's recorded usage, as a scrollable read-only report.
+
+    Shows the exact text the CLI's ``gmlw export`` prints (rendered by the injected
+    ``usage_text``, i.e. the shared ``format_usage``) inside a scroll view -- one renderer, one
+    report format. Esc goes back.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+
+    def __init__(self, job: str) -> None:
+        """Bind the view to the job whose usage it reports."""
+        super().__init__()
+        self._job = job
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the scrollable report, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
+        with VerticalScroll(id="report"):
+            yield Static(self.menu_app.usage_text(self._job), id="usage")
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def action_back(self) -> None:
+        """Pop back to the job picker."""
+        self.menu_app.pop_screen()
+
+
 class MenuApp(App[MenuChoice | None]):
     """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
@@ -1049,6 +1117,8 @@ class MenuApp(App[MenuChoice | None]):
     #name   { margin: 1 2; }
     #menu   { height: 1fr; background: transparent; }
     #empty  { height: 1fr; padding: 1 2; color: $text-muted; }
+    #report { height: 1fr; padding: 0 1; }
+    #usage  { height: auto; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
@@ -1065,6 +1135,7 @@ class MenuApp(App[MenuChoice | None]):
         switchers: dict[str, Switcher] | None = None,
         validate_job: Callable[[str], str | None] | None = None,
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
+        usage_text: Callable[[str], str] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
     ) -> None:
@@ -1079,6 +1150,8 @@ class MenuApp(App[MenuChoice | None]):
                 ``None`` when it is acceptable; defaults to accepting anything (tests).
             sessions_for: Lists a job's sessions for the session picker (lazily, per job);
                 defaults to none.
+            usage_text: Renders a job's usage report (the shared ``format_usage``) for the
+                Export view (lazily, per job); defaults to an empty report.
             config: The settings + setter the Config Get/Set browsers read and call; ``None``
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
@@ -1089,6 +1162,7 @@ class MenuApp(App[MenuChoice | None]):
         self.switchers = switchers or {}
         self.validate_job = validate_job or _accept_any_job
         self.sessions_for = sessions_for or _no_sessions
+        self.usage_text = usage_text or _no_usage
         self.config = config
         self.current_client = current_client
 
