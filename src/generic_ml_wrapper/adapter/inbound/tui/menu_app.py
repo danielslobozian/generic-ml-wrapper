@@ -1505,7 +1505,7 @@ class MenuApp(App[MenuChoice | None]):
     # size to content -- never fill the viewport.
     CSS = """
     Screen  { background: $background; }
-    #banner { color: cyan; text-style: bold; padding: 1 1 0 1; height: auto; }
+    #banner { padding: 1 1 0 1; height: auto; }  /* the Rich Panel carries its own colour */
     #crumb  { dock: top; padding: 0 1; color: $text-muted; }
     #name   { margin: 1 2; }
     #menu   { height: 1fr; background: transparent; }
