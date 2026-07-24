@@ -783,3 +783,65 @@ def test_job_export_view_is_read_only_and_esc_returns() -> None:
     assert seen["running"] is True
     assert seen["return"] is None
     assert seen["back_on_chooser"] is True
+
+
+# --- Workflow Run + List ------------------------------------------------------------------
+
+_WORKFLOWS = ["nightly-etl", "release-notes"]
+
+
+async def _open_workflow(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Workflow (2nd object row)."""
+    await pilot.press("down", "enter")  # Job(0) → Workflow(1)
+    await pilot.pause()
+
+
+def test_workflow_run_exits_with_the_chosen_workflow() -> None:
+    """Workflow → Run → pick a workflow → the app exits with a run choice for it."""
+    result: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("enter")  # Run (row 0) → workflow picker
+            await pilot.pause()
+            await pilot.press("down", "enter")  # pick the 2nd workflow ('release-notes')
+        result["value"] = app.return_value
+
+    asyncio.run(scenario())
+    assert result["value"] == MenuChoice(action="run", workflow="release-notes")
+
+
+def test_workflow_list_shows_the_runnable_workflows() -> None:
+    """Workflow → List lists every runnable workflow (read-only)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("down", "down", "down", "enter")  # Run(0) Create(1) Edit(2) List(3)
+            await pilot.pause()
+            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["titles"] == _WORKFLOWS
+
+
+def test_workflow_run_empty_shows_the_create_hint() -> None:
+    """With no workflows, the Run picker shows the 'create one' hint, not a crash."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, workflows=[])  # none authored yet
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_workflow(pilot)
+            await pilot.press("enter")  # Run → picker
+            await pilot.pause()
+            seen["rows"] = len(app.screen.query(_Row))
+            seen["empty"] = str(app.screen.query_one("#empty", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["rows"] == 0
+    assert "create" in str(seen["empty"]).lower()

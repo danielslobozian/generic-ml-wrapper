@@ -55,13 +55,17 @@ def _no_save(_job: str) -> str:
 class MenuChoice:
     """What the user asked the app to do, handed back to the wiring on exit.
 
-    ``"resume"`` carries the ``job`` and (from the session picker) the specific ``session``
-    to resume. A ``None`` return from the app (Quit / Ctrl+C) means "do nothing".
+    Job launchers use ``job`` (and, for ``"resume"``, the specific ``session``). Workflow
+    launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
+    open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
+    new workflow whose name is proposed at the end). A ``None`` return means "do nothing".
     """
 
     action: str
     job: str | None = None
     session: str | None = None
+    workflow: str | None = None
+    guided: bool = False
 
 
 @dataclass(frozen=True)
@@ -295,6 +299,8 @@ class _MenuScreen(Screen[None]):
     ]
     crumb: ClassVar[str] = "gmlw"
     show_banner: ClassVar[bool] = False
+    # The i18n key shown when there are no rows; subclasses override for a tailored hint.
+    empty_key: ClassVar[str] = "tui.empty"
     # A one-shot detail message the next detail-sync shows instead of the cursor's row,
     # then clears -- so a confirmation survives a programmatic cursor move.
     _flash: str | None = None
@@ -326,7 +332,7 @@ class _MenuScreen(Screen[None]):
         if items:
             yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
         else:
-            yield Static(i18n.active().t("tui.empty"), id="empty")
+            yield Static(i18n.active().t(self.empty_key), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
             yield Static(i18n.active().t("tui.keys"), id="keys")
@@ -434,7 +440,7 @@ class JobMenuScreen(_MenuScreen):
 
 
 class WorkflowMenuScreen(_MenuScreen):
-    """The Workflow object's verbs (placeholders until built out)."""
+    """The Workflow object's verbs: Run and List are wired; Create/Edit are stubbed for now."""
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Workflow (localised)."""
@@ -443,6 +449,68 @@ class WorkflowMenuScreen(_MenuScreen):
     def menu_items(self) -> list[_Item]:
         """The Workflow verbs."""
         return _menu(_WORKFLOW_MENU)
+
+    def handle(self, item: _Item) -> None:
+        """Run launches on a chosen workflow, List browses; the rest are stubbed."""
+        if item.action == "wf:run":
+            self.menu_app.push_screen(WorkflowPickerScreen("run"))
+        elif item.action == "wf:list":
+            self.menu_app.push_screen(WorkflowListScreen())
+        else:
+            self._stub(item)
+
+
+class WorkflowListScreen(_MenuScreen):
+    """Read-only list of the runnable workflows (reuses the injected ``workflows``)."""
+
+    empty_key = "tui.wf.none"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow > List."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.workflow')} > {t('tui.wf.list')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per workflow; the detail panel shows how to run it."""
+        return [
+            _Item("📄", name, "", "wf:listrow", example=f"gmlw run {name}")
+            for name in self.menu_app.workflows
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Read-only: selecting a workflow does nothing (the detail panel is the view)."""
+
+
+class WorkflowPickerScreen(_MenuScreen):
+    """Pick a workflow, to run it (``run``) or to edit it (``edit``).
+
+    ``run`` exits the app with a run choice the wiring launches; ``edit`` moves on to the
+    authoring-depth chooser first. An empty list points the user at Create.
+    """
+
+    empty_key = "tui.wf.none"
+
+    def __init__(self, mode: str) -> None:
+        """Bind the picker to its mode (``"run"`` or ``"edit"``)."""
+        super().__init__()
+        self._mode = mode
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow > Run|Edit."""
+        t = i18n.active().t
+        verb = t("tui.wf.run") if self._mode == "run" else t("tui.wf.edit")
+        return f"gmlw > {t('tui.workflow')} > {verb}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per workflow, carrying its name as payload."""
+        return [_Item("⏵", name, "", "wf:pick", payload=name) for name in self.menu_app.workflows]
+
+    def handle(self, item: _Item) -> None:
+        """Run exits with the choice; Edit moves to the authoring-depth chooser."""
+        if item.action != "wf:pick":
+            return
+        if self._mode == "run":
+            self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
 
 
 class ConfigMenuScreen(_MenuScreen):
@@ -1295,6 +1363,7 @@ class MenuApp(App[MenuChoice | None]):
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
+        workflows: list[str] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
     ) -> None:
@@ -1313,6 +1382,8 @@ class MenuApp(App[MenuChoice | None]):
                 the Export view (lazily, per job, on a worker thread); defaults to empty.
             save_usage: Writes a job's full report to a file and returns the path, for the
                 save-to-file Export destination (lazily, per job); defaults to a no-op.
+            workflows: The runnable workflow names, for the Workflow Run/List/Edit screens;
+                defaults to none.
             config: The settings + setter the Config Get/Set browsers read and call; ``None``
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
@@ -1325,6 +1396,7 @@ class MenuApp(App[MenuChoice | None]):
         self.sessions_for = sessions_for or _no_sessions
         self.usage_view = usage_view or _no_usage_view
         self.save_usage = save_usage or _no_save
+        self.workflows = workflows or []
         self.config = config
         self.current_client = current_client
 

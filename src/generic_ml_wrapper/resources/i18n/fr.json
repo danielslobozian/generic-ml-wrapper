@@ -205,6 +205,7 @@
   "tui.wf.edit.d": "Modifier un workflow existant",
   "tui.wf.list": "Lister",
   "tui.wf.list.d": "Parcourir les workflows exécutables",
+  "tui.wf.none": "Aucun workflow pour l'instant — créez-en un avec Workflow > Créer.",
   "tui.cfg.list": "Lister",
   "tui.cfg.list.d": "Afficher chaque réglage et sa valeur",
   "tui.cfg.get": "Lire",

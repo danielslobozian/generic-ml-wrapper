@@ -1186,10 +1186,15 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         sessions_for=_sessions_for,
         usage_view=_usage_view,
         save_usage=_save_usage,
+        workflows=build_list_workflows().execute(),
         config=config_catalog,
         current_client=client,
     ).run()  # blocks; terminal restored on return
-    if choice is None or choice.job is None or choice.action not in ("start", "resume"):
+    if choice is None:
+        return 0
+    if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
+        return _run_workflow(choice.workflow, client)
+    if choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"
     picked_cwd: str | None = None
@@ -1274,7 +1279,19 @@ def _run(args: argparse.Namespace) -> int:
     workflow = _resolve_workflow(args.workflow)
     if workflow is None:
         return 2
-    client = _client(args.client)
+    return _run_workflow(workflow, _client(args.client))
+
+
+def _run_workflow(workflow: str, client: str) -> int:
+    """Launch the client on a workflow's own job — shared by ``gmlw run`` and the TUI Run verb.
+
+    Args:
+        workflow: The workflow to run (also the job name it accumulates sessions under).
+        client: The resolved client to wrap.
+
+    Returns:
+        The process exit code.
+    """
     command = StartJobCommand(
         job=JobId(workflow),
         client=client,
