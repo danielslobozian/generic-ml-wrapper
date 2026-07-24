@@ -434,11 +434,20 @@ def format_sessions(
     if not sessions:
         return loc.t("sessions.none", job=repr(job), start_job=job)
     lines = [loc.t("sessions.count", job=job, count=len(sessions)), ""]
-    width = max(len(session.session_id) for session in sessions)
-    lines += [
-        loc.t("sessions.row", session=f"{session.session_id:<{width}}", client=session.client)
-        for session in sessions
-    ]
+    session_width = max(len(session.session_id) for session in sessions)
+    client_width = max(len(session.client) for session in sessions)
+    for session in sessions:
+        resumable = loc.t("clients.yes") if session.resumable else loc.t("clients.no")
+        lines.append(
+            loc.t(
+                "sessions.row",
+                session=f"{session.session_id:<{session_width}}",
+                date=f"{(session.created_at or '')[:16]:<16}",  # YYYY-MM-DD HH:MM (blank if unset)
+                client=f"{session.client:<{client_width}}",
+                resumable=f"{resumable:<3}",
+                folder=session.cwd or loc.t("sessions.no_folder"),
+            )
+        )
     return "\n".join(lines)
 
 
