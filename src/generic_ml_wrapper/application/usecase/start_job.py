@@ -158,19 +158,46 @@ class StartJobUseCase(StartJob):
             env=tuple(self._credentials.resolve(workflow).items()),
         )
 
+    def _resume_target(self, command: StartJobCommand) -> Session | None:
+        """The session to resume: the named one, else the latest, else ``None`` (new session).
+
+        A specific ``resume_session`` wins over ``resume_latest``; an unknown id falls through
+        to minting a new session rather than failing.
+        """
+        if command.resume_session is not None:
+            return next(
+                (
+                    s
+                    for s in self._store.sessions_for_job(command.job)
+                    if s.session_id == command.resume_session
+                ),
+                None,
+            )
+        if command.resume_latest:
+            return self._store.latest_for_job(command.job)
+        return None
+
+    @staticmethod
+    def _resumed_run(session: Session) -> RunContext:
+        """Build the run that reopens a session -- in the folder it was launched in.
+
+        ``cwd`` is the session's stored folder (``None`` for pre-folder sessions, which
+        resume in the current directory as before). Claude's resume is scoped to that folder.
+        """
+        return RunContext(
+            job=session.job,
+            session_id=session.session_id,
+            client=session.client,
+            uuid=session.uuid,
+            resume=True,
+            cwd=session.cwd,
+        )
+
     def _resolve(self, command: StartJobCommand) -> tuple[RunContext, Session | None]:
         """Mint the run (and the session to record, or ``None`` on resume) -- no write yet."""
-        if command.resume_latest:
-            latest = self._store.latest_for_job(command.job)
-            if latest is not None:
-                resumed = RunContext(
-                    job=latest.job,
-                    session_id=latest.session_id,
-                    client=latest.client,
-                    uuid=latest.uuid,
-                    resume=True,
-                )
-                return resumed, None
+        target = self._resume_target(command)
+        if target is not None:
+            return self._resumed_run(target), None
         info = client_catalog.by_name(command.client)
         session = Session(
             session_id=next_session_id(command.job, self._store.ids_for_job(command.job)),
