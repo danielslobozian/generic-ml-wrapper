@@ -1014,16 +1014,17 @@ def _tui() -> int:
     config_commands = build_config_commands()
     catalog = build_axis_catalog()
 
+    t = i18n.active().t
+
     def _switcher(
-        crumb: str, key: str, noun: str, choices: list[SwitchChoice], kind: AxisKind | None = None
+        label_key: str, key: str, choices: list[SwitchChoice], kind: AxisKind | None = None
     ) -> Switcher:
         current = config_commands.get(key).value
+        crumb = f"gmlw > {t('tui.config')} > {t(label_key)}"
 
-        def apply(
-            value: str,
-        ) -> str:  # the switcher's confirmation line (localised with the rest of the menu)
+        def apply(value: str) -> str:  # localised confirmation, shown in the detail panel
             changed = config_commands.set(key, value).changed
-            return f"{noun} set to '{value}'" if changed else f"{noun} already '{value}'"
+            return t("tui.switch.set" if changed else "tui.switch.unchanged", value=value)
 
         def create(label: str) -> CreateOutcome:
             try:  # create + make it the default, so "New" from the switcher also switches
@@ -1031,10 +1032,10 @@ def _tui() -> int:
                     CreateAxisCommand(kind=cast(AxisKind, kind), label=label, make_default=True)
                 )
             except AxisLabelError:
-                return CreateOutcome(None, "please enter a usable name")
+                return CreateOutcome(None, t("tui.create.bad"))
             except AxisExistsError:
-                return CreateOutcome(None, f"a {noun} named that already exists")
-            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), f"created '{label}'")
+                return CreateOutcome(None, t("tui.create.exists"))
+            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), "")
 
         return Switcher(
             crumb=crumb,
@@ -1054,19 +1055,11 @@ def _tui() -> int:
 
     switchers: dict[str, Switcher] = {}
     if personas:
-        switchers["persona"] = _switcher(
-            "gmlw > Config > Persona", "companion.persona", "persona", personas
-        )
+        switchers["persona"] = _switcher("tui.cfg.persona", "companion.persona", personas)
     switchers["environment"] = _switcher(
-        "gmlw > Config > Environment",
-        "profile.default_environment",
-        "environment",
-        environments,
-        AxisKind.ENVIRONMENT,
+        "tui.cfg.environment", "profile.default_environment", environments, AxisKind.ENVIRONMENT
     )
-    switchers["role"] = _switcher(
-        "gmlw > Config > Role", "profile.default_role", "role", roles, AxisKind.ROLE
-    )
+    switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
 
     choice = MenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
     if choice is None or choice.action != "resume" or choice.job is None:

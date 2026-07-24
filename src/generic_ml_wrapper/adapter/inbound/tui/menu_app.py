@@ -26,8 +26,7 @@ from textual.screen import Screen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
-
-_KEYS = "↑↓ move · ⏎ select · Esc back · q quit"
+from generic_ml_wrapper.common import i18n
 
 
 @dataclass(frozen=True)
@@ -109,75 +108,50 @@ class _Item:
     payload: str = ""
 
 
-# The object-first menu tree. Sub-menu verbs share one vocabulary (New/Run/List/Export).
-_JOB_MENU = [
-    _Item("🆕", "New", "Start a fresh session on a job", "job:new", "gmlw start <job>"),
-    _Item(
-        "⏵",
-        "Resume",
-        "Relaunch a job's latest session",
-        "job:resume",
-        "gmlw start <job> --resume-latest",
-    ),
-    _Item("📋", "List", "Browse jobs and their sessions", "job:list", "gmlw jobs"),
-    _Item("📊", "Export", "Usage and cost for a job", "job:export", "gmlw export <job>"),
-]
-_WORKFLOW_MENU = [
-    _Item(
-        "⏵", "Run", "Run a workflow (the job is named after it)", "wf:run", "gmlw run <workflow>"
-    ),
-    _Item("✨", "Create", "Author a new workflow", "wf:create", "gmlw workflow new <name>"),
-    _Item("✏️", "Edit", "Edit an existing workflow", "wf:edit", "gmlw workflow edit <name>"),
-    _Item("📋", "List", "Browse the runnable workflows", "wf:list", "gmlw workflow list"),
-]
-_CONFIG_MENU = [
-    _Item("📃", "List", "Show every setting and its value", "cfg:list", "gmlw config list"),
-    _Item(
-        "🔍", "Get", "Read one setting (type to filter keys)", "cfg:get", "gmlw config get <key>"
-    ),
-    _Item(
-        "🔧",
-        "Set",
-        "Change one setting (type to filter keys)",
-        "cfg:set",
-        "gmlw config set <key> <value>",
-    ),
-    _Item(
-        "🎭",
-        "Persona",
-        "Choose the companion persona (from a labelled list)",
-        "cfg:persona",
-        "gmlw config set companion.persona <name>",
-    ),
-    _Item(
+# The object-first menu tree, built through the active localiser. Each entry is
+# (icon, title-key, action, example); the subtitle key is the title key + ".d". The
+# ``example`` commands stay literal (they are commands, not prose).
+_JOB_MENU = (
+    ("🆕", "tui.job.new", "job:new", "gmlw start <job>"),
+    ("⏵", "tui.job.resume", "job:resume", "gmlw start <job> --resume-latest"),
+    ("📋", "tui.job.list", "job:list", "gmlw jobs"),
+    ("📊", "tui.job.export", "job:export", "gmlw export <job>"),
+)
+_WORKFLOW_MENU = (
+    ("⏵", "tui.wf.run", "wf:run", "gmlw run <workflow>"),
+    ("✨", "tui.wf.create", "wf:create", "gmlw workflow new <name>"),
+    ("✏️", "tui.wf.edit", "wf:edit", "gmlw workflow edit <name>"),
+    ("📋", "tui.wf.list", "wf:list", "gmlw workflow list"),
+)
+_CONFIG_MENU = (
+    ("📃", "tui.cfg.list", "cfg:list", "gmlw config list"),
+    ("🔍", "tui.cfg.get", "cfg:get", "gmlw config get <key>"),
+    ("🔧", "tui.cfg.set", "cfg:set", "gmlw config set <key> <value>"),
+    ("🎭", "tui.cfg.persona", "cfg:persona", "gmlw config set companion.persona <name>"),
+    (
         "🌍",
-        "Environment",
-        "Switch the active environment (by label)",
+        "tui.cfg.environment",
         "cfg:environment",
         "gmlw config set profile.default_environment <slug>",
     ),
-    _Item(
-        "🎩",
-        "Role",
-        "Switch the active role (by label)",
-        "cfg:role",
-        "gmlw config set profile.default_role <slug>",
-    ),
-    _Item(
-        "🔌",
-        "Clients",
-        "Installed clients and their versions",
-        "cfg:clients",
-        "gmlw config set client.default <name>",
-    ),
-    _Item("🔁", "Setup", "Re-run the first-time setup", "cfg:setup", "gmlw init"),
-]
-_TOP_MENU = [
-    _Item("🗂", "Job", "Start, resume, and inspect your jobs", "menu:job"),
-    _Item("⚙", "Workflow", "Author and run reusable procedures", "menu:workflow"),
-    _Item("🎛", "Config", "Settings, clients, personas, environments", "menu:config"),
-    _Item("🚪", "Quit", "Leave gmlw", "quit"),
-]
+    ("🎩", "tui.cfg.role", "cfg:role", "gmlw config set profile.default_role <slug>"),
+    ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw config set client.default <name>"),
+    ("🔁", "tui.cfg.setup", "cfg:setup", "gmlw init"),
+)
+_TOP_MENU = (
+    ("🗂", "tui.job", "menu:job", ""),
+    ("⚙", "tui.workflow", "menu:workflow", ""),
+    ("🎛", "tui.config", "menu:config", ""),
+    ("🚪", "tui.quit", "quit", ""),
+)
+
+
+def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[_Item]:
+    """Resolve a menu spec into localised rows (subtitle key = title key + ``.d``)."""
+    t = i18n.active().t
+    return [
+        _Item(icon, t(key), t(f"{key}.d"), action, example) for icon, key, action, example in rows
+    ]
 
 
 class _Row(ListItem):
@@ -245,10 +219,10 @@ class _MenuScreen(Screen[None]):
         if items:
             yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
         else:
-            yield Static("Nothing here yet.", id="empty")
+            yield Static(i18n.active().t("tui.empty"), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
-            yield Static(_KEYS, id="keys")
+            yield Static(i18n.active().t("tui.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
@@ -286,9 +260,7 @@ class _MenuScreen(Screen[None]):
         self._stub(item)
 
     def _stub(self, item: _Item) -> None:
-        self.query_one("#detail", Static).update(
-            f"'{item.title}' isn't wired yet — try Job > Resume, or a Config switcher."
-        )
+        self.query_one("#detail", Static).update(i18n.active().t("tui.stub", title=item.title))
         self.menu_app.bell()
 
     def action_back(self) -> None:
@@ -307,7 +279,7 @@ class TopMenuScreen(_MenuScreen):
 
     def menu_items(self) -> list[_Item]:
         """The object rows: Job, Workflow, Config, Quit."""
-        return _TOP_MENU
+        return _menu(_TOP_MENU)
 
     def handle(self, item: _Item) -> None:
         """Quit, or open the Job/Workflow/Config sub-menu."""
@@ -328,11 +300,13 @@ class TopMenuScreen(_MenuScreen):
 class JobMenuScreen(_MenuScreen):
     """The Job object's verbs. Resume is the one wired to launch."""
 
-    crumb = "gmlw > Job"
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job (localised)."""
+        return f"gmlw > {i18n.active().t('tui.job')}"
 
     def menu_items(self) -> list[_Item]:
         """The Job verbs."""
-        return _JOB_MENU
+        return _menu(_JOB_MENU)
 
     def handle(self, item: _Item) -> None:
         """Resume launches; the other Job verbs are stubbed."""
@@ -345,17 +319,17 @@ class JobMenuScreen(_MenuScreen):
 class WorkflowMenuScreen(_MenuScreen):
     """The Workflow object's verbs (placeholders until built out)."""
 
-    crumb = "gmlw > Workflow"
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow (localised)."""
+        return f"gmlw > {i18n.active().t('tui.workflow')}"
 
     def menu_items(self) -> list[_Item]:
         """The Workflow verbs."""
-        return _WORKFLOW_MENU
+        return _menu(_WORKFLOW_MENU)
 
 
 class ConfigMenuScreen(_MenuScreen):
     """The Config verbs. The switchers (Persona/Environment/Role) are wired; rest are stubs."""
-
-    crumb = "gmlw > Config"
 
     # Config verb -> switcher key injected on the app.
     _SWITCHERS: ClassVar[dict[str, str]] = {
@@ -364,9 +338,13 @@ class ConfigMenuScreen(_MenuScreen):
         "cfg:role": "role",
     }
 
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Config (localised)."""
+        return f"gmlw > {i18n.active().t('tui.config')}"
+
     def menu_items(self) -> list[_Item]:
         """The Config verbs."""
-        return _CONFIG_MENU
+        return _menu(_CONFIG_MENU)
 
     def handle(self, item: _Item) -> None:
         """A switcher verb opens its picker; the other Config verbs are stubbed."""
@@ -413,7 +391,8 @@ class SwitcherScreen(_MenuScreen):
             for c in self._switcher.choices
         ]
         if self._switcher.create is not None:
-            new_row = _Item("➕", "New…", "Create a new one from a name", "switch:new")  # noqa: RUF001
+            t = i18n.active().t
+            new_row = _Item("➕", t("tui.new"), t("tui.new.d"), "switch:new")  # noqa: RUF001
             items.append(new_row)
         return items
 
@@ -450,7 +429,7 @@ class SwitcherScreen(_MenuScreen):
         switcher.current = choice.value
         self.menu_app.pop_screen()
         reopened = SwitcherScreen(self._key)
-        reopened._flash = f"✓ created and switched to '{choice.label}'"
+        reopened._flash = i18n.active().t("tui.create.done", label=choice.label)
         self.menu_app.push_screen(reopened)
 
     def _mark_current(self) -> None:
@@ -482,11 +461,12 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the name input, a status line, and the key hints."""
-        yield Static(f"{self._switcher.crumb} > New", id="crumb")
-        yield Input(placeholder="name (e.g. Client Project)", id="name")
+        t = i18n.active().t
+        yield Static(f"{self._switcher.crumb} > {t('tui.new')}", id="crumb")
+        yield Input(placeholder=t("tui.create.placeholder"), id="name")
         with Container(id="status"):
-            yield Static("Type a name, then Enter to create. Esc to cancel.", id="detail")
-            yield Static("⏎ create · Esc cancel", id="keys")
+            yield Static(t("tui.create.hint"), id="detail")
+            yield Static(t("tui.create.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can just start typing."""
@@ -511,12 +491,16 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
 class JobPickerScreen(_MenuScreen):
     """Resume step: pick a job; selecting one hands the resume choice back to the wiring."""
 
-    crumb = "gmlw > Job > Resume"
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Resume (localised)."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')}"
 
     def menu_items(self) -> list[_Item]:
         """One row per resumable job, carrying the job id as payload."""
+        t = i18n.active().t
         return [
-            _Item("⏵", j.job, f"{j.session_count} sessions", "pick", payload=j.job)
+            _Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
