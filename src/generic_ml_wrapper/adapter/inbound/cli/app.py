@@ -295,7 +295,7 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
 
     sub.add_parser("statusline", help="render the status line (called by the client)")
 
-    sub.add_parser("tui", help="interactive menu (SPIKE — throwaway hand-off proof)")
+    sub.add_parser("tui", help="open the interactive menu")
 
     workflow = sub.add_parser("workflow", help="author/list workflows")
     workflow_sub = workflow.add_subparsers(dest="workflow_command", metavar="<action>")
@@ -986,21 +986,21 @@ def _farewell() -> str | None:
 
 
 def _tui() -> int:
-    """SPIKE: run the interactive menu, then hand off to the client outside the event loop.
+    """Run the interactive menu, then hand off to the client outside the event loop.
 
-    The whole point of the spike lives in the *ordering* here: the Textual app owns the
-    terminal only while ``run()`` blocks. When the user picks a job, the app calls
-    ``exit(choice)``; Textual restores the terminal as ``run()`` returns; and only *then*
-    do we launch the client through the same ``build_start_job`` path every other command
-    uses. Off a TTY we never build the app -- we fall back to the plain capability index,
-    honouring the "non-TTY never blocks on a menu" contract.
+    The hand-off lives in the *ordering* here: the Textual app owns the terminal only while
+    ``run()`` blocks. When the user picks a job, the app calls ``exit(choice)``; Textual
+    restores the terminal as ``run()`` returns; and only *then* do we launch the client
+    through the same ``build_start_job`` path every other command uses. Off a TTY we never
+    build the app -- we fall back to the plain capability index, honouring the "non-TTY never
+    blocks on a menu" contract.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return _index()
-    from generic_ml_wrapper.adapter.inbound.tui.spike_app import (  # noqa: PLC0415  spike-local
+    from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
         CreateOutcome,
         JobChoice,
-        SpikeMenuApp,
+        MenuApp,
         SwitchChoice,
         Switcher,
     )
@@ -1014,14 +1014,17 @@ def _tui() -> int:
     config_commands = build_config_commands()
     catalog = build_axis_catalog()
 
+    t = i18n.active().t
+
     def _switcher(
-        crumb: str, key: str, noun: str, choices: list[SwitchChoice], kind: AxisKind | None = None
+        label_key: str, key: str, choices: list[SwitchChoice], kind: AxisKind | None = None
     ) -> Switcher:
         current = config_commands.get(key).value
+        crumb = f"gmlw > {t('tui.config')} > {t(label_key)}"
 
-        def apply(value: str) -> str:  # spike copy is English, like the rest of the menu
+        def apply(value: str) -> str:  # localised confirmation, shown in the detail panel
             changed = config_commands.set(key, value).changed
-            return f"{noun} set to '{value}'" if changed else f"{noun} already '{value}'"
+            return t("tui.switch.set" if changed else "tui.switch.unchanged", value=value)
 
         def create(label: str) -> CreateOutcome:
             try:  # create + make it the default, so "New" from the switcher also switches
@@ -1029,10 +1032,10 @@ def _tui() -> int:
                     CreateAxisCommand(kind=cast(AxisKind, kind), label=label, make_default=True)
                 )
             except AxisLabelError:
-                return CreateOutcome(None, "please enter a usable name")
+                return CreateOutcome(None, t("tui.create.bad"))
             except AxisExistsError:
-                return CreateOutcome(None, f"a {noun} named that already exists")
-            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), f"created '{label}'")
+                return CreateOutcome(None, t("tui.create.exists"))
+            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), "")
 
         return Switcher(
             crumb=crumb,
@@ -1052,21 +1055,13 @@ def _tui() -> int:
 
     switchers: dict[str, Switcher] = {}
     if personas:
-        switchers["persona"] = _switcher(
-            "gmlw > Config > Persona", "companion.persona", "persona", personas
-        )
+        switchers["persona"] = _switcher("tui.cfg.persona", "companion.persona", personas)
     switchers["environment"] = _switcher(
-        "gmlw > Config > Environment",
-        "profile.default_environment",
-        "environment",
-        environments,
-        AxisKind.ENVIRONMENT,
+        "tui.cfg.environment", "profile.default_environment", environments, AxisKind.ENVIRONMENT
     )
-    switchers["role"] = _switcher(
-        "gmlw > Config > Role", "profile.default_role", "role", roles, AxisKind.ROLE
-    )
+    switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
 
-    choice = SpikeMenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
+    choice = MenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
     if choice is None or choice.action != "resume" or choice.job is None:
         return 0
     command = StartJobCommand(

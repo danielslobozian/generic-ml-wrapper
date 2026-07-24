@@ -1,16 +1,16 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""SPIKE ONLY (branch ``spike/tui-handoff``): the interactive menu, as a pure Textual app.
+"""The interactive ``gmlw tui`` menu, as a pure Textual app.
 
 Deliberately free of any use case, port, or composition import: the app navigates menus
-and *returns a choice*. It never launches a client itself -- the wiring does that, after
-``run()`` returns and the terminal is restored. That separation is the whole point of the
-spike: the risky teardown -> subprocess hand-off lives outside the event loop, and this app
-stays trivially drivable by Textual's ``run_test``/``Pilot``.
+and *returns a choice*. It never launches a client itself -- the CLI wiring does that, after
+``run()`` returns and the terminal is restored. That separation keeps the risky teardown ->
+subprocess hand-off outside the event loop, and keeps this app trivially drivable by
+Textual's ``run_test``/``Pilot``.
 
-The structure is object-first (Job / Workflow / Config), then a verb -- the IA we agreed on.
-Only the Job > Resume path is wired to actually launch; every other verb is a stub that
-updates the detail panel, so the shape and feel are real without the plumbing.
+The structure is object-first (Job / Workflow / Config), then a verb. Job > Resume and the
+Config switchers (Persona / Environment / Role, incl. creating one) are wired; the remaining
+verbs are placeholders that update the detail panel until they are built out.
 """
 
 from __future__ import annotations
@@ -26,8 +26,7 @@ from textual.screen import Screen
 from textual.widgets import Input, Label, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
-
-_KEYS = "↑↓ move · ⏎ select · Esc back · q quit"
+from generic_ml_wrapper.common import i18n
 
 
 @dataclass(frozen=True)
@@ -109,75 +108,50 @@ class _Item:
     payload: str = ""
 
 
-# The object-first menu tree. Sub-menu verbs share one vocabulary (New/Run/List/Export).
-_JOB_MENU = [
-    _Item("🆕", "New", "Start a fresh session on a job", "job:new", "gmlw start <job>"),
-    _Item(
-        "⏵",
-        "Resume",
-        "Relaunch a job's latest session",
-        "job:resume",
-        "gmlw start <job> --resume-latest",
-    ),
-    _Item("📋", "List", "Browse jobs and their sessions", "job:list", "gmlw jobs"),
-    _Item("📊", "Export", "Usage and cost for a job", "job:export", "gmlw export <job>"),
-]
-_WORKFLOW_MENU = [
-    _Item(
-        "⏵", "Run", "Run a workflow (the job is named after it)", "wf:run", "gmlw run <workflow>"
-    ),
-    _Item("✨", "Create", "Author a new workflow", "wf:create", "gmlw workflow new <name>"),
-    _Item("✏️", "Edit", "Edit an existing workflow", "wf:edit", "gmlw workflow edit <name>"),
-    _Item("📋", "List", "Browse the runnable workflows", "wf:list", "gmlw workflow list"),
-]
-_CONFIG_MENU = [
-    _Item("📃", "List", "Show every setting and its value", "cfg:list", "gmlw config list"),
-    _Item(
-        "🔍", "Get", "Read one setting (type to filter keys)", "cfg:get", "gmlw config get <key>"
-    ),
-    _Item(
-        "🔧",
-        "Set",
-        "Change one setting (type to filter keys)",
-        "cfg:set",
-        "gmlw config set <key> <value>",
-    ),
-    _Item(
-        "🎭",
-        "Persona",
-        "Choose the companion persona (from a labelled list)",
-        "cfg:persona",
-        "gmlw config set companion.persona <name>",
-    ),
-    _Item(
+# The object-first menu tree, built through the active localiser. Each entry is
+# (icon, title-key, action, example); the subtitle key is the title key + ".d". The
+# ``example`` commands stay literal (they are commands, not prose).
+_JOB_MENU = (
+    ("🆕", "tui.job.new", "job:new", "gmlw start <job>"),
+    ("⏵", "tui.job.resume", "job:resume", "gmlw start <job> --resume-latest"),
+    ("📋", "tui.job.list", "job:list", "gmlw jobs"),
+    ("📊", "tui.job.export", "job:export", "gmlw export <job>"),
+)
+_WORKFLOW_MENU = (
+    ("⏵", "tui.wf.run", "wf:run", "gmlw run <workflow>"),
+    ("✨", "tui.wf.create", "wf:create", "gmlw workflow new <name>"),
+    ("✏️", "tui.wf.edit", "wf:edit", "gmlw workflow edit <name>"),
+    ("📋", "tui.wf.list", "wf:list", "gmlw workflow list"),
+)
+_CONFIG_MENU = (
+    ("📃", "tui.cfg.list", "cfg:list", "gmlw config list"),
+    ("🔍", "tui.cfg.get", "cfg:get", "gmlw config get <key>"),
+    ("🔧", "tui.cfg.set", "cfg:set", "gmlw config set <key> <value>"),
+    ("🎭", "tui.cfg.persona", "cfg:persona", "gmlw config set companion.persona <name>"),
+    (
         "🌍",
-        "Environment",
-        "Switch the active environment (by label)",
+        "tui.cfg.environment",
         "cfg:environment",
         "gmlw config set profile.default_environment <slug>",
     ),
-    _Item(
-        "🎩",
-        "Role",
-        "Switch the active role (by label)",
-        "cfg:role",
-        "gmlw config set profile.default_role <slug>",
-    ),
-    _Item(
-        "🔌",
-        "Clients",
-        "Installed clients and their versions",
-        "cfg:clients",
-        "gmlw config set client.default <name>",
-    ),
-    _Item("🔁", "Setup", "Re-run the first-time setup", "cfg:setup", "gmlw init"),
-]
-_TOP_MENU = [
-    _Item("🗂", "Job", "Start, resume, and inspect your jobs", "menu:job"),
-    _Item("⚙", "Workflow", "Author and run reusable procedures", "menu:workflow"),
-    _Item("🎛", "Config", "Settings, clients, personas, environments", "menu:config"),
-    _Item("🚪", "Quit", "Leave gmlw", "quit"),
-]
+    ("🎩", "tui.cfg.role", "cfg:role", "gmlw config set profile.default_role <slug>"),
+    ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw config set client.default <name>"),
+    ("🔁", "tui.cfg.setup", "cfg:setup", "gmlw init"),
+)
+_TOP_MENU = (
+    ("🗂", "tui.job", "menu:job", ""),
+    ("⚙", "tui.workflow", "menu:workflow", ""),
+    ("🎛", "tui.config", "menu:config", ""),
+    ("🚪", "tui.quit", "quit", ""),
+)
+
+
+def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[_Item]:
+    """Resolve a menu spec into localised rows (subtitle key = title key + ``.d``)."""
+    t = i18n.active().t
+    return [
+        _Item(icon, t(key), t(f"{key}.d"), action, example) for icon, key, action, example in rows
+    ]
 
 
 class _Row(ListItem):
@@ -202,7 +176,7 @@ class _Row(ListItem):
         self._label.update(self._markup(icon, self.item))
 
 
-class _SpikeScreen(Screen[None]):
+class _MenuScreen(Screen[None]):
     """A menu screen: a header, a rich list, a live detail panel, and a key-hints bar.
 
     Subclasses supply the header and rows and override ``handle`` to act on a selection.
@@ -219,9 +193,9 @@ class _SpikeScreen(Screen[None]):
     _flash: str | None = None
 
     @property
-    def spike_app(self) -> SpikeMenuApp:
-        """The owning app, narrowed from Textual's generic ``App`` to :class:`SpikeMenuApp`."""
-        return cast("SpikeMenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
     def menu_items(self) -> list[_Item]:
         """The rows for this screen (overridden by dynamic screens like the job picker)."""
@@ -245,10 +219,10 @@ class _SpikeScreen(Screen[None]):
         if items:
             yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
         else:
-            yield Static("Nothing here yet.", id="empty")
+            yield Static(i18n.active().t("tui.empty"), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
-            yield Static(_KEYS, id="keys")
+            yield Static(i18n.active().t("tui.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
@@ -286,76 +260,76 @@ class _SpikeScreen(Screen[None]):
         self._stub(item)
 
     def _stub(self, item: _Item) -> None:
-        self.query_one("#detail", Static).update(
-            f"'{item.title}' isn't wired in this spike — try Job > Resume (the live path)."
-        )
-        self.spike_app.bell()
+        self.query_one("#detail", Static).update(i18n.active().t("tui.stub", title=item.title))
+        self.menu_app.bell()
 
     def action_back(self) -> None:
         """Pop back to the previous screen."""
-        self.spike_app.pop_screen()
+        self.menu_app.pop_screen()
 
     def action_quit_app(self) -> None:
         """Leave gmlw with no choice."""
-        self.spike_app.exit(None)
+        self.menu_app.exit(None)
 
 
-class TopMenuScreen(_SpikeScreen):
+class TopMenuScreen(_MenuScreen):
     """The front door: Job · Workflow · Config · Quit, under the banner."""
 
     show_banner = True
 
     def menu_items(self) -> list[_Item]:
         """The object rows: Job, Workflow, Config, Quit."""
-        return _TOP_MENU
+        return _menu(_TOP_MENU)
 
     def handle(self, item: _Item) -> None:
         """Quit, or open the Job/Workflow/Config sub-menu."""
         if item.action == "quit":
-            self.spike_app.exit(None)
+            self.menu_app.exit(None)
         elif item.action == "menu:job":
-            self.spike_app.push_screen(JobMenuScreen())
+            self.menu_app.push_screen(JobMenuScreen())
         elif item.action == "menu:workflow":
-            self.spike_app.push_screen(WorkflowMenuScreen())
+            self.menu_app.push_screen(WorkflowMenuScreen())
         elif item.action == "menu:config":
-            self.spike_app.push_screen(ConfigMenuScreen())
+            self.menu_app.push_screen(ConfigMenuScreen())
 
     def action_back(self) -> None:
         """At the front door, Back leaves gmlw (there is nothing to pop to)."""
-        self.spike_app.exit(None)
+        self.menu_app.exit(None)
 
 
-class JobMenuScreen(_SpikeScreen):
+class JobMenuScreen(_MenuScreen):
     """The Job object's verbs. Resume is the one wired to launch."""
 
-    crumb = "gmlw > Job"
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job (localised)."""
+        return f"gmlw > {i18n.active().t('tui.job')}"
 
     def menu_items(self) -> list[_Item]:
         """The Job verbs."""
-        return _JOB_MENU
+        return _menu(_JOB_MENU)
 
     def handle(self, item: _Item) -> None:
         """Resume launches; the other Job verbs are stubbed."""
         if item.action == "job:resume":
-            self.spike_app.push_screen(JobPickerScreen())
+            self.menu_app.push_screen(JobPickerScreen())
         else:
             self._stub(item)
 
 
-class WorkflowMenuScreen(_SpikeScreen):
-    """The Workflow object's verbs (all stubbed in the spike)."""
+class WorkflowMenuScreen(_MenuScreen):
+    """The Workflow object's verbs (placeholders until built out)."""
 
-    crumb = "gmlw > Workflow"
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Workflow (localised)."""
+        return f"gmlw > {i18n.active().t('tui.workflow')}"
 
     def menu_items(self) -> list[_Item]:
         """The Workflow verbs."""
-        return _WORKFLOW_MENU
+        return _menu(_WORKFLOW_MENU)
 
 
-class ConfigMenuScreen(_SpikeScreen):
+class ConfigMenuScreen(_MenuScreen):
     """The Config verbs. The switchers (Persona/Environment/Role) are wired; rest are stubs."""
-
-    crumb = "gmlw > Config"
 
     # Config verb -> switcher key injected on the app.
     _SWITCHERS: ClassVar[dict[str, str]] = {
@@ -364,20 +338,24 @@ class ConfigMenuScreen(_SpikeScreen):
         "cfg:role": "role",
     }
 
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Config (localised)."""
+        return f"gmlw > {i18n.active().t('tui.config')}"
+
     def menu_items(self) -> list[_Item]:
         """The Config verbs."""
-        return _CONFIG_MENU
+        return _menu(_CONFIG_MENU)
 
     def handle(self, item: _Item) -> None:
         """A switcher verb opens its picker; the other Config verbs are stubbed."""
         key = self._SWITCHERS.get(item.action)
-        if key is not None and key in self.spike_app.switchers:
-            self.spike_app.push_screen(SwitcherScreen(key))
+        if key is not None and key in self.menu_app.switchers:
+            self.menu_app.push_screen(SwitcherScreen(key))
         else:
             self._stub(item)
 
 
-class SwitcherScreen(_SpikeScreen):
+class SwitcherScreen(_MenuScreen):
     """Generic "pick one, set a config key" browser (Persona / Environment / Role).
 
     A *browser* -- unlike the launchers, it stays in the TUI. Selecting a row calls the
@@ -393,7 +371,7 @@ class SwitcherScreen(_SpikeScreen):
 
     @property
     def _switcher(self) -> Switcher:
-        return self.spike_app.switchers[self._key]
+        return self.menu_app.switchers[self._key]
 
     def header_text(self) -> str:
         """The switcher's own breadcrumb (e.g. ``gmlw > Config > Environment``)."""
@@ -413,7 +391,8 @@ class SwitcherScreen(_SpikeScreen):
             for c in self._switcher.choices
         ]
         if self._switcher.create is not None:
-            new_row = _Item("➕", "New…", "Create a new one from a name", "switch:new")  # noqa: RUF001
+            t = i18n.active().t
+            new_row = _Item("➕", t("tui.new"), t("tui.new.d"), "switch:new")  # noqa: RUF001
             items.append(new_row)
         return items
 
@@ -426,7 +405,7 @@ class SwitcherScreen(_SpikeScreen):
     def handle(self, item: _Item) -> None:
         """Set the picked value, or open the create form for the "New…" row."""
         if item.action == "switch:new":
-            self.spike_app.push_screen(CreateAxisScreen(self._key), self._on_created)
+            self.menu_app.push_screen(CreateAxisScreen(self._key), self._on_created)
             return
         if item.action != "switch:set":
             return
@@ -448,10 +427,10 @@ class SwitcherScreen(_SpikeScreen):
         switcher = self._switcher
         switcher.choices.append(choice)
         switcher.current = choice.value
-        self.spike_app.pop_screen()
+        self.menu_app.pop_screen()
         reopened = SwitcherScreen(self._key)
-        reopened._flash = f"✓ created and switched to '{choice.label}'"
-        self.spike_app.push_screen(reopened)
+        reopened._flash = i18n.active().t("tui.create.done", label=choice.label)
+        self.menu_app.push_screen(reopened)
 
     def _mark_current(self) -> None:
         """Refresh every option row's dot to reflect the current value (in place)."""
@@ -478,15 +457,16 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
 
     @property
     def _switcher(self) -> Switcher:
-        return cast("SpikeMenuApp", self.app).switchers[self._key]  # pyright: ignore[reportUnknownMemberType]
+        return cast("MenuApp", self.app).switchers[self._key]  # pyright: ignore[reportUnknownMemberType]
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the name input, a status line, and the key hints."""
-        yield Static(f"{self._switcher.crumb} > New", id="crumb")
-        yield Input(placeholder="name (e.g. Client Project)", id="name")
+        t = i18n.active().t
+        yield Static(f"{self._switcher.crumb} > {t('tui.new')}", id="crumb")
+        yield Input(placeholder=t("tui.create.placeholder"), id="name")
         with Container(id="status"):
-            yield Static("Type a name, then Enter to create. Esc to cancel.", id="detail")
-            yield Static("⏎ create · Esc cancel", id="keys")
+            yield Static(t("tui.create.hint"), id="detail")
+            yield Static(t("tui.create.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can just start typing."""
@@ -508,26 +488,30 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
         self.dismiss(None)
 
 
-class JobPickerScreen(_SpikeScreen):
+class JobPickerScreen(_MenuScreen):
     """Resume step: pick a job; selecting one hands the resume choice back to the wiring."""
 
-    crumb = "gmlw > Job > Resume"
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Resume (localised)."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')}"
 
     def menu_items(self) -> list[_Item]:
         """One row per resumable job, carrying the job id as payload."""
+        t = i18n.active().t
         return [
-            _Item("⏵", j.job, f"{j.session_count} sessions", "pick", payload=j.job)
-            for j in self.spike_app.jobs
+            _Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
+            for j in self.menu_app.jobs
         ]
 
     def handle(self, item: _Item) -> None:
         """A picked job becomes the resume choice handed back to the wiring."""
         if item.action == "pick":
-            self.spike_app.exit(MenuChoice(action="resume", job=item.payload))
+            self.menu_app.exit(MenuChoice(action="resume", job=item.payload))
 
 
-class SpikeMenuApp(App[MenuChoice | None]):
-    """The spike front-end. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
+class MenuApp(App[MenuChoice | None]):
+    """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
     The job list is injected (not read from a store) so the app has no outbound dependency
     and tests can drive it with a fixture list.

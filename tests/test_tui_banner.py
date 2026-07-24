@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""SPIKE: the launch banner derives its version and client list (no drift)."""
+"""Tests: the launch banner derives its version and client list (no drift)."""
 
 from __future__ import annotations
 
