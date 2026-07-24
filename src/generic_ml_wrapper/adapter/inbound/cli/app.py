@@ -798,18 +798,25 @@ def _run_init() -> int:
     _announce_init(build_init().execute())
     _announce_migration(build_migrate_layout().execute())
     _announce_slug_migration(build_migrate_slugs().execute())
+    print(i18n.t("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
     return 0
 
 
 def _index() -> int:
-    """Bare ``gmlw``: run the forced setup on a fresh install, else show the index.
+    """Bare ``gmlw``: run the forced setup on a fresh install, else open the interactive menu.
 
-    Mirrors the gate's first-run behaviour (init once, then the layout migration) so a
-    brand-new user is set up; on an initialised install it prints the grouped capability
-    index instead of the raw argparse help.
+    First run wins over everything — a brand-new user is funnelled through init before any
+    menu. Once initialised, bare ``gmlw`` becomes the front door: on a terminal it opens the
+    ``gmlw tui`` menu; off a terminal ``_tui`` falls back to the plain capability index, so a
+    piped/scripted ``gmlw`` never blocks on a menu.
     """
-    if config.init_version() is None:  # first run — funnel through the forced setup
+    if config.init_version() is None:  # first run — setup must win over the menu
         return _run_init()
+    return _tui()
+
+
+def _capability_index() -> int:
+    """Print the grouped capability index — the non-TTY fallback for bare ``gmlw``/``tui``."""
     print(render_index(i18n.active()))
     return 0
 
@@ -1067,7 +1074,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
     blocks on a menu" contract.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return _index()
+        return _capability_index()  # never the menu off a TTY; never recurse back into _index
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
         ClientRow,
         ConfigCatalog,

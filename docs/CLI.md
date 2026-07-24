@@ -231,10 +231,11 @@ status line is installed and parsed.
 
 ## tui
 
-Open the interactive, full-screen menu — an opt-in alternative to the flag CLI. It is
+Open the interactive, full-screen menu — an alternative to the flag CLI. It is
 object-first (**Job · Workflow · Config**), you navigate with the arrow keys, and each row
-shows the equivalent command. Bare `gmlw` is unchanged; the menu is only entered via
-`gmlw tui`.
+shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too** (once
+initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
+capability index.
 
 ```
 gmlw tui
@@ -489,9 +490,11 @@ gmlw help <topic>
 - `topic` (positional, optional) — one of `job-vs-workflow`, `start-vs-run`, `personas`,
   `cost`. Omit to list the topics. An unknown topic exits non-zero with guidance.
 
-Bare `gmlw` (no arguments) is first-run-aware: on a fresh install it runs `init`;
-thereafter it prints a grouped capability index (**launch / inspect / author**) with a
-next-action footer. The flat argparse view is still available via `gmlw --help`.
+Bare `gmlw` (no arguments) is first-run-aware: on a fresh install it runs `init` (which,
+at the end, tells you how to re-run setup from the menu). Once initialised, on a terminal
+it opens the interactive menu (`gmlw tui`); off a terminal (piped/redirected) it prints a
+grouped capability index (**launch / inspect / author**) with a next-action footer. The
+flat argparse view is still available via `gmlw --help`.
 
 ---
 

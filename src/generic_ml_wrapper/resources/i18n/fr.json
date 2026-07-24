@@ -62,6 +62,7 @@
   "init.announce.client": "gmlw : client par défaut « {client} ». Modifiez-le dans ~/.gmlw/config.toml.",
   "init.announce.no_client": "gmlw : aucun client pris en charge trouvé dans votre PATH (claude, cursor-agent, codex, vibe). Installez-en un ou définissez [client] default dans ~/.gmlw/config.toml.",
   "init.announce.persona": "gmlw : persona « {persona} » sélectionnée — elle vous accueillera au lancement.",
+  "init.reinit_hint": "gmlw : vous pouvez relancer cette configuration à tout moment depuis le menu — gmlw tui > Config > Setup.",
   "jobs.none": "Aucun job pour l'instant. Démarrez-en un avec : gmlw start <job>",
   "jobs.count": "{count} job(s) :",
   "jobs.row": "  {job}  {count} session(s)",

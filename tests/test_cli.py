@@ -248,6 +248,50 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     assert seen == ["init"]
 
 
+class _FreshInit(Init):
+    def execute(self) -> InitOutcome:
+        return InitOutcome(
+            fresh=True,
+            language="en",
+            name="Dan",
+            role=AxisSelection("default", "Default", "Default"),
+            environment=AxisSelection("work", "Work", "Work"),
+            client="claude",
+            persona=None,
+            found=["claude"],
+        )
+
+
+def test_bare_gmlw_on_a_tty_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Initialised install: bare gmlw is the front door — it redirects to the interactive menu
+    # (on a real terminal; off one, _tui itself falls back to the capability index).
+    called: list[str] = []
+    monkeypatch.setattr(app, "_tui", lambda: (called.append("tui"), 0)[1])
+    assert app.main([]) == 0
+    assert called == ["tui"]
+
+
+def test_bare_gmlw_fresh_install_runs_init_not_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # First run must win over the menu redirect: init runs, _tui is never reached.
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    tui_called: list[str] = []
+    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui"))  # must not be called
+    assert app.main([]) == 0
+    assert tui_called == []
+
+
+def test_init_prints_the_reinit_hint(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The end of init tells the user how to re-run setup from the menu.
+    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    assert app.main(["init"]) == 0
+    err = capsys.readouterr().err
+    assert "Config > Setup" in err  # names the specific menu chain
+    assert "gmlw tui" in err
+
+
 def test_help_lists_topics(capsys: pytest.CaptureFixture[str]) -> None:
     assert app.main(["help"]) == 0
     out = capsys.readouterr().out
