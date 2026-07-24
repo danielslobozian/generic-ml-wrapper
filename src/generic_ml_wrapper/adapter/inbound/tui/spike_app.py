@@ -23,7 +23,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container
 from textual.screen import Screen
-from textual.widgets import Label, ListItem, ListView, Static
+from textual.widgets import Input, Label, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 
@@ -63,19 +63,34 @@ class SwitchChoice:
     description: str
 
 
+@dataclass(frozen=True)
+class CreateOutcome:
+    """The result of a create-from-label attempt handed back by the injected ``create``.
+
+    On success ``choice`` is the new option to add and select; on failure it is ``None``
+    (a bad label or a collision) and ``message`` explains why. Either way ``message`` is
+    shown in the panel.
+    """
+
+    choice: SwitchChoice | None
+    message: str
+
+
 @dataclass
 class Switcher:
-    """A "pick one, set a config key" screen's data: its rows, current value, and setter.
+    """A "pick one, set a config key" screen's data: its rows, current value, and setters.
 
     Mutable because ``current`` moves as the user switches. ``apply`` persists the chosen
-    value and returns a one-line confirmation; it is the only outbound call, injected by the
-    wiring so the app stays free of use-case imports.
+    value; ``create`` (when set) creates a new option from a typed label and makes it
+    current. Both are the only outbound calls, injected by the wiring so the app stays free
+    of use-case imports. ``create`` is ``None`` for axes that cannot be created (personas).
     """
 
     crumb: str
     choices: list[SwitchChoice]
     current: str | None
     apply: Callable[[str], str]
+    create: Callable[[str], CreateOutcome] | None = None
 
 
 @dataclass(frozen=True)
@@ -199,6 +214,9 @@ class _SpikeScreen(Screen[None]):
     ]
     crumb: ClassVar[str] = "gmlw"
     show_banner: ClassVar[bool] = False
+    # A one-shot detail message the next detail-sync shows instead of the cursor's row,
+    # then clears -- so a confirmation survives a programmatic cursor move.
+    _flash: str | None = None
 
     @property
     def spike_app(self) -> SpikeMenuApp:
@@ -233,8 +251,11 @@ class _SpikeScreen(Screen[None]):
             yield Static(_KEYS, id="keys")
 
     def on_mount(self) -> None:
-        """Prime the detail panel for the first highlighted row."""
+        """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
         self._sync_detail()
+        if self._flash is not None:  # written after the initial-highlight sync, so it survives
+            message, self._flash = self._flash, None
+            self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
 
     def on_list_view_highlighted(self, _event: ListView.Highlighted) -> None:
         """Follow the cursor: show the highlighted row's description and CLI equivalent."""
@@ -379,9 +400,9 @@ class SwitcherScreen(_SpikeScreen):
         return self._switcher.crumb
 
     def menu_items(self) -> list[_Item]:
-        """One row per option; the active one (by value) is marked with a filled dot."""
+        """One row per option (active one dotted), then a "New…" row when creatable."""
         current = self._switcher.current
-        return [
+        items = [
             _Item(
                 "●" if c.value == current else "○",
                 c.label,
@@ -391,6 +412,10 @@ class SwitcherScreen(_SpikeScreen):
             )
             for c in self._switcher.choices
         ]
+        if self._switcher.create is not None:
+            new_row = _Item("➕", "New…", "Create a new one from a name", "switch:new")  # noqa: RUF001
+            items.append(new_row)
+        return items
 
     def initial_index(self) -> int:
         """Open with the cursor on the active option, not the first row."""
@@ -399,18 +424,88 @@ class SwitcherScreen(_SpikeScreen):
         return values.index(current) if current in values else 0
 
     def handle(self, item: _Item) -> None:
-        """Persist the picked value, move the dot in place, and confirm in the panel."""
+        """Set the picked value, or open the create form for the "New…" row."""
+        if item.action == "switch:new":
+            self.spike_app.push_screen(CreateAxisScreen(self._key), self._on_created)
+            return
         if item.action != "switch:set":
             return
         switcher = self._switcher
         message = switcher.apply(item.payload)
         switcher.current = item.payload
-        # Update each row's dot in place -- rebuilding the list would reset the cursor to
-        # the top and drop the highlight. Selection doesn't move the cursor, so the detail
-        # update is safe to set directly (no follow-the-cursor sync will overwrite it).
-        for row in self.query_one("#menu", ListView).query(_Row):
-            row.set_icon("●" if row.item.payload == switcher.current else "○")
+        self._mark_current()
         self.query_one("#detail", Static).update(f"✓ {message}")
+
+    def _on_created(self, choice: SwitchChoice | None) -> None:
+        """A new option came back from the create form: add it and reopen on it.
+
+        Rather than surgically patch the live list (fragile against async mounting), record
+        the new option and replace this screen with a fresh switcher, which recomposes from
+        the updated data, opens the cursor on the new option, and flashes the confirmation.
+        """
+        if choice is None:  # cancelled, or the create failed and the user backed out
+            return
+        switcher = self._switcher
+        switcher.choices.append(choice)
+        switcher.current = choice.value
+        self.spike_app.pop_screen()
+        reopened = SwitcherScreen(self._key)
+        reopened._flash = f"✓ created and switched to '{choice.label}'"
+        self.spike_app.push_screen(reopened)
+
+    def _mark_current(self) -> None:
+        """Refresh every option row's dot to reflect the current value (in place)."""
+        current = self._switcher.current
+        for row in self.query_one("#menu", ListView).query(_Row):
+            if row.item.action == "switch:set":
+                row.set_icon("●" if row.item.payload == current else "○")
+
+
+class CreateAxisScreen(Screen["SwitchChoice | None"]):
+    """A one-field form: type a name, Enter creates the axis (via the injected ``create``).
+
+    The first text-entry screen in the app. On submit it calls the switcher's ``create``
+    callback; on success it dismisses with the new :class:`SwitchChoice` (the parent adds and
+    selects it), on failure it shows the reason and lets the user retype. Esc cancels.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, key: str) -> None:
+        """Bind the form to the switcher it creates into."""
+        super().__init__()
+        self._key = key
+
+    @property
+    def _switcher(self) -> Switcher:
+        return cast("SpikeMenuApp", self.app).switchers[self._key]  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the name input, a status line, and the key hints."""
+        yield Static(f"{self._switcher.crumb} > New", id="crumb")
+        yield Input(placeholder="name (e.g. Client Project)", id="name")
+        with Container(id="status"):
+            yield Static("Type a name, then Enter to create. Esc to cancel.", id="detail")
+            yield Static("⏎ create · Esc cancel", id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can just start typing."""
+        self.query_one("#name", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Create from the typed name; dismiss on success, explain and stay on failure."""
+        create = self._switcher.create
+        if create is None:
+            return
+        outcome = create(event.value)
+        if outcome.choice is not None:
+            self.dismiss(outcome.choice)
+        else:  # bad label or a collision -- keep the form so the user can fix it
+            self.query_one("#detail", Static).update(f"✗ {outcome.message}")
+
+    def action_cancel(self) -> None:
+        """Abandon the form without creating anything."""
+        self.dismiss(None)
 
 
 class JobPickerScreen(_SpikeScreen):
@@ -445,6 +540,7 @@ class SpikeMenuApp(App[MenuChoice | None]):
     Screen  { background: $background; }
     #banner { color: cyan; text-style: bold; padding: 1 1 0 1; height: auto; }
     #crumb  { dock: top; padding: 0 1; color: $text-muted; }
+    #name   { margin: 1 2; }
     #menu   { height: 1fr; background: transparent; }
     #empty  { height: 1fr; padding: 1 2; color: $text-muted; }
     #status { dock: bottom; height: auto; }

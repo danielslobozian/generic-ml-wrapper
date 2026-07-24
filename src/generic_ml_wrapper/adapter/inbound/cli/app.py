@@ -13,11 +13,9 @@ import os
 import platform
 import signal
 import sys
-import tomllib
 from collections.abc import Generator
 from dataclasses import asdict
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper import __version__
@@ -82,6 +80,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring.composition import (
+    build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
     build_config_commands,
@@ -232,7 +231,7 @@ def _version_string() -> str:
     return f"gmlw {__version__} (build {build_id})"
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative parser wiring)
     """Build the top-level argument parser.
 
     Returns:
@@ -986,34 +985,6 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
-def _axis_choices(root: Path) -> list[tuple[str, str, str]]:
-    """SPIKE: scan a role/environment root for slug-folders, reading each ``.about.toml``.
-
-    The folder name is the slug (the stored config value); the sidecar carries the human
-    ``label`` and ``description`` shown in the switcher. A real front-end would read these
-    through a use case; the spike scans directly.
-
-    Args:
-        root: The ``environments/`` or ``profile/roles/`` directory.
-
-    Returns:
-        One ``(slug, label, description)`` per folder, sorted by slug.
-    """
-    if not root.exists():
-        return []
-    choices: list[tuple[str, str, str]] = []
-    for folder in sorted(p for p in root.iterdir() if p.is_dir()):
-        label, description = folder.name, ""
-        about = folder / ".about.toml"
-        if about.exists():
-            with contextlib.suppress(OSError, tomllib.TOMLDecodeError):
-                data = tomllib.loads(about.read_text(encoding="utf-8"))
-                label = str(data.get("label", folder.name))
-                description = str(data.get("description", ""))
-        choices.append((folder.name, label, description))
-    return choices
-
-
 def _tui() -> int:
     """SPIKE: run the interactive menu, then hand off to the client outside the event loop.
 
@@ -1027,6 +998,7 @@ def _tui() -> int:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return _index()
     from generic_ml_wrapper.adapter.inbound.tui.spike_app import (  # noqa: PLC0415  spike-local
+        CreateOutcome,
         JobChoice,
         SpikeMenuApp,
         SwitchChoice,
@@ -1037,44 +1009,62 @@ def _tui() -> int:
         JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
     ]
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
-    # its options + current value and injects a setter that persists one key. The app stays
-    # pure -- it never imports a use case; the wiring owns every outbound call.
+    # its options + current value and injects an ``apply`` setter and, for the folder-backed
+    # axes, a ``create``. The app stays pure -- the wiring owns every outbound call.
     config_commands = build_config_commands()
+    catalog = build_axis_catalog()
 
-    def _switcher(crumb: str, key: str, noun: str, choices: list[SwitchChoice]) -> Switcher:
+    def _switcher(
+        crumb: str, key: str, noun: str, choices: list[SwitchChoice], kind: AxisKind | None = None
+    ) -> Switcher:
         current = config_commands.get(key).value
 
         def apply(value: str) -> str:  # spike copy is English, like the rest of the menu
             changed = config_commands.set(key, value).changed
             return f"{noun} set to '{value}'" if changed else f"{noun} already '{value}'"
 
+        def create(label: str) -> CreateOutcome:
+            try:  # create + make it the default, so "New" from the switcher also switches
+                result = build_create_axis().execute(
+                    CreateAxisCommand(kind=cast(AxisKind, kind), label=label, make_default=True)
+                )
+            except AxisLabelError:
+                return CreateOutcome(None, "please enter a usable name")
+            except AxisExistsError:
+                return CreateOutcome(None, f"a {noun} named that already exists")
+            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), f"created '{label}'")
+
         return Switcher(
             crumb=crumb,
             choices=choices,
             current=current if isinstance(current, str) else None,
             apply=apply,
+            create=None if kind is None else create,
         )
 
     personas = [
         SwitchChoice(p.name, p.name, p.description) for p in build_list_personas().execute()
     ]
-    environments = [SwitchChoice(s, label, d) for s, label, d in _axis_choices(paths.ENVIRONMENTS)]
-    roles = [SwitchChoice(s, label, d) for s, label, d in _axis_choices(paths.PROFILE / "roles")]
+    environments = [
+        SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ENVIRONMENT)
+    ]
+    roles = [SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ROLE)]
 
     switchers: dict[str, Switcher] = {}
     if personas:
         switchers["persona"] = _switcher(
             "gmlw > Config > Persona", "companion.persona", "persona", personas
         )
-    if environments:
-        switchers["environment"] = _switcher(
-            "gmlw > Config > Environment",
-            "profile.default_environment",
-            "environment",
-            environments,
-        )
-    if roles:
-        switchers["role"] = _switcher("gmlw > Config > Role", "profile.default_role", "role", roles)
+    switchers["environment"] = _switcher(
+        "gmlw > Config > Environment",
+        "profile.default_environment",
+        "environment",
+        environments,
+        AxisKind.ENVIRONMENT,
+    )
+    switchers["role"] = _switcher(
+        "gmlw > Config > Role", "profile.default_role", "role", roles, AxisKind.ROLE
+    )
 
     choice = SpikeMenuApp(jobs, switchers=switchers).run()  # blocks; terminal restored on return
     if choice is None or choice.action != "resume" or choice.job is None:
