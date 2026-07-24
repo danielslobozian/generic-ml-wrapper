@@ -1,20 +1,26 @@
-# Publish to PyPI via Trusted Publishing (OIDC) on a version tag (e.g. v0.5.0). No token
-# or secret: PyPI trusts this exact repo + workflow + environment, and GitHub mints a
-# short-lived OIDC credential for the upload. Release flow (matches generic-ml-cache):
-# bump VERSION + CHANGELOG on a release branch, merge to main, then tag the head. Every
+# Publish to PyPI via Trusted Publishing (OIDC) when a GitHub Release is published. No
+# token or secret: PyPI trusts this exact repo + workflow (release.yml) + environment
+# (pypi), and GitHub mints a short-lived OIDC credential for the upload -- so switching
+# the trigger from tag-push to release-published needs NO PyPI-side change (the trust is
+# keyed on the filename + environment, both unchanged).
+#
+# Release flow: bump VERSION + CHANGELOG on a release branch, merge to main, then publish
+# a GitHub Release whose tag (vX.Y.Z) points at main's head. The Release is the front door
+# -- it carries the human notes and creates the tag; this workflow reacts to it. Every
 # build-time input is pinned (Actions by commit SHA, uv by [tool.uv] required-version).
 name: release
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
 
 permissions:
   contents: read
 
 jobs:
-  # Fail fast if the tag does not match VERSION, so a mistagged release (e.g. v0.5.0
-  # pointing at a commit still on 0.4.0) never builds and publishes the wrong version.
+  # Fail fast if the Release's tag does not match VERSION, so a mistagged release (e.g.
+  # a v0.7.0 Release cut against a commit still on 0.6.0) never builds and publishes the
+  # wrong version. On a release event GITHUB_REF_NAME is the tag the Release points at.
   guard:
     name: Tag matches version
     runs-on: ubuntu-latest
