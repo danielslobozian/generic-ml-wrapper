@@ -15,6 +15,9 @@ from textual.pilot import Pilot
 from textual.widgets import Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
+    ConfigCatalog,
+    ConfigSetResult,
+    ConfigSetting,
     CreateOutcome,
     JobChoice,
     MenuApp,
@@ -376,3 +379,193 @@ def test_new_job_cancel_returns_to_the_job_menu() -> None:
     asyncio.run(scenario())
     assert seen["running"] is True
     assert seen["has_menu"] is True
+
+
+# --- Config Get / Set (the type-to-filter settings picker + value editors) ---------------
+
+_SETTINGS = [
+    ConfigSetting("client.default", "claude", "claude", "str", None, "which client to wrap"),
+    ConfigSetting(
+        "logging.level",
+        "warning",
+        "warning",
+        "choice",
+        ("debug", "info", "warning", "error"),
+        "log verbosity",
+    ),
+    ConfigSetting("hints.show", "true", "true", "bool", None, "show usage hints"),
+    ConfigSetting("companion.name", "(unset)", "(unset)", "str?", None, "your name"),
+]
+
+
+def _config_catalog(
+    apply: Callable[[str, str], ConfigSetResult] | None = None,
+) -> ConfigCatalog:
+    """A fresh config catalog (its settings list is mutable -- never share it across tests)."""
+    settings = [
+        ConfigSetting(s.key, s.value, s.default, s.type_name, s.choices, s.description)
+        for s in _SETTINGS
+    ]
+    return ConfigCatalog(
+        crumb="gmlw > Config",
+        settings=settings,
+        apply=apply or (lambda key, raw: ConfigSetResult(ok=True, message=f"set {key}", value=raw)),
+    )
+
+
+async def _open_config_get(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Config → Get (Config row index 1)."""
+    await pilot.press("down", "down", "enter")  # → Config
+    await pilot.press("down", "enter")  # → Get picker
+    await pilot.pause()
+
+
+async def _open_config_set(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Config → Set (Config row index 2)."""
+    await pilot.press("down", "down", "enter")  # → Config
+    await pilot.press("down", "down", "enter")  # → Set picker
+    await pilot.pause()
+
+
+def test_config_get_filter_narrows_the_list_by_key() -> None:
+    """Typing into the focused filter live-narrows the settings to the matching keys."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog())
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_get(pilot)
+            await pilot.press("l", "o", "g")  # types into the filter (proves it holds focus)
+            await pilot.pause()
+            seen["keys"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["keys"] == ["logging.level"]  # only the key containing "log" survives
+
+
+def test_config_get_shows_the_value_in_the_detail_panel() -> None:
+    """The picker opens on the first setting and its value/default render in the detail panel."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog())
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_get(pilot)
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert "claude" in str(seen["detail"])  # client.default's value/default
+
+
+def test_config_set_bool_picks_a_value_and_applies_it() -> None:
+    """Set → filter to a bool → pick 'false' → the injected apply is called with (key, 'false')."""
+    calls: list[tuple[str, str]] = []
+
+    def apply(key: str, raw: str) -> ConfigSetResult:
+        calls.append((key, raw))
+        return ConfigSetResult(ok=True, message="ok", value=raw)
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog(apply))
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_set(pilot)
+            await pilot.press("h", "i", "n", "t", "s")  # filter → hints.show (the bool)
+            await pilot.pause()
+            await pilot.press("enter")  # open the value editor (bool → choice screen)
+            await pilot.pause()
+            await pilot.press("down", "enter")  # current is 'true' (row 0); pick 'false' (row 1)
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert calls == [("hints.show", "false")]
+
+
+def test_config_set_choice_picks_from_the_allowed_values() -> None:
+    """Set a 'choice' setting: logging.level → 'debug' via the pick-list."""
+    calls: list[tuple[str, str]] = []
+
+    def apply(key: str, raw: str) -> ConfigSetResult:
+        calls.append((key, raw))
+        return ConfigSetResult(ok=True, message="ok", value=raw)
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog(apply))
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_set(pilot)
+            await pilot.press("l", "o", "g")  # filter → logging.level
+            await pilot.pause()
+            await pilot.press("enter")  # open the choice screen (opens on 'warning', row 2)
+            await pilot.pause()
+            await pilot.press("up", "up", "enter")  # warning(2) → info(1) → debug(0)
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert calls == [("logging.level", "debug")]
+
+
+def test_config_set_str_types_a_value_and_applies_it() -> None:
+    """Set a free-text setting: type a value in the input form and submit it."""
+    calls: list[tuple[str, str]] = []
+
+    def apply(key: str, raw: str) -> ConfigSetResult:
+        calls.append((key, raw))
+        return ConfigSetResult(ok=True, message="ok", value=raw)
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog(apply))
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_set(pilot)
+            await pilot.press("n", "a", "m", "e")  # filter → companion.name (str?)
+            await pilot.pause()
+            await pilot.press("enter")  # open the input form
+            await pilot.pause()
+            app.screen.query_one("#value", Input).value = "Ada"
+            await pilot.press("enter")  # submit
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert calls == [("companion.name", "Ada")]
+
+
+def test_config_set_rejected_value_keeps_the_form_and_shows_the_reason() -> None:
+    """A rejected set keeps the input form open and surfaces the message."""
+    seen: dict[str, object] = {}
+
+    def apply(_key: str, _raw: str) -> ConfigSetResult:
+        return ConfigSetResult(ok=False, message="invalid value")
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog(apply))
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_set(pilot)
+            await pilot.press("c", "l", "i", "e", "n", "t")  # filter → client.default (str)
+            await pilot.pause()
+            await pilot.press("enter")  # open the input form
+            await pilot.pause()
+            app.screen.query_one("#value", Input).value = "bogus"
+            await pilot.press("enter")  # submit → rejected
+            await pilot.pause()
+            seen["on_form"] = bool(app.screen.query("#value"))  # form still up
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["on_form"] is True
+    assert "invalid value" in str(seen["detail"])
+
+
+def test_config_get_set_are_stubbed_when_unwired() -> None:
+    """With no config injected, Config → Get falls through to the stub (no picker opens)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)  # no config catalog
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("down", "down", "enter")  # → Config
+            await pilot.press("down", "enter")  # → Get (stubbed)
+            await pilot.pause()
+            seen["has_filter"] = bool(app.screen.query("#filter"))  # no picker mounted
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["has_filter"] is False
+    assert "isn't wired yet" in str(seen["detail"])

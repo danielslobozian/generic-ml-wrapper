@@ -1015,6 +1015,9 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return _index()
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
+        ConfigCatalog,
+        ConfigSetResult,
+        ConfigSetting,
         CreateOutcome,
         JobChoice,
         MenuApp,
@@ -1094,6 +1097,39 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
     )
     switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
 
+    # Config Get/Set: the settings snapshot + a setter, injected like the switchers. The picker
+    # reads the snapshot; a set goes through the same ConfigCommands.set the CLI's `config set`
+    # uses (values/defaults pre-rendered through _setting_value so the app stays format-free).
+    loc = i18n.active()
+
+    def _config_settings() -> list[ConfigSetting]:
+        return [
+            ConfigSetting(
+                key=view.key,
+                value=_setting_value(view.value, loc),
+                default=_setting_value(view.default, loc),
+                type_name=view.type_name,
+                choices=view.choices,
+                description=view.description,
+            )
+            for view in config_commands.list()
+        ]
+
+    def _apply_setting(key: str, raw: str) -> ConfigSetResult:
+        try:  # a value out of range keeps the editor open with the localised reason
+            outcome = config_commands.set(key, raw)
+        except settings_registry.InvalidSettingValueError as error:
+            return ConfigSetResult(ok=False, message=i18n.t("error.generic", error=error))
+        return ConfigSetResult(
+            ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
+        )
+
+    config_catalog = ConfigCatalog(
+        crumb=f"gmlw > {t('tui.config')}",
+        settings=_config_settings(),
+        apply=_apply_setting,
+    )
+
     def _validate_job(name: str) -> str | None:  # in-form validation before any teardown
         try:
             JobId(name)
@@ -1107,6 +1143,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         switchers=switchers,
         validate_job=_validate_job,
         sessions_for=_sessions_for,
+        config=config_catalog,
         current_client=client,
     ).run()  # blocks; terminal restored on return
     if choice is None or choice.job is None or choice.action not in ("start", "resume"):

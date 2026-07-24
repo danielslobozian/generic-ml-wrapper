@@ -120,6 +120,53 @@ class Switcher:
     create: Callable[[str], CreateOutcome] | None = None
 
 
+@dataclass
+class ConfigSetting:
+    """One setting the Config Get/Set browsers show: what it is and its current value.
+
+    All display fields are pre-rendered by the wiring (``value``/``default`` already read
+    through the CLI's ``_setting_value``), so the app stays free of formatting concerns.
+    ``value`` is mutable: a successful set patches it in place so the picker reflects the
+    change without a re-read. ``type_name`` (``str`` / ``str?`` / ``bool`` / ``choice``) and
+    ``choices`` pick which value editor Set opens.
+    """
+
+    key: str
+    value: str
+    default: str
+    type_name: str
+    choices: tuple[str, ...] | None
+    description: str
+
+
+@dataclass(frozen=True)
+class ConfigSetResult:
+    """The outcome of a set attempt handed back by the injected ``apply``.
+
+    ``ok`` is ``False`` for a rejected value (the editor keeps the screen and shows
+    ``message``); on success ``value`` is the new rendered value the catalog is patched with.
+    Either way ``message`` is the localised line shown to the user.
+    """
+
+    ok: bool
+    message: str
+    value: str = ""
+
+
+@dataclass
+class ConfigCatalog:
+    """The settings the Config Get/Set browsers read, plus the setter they call.
+
+    A *browser* bundle, injected by the wiring exactly like :class:`Switcher`: the app reads
+    ``settings`` and calls ``apply`` (the only outbound call), so it never imports a use case.
+    ``settings`` is mutable — a successful set patches the matching row's value in place.
+    """
+
+    crumb: str
+    settings: list[ConfigSetting]
+    apply: Callable[[str, str], ConfigSetResult]
+
+
 @dataclass(frozen=True)
 class _Item:
     """One menu row: an icon, a bold title, a dim subtitle, and what it does.
@@ -382,11 +429,17 @@ class ConfigMenuScreen(_MenuScreen):
         """The Config verbs."""
         return _menu(_CONFIG_MENU)
 
+    # Config verb -> the mode its type-to-filter settings picker opens in.
+    _PICKERS: ClassVar[dict[str, str]] = {"cfg:get": "get", "cfg:set": "set"}
+
     def handle(self, item: _Item) -> None:
-        """A switcher verb opens its picker; the other Config verbs are stubbed."""
+        """A switcher verb opens its picker, Get/Set the settings picker; the rest are stubs."""
         key = self._SWITCHERS.get(item.action)
+        mode = self._PICKERS.get(item.action)
         if key is not None and key in self.menu_app.switchers:
             self.menu_app.push_screen(SwitcherScreen(key))
+        elif mode is not None and self.menu_app.config is not None:
+            self.menu_app.push_screen(ConfigPickerScreen(mode))
         else:
             self._stub(item)
 
@@ -522,6 +575,247 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
     def action_cancel(self) -> None:
         """Abandon the form without creating anything."""
         self.dismiss(None)
+
+
+class ConfigPickerScreen(_MenuScreen):
+    """Type-to-filter the settings, to Get (read) or Set (change) one.
+
+    The app's first live-filtering list: a focused ``Input`` narrows the settings by key as
+    you type, while ``↑↓`` move the highlight and ``⏎`` acts on it. A *browser* -- it stays in
+    the TUI. In ``get`` mode selecting a row is a no-op (the detail panel already shows the
+    setting -- that *is* the read); in ``set`` mode it opens the value editor for the setting's
+    type (a pick-list for bool/choice, a text field for strings).
+    """
+
+    # The filter Input owns focus so typing always filters; ``q`` must therefore stay typable
+    # (no quit binding here). Up/Down/Enter are *priority* bindings so they act on the list
+    # before the Input can consume them; printable keys fall through to the Input.
+    BINDINGS: ClassVar[list[Binding]] = [
+        Binding("escape", "back", "Back"),
+        Binding("up", "cursor(-1)", "Up", show=False, priority=True),
+        Binding("down", "cursor(1)", "Down", show=False, priority=True),
+        Binding("enter", "pick", "Select", show=False, priority=True),
+    ]
+
+    def __init__(self, mode: str) -> None:
+        """Bind the picker to its mode (``"get"`` reads, ``"set"`` changes)."""
+        super().__init__()
+        self._mode = mode
+        self._filter = ""
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)  # pushed only when wired
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Config > Get|Set."""
+        t = i18n.active().t
+        verb = t("tui.cfg.get") if self._mode == "get" else t("tui.cfg.set")
+        return f"{self._config.crumb} > {verb}"
+
+    def compose(self) -> ComposeResult:
+        """Header, the filter input, the (live) settings list, then detail + key bar."""
+        t = i18n.active().t
+        yield Static(self.header_text(), id="crumb")
+        yield Input(placeholder=t("tui.cfg.filter.placeholder"), id="filter")
+        yield ListView(*(_Row(i) for i in self.menu_items()), id="menu")
+        with Container(id="status"):
+            yield Static("", id="detail")
+            yield Static(t("tui.cfg.filter.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Highlight the first match, prime the detail, and focus the filter for typing."""
+        menu = self.query_one("#menu", ListView)
+        if menu.children:
+            menu.index = 0
+        self._sync_detail()
+        self.query_one("#filter", Input).focus()
+
+    def menu_items(self) -> list[_Item]:
+        """One row per setting whose key contains the filter (case-insensitive; empty = all)."""
+        needle = self._filter.lower()
+        return [
+            _Item("🔧", s.key, s.description, "cfg:pick", payload=s.key, note=self._note(s))
+            for s in self._config.settings
+            if needle in s.key.lower()
+        ]
+
+    @staticmethod
+    def _note(setting: ConfigSetting) -> str:
+        """The detail line for a setting: current value, default, and any allowed values."""
+        t = i18n.active().t
+        note = t("tui.cfg.setting", value=setting.value, default=setting.default)
+        if setting.choices:
+            note += t("tui.cfg.setting.allowed", choices=", ".join(setting.choices))
+        return note
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Refilter the list as the user types."""
+        self._filter = event.value
+        self._rebuild()
+
+    def on_screen_resume(self) -> None:
+        """Returning from a value editor: rebuild (a set may have changed a value), then flash."""
+        self._rebuild()
+        if self._flash is not None:  # a confirmation queued by the editor before it popped
+            message, self._flash = self._flash, None
+            self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
+
+    def _rebuild(self) -> None:
+        """Rebuild the list rows from the current filter and settings, highlighting the first."""
+        menu = self.query_one("#menu", ListView)
+        menu.clear()
+        items = self.menu_items()
+        for item in items:
+            menu.append(_Row(item))
+        menu.index = 0 if items else None
+
+    def flash(self, message: str) -> None:
+        """Queue a one-shot confirmation to show when this picker is next resumed."""
+        self._flash = message
+
+    def action_cursor(self, delta: int) -> None:
+        """Move the highlight within the filtered list (the Input keeps focus)."""
+        menu = self.query_one("#menu", ListView)
+        count = len(menu.children)
+        if count:
+            menu.index = max(0, min(count - 1, (menu.index or 0) + delta))
+
+    def action_pick(self) -> None:
+        """Act on the highlighted row (Enter), if any."""
+        item = self._highlighted()
+        if item is not None:
+            self.handle(item)
+
+    def handle(self, item: _Item) -> None:
+        """Get: no-op (detail is the read). Set: open the value editor for the setting's type."""
+        if item.action != "cfg:pick" or self._mode == "get":
+            return
+        setting = next((s for s in self._config.settings if s.key == item.payload), None)
+        if setting is None:
+            return
+        if setting.choices is not None or setting.type_name == "bool":
+            self.menu_app.push_screen(ConfigChoiceScreen(item.payload))
+        else:
+            self.menu_app.push_screen(ConfigInputScreen(item.payload))
+
+
+class ConfigChoiceScreen(_MenuScreen):
+    """Set a constrained setting by picking a value: a bool (true/false) or a choice.
+
+    A short dotted list (``●`` current, ``○`` others), like the switchers. Enter applies via
+    the injected ``apply``, queues a confirmation on the picker, and pops back to it. A rejected
+    value (defensive -- the options are always valid) shows the reason and stays.
+    """
+
+    def __init__(self, key: str) -> None:
+        """Bind the screen to the setting it sets."""
+        super().__init__()
+        self._key = key
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)
+
+    def _setting(self) -> ConfigSetting:
+        return next(s for s in self._config.settings if s.key == self._key)
+
+    def _options(self) -> tuple[str, ...]:
+        setting = self._setting()
+        return setting.choices if setting.choices is not None else ("true", "false")
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Config > Set > <key>."""
+        return f"{self._config.crumb} > {i18n.active().t('tui.cfg.set')} > {self._key}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per allowed value, the current one dotted."""
+        current = self._setting().value
+        return [
+            _Item("●" if value == current else "○", value, "", "choice:set", payload=value)
+            for value in self._options()
+        ]
+
+    def initial_index(self) -> int:
+        """Open the cursor on the current value."""
+        options = list(self._options())
+        current = self._setting().value
+        return options.index(current) if current in options else 0
+
+    def handle(self, item: _Item) -> None:
+        """Apply the picked value; on success confirm on the picker and pop, else explain."""
+        if item.action != "choice:set":
+            return
+        result = self._config.apply(self._key, item.payload)
+        if not result.ok:
+            self.query_one("#detail", Static).update(f"✗ {result.message}")
+            return
+        self._setting().value = result.value
+        below = self.menu_app.screen_stack[-2]
+        if isinstance(below, ConfigPickerScreen):
+            below.flash(f"✓ {result.message}")
+        self.menu_app.pop_screen()
+
+
+class ConfigInputScreen(Screen[None]):
+    """Set a free-text setting (``str`` / ``str?``) by typing a value, modelled on NewJobScreen.
+
+    The current value and default are shown in the hint (an optional ``str?`` can be cleared
+    with an empty value or ``none``). Enter applies via the injected ``apply``: on success the
+    picker is flashed and this form pops; a rejected value (e.g. an empty required string) keeps
+    the form and shows the reason.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+
+    def __init__(self, key: str) -> None:
+        """Bind the form to the setting it sets."""
+        super().__init__()
+        self._key = key
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    @property
+    def _config(self) -> ConfigCatalog:
+        return cast("ConfigCatalog", self.menu_app.config)
+
+    def _setting(self) -> ConfigSetting:
+        return next(s for s in self._config.settings if s.key == self._key)
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the value input, a status line (current/default hint), and key hints."""
+        t = i18n.active().t
+        setting = self._setting()
+        yield Static(f"{self._config.crumb} > {t('tui.cfg.set')} > {self._key}", id="crumb")
+        yield Input(placeholder=t("tui.cfg.value.placeholder"), id="value")
+        optional = setting.type_name == "str?"
+        hint_key = "tui.cfg.value.hint.optional" if optional else "tui.cfg.value.hint"
+        with Container(id="status"):
+            yield Static(t(hint_key, value=setting.value, default=setting.default), id="detail")
+            yield Static(t("tui.cfg.value.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can just start typing."""
+        self.query_one("#value", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Apply the typed value; confirm and pop on success, explain and stay on failure."""
+        result = self._config.apply(self._key, event.value)
+        if not result.ok:
+            self.query_one("#detail", Static).update(f"✗ {result.message}")
+            return
+        self._setting().value = result.value
+        below = self.menu_app.screen_stack[-2]
+        if isinstance(below, ConfigPickerScreen):
+            below.flash(f"✓ {result.message}")
+        self.menu_app.pop_screen()
+
+    def action_cancel(self) -> None:
+        """Abandon the form without changing anything."""
+        self.menu_app.pop_screen()
 
 
 class NewJobScreen(Screen[None]):
@@ -688,13 +982,14 @@ class MenuApp(App[MenuChoice | None]):
     """
     TITLE = "gmlw"
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  (the app's injection seam: one kwarg per browser's data)
         self,
         jobs: list[JobChoice],
         *,
         switchers: dict[str, Switcher] | None = None,
         validate_job: Callable[[str], str | None] | None = None,
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
+        config: ConfigCatalog | None = None,
         current_client: str = "",
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
@@ -708,6 +1003,8 @@ class MenuApp(App[MenuChoice | None]):
                 ``None`` when it is acceptable; defaults to accepting anything (tests).
             sessions_for: Lists a job's sessions for the session picker (lazily, per job);
                 defaults to none.
+            config: The settings + setter the Config Get/Set browsers read and call; ``None``
+                leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
                 differs (resuming will launch the session's client, not this one).
         """
@@ -716,6 +1013,7 @@ class MenuApp(App[MenuChoice | None]):
         self.switchers = switchers or {}
         self.validate_job = validate_job or _accept_any_job
         self.sessions_for = sessions_for or _no_sessions
+        self.config = config
         self.current_client = current_client
 
     def on_mount(self) -> None:
