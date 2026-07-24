@@ -304,5 +304,10 @@
   "clients.col.version": "Version",
   "clients.col.resumable": "Resumable",
   "clients.col.default": "Default",
-  "log.hint_not_recorded": "could not record hint {hint} as seen: {error}"
+  "log.hint_not_recorded": "could not record hint {hint} as seen: {error}",
+  "log.gateway_request_failed": "relay request failed ({method} {path}); returned 502 to the client",
+  "log.gateway_handler_crashed": "relay handler thread crashed (client {client})",
+  "log.gateway_stream_interrupted": "upstream stream ended early ({error}); keeping what was captured",
+  "log.gateway_record_failed": "could not record the turn for {path} ({error}); the turn itself was unaffected",
+  "log.gateway_stopped": "the metering relay stopped serving ({error}); this session's turns are no longer being recorded"
 }

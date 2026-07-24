@@ -16,9 +16,11 @@ run is recorded per call.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import itertools
 import secrets
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -142,7 +144,28 @@ class MeteringRelay:
     def start(self) -> None:
         """Bind an ephemeral local port and serve in a background thread."""
         self._server = _RelayServer(("127.0.0.1", 0), _Handler, self)
-        threading.Thread(target=self._server.serve_forever, daemon=True).start()
+        threading.Thread(target=self._serve, daemon=True).start()
+
+    def _serve(self) -> None:
+        """Run the accept loop, recording a crash instead of dying silently.
+
+        Per-request failures are handled below (``_Handler._proxy`` and
+        ``_RelayServer.handle_error``). This guards the loop *itself*: if it dies, the
+        relay stops metering while the client keeps working, and on a daemon thread that
+        would otherwise leave no trace at all — the session would just quietly stop being
+        recorded, which is worse than a failure you can see.
+        """
+        server = self._server
+        if server is None:  # pragma: no cover  (start() always sets it first)
+            return
+        try:
+            server.serve_forever()
+        except Exception as error:  # noqa: BLE001  (a daemon thread's last chance to speak)
+            log.error(
+                i18n.t("log.gateway_stopped", error=error),
+                exc=error,
+                key="log.gateway_stopped",
+            )
 
     def stop(self) -> None:
         """Stop serving and release the port."""
@@ -278,6 +301,25 @@ class _RelayServer(ThreadingHTTPServer):
         super().__init__(address, handler)
         self.relay = relay
 
+    def handle_error(self, request: object, client_address: object) -> None:  # noqa: ARG002
+        """Log a handler thread's uncaught exception instead of printing it.
+
+        The stdlib default writes ``'-' * 40``, a raw traceback, and another rule
+        straight to ``sys.stderr``. The relay serves from a daemon thread inside the
+        process that launched the client, so that stderr **is the client's screen**: the
+        traceback lands on top of a live TUI, cannot be copied before the next redraw
+        paints over it, and is preserved nowhere. Route it to the diagnostics sink.
+
+        This is the belt to :meth:`_Handler._proxy`'s braces — that boundary should catch
+        everything, so anything arriving here is a bug we still want recorded rather than
+        displayed.
+        """
+        log.error(
+            i18n.t("log.gateway_handler_crashed", client=client_address),
+            exc=sys.exc_info()[1],
+            key="log.gateway_handler_crashed",
+        )
+
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
@@ -290,16 +332,56 @@ class _Handler(BaseHTTPRequestHandler):
         log.debug(i18n.t("log.gateway", message=(format % args if args else format)))
 
     def _proxy(self) -> None:
+        """Proxy one request, with an error boundary around the whole exchange.
+
+        Everything past this point talks to the upstream API over TLS, and a TLS error
+        (``ssl.SSLError``, ``SSLEOFError``) can surface at the handshake, mid-stream, or
+        anywhere in between. Without this boundary such an exception escapes the handler
+        thread, and the stdlib prints it as a raw traceback to a stderr that belongs to
+        the client's TUI (issue #59).
+
+        With it, the client gets a clean ``502`` it can retry, and the traceback goes to
+        the log file where it can actually be read.
+        """
+        self._responded = False
+        try:
+            self._exchange()
+        except Exception as error:  # noqa: BLE001  (the boundary: nothing may escape)
+            log.error(
+                i18n.t("log.gateway_request_failed", method=self.command, path=self.path),
+                exc=error,
+                key="log.gateway_request_failed",
+            )
+            self._fail()
+
+    def _fail(self) -> None:
+        """Tell the client the gateway failed, if it is still possible to say so.
+
+        Once the response head is on the wire a status can no longer be sent — the client
+        sees a truncated stream and its own retry logic takes over, which is the honest
+        outcome. Before that, ``502`` says exactly what happened: the relay could not
+        complete the upstream call.
+        """
+        if self._responded:
+            return
+        # The client being gone too is the ordinary case here; there is then nothing left
+        # to report the failure to, and the log already has it.
+        with contextlib.suppress(OSError):
+            self.send_error(HTTPStatus.BAD_GATEWAY)
+
+    def _exchange(self) -> None:
         relay = cast("_RelayServer", self.server).relay
         # A browser cross-origin POST carries Origin; a real client SDK does not. And
         # any request whose /<client>/<token>/ prefix doesn't match this run is refused,
         # so a stray local process can't drive the relay.
         if self.headers.get("Origin") is not None:
             self.send_error(HTTPStatus.FORBIDDEN)
+            self._responded = True
             return
         upstream_path = relay.authorize(self.path)
         if upstream_path is None:
             self.send_error(HTTPStatus.NOT_FOUND)
+            self._responded = True
             return
         length = int(self.headers.get("Content-Length") or 0)
         body = relay.intercept_request(self.rfile.read(length) if length else b"")
@@ -322,23 +404,84 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
         except OSError:
             pass  # client already gone; still drain upstream below to record usage
+        finally:
+            # The head is on the wire (or the socket is gone). Either way a status can no
+            # longer be sent, so a later failure must not try to.
+            self._responded = True
 
         if relay.wants_body(self.command, upstream_path):
             captured = _tee(response.body, self._write_chunk)
-            relay.intercept_response(captured)
-            if relay.is_metered(self.command, upstream_path):
-                relay.record(body, captured, started_at)
+            self._bookkeep(relay, upstream_path, body, captured, started_at)
         else:
             _stream(response.body, self._write_chunk)
+
+    def _bookkeep(
+        self,
+        relay: MeteringRelay,
+        upstream_path: str,
+        request: bytes,
+        captured: bytes,
+        started_at: float,
+    ) -> None:
+        """Run the post-response work — response interceptors and metering.
+
+        Guarded separately from the exchange: by this point the client already has its
+        answer, so a metering or interceptor failure is *our* bookkeeping problem and must
+        not be reported as a gateway error. Recording a turn is never worth losing a turn
+        over.
+        """
+        try:
+            relay.intercept_response(captured)
+            if relay.is_metered(self.command, upstream_path):
+                relay.record(request, captured, started_at)
+        except Exception as error:  # noqa: BLE001  (metering must never break a turn)
+            log.warning(
+                i18n.t("log.gateway_record_failed", path=upstream_path, error=error),
+                key="log.gateway_record_failed",
+            )
 
     def _write_chunk(self, chunk: bytes) -> None:
         self.wfile.write(chunk)
         self.wfile.flush()
 
 
+def _drain(chunks: Iterable[bytes]) -> Iterable[bytes]:
+    """Yield ``chunks``, ending the stream cleanly if the *upstream* read fails.
+
+    The two directions fail independently and were not guarded alike. A write to the
+    client raises when it hangs up, and that was handled. But pulling the next chunk
+    reaches across TLS to the API, and a connection dropped mid-response raises here —
+    ``ssl.SSLError``/``SSLEOFError`` (both ``OSError``) or an ``IncompleteRead``. That
+    exception used to escape the handler thread entirely and become a traceback on the
+    user's screen (issue #59).
+
+    Ending the iteration instead of propagating means the caller keeps whatever arrived
+    before the break, so a turn cut short is still recorded with what it managed to send.
+
+    Args:
+        chunks: The upstream response body chunks.
+
+    Yields:
+        Each chunk read successfully, stopping at the first read failure.
+    """
+    iterator = iter(chunks)
+    while True:
+        try:
+            chunk = next(iterator)
+        except StopIteration:
+            return
+        except (OSError, http.client.HTTPException) as error:
+            log.warning(
+                i18n.t("log.gateway_stream_interrupted", error=error),
+                key="log.gateway_stream_interrupted",
+            )
+            return
+        yield chunk
+
+
 def _stream(chunks: Iterable[bytes], sink: Callable[[bytes], None]) -> None:
     """Stream ``chunks`` to the client without buffering (nothing consumes the body)."""
-    for chunk in chunks:
+    for chunk in _drain(chunks):
         try:
             sink(chunk)
         except OSError:
@@ -350,18 +493,19 @@ def _tee(chunks: Iterable[bytes], sink: Callable[[bytes], None]) -> bytes:
 
     If the client hangs up mid-stream (e.g. it exits or cancels), writes raise and
     are swallowed, but the upstream is still drained fully so the turn's usage —
-    which arrives at the end — is captured.
+    which arrives at the end — is captured. If the *upstream* fails instead, the
+    capture ends there and what arrived so far is returned rather than lost.
 
     Args:
         chunks: The upstream response body chunks.
         sink: Writes a chunk to the client (may raise ``OSError`` once it hangs up).
 
     Returns:
-        The full captured body.
+        The captured body (complete, or as much of it as arrived).
     """
     captured = bytearray()
     client_gone = False
-    for chunk in chunks:
+    for chunk in _drain(chunks):
         captured.extend(chunk)
         if not client_gone:
             try:

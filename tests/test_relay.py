@@ -3,15 +3,27 @@
 """Tests for the metering relay, driven over a real local socket with a fake upstream."""
 
 import http.client
-from collections.abc import Mapping
+import socket
+import ssl
+from collections.abc import Iterator, Mapping
+
+import pytest
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
-from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay, UpstreamResponse, _tee
+from generic_ml_wrapper.adapter.outbound.gateway.relay import (
+    MeteringRelay,
+    UpstreamResponse,
+    _Handler,
+    _RelayServer,
+    _tee,
+)
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
+from generic_ml_wrapper.common.log import set_active
 
 _SSE = (
     b'data: {"type":"message_start","message":{"model":"m","usage":{"input_tokens":10}}}\n\n'
@@ -361,3 +373,198 @@ def test_request_with_an_origin_header_is_refused() -> None:
         connection.close()
     finally:
         relay.stop()
+
+
+# ---------------------------------------------------------------------------
+# Error boundaries (issue #59)
+#
+# Every one of these used to end the same way: an exception escaped the handler
+# thread, socketserver printed a raw traceback to stderr -- which during a wrapped
+# session is the client's own screen -- and nothing was written to any log file.
+# ---------------------------------------------------------------------------
+
+
+class _Recording(Diagnostics):
+    """A sink that keeps what it was handed, so a test can assert the failure was logged."""
+
+    def __init__(self) -> None:
+        self.records: list[tuple[str, str, BaseException | None, dict[str, object]]] = []
+
+    def debug(self, message: str, **context: object) -> None:
+        self.records.append(("debug", message, None, context))
+
+    def info(self, message: str, **context: object) -> None:
+        self.records.append(("info", message, None, context))
+
+    def warning(self, message: str, **context: object) -> None:
+        self.records.append(("warning", message, None, context))
+
+    def error(self, message: str, exc: BaseException | None = None, **context: object) -> None:
+        self.records.append(("error", message, exc, context))
+
+    def keys(self, level: str) -> list[object]:
+        """The catalogue keys logged at *level* — asserted on instead of rendered text,
+        so these tests do not break when a message is reworded or translated."""
+        return [context.get("key") for name, _, _, context in self.records if name == level]
+
+
+def _post_status(relay: MeteringRelay, body: bytes = b"{}") -> tuple[int, bytes]:
+    connection = http.client.HTTPConnection("127.0.0.1", relay.port, timeout=5)
+    try:
+        connection.request("POST", f"/{relay._client}/{relay._token}/v1/messages", body=body)
+        response = connection.getresponse()
+        return response.status, response.read()
+    finally:
+        connection.close()
+
+
+def _raise_ssl_error() -> None:
+    raise ssl.SSLError("EOF occurred in violation of protocol")
+
+
+def _exploding_forwarder(
+    method: str, path: str, headers: Mapping[str, str], body: bytes
+) -> UpstreamResponse:
+    """A TLS handshake that fails -- the unguarded call at the top of the exchange."""
+    raise ssl.SSLError("EOF occurred in violation of protocol")
+
+
+def _half_stream() -> Iterator[bytes]:
+    """A response that dies mid-stream, after the head and one chunk are already out."""
+    yield b'data: {"type":"message_start","message":{"model":"m","usage":{"input_tokens":10}}}\n\n'
+    raise ssl.SSLError("EOF occurred in violation of protocol")
+
+
+def _dying_forwarder(
+    method: str, path: str, headers: Mapping[str, str], body: bytes
+) -> UpstreamResponse:
+    return UpstreamResponse(200, [("Content-Type", "text/event-stream")], _half_stream())
+
+
+def test_a_failed_handshake_returns_502_and_logs_instead_of_crashing(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(
+        job="J", session="S", metering=_FakeStore(), forwarder=_exploding_forwarder
+    )
+    relay.start()
+    try:
+        status, _ = _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+
+    assert status == 502, "the client should get a clean gateway error it can retry"
+    assert sink.keys("error") == ["log.gateway_request_failed"]
+    errors = [record for record in sink.records if record[0] == "error"]
+    assert isinstance(errors[0][2], ssl.SSLError), "the traceback must reach the sink"
+    # The whole point: nothing reaches the terminal the client is drawing on.
+    assert capsys.readouterr().err == ""
+
+
+def test_a_midstream_upstream_failure_ends_the_turn_cleanly(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sink = _Recording()
+    previous = set_active(sink)
+    store = _FakeStore()
+    relay = MeteringRelay(job="J", session="S", metering=store, forwarder=_dying_forwarder)
+    relay.start()
+    try:
+        status, body = _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+
+    # The head was already sent, so the status stands; the client sees a short stream.
+    assert status == 200
+    assert b"message_start" in body, "what arrived before the break is still delivered"
+    assert "log.gateway_stream_interrupted" in sink.keys("warning")
+    assert capsys.readouterr().err == ""
+
+
+def test_a_partial_turn_is_still_recorded() -> None:
+    # A turn cut short is worth recording with what it managed to send, rather than lost.
+    store = _FakeStore()
+    previous = set_active(_Recording())
+    relay = MeteringRelay(job="J", session="S", metering=store, forwarder=_dying_forwarder)
+    relay.start()
+    try:
+        _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+    assert store.recorded, "the input tokens seen before the break should still be metered"
+
+
+def test_a_metering_failure_never_costs_the_client_its_turn(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class _BrokenStore(_FakeStore):
+        def record(self, job: str, turn: TurnUsage) -> None:
+            raise RuntimeError("the ledger is locked")
+
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(job="J", session="S", metering=_BrokenStore(), forwarder=_echo_forwarder)
+    relay.start()
+    try:
+        status, body = _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+
+    # Bookkeeping happens after the client already has its answer: a failure there is
+    # ours, and must not be reported as a gateway error.
+    assert status == 200
+    assert b"message_start" in body
+    assert "log.gateway_record_failed" in sink.keys("warning")
+    assert capsys.readouterr().err == ""
+
+
+def test_the_server_logs_a_handler_crash_rather_than_printing_it(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The belt to _proxy's braces: even a bug that bypasses the boundary must not paint
+    # a traceback over the client's screen.
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(job="J", session="S", metering=_FakeStore(), forwarder=_echo_forwarder)
+    relay.start()
+    server = relay._server
+    assert server is not None
+    try:
+        with socket.socket() as request:
+            try:
+                _raise_ssl_error()
+            except ssl.SSLError:
+                server.handle_error(request, ("127.0.0.1", 1234))
+    finally:
+        relay.stop()
+        set_active(previous)
+
+    assert sink.keys("error") == ["log.gateway_handler_crashed"]
+    assert capsys.readouterr().err == ""
+
+
+def test_a_dead_accept_loop_is_recorded_rather_than_vanishing() -> None:
+    # A daemon thread that dies takes the metering with it and leaves no trace: the
+    # session keeps working while silently going unrecorded. Make it say so.
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(job="J", session="S", metering=_FakeStore(), forwarder=_echo_forwarder)
+    server = _RelayServer(("127.0.0.1", 0), _Handler, relay)
+    relay._server = server
+    try:
+        # Drive _serve directly with an accept loop that dies immediately. Note we must
+        # not call relay.stop() afterwards: shutdown() waits on a serve_forever that
+        # never ran, and would block forever.
+        server.serve_forever = _raise_ssl_error  # type: ignore[method-assign]
+        relay._serve()
+    finally:
+        server.server_close()
+        set_active(previous)
+
+    assert sink.keys("error") == ["log.gateway_stopped"]
