@@ -11,6 +11,12 @@ Textual's ``run_test``/``Pilot``.
 The structure is object-first (Job / Workflow / Config), then a verb. Job > Resume and the
 Config switchers (Persona / Environment / Role, incl. creating one) are wired; the remaining
 verbs are placeholders that update the detail panel until they are built out.
+
+**Import timing matters here.** Textual reads ``BINDINGS`` as a class attribute, so a
+footer label is resolved when this module is *imported*, not when a screen is shown. That
+is fine because the module is imported lazily from the ``tui`` command, which runs after
+the active localiser is installed -- so the labels come out in the user's language. Import
+it any earlier and they would freeze in English. :func:`_key` marks every such label.
 """
 
 from __future__ import annotations
@@ -29,6 +35,21 @@ from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.common import i18n
+
+
+def _key(key: str, action: str, label: str, **options: object) -> Binding:
+    """A key binding whose footer label comes from the catalogue.
+
+    Args:
+        key: The key that triggers it.
+        action: The action method name Textual dispatches to.
+        label: The catalogue key for the label shown in the footer.
+        options: Passed through to :class:`~textual.binding.Binding`.
+
+    Returns:
+        The binding, with its description already localised.
+    """
+    return Binding(key, action, i18n.active().t(label), **options)  # type: ignore[arg-type]
 
 
 def _accept_any_job(_name: str) -> str | None:
@@ -313,8 +334,8 @@ class _MenuScreen(Screen[None]):
     """
 
     BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "back", "Back"),
-        Binding("q", "quit_app", "Quit"),
+        _key("escape", "back", "tui.key.back"),
+        _key("q", "quit_app", "tui.key.quit"),
     ]
     crumb: ClassVar[str] = "gmlw"
     show_banner: ClassVar[bool] = False
@@ -546,7 +567,7 @@ class NewWorkflowScreen(Screen[None]):
     so a bad seed name never tears the menu down only to fail at the prompt. Esc cancels.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
 
     @property
     def menu_app(self) -> MenuApp:
@@ -753,7 +774,7 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
     selects it), on failure it shows the reason and lets the user retype. Esc cancels.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
 
     def __init__(self, key: str) -> None:
         """Bind the form to the switcher it creates into."""
@@ -807,10 +828,10 @@ class ConfigPickerScreen(_MenuScreen):
     # (no quit binding here). Up/Down/Enter are *priority* bindings so they act on the list
     # before the Input can consume them; printable keys fall through to the Input.
     BINDINGS: ClassVar[list[Binding]] = [
-        Binding("escape", "back", "Back"),
-        Binding("up", "cursor(-1)", "Up", show=False, priority=True),
-        Binding("down", "cursor(1)", "Down", show=False, priority=True),
-        Binding("enter", "pick", "Select", show=False, priority=True),
+        _key("escape", "back", "tui.key.back"),
+        _key("up", "cursor(-1)", "tui.key.up", show=False, priority=True),
+        _key("down", "cursor(1)", "tui.key.down", show=False, priority=True),
+        _key("enter", "pick", "tui.key.select", show=False, priority=True),
     ]
 
     def __init__(self, mode: str) -> None:
@@ -982,7 +1003,7 @@ class ConfigInputScreen(Screen[None]):
     the form and shows the reason.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
 
     def __init__(self, key: str) -> None:
         """Bind the form to the setting it sets."""
@@ -1043,7 +1064,7 @@ class NewJobScreen(Screen[None]):
     so an unusable name never tears the menu down only to fail at the prompt. Esc cancels.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "cancel", "Cancel")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
 
     @property
     def menu_app(self) -> MenuApp:
@@ -1208,7 +1229,7 @@ class SessionListScreen(Screen[None]):
     so it fills synchronously (no worker). Read-only; Esc goes back.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
 
     def __init__(self, job: str) -> None:
         """Bind the view to the job whose sessions it lists."""
@@ -1320,7 +1341,7 @@ class UsageSummaryScreen(Screen[None]):
     lives in the JSON file export.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
 
     def __init__(self, job: str) -> None:
         """Bind the view to the job whose usage it summarises."""
@@ -1395,7 +1416,7 @@ class SaveReportScreen(Screen[None]):
     success the saved path is shown, on failure a plain error line. Esc goes back.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
 
     def __init__(self, job: str) -> None:
         """Bind the screen to the job whose report it saves."""
@@ -1448,7 +1469,7 @@ class ClientsScreen(Screen[None]):
     thread with a spinner, like the Export summary. Read-only; Esc goes back.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
 
     @property
     def menu_app(self) -> MenuApp:
@@ -1506,7 +1527,7 @@ class ConfigListScreen(Screen[None]):
     filter-to-one. Reads the already-injected settings synchronously (no worker). Esc goes back.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [Binding("escape", "back", "Back")]
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
 
     @property
     def menu_app(self) -> MenuApp:

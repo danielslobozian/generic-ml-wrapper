@@ -17,6 +17,12 @@ order until one yields a version.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+from generic_ml_wrapper.common import i18n
+
+if TYPE_CHECKING:
+    from generic_ml_wrapper.common.i18n import Localizer
 
 
 @dataclass(frozen=True)
@@ -73,7 +79,12 @@ class ClientInfo:
             (the "do you pay for …?" map).
         install_unix: The recommended install command on macOS / Linux.
         install_windows: The recommended install command on Windows.
-        login: How to authenticate once installed.
+        login: The command that authenticates once installed — a literal command, never
+            prose, so it stays the same in every language.
+        login_hint: Catalogue key for a short note rendered beside ``login`` (e.g. that the
+            first run opens a browser), or ``""`` when the command speaks for itself. It is
+            a key rather than a sentence because this catalogue is module-level data,
+            built at import time, long before the active localiser exists.
         resumable: Whether a session on this client can be resumed by its id — ``True``
             when the launch can reopen a session we named/identified (Claude, cursor-agent),
             ``False`` for clients that mint their own id we can't target (Codex, Vibe). The
@@ -91,6 +102,7 @@ class ClientInfo:
     install_unix: str
     install_windows: str
     login: str
+    login_hint: str = ""
     resumable: bool = True
     version_probes: tuple[VersionProbe, ...] = field(default_factory=tuple)
     update: str = ""
@@ -104,6 +116,22 @@ class ClientInfo:
     def update_for(self, system: str) -> str:
         """Return the upgrade command for an OS: the dedicated updater, else the installer."""
         return self.update or self.install_for(system)
+
+    def login_for(self, loc: Localizer | None = None) -> str:
+        """Return the login command, with its localised note when it has one.
+
+        The command itself is never translated — it is something the user types. Only the
+        note beside it is prose, so only the note goes through the catalogue.
+
+        Args:
+            loc: The localiser to render the note through; defaults to the active one.
+
+        Returns:
+            e.g. ``claude   (first run opens a browser)``, or bare ``cursor-agent login``.
+        """
+        if not self.login_hint:
+            return self.login
+        return f"{self.login}   ({(loc or i18n.active()).t(self.login_hint)})"
 
 
 # ``uv`` is Astral's Python tool installer. gmlw itself may have arrived via pip / pipx,
@@ -128,7 +156,8 @@ CLAUDE = ClientInfo(
     # needs only curl and self-updates in the background.
     install_unix="curl -fsSL https://claude.ai/install.sh | bash",
     install_windows="irm https://claude.ai/install.ps1 | iex",
-    login="claude   (first run opens a browser)",
+    login="claude",
+    login_hint="client.login_hint.claude",
     update="claude update",
     version_probes=(
         # The stable channel the native installer and `claude update` target.
@@ -172,7 +201,8 @@ CODEX = ClientInfo(
     install_windows=(
         'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"'
     ),
-    login="codex login   (ChatGPT account or API key)",
+    login="codex login",
+    login_hint="client.login_hint.codex",
     resumable=False,  # codex mints its own session id; no launch flag to target one
     # No dedicated updater subcommand; re-running the native installer upgrades in place.
     version_probes=(
@@ -196,7 +226,8 @@ VIBE = ClientInfo(
     subscription="Mistral La Plateforme / Le Chat Pro",
     install_unix="uv tool install mistral-vibe",
     install_windows="uv tool install mistral-vibe",
-    login="vibe   (first run opens the setup wizard; or set MISTRAL_API_KEY)",
+    login="vibe",
+    login_hint="client.login_hint.vibe",
     resumable=False,  # vibe mints its own uuid; cannot be told a session id at launch
     update="uv tool upgrade mistral-vibe",
     prereq=UV,

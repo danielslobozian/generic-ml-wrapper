@@ -33,7 +33,7 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-from generic_ml_wrapper.common import paths
+from generic_ml_wrapper.common import i18n, paths
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -52,9 +52,7 @@ class _Section(BaseModel):
 class ClientSettings(_Section):
     """The ``[client]`` section."""
 
-    default: Annotated[
-        str, Field(description="The client gmlw wraps when --client is omitted.")
-    ] = "claude"
+    default: Annotated[str, Field(description="setting.client.default")] = "claude"
 
 
 class LanguageSettings(_Section):
@@ -62,18 +60,16 @@ class LanguageSettings(_Section):
 
     code: Annotated[
         str | None,
-        Field(description="The language gmlw speaks to you (unset → $LANG, then English)."),
+        Field(description="setting.language.code"),
     ] = None
 
 
 class ProfileSettings(_Section):
     """The ``[profile]`` section."""
 
-    default_role: Annotated[
-        str, Field(description="The role (functional hat) composed into every session.")
-    ] = "default"
+    default_role: Annotated[str, Field(description="setting.profile.default_role")] = "default"
     default_environment: Annotated[
-        str, Field(description="The environment (the place work happens) composed into a session.")
+        str, Field(description="setting.profile.default_environment")
     ] = "work"
 
 
@@ -82,61 +78,51 @@ class LoggingSettings(_Section):
 
     level: Annotated[
         Literal["debug", "info", "warning", "error"],
-        Field(description="Diagnostic log verbosity (debug < info < warning < error)."),
+        Field(description="setting.logging.level"),
     ] = "warning"
     to_file: Annotated[
         bool,
-        Field(description="Write diagnostics to the rolling log file under ~/.gmlw/logs/."),
+        Field(description="setting.logging.to_file"),
     ] = True
     max_bytes: Annotated[
         int,
-        Field(gt=0, description="Roll the log file once it grows past this many bytes."),
+        Field(gt=0, description="setting.logging.max_bytes"),
     ] = 1_048_576
     backup_count: Annotated[
         int,
-        Field(ge=0, description="How many rolled log files to keep."),
+        Field(ge=0, description="setting.logging.backup_count"),
     ] = 5
 
 
 class CompanionSettings(_Section):
     """The ``[companion]`` section."""
 
-    persona: Annotated[
-        str | None, Field(description="The selected persona; unset leaves the companion invisible.")
-    ] = None
+    persona: Annotated[str | None, Field(description="setting.companion.persona")] = None
     name: Annotated[
         str | None,
-        Field(description="The name the host greeting addresses you by; unset uses the OS user."),
+        Field(description="setting.companion.name"),
     ] = None
 
 
 class TranscriptSettings(_Section):
     """The ``[transcript]`` section."""
 
-    enabled: Annotated[
-        bool, Field(description="Persist the per-call in/out/usage trio for each turn.")
-    ] = False
-    root: Annotated[
-        str | None, Field(description="Override transcript root; unset uses ~/.gmlw/transcripts.")
-    ] = None
+    enabled: Annotated[bool, Field(description="setting.transcript.enabled")] = False
+    root: Annotated[str | None, Field(description="setting.transcript.root")] = None
 
 
 class CompressSettings(_Section):
     """The scalar keys of the ``[compress]`` section (``prompts`` stays hand-rolled)."""
 
-    adapter: Annotated[
-        str, Field(description="The generic-ml-cache adapter to compress through.")
-    ] = "cursor"
-    model: Annotated[str, Field(description="The model to compress context with.")] = "gpt-5.4"
-    effort: Annotated[str, Field(description="The reasoning effort for compression.")] = "low"
+    adapter: Annotated[str, Field(description="setting.compress.adapter")] = "cursor"
+    model: Annotated[str, Field(description="setting.compress.model")] = "gpt-5.4"
+    effort: Annotated[str, Field(description="setting.compress.effort")] = "low"
 
 
 class HintsSettings(_Section):
     """The ``[hints]`` section: the suppressible exit-receipt tips."""
 
-    show: Annotated[
-        bool, Field(description="Show one usage-driven tip on the exit receipt (once each).")
-    ] = True
+    show: Annotated[bool, Field(description="setting.hints.show")] = True
 
 
 class AmbientSettings(_Section):
@@ -144,7 +130,7 @@ class AmbientSettings(_Section):
 
     capability_card: Annotated[
         bool,
-        Field(description="Inject an off-by-default 'how do I …' gmlw card into the context."),
+        Field(description="setting.ambient.capability_card"),
     ] = False
 
 
@@ -308,7 +294,11 @@ def registry_rows() -> list[SettingRow]:
                     type_name=_type_name(field),
                     default=field.get_default(),
                     choices=_choices(field),
-                    description=field.description or "",
+                    # A Field's `description` holds the *catalogue key*, not the text: a
+                    # model's fields are evaluated at import time, long before the active
+                    # localiser exists, so the sentence cannot live there. Resolving here
+                    # — at render time — is what lets `config list` speak French.
+                    description=i18n.t(field.description) if field.description else "",
                 )
             )
     return rows
