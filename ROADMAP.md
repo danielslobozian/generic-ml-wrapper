@@ -264,75 +264,30 @@ than only configurable — plus a round of data-screen and localisation fixes.
   presentation.
 - **Fixes** — the first-run init announcement speaks the chosen language, not the OS locale.
 
-## Planned
-
 ### 0.8.0 — every string a key, every log a file
-Two passes over the *whole* application, both about the same thing: gmlw currently says
-things in the wrong language and writes them to the wrong place. Neither is a feature —
-each is a sweep that ends with a guard so the debt cannot silently return.
+Two sweeps over the *whole* application, both about the same thing: gmlw was saying things in
+the wrong language and writing them to the wrong place. Neither was a feature — each was a
+pass that ends with a guard, so the debt cannot quietly come back.
 
-#### 1. Localisation, finished
-0.5.0 built the mechanism (a keyed JSON catalogue, a process-global active localiser,
-English-fallback, an EN/FR key-parity guard) and localised the surfaces it touched. The app
-has grown four releases since — `config` commands, the TUI, `sessions`, `CreateAxis` — and
-the drift is measurable: of 67 `print` sites ~30 still carry English literals, ~49 argparse
-`help=`/`description=` strings are raw, and a couple of `log.*` calls slipped through. 0.7.0
-introduced codes and labels for the TUI, but only for the TUI.
+- **Localisation, finished** — 87 new keys (EN and FR, **395 each**) convert what had drifted
+  back since 0.5.0: every argparse `help` / `description` / `metavar`, the TUI footer labels,
+  the 17 settings-registry descriptions, the client catalogue's login hints. Technical logs are
+  localised on purpose — a French user reading their own log file is the case that decided it.
+  `--help` now speaks one language rather than two, argparse's own chrome included.
+- **A drift guard that fails the build** — rejects a literal at a `print` / `log` / argparse /
+  `Binding` call site, a `t()` key missing from the catalogue, and a registry setting with no
+  `setting.<key>` entry. The mechanically enforceable half that key-parity could not see.
+- **Logging as a real subsystem** — a `DiagnosticsPort` in core with the concrete adapter built
+  at the composition root, a never-raises contract, a rolling file sink at `~/.gmlw/logs/`, a
+  structured line format, and PII scrubbing in the sink (narrowed twice against over-redaction).
+  The destination is a wiring decision: file + `stderr` for a utility command, file only once a
+  command hands the terminal over, silence for the statusline.
+- **Relay error boundaries ([#59](https://github.com/danielslobozian/generic-ml-wrapper/issues/59))**
+  — a TLS failure in a request thread no longer dumps a raw traceback onto the live client's
+  screen. Boundaries around the exchange, the upstream read, post-response bookkeeping, and the
+  accept loop, all recorded through the port.
 
-- **One rule, no exceptions: no message is a literal at its call site.** Every string a human
-  can ever read — command output, prompts, errors, argparse help, TUI labels, **and every
-  technical log line** — is a key resolved through the catalogue, with EN *and* FR authored.
-- **Technical logs included, deliberately.** This restates the 0.5.0 call rather than softening
-  it: the convention is English-only logs, and we are choosing against it. A French user
-  reading their own log file (or pasting one into an issue) is the case that decides it — the
-  logs are part of the product's voice, not an internal channel.
-- **A drift guard that fails CI.** The key-parity check keeps EN and FR aligned; the missing
-  half is a check that rejects a *new* literal at a message call site (`print`, `log.*`,
-  argparse `help=`/`description=`, TUI label constructors). This is mechanically enforceable,
-  so it ships as a check the build runs, not as a note in CONTRIBUTING.
-- **Catalogue hygiene.** At 305 keys and climbing, the flat namespace needs a convention
-  (surface-prefixed keys) and a dead-key sweep, so the catalogue stays navigable for whoever
-  authors the next language.
-
-#### 2. Logging as a real subsystem — a diagnostics port, modelled on generic-ml-cache
-`common/log.py` is 83 lines that print to `stderr`. During a wrapped session `stderr` **is the
-client's screen** — so gmlw's diagnostics either collide with the client's TUI or are simply
-never written anywhere. generic-ml-cache already solved this properly, and its shape is the
-one to copy rather than reinvent.
-
-- **Port in core, adapter at the edge.** A `DiagnosticsPort` (`debug`/`info`/`warn`/`error`,
-  plus free-form keyword context) that core emits through and never a logging library it
-  imports directly. The composition root resolves level + destination from flags/env/config
-  and builds the concrete adapter — mirroring the cache's `build_diagnostics`. A null adapter
-  makes "quiet" a wiring choice rather than a branch in every call site.
-- **The hard contract: an adapter must never raise.** A diagnostics failure must not break or
-  alter a run. Non-negotiable, and tested.
-- **A rolling file sink under the app folder** — `~/.gmlw/logs/`, rotating, appended across
-  restarts, so a wrapped session's diagnostics land in a file the user can open *afterwards*
-  instead of being painted over by the client mid-session.
-- **A structured line format** — timestamp, thread, caller (`Class.method:lineno`), level,
-  message, `k=v` context — human-readable text by default, newline-delimited JSON as an
-  option. Same convention as the cache, so the two products' logs read alike.
-- **PII scrubbing in the sink, not at the call site.** A wrapper's logs pass API keys, bearer
-  tokens, e-mail addresses and context derived from the user's own journal. Adopt the cache's
-  posture: redact by sensitive key name *and* by pattern, and deliberately avoid
-  over-redacting (silently destroyed logs are their own bug).
-- **Error boundaries — [#59](https://github.com/danielslobozian/generic-ml-wrapper/issues/59).**
-  The relay's `_proxy` has no outer `try/except`, so an `ssl.SSLError` in a handler thread
-  reaches `socketserver`'s default `handle_error`, which prints a raw traceback to `stderr` —
-  onto the live client's screen, uncopyable, and into no log file at all. The fix is four
-  parts: an error boundary that returns a clean `502`, a `handle_error` override routed
-  through the port, a guard on the upstream **read** (today only the client *write* is
-  guarded), and the file sink above so this can never reach the screen again. Then generalise:
-  audit every long-lived thread and subprocess seam for the same missing-boundary shape.
-- **Log generously, now that it's safe to.** The reason gmlw logs so little is that logging
-  meant shouting at the user. With a file sink that constraint lifts — the launch sequence,
-  hooks, interceptors, relay turns, and config resolution should all leave a trace worth
-  reading when something goes wrong.
-
-**Order matters.** Strings first, then logging: the logging pass *creates* new messages, so the
-drift guard has to exist before those lines are written, or the second pass rebuilds the debt
-the first one just cleared.
+## Planned
 
 ### 0.9.0 — TUI refactoring: the terminal UX as one system
 The discoverability surfaces landed piecemeal across 0.4.0–0.6.0 — the first-run chooser, the

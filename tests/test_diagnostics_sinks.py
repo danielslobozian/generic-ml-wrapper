@@ -156,7 +156,7 @@ def test_a_sensitive_key_is_redacted_whatever_its_value(tmp_path: Path) -> None:
 
 def test_an_api_key_in_the_message_is_scrubbed(tmp_path: Path) -> None:
     target = tmp_path / "gmlw.log"
-    secret = "sk-ant-api03-" + "A1b2C3d4E5f6G7h8" * 2
+    secret = "sk-ant-api03-" + "A1b2C3d4E5f6G7h8" * 2  # pragma: allowlist secret
     RollingFileDiagnostics(target, level="info").info(f"calling with {secret}")
     written = target.read_text(encoding="utf-8")
     assert secret not in written
@@ -173,7 +173,8 @@ def test_an_email_address_is_scrubbed(tmp_path: Path) -> None:
 
 def test_a_secret_nested_in_a_dict_value_is_scrubbed(tmp_path: Path) -> None:
     target = tmp_path / "gmlw.log"
-    RollingFileDiagnostics(target, level="info").info("headers", meta={"password": "hunter2"})
+    headers = {"password": "hunter2"}  # pragma: allowlist secret
+    RollingFileDiagnostics(target, level="info").info("headers", meta=headers)
     written = target.read_text(encoding="utf-8")
     assert "hunter2" not in written
 
@@ -247,7 +248,7 @@ def test_an_empty_tee_is_a_null_sink() -> None:
 
 def test_a_secret_inside_a_list_value_is_scrubbed(tmp_path: Path) -> None:
     target = tmp_path / "gmlw.log"
-    secret = "sk-ant-api03-" + "A1b2C3d4E5f6G7h8" * 2
+    secret = "sk-ant-api03-" + "A1b2C3d4E5f6G7h8" * 2  # pragma: allowlist secret
     RollingFileDiagnostics(target, level="info").info("headers", values=["safe", secret])
     written = target.read_text(encoding="utf-8")
     assert secret not in written

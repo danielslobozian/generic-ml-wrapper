@@ -6,6 +6,79 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-07-25
+
+Two sweeps over the *whole* application, both about the same thing: gmlw was saying things
+in the wrong language and writing them to the wrong place. Neither is a feature you switch
+on — each is a pass that ends with a guard, so the debt cannot quietly come back.
+
+### Added
+- **Logging as a real subsystem — a diagnostics port and swappable sinks.** gmlw's
+  diagnostics were 83 lines printing to `stderr`, which during a wrapped session **is the
+  client's own screen** — so a warning either corrupted the client's TUI or vanished on its
+  next redraw, and was written nowhere else. There is now a `DiagnosticsPort` that core
+  emits through, importing no logging library, with the destination chosen at the
+  composition root. The contract is that **a sink never raises**: a diagnostics failure must
+  not break or alter the run it was only observing.
+- **A rolling log file at `~/.gmlw/logs/gmlw.log`.** Appended across runs, size-capped with
+  bounded backups, and it preserves a caught exception's traceback — so a failure no longer
+  has to reach the screen to be diagnosable. The destination is now a wiring decision rather
+  than a branch at every call site: file **and** `stderr` for a utility command, file only
+  once a command hands the terminal over (`start` / `run` / `tui` / `workflow new|edit`), and
+  silence for the statusline, which renders into another program's prompt from a short-lived
+  subprocess many times a session. Configurable via `[logging]` (`to_file`, `max_bytes`,
+  `backup_count`).
+- **Secret and PII scrubbing in the sink**, so no call site has to remember. Deliberately
+  narrowed twice against over-redaction, because a log that has eaten its own identifiers is
+  useless: session ids and content hashes survive, and the entropy rule no longer treats `/`
+  as secret-ish — the inherited rule ate every file path in a traceback and rendered it
+  `[secret].py`.
+- **Localisation, finished — every message a key, technical logs included.** 0.5.0 built the
+  catalogue mechanism; four releases of new surfaces put English literals back, because
+  nothing failed when they did. 87 new keys (EN and FR, **395 each**) convert what drifted:
+  every argparse `help` / `description` / `metavar`, the TUI footer labels, the 17
+  settings-registry descriptions, and the client catalogue's login hints. Logs are localised
+  on purpose rather than by oversight — a French user reading their own log file, or pasting
+  one into an issue, is the case that decides it.
+- **A drift guard that fails the build** (`tests/test_no_untranslated_literals.py`). It
+  catches the three things key-parity cannot see, since parity only checks the languages
+  against each other: a literal at a `print` / `log` / argparse / `Binding` call site, a
+  `t()` key missing from the catalogue (which renders as the raw key), and a registry setting
+  with no `setting.<key>` entry. Each was verified to actually fail by introducing the
+  violation it targets.
+
+### Changed
+- **`--help` speaks one language instead of two.** `build_parser()` ran before the localiser
+  was installed, so `--help` would have stayed English whatever the language setting; that
+  ordering is fixed. argparse's own chrome (`usage:`, `positional arguments`, `options`, `-h`,
+  `--version`) comes from its gettext domain, which the catalogue cannot reach — so
+  `add_help=False` plus a localised help formatter brings it under the same roof.
+
+### Fixed
+- **A TLS failure in the relay can no longer reach the client's screen**
+  ([#59](https://github.com/danielslobozian/generic-ml-wrapper/issues/59)). An error in a
+  relay request thread escaped uncaught and `socketserver`'s default `handle_error` printed a
+  raw traceback to `stderr` — unreadable, uncopyable, and in no log file, while the session
+  carried on as if nothing had happened. Three operations talked to the upstream over TLS
+  with no guard; the only `try`/`except` covered writes *to the client*, the direction that
+  was not failing. `_proxy` is now a boundary around the whole exchange, returning a clean
+  `502` if it fails before the response head is on the wire and ending the stream cleanly
+  after; `handle_error` routes through the diagnostics port; `_drain` guards the upstream
+  **read**, so a connection dropped mid-response keeps what arrived and a cut-short turn is
+  still metered rather than lost; post-response bookkeeping is guarded separately, because by
+  then the client has its answer and a ledger failure is ours; and the accept loop is guarded
+  too — it runs on a daemon thread, so its death would silently stop metering while the
+  session kept working, the one failure mode worse than a visible error.
+
+### Engineering
+- Registry descriptions hold a catalogue **key** resolved at render time, since a pydantic
+  `Field` is evaluated at import, long before a localiser exists. TUI bindings resolve at
+  import too, which is correct because the module is imported lazily after the localiser is
+  installed — documented at the top of the module.
+- Deliberately left in English: the TOML comments in the generated `config.toml` (the keys
+  they annotate are English, and a half-translated config reads worse than a consistent one),
+  install and login commands, vendor plan names, and the `gmlw > ` breadcrumb.
+
 ## [0.7.0] - 2026-07-24
 
 The interactive release — a full-screen TUI over every verb, roles and environments you
@@ -296,7 +369,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.4.0...v0.5.0
