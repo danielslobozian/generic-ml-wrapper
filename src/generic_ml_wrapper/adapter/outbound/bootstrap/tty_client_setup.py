@@ -164,7 +164,11 @@ class TtyClientSetup(ClientSetupPort):
         if target.prereq is not None and not self._present(target.prereq.binary):
             self._guide_prereq(target.prereq, loc)
         installed = self._guide(
-            target.display, target.install_for(self._system), target.binary, target.login, loc
+            target.display,
+            target.install_for(self._system),
+            target.binary,
+            target.login_for(loc),
+            loc,
         )
         if installed or self._present(target.binary):
             return target.name

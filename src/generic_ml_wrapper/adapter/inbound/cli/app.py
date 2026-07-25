@@ -13,11 +13,11 @@ import os
 import platform
 import signal
 import sys
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
@@ -119,9 +119,44 @@ if TYPE_CHECKING:
     _SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]  # pyright: ignore[reportPrivateUsage]
 
 
+class LocalizedHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Argparse's own chrome, rendered through our catalogue.
+
+    ``usage:``, ``positional arguments`` and ``options`` are argparse's, not ours: it
+    resolves them through its own ``gettext`` domain, which our JSON catalogue cannot
+    reach. Without this the help screen ends up bilingual — our command descriptions in
+    the user's language, the headings above them in English.
+
+    The two hooks below are the seams argparse gives a formatter subclass. They are
+    lightly-documented internals rather than public API, so the help-rendering tests are
+    what keep this honest across Python versions.
+    """
+
+    #: Argparse's English heading -> our catalogue key.
+    _HEADINGS: ClassVar[dict[str, str]] = {
+        "positional arguments": "cli.section.positional",
+        "options": "cli.section.options",
+    }
+
+    def add_usage(
+        self,
+        usage: str | None,
+        actions: Iterable[argparse.Action],
+        groups: Iterable[argparse._MutuallyExclusiveGroup],  # pyright: ignore[reportPrivateUsage]
+        prefix: str | None = None,
+    ) -> None:
+        """Render the usage line under a localised ``usage:`` prefix."""
+        super().add_usage(usage, actions, groups, prefix or i18n.t("cli.section.usage"))
+
+    def start_section(self, heading: str | None) -> None:
+        """Open a section, translating argparse's own headings on the way through."""
+        key = self._HEADINGS.get(heading or "")
+        super().start_section(i18n.t(key) if key else heading)
+
+
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--json`` flag to a read command's parser."""
-    parser.add_argument("--json", action="store_true", help="output as JSON instead of text")
+    parser.add_argument("--json", action="store_true", help=i18n.t("cli.flag.json"))
 
 
 def _add_guided_flags(parser: argparse.ArgumentParser) -> None:
@@ -134,12 +169,12 @@ def _add_guided_flags(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--guided",
         action="store_true",
-        help="use the guided authoring experience (a facilitative guide; costs more)",
+        help=i18n.t("cli.flag.guided"),
     )
     group.add_argument(
         "--quick",
         action="store_true",
-        help="use the lean interview (skip the guided experience)",
+        help=i18n.t("cli.flag.quick"),
     )
 
 
@@ -246,107 +281,121 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     parser = argparse.ArgumentParser(
         prog="gmlw",
         description=banner(),
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        formatter_class=LocalizedHelpFormatter,
+        # argparse builds `-h` itself, with its own English text that our catalogue cannot
+        # reach (it resolves through argparse's gettext domain, not ours). Declining the
+        # built-in and adding the flag ourselves is what lets the whole help screen speak
+        # one language instead of two.
+        add_help=False,
     )
-    parser.add_argument("--version", action="version", version=_version_string())
-    sub = parser.add_subparsers(dest="command", metavar="<command>")
+    parser.add_argument("-h", "--help", action="help", help=i18n.t("cli.flag.help"))
+    parser.add_argument(
+        "--version", action="version", version=_version_string(), help=i18n.t("cli.flag.version")
+    )
+    sub = parser.add_subparsers(dest="command", metavar=i18n.t("cli.metavar.command"))
 
     sub.add_parser(
         "init",
-        help="set up gmlw (language, name, role, environment, persona, client)",
+        help=i18n.t("cli.cmd.init"),
     )
 
-    start = sub.add_parser("start", help="start or resume a session on a job")
-    start.add_argument("job", nargs="?", default=None, help="the job identifier")
+    start = sub.add_parser("start", help=i18n.t("cli.cmd.start"))
+    start.add_argument("job", nargs="?", default=None, help=i18n.t("cli.arg.job"))
     start.add_argument(
         "--client",
         default=None,
-        help="which client to wrap (default: the configured default, or claude)",
+        help=i18n.t("cli.flag.client"),
     )
     start.add_argument(
         "--resume-latest",
         action="store_true",
-        help="resume the job's most recent session",
+        help=i18n.t("cli.flag.resume_latest"),
     )
     start.add_argument(
         "--workflow",
         "-w",
         default=None,
-        help="run a workflow on the job (see: gmlw workflow list)",
+        help=i18n.t("cli.flag.workflow"),
     )
 
-    run = sub.add_parser("run", help="run a workflow directly (the job is named after it)")
+    run = sub.add_parser("run", help=i18n.t("cli.cmd.run"))
     run.add_argument(
         "workflow",
         nargs="?",
         default=None,
-        help="the workflow to run (omit to choose one; see: gmlw workflow list)",
+        help=i18n.t("cli.arg.run_workflow"),
     )
     run.add_argument(
         "--client",
         default=None,
-        help="which client to wrap (default: the configured default, or claude)",
+        help=i18n.t("cli.flag.client"),
     )
 
-    jobs = sub.add_parser("jobs", help="list the jobs with recorded activity")
+    jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
     _add_json_flag(jobs)
 
-    sessions = sub.add_parser("sessions", help="list a job's sessions")
-    sessions.add_argument("job", help="the job identifier")
+    sessions = sub.add_parser("sessions", help=i18n.t("cli.cmd.sessions"))
+    sessions.add_argument("job", help=i18n.t("cli.arg.job"))
     _add_json_flag(sessions)
 
-    export = sub.add_parser("export", help="report a job's recorded usage")
-    export.add_argument("job", help="the job identifier")
+    export = sub.add_parser("export", help=i18n.t("cli.cmd.export"))
+    export.add_argument("job", help=i18n.t("cli.arg.job"))
     _add_json_flag(export)
 
-    clients = sub.add_parser("clients", help="list the supported clients and their versions")
+    clients = sub.add_parser("clients", help=i18n.t("cli.cmd.clients"))
     _add_json_flag(clients)
 
-    sub.add_parser("statusline", help="render the status line (called by the client)")
+    sub.add_parser("statusline", help=i18n.t("cli.cmd.statusline"))
 
-    sub.add_parser("tui", help="open the interactive menu")
+    sub.add_parser("tui", help=i18n.t("cli.cmd.tui"))
 
-    workflow = sub.add_parser("workflow", help="author/list workflows")
-    workflow_sub = workflow.add_subparsers(dest="workflow_command", metavar="<action>")
-    new = workflow_sub.add_parser("new", help="author a new workflow (no job)")
+    workflow = sub.add_parser("workflow", help=i18n.t("cli.cmd.workflow"))
+    workflow_sub = workflow.add_subparsers(
+        dest="workflow_command", metavar=i18n.t("cli.metavar.action")
+    )
+    new = workflow_sub.add_parser("new", help=i18n.t("cli.cmd.workflow_new"))
     new.add_argument(
         "name",
         nargs="?",
         default=None,
-        help="a suggested name (optional; the session proposes one at the end)",
+        help=i18n.t("cli.arg.workflow_name_optional"),
     )
     new.add_argument(
         "--client",
         default=None,
-        help="which client to wrap (default: the configured default, or claude)",
+        help=i18n.t("cli.flag.client"),
     )
     _add_guided_flags(new)
-    edit = workflow_sub.add_parser("edit", help="edit an existing workflow (no job)")
-    edit.add_argument("name", help="the workflow to edit")
+    edit = workflow_sub.add_parser("edit", help=i18n.t("cli.cmd.workflow_edit"))
+    edit.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
     edit.add_argument(
         "--client",
         default=None,
-        help="which client to wrap (default: the configured default, or claude)",
+        help=i18n.t("cli.flag.client"),
     )
     _add_guided_flags(edit)
-    workflow_list = workflow_sub.add_parser("list", help="list the runnable workflows")
+    workflow_list = workflow_sub.add_parser("list", help=i18n.t("cli.cmd.workflow_list"))
     _add_json_flag(workflow_list)
 
-    persona = sub.add_parser("persona", help="list the selectable personas")
-    persona_sub = persona.add_subparsers(dest="persona_command", metavar="<action>")
-    persona_list = persona_sub.add_parser("list", help="list the selectable personas")
+    persona = sub.add_parser("persona", help=i18n.t("cli.cmd.persona"))
+    persona_sub = persona.add_subparsers(
+        dest="persona_command", metavar=i18n.t("cli.metavar.action")
+    )
+    persona_list = persona_sub.add_parser("list", help=i18n.t("cli.cmd.persona_list"))
     _add_json_flag(persona_list)
 
-    plugins = sub.add_parser("plugins", help="list the installed plugins")
-    plugins_sub = plugins.add_subparsers(dest="plugins_command", metavar="<action>")
-    plugins_list = plugins_sub.add_parser("list", help="list the installed plugins")
+    plugins = sub.add_parser("plugins", help=i18n.t("cli.cmd.plugins"))
+    plugins_sub = plugins.add_subparsers(
+        dest="plugins_command", metavar=i18n.t("cli.metavar.action")
+    )
+    plugins_list = plugins_sub.add_parser("list", help=i18n.t("cli.cmd.plugins_list"))
     _add_json_flag(plugins_list)
 
-    creds = sub.add_parser("creds", help="manage per-workflow credentials")
-    creds_sub = creds.add_subparsers(dest="creds_command", metavar="<action>")
-    creds_set = creds_sub.add_parser("set", help="store a workflow credential")
-    creds_set.add_argument("workflow", help="the workflow the credential belongs to")
-    creds_set.add_argument("name", help="the environment-variable name to export at launch")
+    creds = sub.add_parser("creds", help=i18n.t("cli.cmd.creds"))
+    creds_sub = creds.add_subparsers(dest="creds_command", metavar=i18n.t("cli.metavar.action"))
+    creds_set = creds_sub.add_parser("set", help=i18n.t("cli.cmd.creds_set"))
+    creds_set.add_argument("workflow", help=i18n.t("cli.arg.creds_workflow"))
+    creds_set.add_argument("name", help=i18n.t("cli.arg.creds_name"))
 
     _add_config_parser(sub)
     _add_axis_parsers(sub)
@@ -356,43 +405,50 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
 
 def _add_axis_parsers(sub: _SubParsers) -> None:
     """Add the ``environment`` and ``role`` commands (each with a ``new`` action)."""
-    for command, noun in (("environment", "environment"), ("role", "role")):
-        parser = sub.add_parser(command, help=f"create and manage {noun}s")
-        action = parser.add_subparsers(dest=f"{command}_command", metavar="<action>")
-        new = action.add_parser("new", help=f"create a new {noun}")
-        new.add_argument("label", help="the human name (a slug is derived from it)")
-        new.add_argument("--description", default="", help="a fuller line saved to its .about.toml")
+    # Keyed per axis rather than interpolating a noun into one sentence: "create and
+    # manage {noun}s" only pluralises in English, and French needs its own article and
+    # agreement per axis. Two axes is few enough to spell out honestly.
+    for command in ("environment", "role"):
+        parser = sub.add_parser(command, help=i18n.t(f"cli.cmd.{command}"))
+        action = parser.add_subparsers(
+            dest=f"{command}_command", metavar=i18n.t("cli.metavar.action")
+        )
+        new = action.add_parser("new", help=i18n.t(f"cli.cmd.{command}_new"))
+        new.add_argument("label", help=i18n.t("cli.arg.axis_label"))
+        new.add_argument("--description", default="", help=i18n.t("cli.flag.axis_description"))
         new.add_argument(
             "--default",
             action="store_true",
             dest="make_default",
-            help=f"also make it the default {noun}",
+            help=i18n.t(f"cli.flag.{command}_default"),
         )
 
 
 def _add_config_parser(sub: _SubParsers) -> None:
     """Add the ``config`` command (list/get/set) to the top-level subparsers."""
-    config_parser = sub.add_parser("config", help="view or change gmlw settings")
-    config_sub = config_parser.add_subparsers(dest="config_command", metavar="<action>")
-    config_list = config_sub.add_parser("list", help="list every setting and its value")
+    config_parser = sub.add_parser("config", help=i18n.t("cli.cmd.config"))
+    config_sub = config_parser.add_subparsers(
+        dest="config_command", metavar=i18n.t("cli.metavar.action")
+    )
+    config_list = config_sub.add_parser("list", help=i18n.t("cli.cmd.config_list"))
     _add_json_flag(config_list)
-    config_get = config_sub.add_parser("get", help="show one setting")
-    config_get.add_argument("key", help="the dotted setting key (e.g. profile.default_role)")
+    config_get = config_sub.add_parser("get", help=i18n.t("cli.cmd.config_get"))
+    config_get.add_argument("key", help=i18n.t("cli.arg.config_key_example"))
     _add_json_flag(config_get)
-    config_set = config_sub.add_parser("set", help="change one setting")
-    config_set.add_argument("key", help="the dotted setting key")
-    config_set.add_argument("value", help="the new value (use 'none' to clear an optional key)")
+    config_set = config_sub.add_parser("set", help=i18n.t("cli.cmd.config_set"))
+    config_set.add_argument("key", help=i18n.t("cli.arg.config_key"))
+    config_set.add_argument("value", help=i18n.t("cli.arg.config_value"))
 
 
 def _add_help_parser(sub: _SubParsers) -> None:
     """Add the ``help`` command (topic explainers) to the top-level subparsers."""
-    help_parser = sub.add_parser("help", help="explain a core concept (see: gmlw help)")
+    help_parser = sub.add_parser("help", help=i18n.t("cli.cmd.help"))
     help_parser.add_argument(
         "topic",
         nargs="?",
         default=None,
-        metavar="<topic>",
-        help=f"the concept to explain ({', '.join(TOPICS)}); omit to list the topics",
+        metavar=i18n.t("cli.metavar.topic"),
+        help=i18n.t("cli.arg.help_topic", topics=", ".join(TOPICS)),
     )
 
 
@@ -672,6 +728,11 @@ def _hands_over_the_terminal(args: argparse.Namespace) -> bool:
 
 
 def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-command dispatcher)
+    # Bind the language the whole app speaks *first*: every user string and log line
+    # renders through this active localiser (seeded to English until now). It has to
+    # precede `build_parser`, because the parser resolves its own help text through the
+    # catalogue as it is built — build it any earlier and `--help` is always English.
+    i18n.set_active(build_localizer())
     parser = build_parser()
     args = parser.parse_args(_implicit_start(resolved))
     set_active_diagnostics(
@@ -680,9 +741,6 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             to_stderr=not _hands_over_the_terminal(args),
         )
     )
-    # Bind the language the whole app speaks: every user string and log line renders
-    # through this active localiser (seeded to English until now).
-    i18n.set_active(build_localizer())
     if _incomplete_command_help(parser, args):  # e.g. `gmlw workflow` -> show its help
         return 0
     # The init gate: on a real command (not the statusline hot path or bare help), an
@@ -919,7 +977,7 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         lines = [
             loc.t("client.guidance.missing", client=repr(readiness.client), display=info.display),
             loc.t("client.guidance.install", command=info.install_for(system)),
-            loc.t("client.guidance.login", login=info.login),
+            loc.t("client.guidance.login", login=info.login_for(loc)),
         ]
         others = [name for name in readiness.installed if name != readiness.client]
         if others:
