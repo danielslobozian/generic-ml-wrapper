@@ -6,6 +6,54 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-26
+
+A rule is a projection of the user, so it belongs on one of the two axes that describe one:
+the **environment** (constraints of the place — its processes, standards, tooling) or the
+**role** (the user's own preferences about the craft). This release moves rules onto those
+axes and deletes the two tiers that sat outside them.
+
+### Changed
+- **Rules now live on the environment and role axes; the global and per-workflow tiers are
+  removed.** A rule is read from `~/.gmlw/environments/<env>/rules/<slug>.rule.md` or
+  `~/.gmlw/profile/roles/<role>/rules/<slug>.rule.md`, and from nowhere else. The global
+  `~/.gmlw/rules/` and per-workflow `<workflow>/rules/` directories are no longer read — a
+  workflow that behaves wrongly is fixed in the workflow, not patched by a rule sitting
+  beside it.
+
+  **Migration.** Existing files are **not** moved for you: rules left in `~/.gmlw/rules/` or
+  in a workflow's `rules/` folder are silently inactive after upgrading. Move each one into
+  the environment (if it encodes a constraint of the place) or the role (if it encodes your
+  own craft preference). The config key is migrated automatically — see below.
+- **On conflict the environment wins.** A constraint is not overridden by a preference, so
+  environment rules compose *last*, closest to the model, and the capture directive says so
+  outright. Within a single axis, an explicit `Precedence:` number decides.
+- **A rule is active from creation.** The user demanded the correction, so it applies —
+  rather than being parked as a draft awaiting promotion. `status: draft` survives as the
+  user's own off-switch, for retiring a rule without deleting it.
+- **The rule format moved to `~/.gmlw/templates/rule.template.md`**, seeded once and never
+  overwritten. The capture directive reads it from disk and embeds it, so the format the
+  model follows is the user's own file — collapsing two hand-synced copies that could
+  silently drift into one.
+- **Config keys `rules.environment` / `rules.role` replace the scalar `rules`.** The
+  migration carries an explicit legacy setting onto *both* axes, so a deliberate opt-out is
+  never silently undone by the rename.
+
+### Added
+- **A Rules browser in `gmlw tui`** (Job · Workflow · Config · Rules · Quit). It lists only
+  the axes and groups that actually hold rules, and marks the ones switched off.
+- **A session snapshot at the head of every compiled context** — the active environment,
+  role, persona, user, language, and job as a JSON block, so a client answers "which role am
+  I in?" by reading a field instead of inferring it.
+- **A `rules/` folder for environments at creation.** `FilesystemAxisCatalog.create()` made
+  one only for roles.
+
+### Fixed
+- **Draft-ness is read from frontmatter** rather than a substring search over the whole file,
+  which silently dropped any live rule whose prose happened to mention drafting.
+- **`docs/CONFIGURATION.md` documented the rules source as `activated = false`** when the
+  code default was `true`.
+
 ## [0.8.0] - 2026-07-25
 
 Two sweeps over the *whole* application, both about the same thing: gmlw was saying things
@@ -369,7 +417,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.5.0...v0.6.0
