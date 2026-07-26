@@ -30,12 +30,16 @@ class FakeStore(SessionStorePort):
         sessions: list[Session] | None = None,
     ) -> None:
         self.recorded: list[Session] = []
+        self.bound: list[tuple[str, str, str]] = []
         self._latest = latest
         self._ids = ids or []
         self._sessions = sessions or []
 
     def jobs(self) -> list[str]:
         return []
+
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        self.bound.append((job, session_id, uuid))
 
     def sessions_for_job(self, job: str) -> list[Session]:
         return self._sessions

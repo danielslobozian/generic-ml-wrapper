@@ -203,7 +203,11 @@ CODEX = ClientInfo(
     ),
     login="codex login",
     login_hint="client.login_hint.codex",
-    resumable=False,  # codex mints its own session id; no launch flag to target one
+    # Not resumable *at launch*: codex mints its own session id and takes no flag to
+    # accept ours, so a fresh session has nothing to target. Its caller learns the id off
+    # the wire on the first metered turn and binds it, which flips the session's own
+    # ``resumable`` on — for codex this flag is the starting state, not the verdict.
+    resumable=False,
     # No dedicated updater subcommand; re-running the native installer upgrades in place.
     version_probes=(
         VersionProbe(

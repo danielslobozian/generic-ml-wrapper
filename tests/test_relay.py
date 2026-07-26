@@ -3,6 +3,7 @@
 """Tests for the metering relay, driven over a real local socket with a fake upstream."""
 
 import http.client
+import json
 import socket
 import ssl
 from collections.abc import Iterator, Mapping
@@ -568,3 +569,104 @@ def test_a_dead_accept_loop_is_recorded_rather_than_vanishing() -> None:
         set_active(previous)
 
     assert sink.keys("error") == ["log.gateway_stopped"]
+
+
+# ── learning the client's own session id off the wire ──
+def _sink_relay(sink: list[str], **kwargs: object) -> MeteringRelay:
+    """A relay that learns a session id from the request body's ``session_id`` field."""
+
+    def read(text: str) -> str | None:
+        try:
+            return dict(json.loads(text)).get("session_id")
+        except ValueError:
+            return None
+
+    return MeteringRelay(
+        job="J",
+        session="S",
+        metering=_FakeStore(),
+        forwarder=_echo_forwarder,
+        session_id_reader=read,
+        session_id_sink=sink.append,
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_the_session_id_is_learned_from_the_first_metered_turn() -> None:
+    # Codex mints its own id and takes no flag to accept ours, so the wire is the only
+    # place to learn it -- and it is there from the very first turn.
+    seen: list[str] = []
+    relay = _sink_relay(seen)
+    relay.start()
+    try:
+        _post(relay, b'{"session_id":"019f-abc"}')
+    finally:
+        relay.stop()
+    assert seen == ["019f-abc"]
+
+
+def test_an_unchanged_session_id_is_reported_once_not_per_turn() -> None:
+    # The id is stable for the session's life, so every later turn repeats it. Binding it
+    # again on each turn would be a write per turn for a value that never moved.
+    seen: list[str] = []
+    relay = _sink_relay(seen)
+    relay.start()
+    try:
+        for _ in range(3):
+            _post(relay, b'{"session_id":"019f-abc"}')
+    finally:
+        relay.stop()
+    assert seen == ["019f-abc"]
+
+
+def test_a_changed_session_id_is_reported_again() -> None:
+    # Last observation wins: nothing observed rotates an id today, but if a client ever
+    # does, the binding must follow it rather than latch onto the first value forever.
+    seen: list[str] = []
+    relay = _sink_relay(seen)
+    relay.start()
+    try:
+        _post(relay, b'{"session_id":"019f-abc"}')
+        _post(relay, b'{"session_id":"019f-def"}')
+    finally:
+        relay.stop()
+    assert seen == ["019f-abc", "019f-def"]
+
+
+def test_a_body_without_a_session_id_binds_nothing() -> None:
+    seen: list[str] = []
+    relay = _sink_relay(seen)
+    relay.start()
+    try:
+        _post(relay, b"{}")
+    finally:
+        relay.stop()
+    assert seen == []
+
+
+def test_a_failing_sink_never_costs_the_client_its_turn(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # The sink writes to the ledger from a handler thread mid-turn. A locked database
+    # must cost the resume, not the answer the user is waiting on.
+    def explode(uuid: str) -> None:
+        raise RuntimeError("the ledger is locked")
+
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(
+        job="J",
+        session="S",
+        metering=_FakeStore(),
+        forwarder=_echo_forwarder,
+        session_id_reader=lambda text: "019f-abc",
+        session_id_sink=explode,
+    )
+    relay.start()
+    try:
+        body = _post(relay, b'{"session_id":"019f-abc"}')
+    finally:
+        relay.stop()
+        set_active(previous)
+    assert body == _SSE, "the client still gets its full turn"
+    assert capsys.readouterr().err == "", "and no traceback lands on its screen"

@@ -173,6 +173,8 @@
   "log.vibe_relay_failed": "échec du démarrage du relais de métrage ({error}) ; lancement de vibe sans métrage",
   "log.relay_failed": "échec du démarrage du relais de métrage ({error}) ; lancement sans métrage",
   "log.codex_relay_failed": "échec du démarrage du relais de métrage ({error}) ; lancement de codex sans métrage",
+  "log.codex_index_failed": "impossible d'enregistrer le nom de session {name} auprès de codex ({error}) ; la reprise par nom sera indisponible pour elle",
+  "log.session_bind_failed": "impossible d'enregistrer l'identifiant de session client pour {session} ({error}) ; elle ne sera pas reprenable",
   "log.statusline_install_failed": "impossible d'installer la barre d'état à {path} ({error}) ; exécution sans elle",
   "log.statusline_unreadable": "{path} laissé intact : ce n'est plus du JSON lisible",
   "log.receipt_failed": "échec de la lecture de l'usage pour le reçu de sortie : {error}",

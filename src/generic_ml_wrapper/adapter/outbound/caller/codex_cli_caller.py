@@ -8,7 +8,7 @@ import os
 import subprocess
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.caller import context_file
+from generic_ml_wrapper.adapter.outbound.caller import codex_session_index, context_file
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.gateway import openai_responses
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
     from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+    from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 BINARY = "codex"
@@ -37,6 +38,13 @@ class CodexCliCaller(CliCaller):
     flag). ``start_metering`` stands up a relay pointed at the ChatGPT-Codex backend
     and ``_provider_flags`` adds the ``model_providers`` overrides pointing codex at
     it; if the relay cannot start, codex launches unmetered.
+
+    Resume works the other way round from Claude's. Codex mints its own session id and
+    has no flag to accept ours, so instead of *telling* it an id we *learn* the one it
+    minted — off the relayed request body, on the first metered turn — then bind that
+    id to the session and register the session's name in codex's own index, so the
+    session can be reopened by either. A codex session is therefore resumable from its
+    first turn onward, not from launch.
     """
 
     def __init__(
@@ -45,6 +53,7 @@ class CodexCliCaller(CliCaller):
         metering: PerTurnMeteringPort,
         interceptors: InterceptorChain | None = None,
         transcript: TranscriptPort | None = None,
+        sessions: SessionStorePort | None = None,
     ) -> None:
         """Bind the caller to a run, its metering store, and the interceptor chain.
 
@@ -53,16 +62,31 @@ class CodexCliCaller(CliCaller):
             metering: Where the relay records per-turn usage.
             interceptors: The interceptor chain the relay applies to wire traffic.
             transcript: Where the relay records each call's transcript, or ``None``.
+            sessions: Where the observed client-side session id is bound back to the
+                session record; ``None`` disables learning it (the session still runs
+                and meters, it just stays unresumable).
         """
         super().__init__(run)
         self._metering = metering
         self._interceptors = interceptors
         self._transcript = transcript
+        self._sessions = sessions
         self._relay: MeteringRelay | None = None
 
     def can_meter_per_call(self) -> bool:
         """This caller records per-turn usage via its metering relay."""
         return True
+
+    def can_resume(self) -> bool:
+        """Whether this codex session can be reopened — only once its id is known.
+
+        Overrides the catalog's flat capability: for codex, resumability is a property
+        of the *session*, not the client. A session is resumable once the relay has
+        learned the id codex minted for it, and only while codex still has that session
+        on disk (deleting it there must not leave a resume that silently opens a new,
+        empty session instead).
+        """
+        return self.run.uuid is not None and codex_session_index.knows(self.run.uuid)
 
     def start_metering(self) -> None:
         """Start the Codex metering relay for this session."""
@@ -76,6 +100,8 @@ class CodexCliCaller(CliCaller):
             path_map=_codex_path_map,
             usage_reader=openai_responses.read_usage,
             is_metered=_codex_metered,
+            session_id_reader=openai_responses.read_session_id,
+            session_id_sink=self._bind_session_id,
             interceptors=self._interceptors,
         )
         try:
@@ -84,6 +110,29 @@ class CodexCliCaller(CliCaller):
             log.warning(i18n.t("log.codex_relay_failed", error=error))
             return
         self._relay = relay
+
+    def _bind_session_id(self, uuid: str) -> None:
+        """Record the session id codex minted, and give codex our name for it.
+
+        Called by the relay on the first metered turn (and again only if the id ever
+        changes). Two writes, deliberately in this order: the session record is ours and
+        is what ``gmlw`` resumes from, so it must land first; codex's name registry is a
+        convenience on top, letting ``codex resume <job>_NNN`` work outside the wrapper.
+
+        Runs on a relay handler thread mid-turn, so it swallows its own failures — a
+        session that cannot be made resumable is a lesser loss than a broken turn.
+        """
+        if self._sessions is None:
+            return
+        try:
+            self._sessions.bind_uuid(self.run.job, self.run.session_id, uuid)
+        except Exception as error:  # noqa: BLE001  (bookkeeping must never break a turn)
+            log.warning(
+                i18n.t("log.session_bind_failed", session=self.run.session_id, error=error),
+                key="log.session_bind_failed",
+            )
+            return
+        codex_session_index.register(self.run.session_id, uuid)
 
     def end_metering(self) -> None:
         """Stop the metering relay."""
@@ -111,13 +160,20 @@ class CodexCliCaller(CliCaller):
     def command(self, opening: str | None = None) -> list[str]:
         """Build the ``codex`` command line for this run.
 
+        On resume this is ``codex resume <id>``; the subcommand comes before the
+        provider flags because ``resume`` is a subcommand, not an option. The id is
+        codex's own, learned on a previous run — the session's ``<job>_NNN`` name would
+        also resolve (we register it), but the id is what we hold and needs no registry
+        lookup to be correct.
+
         Args:
             opening: The opening message to start the session on, or ``None``.
 
         Returns:
             The argv list to execute.
         """
-        argv = [BINARY, *self._provider_flags()]
+        head = [BINARY, "resume", self.run.uuid] if self.run.resume and self.run.uuid else [BINARY]
+        argv = [*head, *self._provider_flags()]
         if opening is not None:
             argv.append(opening)
         return argv

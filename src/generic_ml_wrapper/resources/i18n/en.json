@@ -173,6 +173,8 @@
   "log.vibe_relay_failed": "metering relay failed to start ({error}); launching vibe unmetered",
   "log.relay_failed": "metering relay failed to start ({error}); launching unmetered",
   "log.codex_relay_failed": "metering relay failed to start ({error}); launching codex unmetered",
+  "log.codex_index_failed": "could not register session name {name} with codex ({error}); resume by name unavailable for it",
+  "log.session_bind_failed": "could not record the client session id for {session} ({error}); it will not be resumable",
   "log.statusline_install_failed": "could not install the status line at {path} ({error}); running without it",
   "log.statusline_unreadable": "leaving {path} untouched: it is no longer readable JSON",
   "log.receipt_failed": "exit receipt usage read failed: {error}",

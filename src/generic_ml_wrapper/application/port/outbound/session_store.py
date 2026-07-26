@@ -29,6 +29,22 @@ class SessionStorePort(ABC):
         """
 
     @abstractmethod
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        """Record the client-side session id a recorded session turned out to have.
+
+        For clients we hand an id to at launch (Claude's ``--session-id``) the uuid is
+        known before the session starts and :meth:`record` already carries it. For
+        clients that mint their own (Codex), it can only be learned once the session is
+        running, so it is bound after the fact — which is what makes such a session
+        resumable at all.
+
+        Args:
+            job: The job the session belongs to.
+            session_id: The session's ``<job>_NNN`` id.
+            uuid: The client-side session id observed for it.
+        """
+
+    @abstractmethod
     def sessions_for_job(self, job: str) -> list[Session]:
         """Return the sessions recorded for a job, oldest first.
 
