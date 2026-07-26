@@ -235,19 +235,29 @@ A workflow is a set of markdown files compiled, in fixed order, into one blob an
 injected at launch (Claude: `--append-system-prompt-file`):
 
 ```
-_common/base.md → profile/* → global rules → workflow rules → workflow steps
+session snapshot → profile/* → role rules → environment rules → _common/base.md → workflow steps
 ```
 
 Each stage passes through the **interceptor chain**, so a transform like context
 compression is an opt-in plug-in bound to a target, not a fork of the engine.
 
+- **Session snapshot (always-on, verbatim):** the context opens with a small JSON block
+  naming the active environment, role, persona and job. At the moment a session starts
+  exactly one of each is in play, so the frame is scalars rather than anything to resolve;
+  it is never compressed, because a paraphrase would make it wrong rather than shorter.
+- **Rules are scoped to the user, never to a workflow:** a rule lives on the environment
+  axis (the place's constraints) or the role axis (the user's craft preferences). The
+  environment composes last and outranks the role on conflict. A workflow that behaves
+  wrongly is fixed in the workflow, so there is no per-workflow rule tier.
+
 - **Rule capture (always-on):** the `rules` stage leads with a fixed capture directive
   (gmlw's voice, verbatim) whenever the source is active — on by default in every mode,
-  including a plain start — so a demanded correction becomes a draft rule in any session,
-  is deduped against the existing rules, and, when mechanically enforceable, is offered as
-  a script rather than a reminder.
+  including a plain start — so a demanded correction becomes a rule in any session, filed
+  on the environment or role axis, deduped against the existing rules, and, when
+  mechanically enforceable, offered as a script rather than a reminder.
 - **Rule cleaning (always, lossless):** drop each rule's YAML frontmatter and the
-  human-only `Origin` / `Notes` sections; skip rules marked `status: draft`.
+  human-only `Origin` / `Notes` sections; skip rules the user has switched off with
+  `status: draft`.
 - **Compression (optional, off):** each source can be compressed through its *typed*
   prompt by the `CacheBackedContextCompressor` (the `ContextCompressorPort`), which
   records through `generic-ml-cache` so the same source replays for free — the lossy

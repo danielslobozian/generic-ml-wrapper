@@ -103,7 +103,7 @@ class NewWorkflowUseCase(NewWorkflow):
             uuid=session.uuid,
             resume=False,
             cwd=draft,
-            context=self._authoring_context(guided=command.guided),
+            context=self._authoring_context(guided=command.guided, job=job),
             kickoff=self._kickoff(command.name, draft, guided=command.guided),
         )
         caller = self._callers.for_run(run)
@@ -129,9 +129,9 @@ class NewWorkflowUseCase(NewWorkflow):
         deployed = self._workflows.deploy_draft(draft, marker.name)
         return NewWorkflowResult(exit_code, WorkflowOutcome.DEPLOYED, marker.name, deployed)
 
-    def _authoring_context(self, *, guided: bool) -> str:
+    def _authoring_context(self, *, guided: bool, job: str) -> str:
         """The authoring context, with the guided-facilitation layer added when chosen."""
-        context = self._workflows.compile(CompileMode.AUTHORING, _META)
+        context = self._workflows.compile(CompileMode.AUTHORING, _META, job=job)
         if not guided:
             return context
         guide = self._workflows.meta_guide()

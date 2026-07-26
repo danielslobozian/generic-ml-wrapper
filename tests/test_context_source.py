@@ -25,7 +25,8 @@ def test_only_workflow_modes_include_base_and_steps() -> None:
 def test_source_kinds_follow_the_data_shape() -> None:
     assert context_source.ME_USER.kind is CompressorKind.HUMAN_TOUCH
     assert context_source.ME_LEARNED.kind is CompressorKind.HUMAN_TOUCH
-    assert context_source.RULES.kind is CompressorKind.RULES
+    assert context_source.RULES_ENVIRONMENT.kind is CompressorKind.RULES
+    assert context_source.RULES_ROLE.kind is CompressorKind.RULES
     assert context_source.STEPS.kind is CompressorKind.TECHNICAL
     assert context_source.BASE.kind is CompressorKind.TECHNICAL
     # verbatim by default — each word matters / tone must not be distorted

@@ -393,5 +393,17 @@
   "cli.section.positional": "arguments positionnels",
   "cli.section.options": "options",
   "cli.banner.tagline": "une surcouche autour d'une CLI de codage par IA",
-  "cli.banner.subtitle": "entrez par un travail · une session reprenable et mesurée · flux de travail facultatif"
+  "cli.banner.subtitle": "entrez par un travail · une session reprenable et mesurée · flux de travail facultatif",
+  "tui.rules": "Règles",
+  "tui.rules.d": "Les réflexes que vous avez exigés, par environnement et par rôle",
+  "tui.rules.none": "Aucune règle pour l'instant.\n\nLes règles ne s'écrivent pas ici — elles se capturent en session : quand vous exigez une correction, le client l'enregistre, active aussitôt, sous l'environnement où vous êtes ou le rôle que vous portez.",
+  "tui.rules.axis.environment": "Environnement",
+  "tui.rules.axis.environment.d": "Les contraintes du lieu — ses processus, ses standards, son outillage",
+  "tui.rules.axis.role": "Rôle",
+  "tui.rules.axis.role.d": "Vos propres préférences sur le métier, où que vous travailliez",
+  "tui.rules.count": "{count} règle(s)",
+  "tui.rules.drafts": "{count} désactivée(s)",
+  "tui.rules.draft": "brouillon — désactivée, injectée dans aucune session",
+  "tui.rules.active": "active",
+  "tui.rules.norule": "(pas de ligne Rule:)"
 }

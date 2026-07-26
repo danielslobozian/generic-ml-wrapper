@@ -21,7 +21,9 @@ def test_seeder_creates_the_layout_and_config(tmp_path: Path) -> None:
     FilesystemLayoutSeeder(tmp_path).ensure()
     assert (tmp_path / "profile" / "me").is_dir()
     assert not (tmp_path / "profile" / "company").exists()  # retired; env folders replace it
-    assert (tmp_path / "rules").is_dir()
+    assert (tmp_path / "templates").is_dir()
+    # No global rules tier: rules live per environment and per role, seeded by `initialize`.
+    assert not (tmp_path / "rules").exists()
     config = tmp_path / "config.toml"
     assert config.is_file()
     # The seeded config is valid TOML that parses to no active settings (all commented).
@@ -64,14 +66,24 @@ def test_seeder_seeds_the_learned_notebook(tmp_path: Path) -> None:
     assert "## What to avoid" in text  # the negative section (first-class)
 
 
-def test_seeder_seeds_the_example_rule_as_a_draft(tmp_path: Path) -> None:
+def test_seeder_seeds_the_rule_template(tmp_path: Path) -> None:
     FilesystemLayoutSeeder(tmp_path).ensure()
-    example = tmp_path / "rules" / "example.rule.md"
-    assert example.is_file()
-    text = example.read_text(encoding="utf-8")
-    assert "status: draft" in text  # never injected; a template to copy
+    template = tmp_path / "templates" / "rule.template.md"
+    assert template.is_file()
+    text = template.read_text(encoding="utf-8")
+    assert "status: active" in text  # a rule applies from creation; draft is the off-switch
     for field in ("**Rule:**", "**When:**", "**Signals:**", "**Strength:**", "**Origin:**"):
         assert field in text
+
+
+def test_seeder_never_overwrites_an_edited_rule_template(tmp_path: Path) -> None:
+    # The template is the user's to reshape, and the capture directive embeds whatever is
+    # on disk — so a re-seed must never quietly restore the packaged wording.
+    (tmp_path / "templates").mkdir(parents=True)
+    template = tmp_path / "templates" / "rule.template.md"
+    template.write_text("MY FORMAT", encoding="utf-8")
+    FilesystemLayoutSeeder(tmp_path).ensure()
+    assert template.read_text(encoding="utf-8") == "MY FORMAT"
 
 
 def test_seeder_never_overwrites_an_edited_notebook(tmp_path: Path) -> None:

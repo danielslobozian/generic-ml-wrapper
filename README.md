@@ -94,11 +94,11 @@ uv tool install generic-ml-wrapper     # or: uv sync --extra dev  (from a clone)
 gmlw start MY-FIRST-JOB                # first run self-seeds ~/.gmlw (owner-only)
 ```
 
-On first run the wrapper creates `~/.gmlw/` (mode `0700`) with a commented `config.toml`, a SQLite ledger, and the workflow/profile/rule folders. Pick the client per run with `--client claude|cursor|codex|vibe`, or set a default in `config.toml`.
+On first run the wrapper creates `~/.gmlw/` (mode `0700`) with a commented `config.toml`, a SQLite ledger, and the workflow, profile, environment and template folders. Pick the client per run with `--client claude|cursor|codex|vibe`, or set a default in `config.toml`.
 
 ## Workflows
 
-A **workflow** is a small operating context you author once and launch a job with. Rather than re-explaining the same standing instructions to the client every time, you compile them once — a base, your profile, global rules, and the workflow's own steps — into the context the session opens with.
+A **workflow** is a small operating context you author once and launch a job with. Rather than re-explaining the same standing instructions to the client every time, you compile them once — a base, your profile, the rules of your environment and role, and the workflow's own steps — into the context the session opens with.
 
 ```sh
 gmlw workflow new doc-review           # author a workflow (an authoring session, kept apart from work)
@@ -131,7 +131,7 @@ Beyond metering, `gmlw` builds a portable operating context that follows you fro
 - **Profile & company** — who you are and your project's conventions (`profile/me`, `profile/company`), composed into every session.
 - **Learned notebook** — what your tools notice about how you work, in one file they all mirror into; negatives ("what to avoid") are first-class.
 - **Personas** — a selectable tone with a free, local greeting at launch (`gmlw persona list`).
-- **Rules** — corrections you've demanded, captured as reusable reflexes (`~/.gmlw/rules/*.rule.md`).
+- **Rules** — corrections you've demanded, captured as reusable reflexes and filed by axis: the environment's constraints (`~/.gmlw/environments/<env>/rules/`) or your role's craft preferences (`~/.gmlw/profile/roles/<role>/rules/`). Browse them with `gmlw tui` → Rules.
 - **Mode-aware packaging** — a `[startup.<mode>]` matrix decides which sources compose for a plain session, a workflow, or authoring, with optional typed compression.
 - **Plugins & overrides** — swap a client's caller by id (`gmlw plugins list`, `[callers]`).
 

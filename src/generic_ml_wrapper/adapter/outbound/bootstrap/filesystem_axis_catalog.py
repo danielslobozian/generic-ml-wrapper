@@ -69,10 +69,11 @@ class FilesystemAxisCatalog(AxisCatalogPort):
         return (self._root(kind) / slug).is_dir()
 
     def create(self, kind: AxisKind, slug: str, label: str, description: str, created: str) -> None:
-        """Create the slug-folder (plus ``rules/`` for a role) and its ``.about.toml``."""
+        """Create the slug-folder with its ``rules/`` drop-zone and its ``.about.toml``.
+
+        Both axes carry rules — an environment's constraints and a role's craft preferences —
+        so both get the drop-zone, matching what ``init`` seeds for the chosen pair.
+        """
         folder = self._root(kind) / slug
-        if kind is AxisKind.ROLE:
-            (folder / "rules").mkdir(parents=True, exist_ok=True)
-        else:
-            folder.mkdir(parents=True, exist_ok=True)
+        (folder / "rules").mkdir(parents=True, exist_ok=True)
         write_about(folder, label, description, created)

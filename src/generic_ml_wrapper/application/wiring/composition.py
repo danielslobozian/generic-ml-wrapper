@@ -20,6 +20,9 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator im
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_catalog import (
+    FilesystemRuleCatalog,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_slug_migrator import (
     FilesystemSlugMigrator,
 )
@@ -88,6 +91,7 @@ from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
+from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
@@ -114,6 +118,7 @@ from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCa
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
+from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
@@ -162,7 +167,7 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
     return FilesystemWorkflowSource(
         paths.WORKFLOWS,
         paths.PROFILE,
-        paths.RULES,
+        paths.TEMPLATES,
         interceptors,
         personas=build_persona_source(),
         compressor=CacheBackedContextCompressor(),
@@ -171,6 +176,8 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
         environments_root=paths.ENVIRONMENTS,
         default_environment=config.default_environment,
         default_role=config.default_role,
+        user_name=lambda: config.companion().name,
+        language=config.language,
     )
 
 
@@ -413,6 +420,17 @@ def build_axis_catalog() -> AxisCatalogPort:
         A ready-to-use :class:`AxisCatalogPort` for listing the axis slug-folders.
     """
     return FilesystemAxisCatalog(paths.HOME)
+
+
+def build_list_rules() -> ListRules:
+    """Build the ListRules use case for the TUI's Rules browser.
+
+    Returns:
+        A ready-to-run ListRules over the environment and role rule folders.
+    """
+    return ListRulesUseCase(
+        catalog=FilesystemRuleCatalog(paths.HOME, FilesystemAxisCatalog(paths.HOME))
+    )
 
 
 def build_migrate_layout() -> MigrateLayout:

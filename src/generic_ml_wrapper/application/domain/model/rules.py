@@ -1,26 +1,39 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The rule format: a domain-neutral, seeded example of a user-authored rule.
+"""The rule format: a user-editable template and the capture directive that carries it.
 
 A rule is a *correction the user demanded* — a reusable reflex to apply again, born
 from a concrete dissatisfaction (distinct from ``learned``, which is what the AI
-notices about the user). The mature software-review format is trimmed here to fields
-that fit any job: ``Rule`` / ``When`` / ``Signals`` / ``Strength`` / ``Origin`` (+ an
-optional ``Precedence``). ``Origin`` is provenance for the user and is stripped before
-the model; the rest reach it. Rules live under ``~/.gmlw/rules/*.rule.md``; a
-``status: draft`` rule is not injected until the user promotes it to ``active``.
+notices about the user). The format is trimmed to fields that fit any job:
+``Rule`` / ``When`` / ``Signals`` / ``Strength`` / ``Origin`` (+ an optional
+``Precedence``). ``Origin`` is provenance for the user and is stripped before the
+model; the rest reach it.
+
+A rule is a projection of the *user*, so it lives on one of the two axes that describe
+them: the **environment** (the place — its processes and standards) or the **role**
+(the craft — how the work is done, wherever it happens). There is no global tier and
+no workflow tier: a workflow that behaves wrongly is fixed in the workflow itself.
+
+``RULE_TEMPLATE`` is seeded once to ``~/.gmlw/templates/rule.template.md`` and never
+overwritten, so a user who reshapes it keeps their version — and because
+:func:`rule_capture_directive` embeds whatever is on disk, their edits are what the
+model is told to follow.
+
+A rule is **active from the moment it is created** — the user demanded it, so it applies.
+``status: draft`` is the off-switch they reach for later to retire a rule without deleting
+it; a draft is read but injected into no session.
 """
 
 from __future__ import annotations
 
-# Seeded once into ``rules/example.rule.md`` as a draft (never injected), so the user
-# has the format in front of them to copy. Frontmatter + the six fields.
-EXAMPLE_RULE = """\
+# Seeded once to ``templates/rule.template.md``. Kept free of commentary so it can be
+# embedded verbatim into the capture directive — one copy of the format, not two.
+RULE_TEMPLATE = """\
 ---
-name: example
-status: draft
+name: <slug>
+status: active
 ---
-# example — a template, not an active rule
+# <slug>
 
 **Rule:** State the correction as an instruction — what to do, or never do, every time
 it applies.
@@ -36,26 +49,28 @@ you have not seen yet.
 
 **Origin:** Where this came from — the moment it was demanded. This stays with you; it
 is stripped before the model sees the rule.
-
-<!-- This file is status: draft, so gmlw does not inject it. Copy it, rename to
-<your-rule>.rule.md, fill it in, and set status to active to turn it on. Keep Origin
-for yourself; the model sees Rule / When / Signals / Strength / Precedence. -->
 """
 
-# Injected as the head of the ``rules`` context section (gmlw's voice to the client), so
-# rule capture is *always-on* — a demanded correction becomes a draft rule in any session,
-# not only inside a workflow. It carries the whole rule loop: (1) offer to record a durable,
-# reusable reflex; (2) before writing, read the existing rules and update/supersede a match
-# instead of duplicating (mirrors the learned notebook's supersede-on-contradiction); and
-# (3) judge whether the rule is mechanically enforceable and, if so, offer to realise it as a
-# script/check — the create-workflow step-codeability logic generalised from steps to rules.
-# The inline template mirrors ``EXAMPLE_RULE`` so a written file is correct on the first try.
-RULE_CAPTURE_DIRECTIVE = """\
+_DIRECTIVE = """\
 ## Rules — the user's demanded reflexes
 
-The user keeps rules at ~/.gmlw/rules/*.rule.md — corrections they demanded, that gmlw
-reads into every AI tool they use, so a standard held in one client holds in all of them.
-Their active rules, if any, are included with this note.
+The user keeps rules that gmlw reads into every AI tool they use, so a standard held in
+one client holds in all of them. Their active rules, if any, are included with this note.
+
+A rule lives on one of two axes, and this session has one of each active:
+
+- **environment — `{environment}`** — a **constraint**, set by the company, the project, or
+  the tooling: how documentation is written here, how a particular service is built, how the
+  code is linted. Not the user's preference and not open to their taste — it is how this
+  place works, and it stops applying elsewhere.
+- **role — `{role}`** — a **preference or decision of the user's own**, about the craft:
+  design patterns, how they approach code, what they consider good work. It travels with
+  them wherever they work.
+
+When the two conflict, the environment rule wins: a constraint is not overridden by a
+preference. Within a single axis, an explicit `Precedence:` number decides.
+
+There is no general or per-workflow rule. If a workflow behaves wrongly, fix the workflow.
 
 When the user is dissatisfied with something you did and wants it to never happen again —
 or otherwise asks you to hold to a standard — offer to record it as a rule. A rule is a
@@ -64,10 +79,14 @@ rule, but a one-off decision often encodes a reflex underneath — extract the r
 the specifics. Offer, don't impose: one line, and only when the reflex is genuinely durable
 and reusable.
 
-Before writing one, read the existing rules in ~/.gmlw/rules/ (drafts included). If one
-already covers this, update or supersede that file in place rather than stacking a
-near-duplicate — the same way you correct the learned notebook on a contradiction instead
-of piling a second, conflicting note on top.
+Work out which axis it belongs to and say which you propose and why — but the choice is the
+user's, so let them redirect it. When you genuinely cannot tell, ask rather than guess: a
+rule filed on the wrong axis is silently absent from every session that does not use it.
+
+Before writing one, read the existing rules on the axis you are about to write to (drafts
+included). If one already covers this, update or supersede that file in place rather than
+stacking a near-duplicate — the same way you correct the learned notebook on a contradiction
+instead of piling a second, conflicting note on top.
 
 Then judge whether the rule is *mechanically enforceable* — deterministic and checkable by a
 script (a formatter, a lint, a guard), rather than needing judgment, taste, or reading intent.
@@ -75,20 +94,45 @@ If it is, offer to realise it as a small script or check the user can run, not j
 reminder — faster and reliable. Offer the code, leave the judgment rules as prose, and get the
 user's OK before writing either.
 
-Write a new rule to ~/.gmlw/rules/<slug>.rule.md as status: draft, so the user approves it
-(they promote it by editing status to active):
+Write the new rule as `<slug>.rule.md` in the folder for the chosen axis:
 
-    ---
-    name: <slug>
-    status: draft
-    ---
-    # <slug>
+- environment → `{environment_dir}`
+- role → `{role_dir}`
 
-    **Rule:** <the correction, as an instruction — what to do, or never do>
-    **When:** <the situation that should trigger it>
-    **Signals:** <how to recognise you are in that situation>
-    **Strength:** hard   (always applies) — or soft (a strong preference)
-    **Origin:** <the moment it was demanded — stays with the user; stripped before the model>
+Write it `status: active`: the user demanded this correction, so it applies from the moment
+it is recorded — do not park it awaiting approval. Setting `status: draft` is *their* switch,
+to retire a rule later without deleting it. This is the user's own template — if they have
+reshaped it, follow their version:
 
-Add **Precedence:** <n> only when it may conflict with another rule (higher wins).
+{template}
 """
+
+
+def rule_capture_directive(
+    *, environment: str, role: str, environment_dir: str, role_dir: str, template: str
+) -> str:
+    """Render the always-on rule-capture directive for this session's active axes.
+
+    The directive is gmlw's own voice to the client, injected at the head of the ``rules``
+    context section so a demanded correction becomes a draft rule in any session — even one
+    with no rules yet. It names the two concrete destinations rather than a general one,
+    because at the moment a rule is born exactly one environment and one role are active.
+
+    Args:
+        environment: The active environment's slug.
+        role: The active role's slug.
+        environment_dir: The environment's rules folder, as a user-readable path.
+        role_dir: The role's rules folder, as a user-readable path.
+        template: The rule template's text, read from the user's templates folder so their
+            edits are what the model follows.
+
+    Returns:
+        The rendered directive.
+    """
+    return _DIRECTIVE.format(
+        environment=environment,
+        role=role,
+        environment_dir=environment_dir,
+        role_dir=role_dir,
+        template=template.strip(),
+    )

@@ -19,7 +19,10 @@ PROFILE = HOME / "profile"
 # Place-specific context, one folder per environment (the movie set). The old single
 # profile/company folder is migrated into environments/<default_environment>/ on init.
 ENVIRONMENTS = HOME / "environments"
-RULES = HOME / "rules"
+# User-editable authoring templates (rule.template.md, later persona.template.md, ...).
+# Seeded once and never overwritten, so a user who reshapes a template keeps their version.
+# Rules themselves are not stored here: they live per environment and per role.
+TEMPLATES = HOME / "templates"
 # The personas folder: one persona per file; the selected one is injected as a source.
 PERSONAS = HOME / "personas"
 # Trusted plugins: one folder per plugin (id = folder name) with a plugin.toml manifest.

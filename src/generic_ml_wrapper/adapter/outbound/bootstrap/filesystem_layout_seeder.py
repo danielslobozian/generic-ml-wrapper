@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
-from generic_ml_wrapper.application.domain.model.rules import EXAMPLE_RULE
+from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
     InitPersist,
     InitSelections,
@@ -24,16 +24,18 @@ if TYPE_CHECKING:
 # The personas/ folder is seeded on demand by the persona source (packaged defaults),
 # so it is not created here. Place-specific context lives under environments/<env>/ now
 # (created by `initialize` for the chosen env); the old profile/company is migrated into it.
-_DIRS = ("profile/me", "rules")
+_DIRS = ("profile/me", "templates")
 _ENVIRONMENTS = "environments"
-# Role-scoped rules/learned live per role; init seeds the chosen role's folder (with an
-# empty rules/ drop-zone mirroring the global rules/). The role is a lens over `me`.
+# Rules are a projection of the user, so they live on the two axes that describe one: the
+# environment (the place) and the role (the craft). Init seeds an empty rules/ drop-zone in
+# each of the chosen folders. There is no global tier and no per-workflow tier.
 _ROLES = "profile/roles"
 _CONFIG = "config.toml"
 # The learned notebook, seeded empty (header + the two sections) for the client to fill.
 _LEARNED = "profile/me/learned.md"
-# A draft example rule (never injected) so the user has the rule format to copy.
-_EXAMPLE_RULE = "rules/example.rule.md"
+# The user-editable rule format. Seeded once, never overwritten, and embedded into the
+# capture directive from disk — so a user who reshapes it changes what the model follows.
+_RULE_TEMPLATE = "templates/rule.template.md"
 
 
 # The seed for the ``[init]`` gate marker: an active ``version`` once init has run, else a
@@ -200,16 +202,20 @@ __CLIENT_DEFAULT__
 # sources; [startup] decides, per mode, which are active and which are compressed. Modes:
 # default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`).
 # Sources: me.user (profile/me/*.md), me.learned (profile/me/learned*), company
-# (environments/<env>/*.md — the active [profile] default_environment), rules (rules/*.md),
-# persona (the selected persona + shared floor,
-# see [companion]); a workflow run also composes its base and steps. Omit all of this for the
-# built-in per-mode defaults; the default-mode defaults, shown explicitly:
+# (environments/<env>/*.md — the active [profile] default_environment), rules.environment
+# (environments/<env>/rules/*.rule.md — the place's constraints) and rules.role
+# (profile/roles/<role>/rules/*.rule.md — the user's own craft preferences), persona (the
+# selected persona + shared floor, see [companion]); a workflow run also composes its base
+# and steps. Omit all of this for the built-in per-mode defaults; the default-mode defaults,
+# shown explicitly:
 # [startup.default.context.me]
 # user    = { activated = true,  compression = false }
 # learned = { activated = true,  compression = false }
+# [startup.default.context.rules]
+# environment = { activated = true, compression = false }
+# role        = { activated = true, compression = false }
 # [startup.default.context]
 # company = { activated = true,  compression = false }
-# rules   = { activated = true,  compression = false }
 # persona = { activated = false, compression = false }
 # In workflow/authoring modes base and steps are always active — only their compression
 # is configurable:
@@ -231,7 +237,7 @@ __COMPANION_PERSONA__
 # (record/replay — the same source replays for free). The prompt is chosen by the source's
 # data type; each is your IP (the repo ships none), so a source stays verbatim until a
 # prompt resolves for it. Kinds: human-touch (me.user + me.learned), technical (workflow
-# base + steps), rules (rules); company/persona are verbatim.
+# base + steps), rules (both rule axes); company/persona are verbatim.
 # adapter = "cursor"   # any generic-ml-cache client adapter / model / effort
 # model = "gpt-5.4"
 # effort = "low"
@@ -324,11 +330,13 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         # The chosen environment's slug-folder — the movie set the migration wraps company
         # into — with its .about.toml recording the human label the slug came from.
         env_dir = self._home / _ENVIRONMENTS / selections.environment.slug
-        env_dir.mkdir(parents=True, exist_ok=True)
+        # ...with an empty rules/ drop-zone: the place's own standards and processes.
+        (env_dir / "rules").mkdir(parents=True, exist_ok=True)
         write_about(
             env_dir, selections.environment.label, selections.environment.description, created
         )
-        # The chosen role's slug-folder, with an empty rules/ drop-zone (role-scoped reflexes).
+        # The chosen role's slug-folder, with an empty rules/ drop-zone: reflexes about the
+        # craft, correct wherever the user is working.
         role_dir = self._home / _ROLES / selections.role.slug
         (role_dir / "rules").mkdir(parents=True, exist_ok=True)
         write_about(role_dir, selections.role.label, selections.role.description, created)
@@ -359,9 +367,9 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         learned = self._home / _LEARNED
         if not learned.exists():
             learned.write_text(NOTEBOOK_TEMPLATE, encoding="utf-8")
-        example_rule = self._home / _EXAMPLE_RULE
-        if not example_rule.exists():
-            example_rule.write_text(EXAMPLE_RULE, encoding="utf-8")
+        rule_template = self._home / _RULE_TEMPLATE
+        if not rule_template.exists():
+            rule_template.write_text(RULE_TEMPLATE, encoding="utf-8")
 
     @staticmethod
     def _merge(config: Path, selections: InitSelections) -> tuple[str, ...]:
