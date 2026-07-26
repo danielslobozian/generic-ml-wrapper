@@ -62,6 +62,20 @@ class SqliteSessionStore(SessionStorePort):
                 ),
             )
 
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        """Bind an observed client-side session id to a recorded session.
+
+        Also flips ``resumable`` on: a client that mints its own id is recorded as
+        not-resumable precisely because we had no id to target, so learning one is what
+        makes the session resumable. Scoped by ``job`` as well as ``session_id`` because
+        the ``<job>_NNN`` id is only unique within its job.
+        """
+        with self._ledger.connect() as connection:
+            connection.execute(
+                "UPDATE sessions SET uuid = ?, resumable = 1 WHERE job = ? AND session_id = ?",
+                (uuid, job, session_id),
+            )
+
     def sessions_for_job(self, job: str) -> list[Session]:
         """Return the sessions recorded for a job, oldest first."""
         with self._ledger.connect() as connection:

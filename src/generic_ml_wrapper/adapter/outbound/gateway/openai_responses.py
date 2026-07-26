@@ -1,11 +1,15 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Extract per-turn token usage from an OpenAI Responses API SSE stream (Codex).
+"""Read a Codex turn's usage and session id off the OpenAI Responses API wire.
 
 Codex streams a turn as Server-Sent Events and reports usage once, in the final
 ``response.completed`` event's ``response.usage``. Unlike Anthropic, its
 ``input_tokens`` is the TOTAL input including cache reads, so fresh input is
 ``input_tokens - cached_tokens``.
+
+The *request* side carries codex's own session id, which is the only way to learn it
+— codex mints it internally and takes no launch flag to set it (see
+:func:`read_session_id`).
 """
 
 from __future__ import annotations
@@ -44,6 +48,36 @@ def read_usage(text: str) -> StreamUsage | None:
         if usage is not None:
             return usage
     return None
+
+
+def read_session_id(text: str) -> str | None:
+    """Read codex's own session id from a Responses API *request* body.
+
+    Codex mints its session id internally and has no launch flag to set one, so the
+    wire is the only place we can learn it. Every turn's request body carries it in
+    ``client_metadata`` (alongside ``thread_id``, which has been identical to it in
+    every sample, and ``turn_id``, which is per-turn and NOT what we want). It is
+    stable for the life of a session, so the first metered turn already yields it.
+
+    ``prompt_cache_key`` carries the same value and is the fallback: it survives a
+    ``client_metadata`` rename, and reading the wrong one costs a resume, not a turn.
+
+    Args:
+        text: The decoded request body.
+
+    Returns:
+        The client-side session id, or ``None`` if the body carries none.
+    """
+    try:
+        decoded: object = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    request = cast("dict[str, object]", decoded)
+    return _as_str(_get(request.get("client_metadata"), "session_id")) or _as_str(
+        request.get("prompt_cache_key")
+    )
 
 
 def _usage(response: object) -> StreamUsage | None:

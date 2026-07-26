@@ -94,7 +94,15 @@ class StartJobUseCase(StartJob):
             run = self._with_capability_card(run)  # optional ambient "how do I …" card
         caller = self._callers.for_run(run)
         if run.resume and not caller.can_resume():
-            message = f"session resume not supported on {run.client}"
+            # Two different refusals wear this one error. Some clients cannot resume at
+            # all; others (codex) can, but only a session whose client-side id we managed
+            # to learn — one that died before its first turn, or was deleted client-side,
+            # has none. Say which, because the fixes are not the same.
+            message = (
+                f"session resume not supported on {run.client}"
+                if run.uuid is None
+                else f"{run.session_id} cannot be resumed: {run.client} no longer has it"
+            )
             raise ResumeNotSupportedError(message)
         # Persist only once every precondition (workflow, caller, resume) has passed, so
         # a rejected start never leaves a ghost session that burns an id and could be resumed.

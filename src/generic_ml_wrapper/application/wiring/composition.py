@@ -296,8 +296,9 @@ def build_start_job() -> StartJob:
         A ready-to-run StartJob.
     """
     interceptors = _interceptor_chain()
+    sessions = SqliteSessionStore(_ledger())
     return StartJobUseCase(
-        store=SqliteSessionStore(_ledger()),
+        store=sessions,
         workflows=_workflow_source(interceptors),
         callers=DefaultCliCallerProvider(
             config.caller_overrides(),
@@ -305,6 +306,7 @@ def build_start_job() -> StartJob:
             transcript=_transcript(),
             interceptors=interceptors,
             plugins=build_plugin_source(),
+            sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         cwd_factory=os.getcwd,
@@ -579,15 +581,17 @@ def build_new_workflow() -> NewWorkflow:
         A ready-to-run NewWorkflow.
     """
     interceptors = _interceptor_chain()
+    sessions = SqliteSessionStore(_ledger(), kind="authoring")
     return NewWorkflowUseCase(
         workflows=_workflow_source(interceptors),
-        store=SqliteSessionStore(_ledger(), kind="authoring"),
+        store=sessions,
         callers=DefaultCliCallerProvider(
             config.caller_overrides(),
             metering=SqlitePerTurnStore(_ledger()),
             transcript=_transcript(),
             interceptors=interceptors,
             plugins=build_plugin_source(),
+            sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         hooks=_hook_runner(),
@@ -601,15 +605,17 @@ def build_edit_workflow() -> EditWorkflow:
         A ready-to-run EditWorkflow.
     """
     interceptors = _interceptor_chain()
+    sessions = SqliteSessionStore(_ledger(), kind="authoring")
     return EditWorkflowUseCase(
         workflows=_workflow_source(interceptors),
-        store=SqliteSessionStore(_ledger(), kind="authoring"),
+        store=sessions,
         callers=DefaultCliCallerProvider(
             config.caller_overrides(),
             metering=SqlitePerTurnStore(_ledger()),
             transcript=_transcript(),
             interceptors=interceptors,
             plugins=build_plugin_source(),
+            sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         hooks=_hook_runner(),

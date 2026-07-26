@@ -18,6 +18,9 @@ class FakeStore(SessionStorePort):
     def sessions_for_job(self, job: str) -> list[Session]:
         return self._sessions
 
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        raise NotImplementedError
+
     def record(self, session: Session) -> None:
         raise NotImplementedError
 

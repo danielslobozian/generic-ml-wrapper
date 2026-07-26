@@ -15,12 +15,16 @@ class Session:
         session_id: The human-readable id, ``<job>_NNN``.
         job: The job this session belongs to.
         client: The client it runs on (e.g. ``"claude"``).
-        uuid: The client-side session id (Claude's ``--session-id``), or ``None``.
+        uuid: The client-side session id — one we minted and handed to the client
+            (Claude's ``--session-id``), or one the client minted and we learned off the
+            wire (Codex, bound after the session's first turn) — or ``None``.
         cwd: The working directory the session was launched in, or ``None`` if unknown
             (pre-existing sessions). Claude resume is scoped to this folder, so a resume
             must relaunch there.
-        resumable: Whether this session can be resumed — snapshotted from the client's
-            capability at creation (claude/cursor yes; codex/vibe no).
+        resumable: Whether this session can be resumed — the client's capability at
+            creation (claude/cursor yes; codex/vibe no), which for codex is only the
+            starting state: it flips on once the session's own id has been learned from
+            the wire and bound, so resumability there is per-session, not per-client.
         created_at: When the session was first recorded (ISO string), populated on read
             from the store; ``None`` for a freshly-minted, not-yet-persisted session.
             Excluded from equality, being store-assigned rather than app-provided.

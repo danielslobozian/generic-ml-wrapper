@@ -17,6 +17,7 @@ what run. It also ships in-memory reference fakes any test can reuse.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -49,6 +50,12 @@ class InMemorySessionStore(SessionStorePort):
 
     def record(self, session: Session) -> None:
         self._by_job.setdefault(session.job, []).append(session)
+
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        recorded = self._by_job.get(job, [])
+        for index, session in enumerate(recorded):
+            if session.session_id == session_id:
+                recorded[index] = replace(session, uuid=uuid, resumable=True)
 
     def sessions_for_job(self, job: str) -> list[Session]:
         return list(self._by_job.get(job, []))
@@ -166,6 +173,31 @@ class SessionStoreConformance:
         store.record(Session("B_001", "B", "claude", None))
         store.record(Session("A_001", "A", "claude", None))
         assert store.jobs() == ["A", "B"]
+
+    def test_binding_a_uuid_makes_an_unresumable_session_resumable(self, tmp_path: Path) -> None:
+        # A codex session is recorded with no uuid and resumable=False, because its id
+        # only exists once the client is running. Learning it is what makes it resumable.
+        store = self.make_store(tmp_path)
+        store.record(Session("JOB-1_001", "JOB-1", "codex", None, resumable=False))
+        store.bind_uuid("JOB-1", "JOB-1_001", "019f9f6b-9989-7502-82b7-781594cd2d5c")
+        bound = store.sessions_for_job("JOB-1")[0]
+        assert bound.uuid == "019f9f6b-9989-7502-82b7-781594cd2d5c"
+        assert bound.resumable is True
+
+    def test_binding_a_uuid_touches_only_its_own_session(self, tmp_path: Path) -> None:
+        # The <job>_NNN id is unique only within its job, so a bind must be scoped by both.
+        store = self.make_store(tmp_path)
+        store.record(Session("A_001", "A", "codex", None, resumable=False))
+        store.record(Session("B_001", "B", "codex", None, resumable=False))
+        store.bind_uuid("A", "A_001", "u-a")
+        assert store.sessions_for_job("B")[0].uuid is None
+
+    def test_binding_an_unknown_session_is_a_no_op(self, tmp_path: Path) -> None:
+        # The relay can outlive the record it was launched for (a rejected start records
+        # nothing). Binding must not resurrect a session or raise on the handler thread.
+        store = self.make_store(tmp_path)
+        store.bind_uuid("JOB-1", "JOB-1_404", "u-1")
+        assert store.sessions_for_job("JOB-1") == []
 
 
 class PerTurnMeteringConformance:

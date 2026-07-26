@@ -74,6 +74,9 @@ class FakeStore(SessionStorePort):
     def sessions_for_job(self, job: str) -> list[Session]:
         return []
 
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        return None
+
     def record(self, session: Session) -> None:
         self.recorded.append(session)
 

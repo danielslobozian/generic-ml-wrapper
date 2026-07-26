@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
+    from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 
@@ -28,7 +29,7 @@ class UnsupportedClientError(ValueError):
 class DefaultCliCallerProvider(CliCallerProvider):
     """Resolve a run's caller: a config override if present, else the built-in one."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  (one collaborator per concern, all keyword-only)
         self,
         overrides: dict[str, str] | None = None,
         *,
@@ -36,6 +37,7 @@ class DefaultCliCallerProvider(CliCallerProvider):
         transcript: TranscriptPort | None = None,
         interceptors: InterceptorChain | None = None,
         plugins: PluginSourcePort | None = None,
+        sessions: SessionStorePort | None = None,
     ) -> None:
         """Bind the provider to its overrides, metering store, and interceptor chain.
 
@@ -48,12 +50,15 @@ class DefaultCliCallerProvider(CliCallerProvider):
             interceptors: The interceptor chain the relay applies to wire traffic.
             plugins: Resolves a plugin-id override to a loadable spec; ``None`` means
                 overrides are used verbatim (only ``"path.py:Class"`` specs work).
+            sessions: The session store, for clients whose session id can only be
+                learned from the wire once running (codex) and must be bound back.
         """
         self._overrides = overrides or {}
         self._metering = metering
         self._transcript = transcript
         self._interceptors = interceptors
         self._plugins = plugins
+        self._sessions = sessions
 
     def for_run(self, run: RunContext) -> CliCaller:
         """Return the caller for the run's client.
@@ -80,7 +85,9 @@ class DefaultCliCallerProvider(CliCallerProvider):
         if run.client == "cursor":
             return CursorCliCaller(run)
         if run.client == "codex":
-            return CodexCliCaller(run, self._metering, self._interceptors, self._transcript)
+            return CodexCliCaller(
+                run, self._metering, self._interceptors, self._transcript, self._sessions
+            )
         if run.client == "vibe":
             return VibeCliCaller(run, self._metering, self._interceptors, self._transcript)
         message = f"unsupported client: {run.client!r}"

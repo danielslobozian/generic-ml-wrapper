@@ -24,10 +24,12 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
 from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.run import RunContext
+from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
+from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
 
 class _BareCaller(CliCaller):
@@ -379,8 +381,9 @@ def test_codex_meters_but_delivers_no_statusline() -> None:
 
 
 def test_codex_and_vibe_cannot_resume_while_others_can() -> None:
-    # Resume is the default (claude/cursor support it); codex and vibe opt out
-    # because neither lets the wrapper set a session id at launch.
+    # Resume is the default (claude/cursor support it) because they let the wrapper set a
+    # session id at launch. Vibe never can. Codex cannot *at launch* either -- but unlike
+    # vibe it can once its own id has been learned from the wire (see below).
     assert _BareCaller(_run(resume=False, uuid=None)).can_resume() is True
     assert _claude(_run(resume=False, uuid=None)).can_resume() is True
     assert CursorCliCaller(_cursor_run(resume=False)).can_resume() is True
@@ -520,3 +523,130 @@ def test_provider_returns_vibe_caller() -> None:
     provider = DefaultCliCallerProvider(metering=_FakeMetering())
     run = RunContext("JOB-1", "JOB-1_001", "vibe", None, False)
     assert type(provider.for_run(run)) is VibeCliCaller
+
+
+# ── codex: learning its session id, and resuming by it ──
+class _RecordingSessions(SessionStorePort):
+    """A session store that only records what was bound back to it."""
+
+    def __init__(self) -> None:
+        self.bound: list[tuple[str, str, str]] = []
+
+    def jobs(self) -> list[str]:
+        return []
+
+    def record(self, session: Session) -> None:
+        raise NotImplementedError
+
+    def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+        self.bound.append((job, session_id, uuid))
+
+    def sessions_for_job(self, job: str) -> list[Session]:
+        return []
+
+    def ids_for_job(self, job: str) -> list[str]:
+        return []
+
+    def latest_for_job(self, job: str) -> Session | None:
+        return None
+
+
+def _codex_resume_run(uuid: str | None) -> RunContext:
+    return RunContext("JOB-1", "JOB-1_001", "codex", uuid, True)
+
+
+def _known_session(root: Path, uuid: str) -> None:
+    """Give codex a rollout file for ``uuid``, as a real session would have."""
+    folder = root / "sessions" / "2026" / "07" / "26"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"rollout-2026-07-26T19-14-16-{uuid}.jsonl").write_text("{}\n", encoding="utf-8")
+
+
+def test_a_codex_session_becomes_resumable_once_its_id_is_known(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    _known_session(tmp_path, "019f-abc")
+    assert _codex(_codex_resume_run("019f-abc")).can_resume() is True
+
+
+def test_a_codex_session_without_an_id_cannot_resume(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # It died before its first turn, so the wire never carried an id to learn.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    assert _codex(_codex_resume_run(None)).can_resume() is False
+
+
+def test_a_codex_session_codex_no_longer_has_cannot_resume(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # We hold the id, but the user deleted the session client-side. Resuming anyway would
+    # silently open a NEW session -- codex answers an unknown id that way rather than failing.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    assert _codex(_codex_resume_run("019f-gone")).can_resume() is False
+
+
+def test_codex_resume_command_targets_the_learned_id() -> None:
+    argv = _codex(_codex_resume_run("019f-abc")).command()
+    assert argv[:3] == ["codex", "resume", "019f-abc"]
+
+
+def test_codex_resume_keeps_the_subcommand_ahead_of_the_provider_flags() -> None:
+    # `resume` is a subcommand, not an option: it has to come before -c overrides.
+    caller = _codex(_codex_resume_run("019f-abc"))
+    caller.start_metering()
+    try:
+        argv = caller.command()
+    finally:
+        caller.end_metering()
+    assert argv[:3] == ["codex", "resume", "019f-abc"]
+    assert 'model_provider="gml"' in argv
+
+
+def test_a_fresh_codex_run_does_not_resume() -> None:
+    assert _codex(_codex_run()).command() == ["codex"]
+
+
+def test_a_resume_without_an_id_falls_back_to_a_plain_launch() -> None:
+    # Belt-and-braces: can_resume already refuses this, so it should never be built --
+    # and if it ever were, `codex resume` with no id opens a picker rather than the session.
+    assert _codex(_codex_resume_run(None)).command() == ["codex"]
+
+
+def test_the_learned_session_id_is_bound_to_the_session_and_registered_with_codex(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    sessions = _RecordingSessions()
+    caller = CodexCliCaller(_codex_run(), _METERING, None, None, sessions)
+    caller._bind_session_id("019f-abc")
+
+    assert sessions.bound == [("JOB-1", "JOB-1_001", "019f-abc")]
+    index = (tmp_path / "session_index.jsonl").read_text(encoding="utf-8")
+    assert '"thread_name": "JOB-1_001"' in index
+    assert '"id": "019f-abc"' in index
+
+
+def test_a_failed_binding_does_not_register_a_name_with_codex(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The session record is ours and is what gmlw resumes from. If it did not land, a name
+    # in codex's index would point at a session the wrapper cannot account for.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    class _Broken(_RecordingSessions):
+        def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
+            raise RuntimeError("the ledger is locked")
+
+    caller = CodexCliCaller(_codex_run(), _METERING, None, None, _Broken())
+    caller._bind_session_id("019f-abc")  # must not raise: it runs mid-turn
+    assert not (tmp_path / "session_index.jsonl").exists()
+
+
+def test_a_caller_with_no_session_store_still_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    CodexCliCaller(_codex_run(), _METERING)._bind_session_id("019f-abc")
+    assert not (tmp_path / "session_index.jsonl").exists()

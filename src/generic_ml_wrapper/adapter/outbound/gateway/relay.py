@@ -46,6 +46,8 @@ if TYPE_CHECKING:
     UsageReader = Callable[[str], "StreamUsage | None"]
     MeteredPredicate = Callable[[str, str], bool]
     PathMap = Callable[[str], str]
+    SessionIdReader = Callable[[str], "str | None"]
+    SessionIdSink = Callable[[str], None]
 
 _ANTHROPIC = "https://api.anthropic.com"
 
@@ -96,6 +98,8 @@ class MeteringRelay:
         path_map: PathMap | None = None,
         usage_reader: UsageReader | None = None,
         is_metered: MeteredPredicate | None = None,
+        session_id_reader: SessionIdReader | None = None,
+        session_id_sink: SessionIdSink | None = None,
         interceptors: InterceptorChain | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -116,6 +120,12 @@ class MeteringRelay:
                 Anthropic reader. A per-client reader plugs in a different wire shape.
             is_metered: Predicate ``(method, path) -> bool`` selecting the turn
                 endpoint; defaults to Claude's ``POST /v1/messages``.
+            session_id_reader: Reads the client's own session id from a metered turn's
+                *request* body; ``None`` (the default) for clients we hand an id to at
+                launch rather than learn one from. Paired with ``session_id_sink``.
+            session_id_sink: Receives the id ``session_id_reader`` finds, once per
+                distinct value — clients mint it themselves, so this is how the wrapper
+                learns which client-side session its named session actually became.
             interceptors: The interceptor chain applied to the wire — ``request`` to
                 the outbound body, ``response`` to the captured reply; empty when ``None``.
             clock: Returns the current time (epoch seconds); injectable for tests.
@@ -134,6 +144,13 @@ class MeteringRelay:
         self._forward = forwarder or _https_forwarder(upstream_base, path_map)
         self._read_usage = usage_reader or _anthropic_usage
         self._metered = is_metered or _claude_metered
+        self._read_session_id = session_id_reader
+        self._session_id_sink = session_id_sink
+        # The last id handed to the sink. The id is stable for a session's life, so this
+        # makes the common case one write per session; it is a "last observation wins"
+        # latch rather than a write-once so a client that ever does rotate still lands
+        # on its current id.
+        self._seen_session_id: str | None = None
         self._interceptors = interceptors or InterceptorChain(())
         self._clock = clock
         self._server: ThreadingHTTPServer | None = None
@@ -260,6 +277,23 @@ class MeteringRelay:
         """
         if self._interceptors.has("response"):
             self._interceptors.apply("response", captured.decode("utf-8", "replace"))
+
+    def bind_session_id(self, request: bytes) -> None:
+        """Hand the client's own session id to the sink, once per distinct value.
+
+        A no-op unless both a reader and a sink are configured. Runs on the metered turn
+        because that is the request that carries the id.
+
+        Args:
+            request: The request body forwarded upstream.
+        """
+        if self._read_session_id is None or self._session_id_sink is None:
+            return
+        found = self._read_session_id(request.decode("utf-8", "replace"))
+        if found is None or found == self._seen_session_id:
+            return
+        self._seen_session_id = found
+        self._session_id_sink(found)
 
     def record(self, request: bytes, captured: bytes, started_at: float) -> None:
         """Record the turn's usage (if any) and its transcript (if configured).
@@ -433,6 +467,7 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             relay.intercept_response(captured)
             if relay.is_metered(self.command, upstream_path):
+                relay.bind_session_id(request)
                 relay.record(request, captured, started_at)
         except Exception as error:  # noqa: BLE001  (metering must never break a turn)
             log.warning(
