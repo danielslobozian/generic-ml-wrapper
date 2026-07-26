@@ -14,7 +14,9 @@ from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
 from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
-from generic_ml_wrapper.application.domain.model.rules import RULE_CAPTURE_DIRECTIVE
+from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE, rule_capture_directive
+from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
+from generic_ml_wrapper.application.domain.service import rule_parser
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
@@ -34,6 +36,8 @@ _HIDDEN = frozenset({_COMMON, _META})
 _LEARNED_FILE = "learned.md"
 _LEARNED_DIR = "learned"
 _STRIP_SECTIONS = ("Origin", "Notes")
+# The user-editable rule format, read from the templates root and embedded in the directive.
+_RULE_TEMPLATE_FILE = "rule.template.md"
 _MARKER = "meta.json"
 _FINISHED = "finished"
 _GUIDE = "guided.md"
@@ -53,7 +57,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self,
         root: Path,
         profile_root: Path | None = None,
-        rules_root: Path | None = None,
+        templates_root: Path | None = None,
         interceptors: InterceptorChain | None = None,
         personas: PersonaSourcePort | None = None,
         compressor: ContextCompressorPort | None = None,
@@ -62,13 +66,17 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         environments_root: Path | None = None,
         default_environment: Callable[[], str] | None = None,
         default_role: Callable[[], str] | None = None,
+        user_name: Callable[[], str | None] | None = None,
+        language: Callable[[], str | None] | None = None,
     ) -> None:
         """Bind the source to its roots and context policy.
 
         Args:
             root: The directory holding one folder per workflow.
             profile_root: The user's profile directory, or ``None`` to omit it.
-            rules_root: The global rules directory, or ``None`` to omit it.
+            templates_root: The user-editable templates directory, holding
+                ``rule.template.md``. ``None`` (or a missing file) falls back to the
+                packaged format, so the directive always carries a usable template.
             interceptors: The per-section interceptor chain, or ``None`` for none.
             personas: The persona source; the selected persona (plus the shared floor)
                 is the ``persona`` context section. ``None`` omits the section.
@@ -86,16 +94,21 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             default_environment: Resolves the active environment's name; defaults to
                 ``"work"`` until the composition root injects
                 :func:`config.default_environment`.
-            default_role: Resolves the active role's name; the ``rules`` and ``me.learned``
-                sources also read that role's ``profile/roles/<role>/`` folder. Defaults to
-                ``"default"`` until the composition root injects :func:`config.default_role`.
+            default_role: Resolves the active role's name; the ``rules.role`` and
+                ``me.learned`` sources read that role's ``profile/roles/<role>/`` folder.
+                Defaults to ``"default"`` until the composition root injects
+                :func:`config.default_role`.
+            user_name: Resolves the user's name for the session snapshot; defaults to
+                unset, which renders as ``""``.
+            language: Resolves the language gmlw speaks for the session snapshot; defaults
+                to unset, which renders as ``""``.
         """
         self._root = root
         # In-progress drafts live in a sibling root (``~/.gmlw/drafts``), so a half-
         # authored workflow is never visible under ``workflows/`` until it is deployed.
         self._drafts_root = root.parent / "drafts"
         self._profile_root = profile_root
-        self._rules_root = rules_root
+        self._templates_root = templates_root
         self._interceptors = interceptors or InterceptorChain(())
         self._personas = personas
         self._compressor = compressor
@@ -104,6 +117,8 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self._environments_root = environments_root
         self._default_environment = default_environment or (lambda: "work")
         self._default_role = default_role or (lambda: "default")
+        self._user_name = user_name or (lambda: None)
+        self._language = language or (lambda: None)
 
     def seed(self) -> None:
         """Copy the packaged default workflows into ``root``, never overwriting."""
@@ -148,7 +163,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         return (self._root / name / "workflow.md").is_file()
 
     def create(self, name: str) -> str:
-        """Create ``<root>/<name>/`` (and its ``rules/`` folder).
+        """Create ``<root>/<name>/``.
 
         Args:
             name: The workflow name.
@@ -157,7 +172,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             The absolute path to the created folder.
         """
         folder = self._root / name
-        (folder / "rules").mkdir(parents=True, exist_ok=True)
+        folder.mkdir(parents=True, exist_ok=True)
         return str(folder)
 
     def folder(self, name: str) -> str:
@@ -172,7 +187,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         return str(self._root / name)
 
     def create_draft(self, key: str) -> str:
-        """Create ``<drafts>/<key>/`` (and its ``rules/`` folder).
+        """Create ``<drafts>/<key>/``.
 
         Args:
             key: A unique key for the draft (the authoring session id).
@@ -181,7 +196,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             The absolute path to the created draft folder.
         """
         folder = self._drafts_root / key
-        (folder / "rules").mkdir(parents=True, exist_ok=True)
+        folder.mkdir(parents=True, exist_ok=True)
         return str(folder)
 
     def read_draft_marker(self, draft_path: str) -> DraftMarker:
@@ -232,27 +247,50 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         """Return the create-workflow guided supplement (``guided.md``), or ``""``."""
         return self._read(self._root / _META / _GUIDE)
 
-    def compile(self, mode: CompileMode, name: str | None = None) -> str:
+    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
         """Compose a run's operating context for a mode.
 
-        The order is: profile family (persona, self, learned, company), then rules,
-        then — for a workflow/authoring run — the base and steps. Each active source
-        is optionally compressed (per its config), sections pass through the
-        interceptor chain for their target, and the joined result through ``context``.
+        The order is: the session snapshot, the profile family (persona, self, learned,
+        company), then rules, then — for a workflow/authoring run — the base and steps.
+        Each active source is optionally compressed (per its config), sections pass
+        through the interceptor chain for their target, and the joined result through
+        ``context``. The snapshot leads because it frames everything after it, and stays
+        verbatim: six scalars are not worth compressing and a paraphrase would make them
+        wrong rather than shorter.
 
         Args:
             mode: The compile mode (default/workflow/authoring).
-            name: The workflow whose base/steps/rules to compose, or ``None``.
+            name: The workflow whose base/steps to compose, or ``None``.
+            job: The job this session runs on, for the snapshot.
 
         Returns:
             The composed context (active sections, joined by blank lines).
         """
         settings = self._startup(mode)
+        snapshot = self._snapshot(job).render()
         profile = self._interceptors.apply("profile", self._profile_group(settings))
-        rules = self._interceptors.apply("rules", self._rules_group(mode, name, settings))
+        rules = self._interceptors.apply("rules", self._rules_group(settings))
         workflow = self._interceptors.apply("workflow", self._workflow_group(mode, name, settings))
-        context = "\n\n\n".join(part for part in (profile, rules, workflow) if part)
+        context = "\n\n\n".join(part for part in (snapshot, profile, rules, workflow) if part)
         return self._interceptors.apply("context", context)
+
+    def _snapshot(self, job: str | None) -> SessionSnapshot:
+        """Build the session snapshot from the live selections.
+
+        Args:
+            job: The job this session runs on, or ``None``.
+
+        Returns:
+            The snapshot, with any unset selection rendered as ``""``.
+        """
+        return SessionSnapshot(
+            user_name=self._user_name() or "",
+            user_prefered_language=self._language() or "",
+            user_environment=self._default_environment(),
+            user_role=self._default_role(),
+            ai_persona=self._companion() or "",
+            job_name=job or "",
+        )
 
     def _profile_group(self, settings: dict[str, config.SourceSetting]) -> str:
         """Compose the active profile-family sources (persona, self, learned, company)."""
@@ -266,39 +304,74 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
                 parts.append(text)
         return "\n\n".join(parts)
 
-    def _rules_group(
-        self, mode: CompileMode, name: str | None, settings: dict[str, config.SourceSetting]
-    ) -> str:
-        """Compose the rule-capture directive, the global rules, and any scoped rules.
+    def _rules_group(self, settings: dict[str, config.SourceSetting]) -> str:
+        """Compose the rule-capture directive and the two axis-scoped rule sets.
 
-        When the ``rules`` source is active for this mode, the section leads with the
-        always-on capture directive (gmlw's voice) so a demanded correction becomes a
-        draft rule in any session — even one with no rules yet. The directive stays
-        verbatim; only the user's rule content is subject to compression.
+        Rules are a projection of the user, so they live on the two axes that describe
+        one: the environment (the place) and the role (the craft). When either axis is
+        active the section leads with the capture directive (gmlw's voice) so a demanded
+        correction becomes a draft rule in any session — even one with no rules yet. The
+        directive stays verbatim; only the user's rule content is subject to compression.
+
+        Activation governs *loading*, not authoring: an axis switched off for this mode
+        still names a real folder, and a rule written there loads in the sessions where
+        that axis is on. So the directive offers both axes whenever it is shown at all.
         """
-        setting = settings[context_source.RULES.key]
-        if not setting.activated:
+        env_setting = settings[context_source.RULES_ENVIRONMENT.key]
+        role_setting = settings[context_source.RULES_ROLE.key]
+        if not env_setting.activated and not role_setting.activated:
             return ""
-        parts: list[str] = [RULE_CAPTURE_DIRECTIVE]
-        global_rules = self._maybe_compress(
-            self._rules(self._rules_root), context_source.RULES, setting
-        )
-        if global_rules:
-            parts.append(global_rules)
-        role_dir = self._role_dir()  # rules scoped to the active role, more specific than global
-        if role_dir is not None:
-            role_rules = self._maybe_compress(
-                self._rules(role_dir / "rules"), context_source.RULES, setting
+        env_dir = self._environment_rules_dir()
+        role_dir = self._role_rules_dir()
+        parts: list[str] = [
+            rule_capture_directive(
+                environment=self._default_environment(),
+                role=self._default_role(),
+                environment_dir=str(env_dir) if env_dir else "(no environment configured)",
+                role_dir=str(role_dir) if role_dir else "(no role configured)",
+                template=self._rule_template(),
             )
-            if role_rules:
-                parts.append(role_rules)
-        if context_source.includes_workflow(mode) and name:
-            scoped = self._maybe_compress(
-                self._rules(self._root / name / "rules"), context_source.RULES, setting
+        ]
+        # Role first, environment last. The environment's constraints outrank the role's
+        # preferences on conflict (the directive says so outright), and the authoritative
+        # set also sits closest to the model, where late instructions carry more weight.
+        if role_setting.activated:
+            rules = self._maybe_compress(
+                self._rules(role_dir), context_source.RULES_ROLE, role_setting
             )
-            if scoped:
-                parts.append(scoped)
+            if rules:
+                parts.append(rules)
+        if env_setting.activated:
+            rules = self._maybe_compress(
+                self._rules(env_dir), context_source.RULES_ENVIRONMENT, env_setting
+            )
+            if rules:
+                parts.append(rules)
         return "\n\n\n".join(parts)
+
+    def _environment_rules_dir(self) -> Path | None:
+        """The active environment's rules folder, or ``None`` without an environments root."""
+        if self._environments_root is None:
+            return None
+        return self._environments_root / self._default_environment() / "rules"
+
+    def _role_rules_dir(self) -> Path | None:
+        """The active role's rules folder, or ``None`` without a profile root."""
+        role_dir = self._role_dir()
+        return None if role_dir is None else role_dir / "rules"
+
+    def _rule_template(self) -> str:
+        """The user's rule template, falling back to the packaged one when absent.
+
+        Read from disk on every compile so a user who reshapes the template immediately
+        changes what the client is told to write — the template and the directive's copy
+        of it can never drift, because there is only one copy.
+        """
+        if self._templates_root is not None:
+            text = self._read(self._templates_root / _RULE_TEMPLATE_FILE)
+            if text:
+                return text
+        return RULE_TEMPLATE
 
     def _workflow_group(
         self, mode: CompileMode, name: str | None, settings: dict[str, config.SourceSetting]
@@ -427,7 +500,9 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         cleaned: list[str] = []
         for path in sorted(directory.glob("*.rule.md")):
             raw = path.read_text(encoding="utf-8").strip()
-            if raw and "status: draft" not in raw:
+            # Draft-ness is a frontmatter key, not a phrase: a substring search over the
+            # whole file silently dropped any live rule that merely mentioned drafting.
+            if raw and not rule_parser.is_draft(raw):
                 rule = clean_rule(raw, _STRIP_SECTIONS)
                 if rule:
                     cleaned.append(rule)

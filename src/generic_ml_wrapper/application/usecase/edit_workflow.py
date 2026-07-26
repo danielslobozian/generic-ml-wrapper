@@ -105,7 +105,7 @@ class EditWorkflowUseCase(EditWorkflow):
             uuid=session.uuid,
             resume=False,
             cwd=folder,
-            context=self._authoring_context(guided=command.guided),
+            context=self._authoring_context(guided=command.guided, job=job),
             kickoff=(
                 f"You are editing the existing workflow {name!r}. Your working directory "
                 f"is its folder ({folder}); its current workflow.md is there. Read it "
@@ -116,9 +116,9 @@ class EditWorkflowUseCase(EditWorkflow):
         caller = self._callers.for_run(run)
         return run_with_hooks(caller, run, self._hooks)
 
-    def _authoring_context(self, *, guided: bool) -> str:
+    def _authoring_context(self, *, guided: bool, job: str) -> str:
         """The authoring context, with the guided-facilitation layer added when chosen."""
-        context = self._workflows.compile(CompileMode.AUTHORING, _META)
+        context = self._workflows.compile(CompileMode.AUTHORING, _META, job=job)
         if not guided:
             return context
         guide = self._workflows.meta_guide()

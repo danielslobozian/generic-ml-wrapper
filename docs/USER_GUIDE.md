@@ -55,7 +55,7 @@ gmlw start PROJ-482 -w triage
 ```
 
 The authoring session is hidden from `gmlw jobs`. See [WORKFLOWS.md](WORKFLOWS.md) for the compile
-order and the `rules/` and `scripts/` folders.
+order and the `scripts/` folder.
 
 ## 5. Add profile and environment context
 
@@ -69,14 +69,15 @@ $EDITOR ~/.gmlw/profile/me/about.md
 $EDITOR ~/.gmlw/environments/work/overview.md
 ```
 
-Rules and learnings can also be **role-scoped**: drop them under
-`~/.gmlw/profile/roles/<role>/rules/` and `~/.gmlw/profile/roles/<role>/learned.md`, and they
-compose only when `<role>` is your active `[profile] default_role` (the functional hat you
-picked at `gmlw init` — a lens over `me`, not a separate you). Global `rules/` and
-`profile/me/learned.md` always apply; the role's add on top.
+Learnings can also be **role-scoped**: drop them under
+`~/.gmlw/profile/roles/<role>/learned.md`, and they compose only when `<role>` is your active
+`[profile] default_role` (the functional hat you picked at `gmlw init` — a lens over `me`, not a
+separate you). `profile/me/learned.md` always applies; the role's adds on top.
+
+Rules are *always* scoped — see section 7.
 
 ```
-$EDITOR ~/.gmlw/profile/roles/engineer/rules/review.rule.md
+$EDITOR ~/.gmlw/profile/roles/engineer/learned.md
 ```
 
 Which sources are activated (and compressed) per mode is controlled by the `[startup.<mode>]`
@@ -101,20 +102,36 @@ persona = "mentor"     # plain | companion | mentor | butler | terse, or a file 
 
 Personas are off and invisible until you set this key.
 
-## 7. Record and activate a rule
+## 7. Record a rule
 
-Rules live in `~/.gmlw/rules/<slug>.rule.md`. A rule with `status: draft` is **not** injected;
-promote it to `active` once you're happy with it. The `Origin` field is stripped before the model
-sees the rule.
+A rule is a projection of *you*, so it lives on one of the two axes that describe you — never
+globally, and never per-workflow:
+
+| Axis | Folder | What belongs there |
+| --- | --- | --- |
+| Environment | `~/.gmlw/environments/<env>/rules/` | Constraints of the place — how docs are written here, how a service is built, the house lint config. Not your taste; it stops applying elsewhere. |
+| Role | `~/.gmlw/profile/roles/<role>/rules/` | Your own preferences about the craft — design patterns, how you approach code. They travel with you. |
+
+When the two conflict the **environment wins**: a constraint is not overridden by a preference.
+Within one axis, an explicit `Precedence: <n>` decides (higher wins).
+
+A rule is **active from the moment it is recorded** — you demanded it, so it applies. Setting
+`status: draft` is your off-switch, to retire a rule later without deleting it; a draft is
+injected into no session. The `Origin` field is stripped before the model sees the rule.
 
 ```
-$EDITOR ~/.gmlw/rules/no-force-push.rule.md   # write Rule / When / Signals / Strength, status: draft
-# edit the front matter: status: draft  ->  status: active
+$EDITOR ~/.gmlw/profile/roles/engineer/rules/no-force-push.rule.md
+# to retire it later, edit the front matter: status: active  ->  status: draft
 ```
 
 In any session, when you're dissatisfied and want something to never recur, the client offers to
-record it as a draft rule for you — updating an existing rule instead of duplicating it, and
-offering to turn a mechanically enforceable one into a script. See [WORKFLOWS.md](WORKFLOWS.md).
+record the rule for you — proposing an axis and letting you redirect it, updating an existing rule
+instead of duplicating it, and offering to turn a mechanically enforceable one into a script.
+
+Browse what you have with `gmlw tui` → **Rules**, which lists only the environments and roles that
+actually hold rules and marks the ones you have switched off. The format itself is yours to
+reshape: it is a plain file at `~/.gmlw/templates/rule.template.md`, and the client is told to
+follow whatever is in it. See [WORKFLOWS.md](WORKFLOWS.md).
 
 ## 8. Enable transcripts safely
 

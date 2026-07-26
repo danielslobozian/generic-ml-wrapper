@@ -116,19 +116,22 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
-    def compile(self, mode: CompileMode, name: str | None = None) -> str:
+    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
         """Compile a run's operating context for a mode.
 
-        The activation matrix for the mode selects which cross-cutting sources
-        (persona, profile, learned, company, rules) are composed and whether each is
-        compressed. A workflow/authoring run additionally composes the workflow's
-        base, its steps, and its scoped rules.
+        The context opens with the session snapshot — the active environment, role,
+        persona and job — then the activation matrix for the mode selects which
+        cross-cutting sources (persona, profile, learned, company, rules) are composed
+        and whether each is compressed. A workflow/authoring run additionally composes
+        the workflow's base and its steps.
 
         Args:
             mode: The compile mode (default/workflow/authoring).
-            name: The workflow whose base/steps/rules to compose, for the
-                workflow/authoring modes; ``None`` for a plain (default) run.
+            name: The workflow whose base/steps to compose, for the workflow/authoring
+                modes; ``None`` for a plain (default) run.
+            job: The job this session runs on, for the snapshot; ``None`` leaves the
+                snapshot's ``job_name`` empty rather than omitting the block.
 
         Returns:
-            The composed context (active sources, joined by blank lines).
+            The composed context (the snapshot, then the active sources).
         """

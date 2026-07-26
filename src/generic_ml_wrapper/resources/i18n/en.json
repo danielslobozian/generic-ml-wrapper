@@ -393,5 +393,17 @@
   "cli.section.positional": "positional arguments",
   "cli.section.options": "options",
   "cli.banner.tagline": "a wrapper around an ML coding CLI",
-  "cli.banner.subtitle": "enter at a job · one resumable, metered session · optional workflow"
+  "cli.banner.subtitle": "enter at a job · one resumable, metered session · optional workflow",
+  "tui.rules": "Rules",
+  "tui.rules.d": "The reflexes you have demanded, by environment and role",
+  "tui.rules.none": "No rules yet.\n\nRules are not written here — they are captured during a session: when you demand a correction, the client records it, active straight away, under the environment you are in or the role you are wearing.",
+  "tui.rules.axis.environment": "Environment",
+  "tui.rules.axis.environment.d": "Constraints of the place — its processes, standards and tooling",
+  "tui.rules.axis.role": "Role",
+  "tui.rules.axis.role.d": "Your own preferences about the craft, wherever you work",
+  "tui.rules.count": "{count} rule(s)",
+  "tui.rules.drafts": "{count} switched off",
+  "tui.rules.draft": "draft — switched off, injected into no session",
+  "tui.rules.active": "active",
+  "tui.rules.norule": "(no Rule: line)"
 }

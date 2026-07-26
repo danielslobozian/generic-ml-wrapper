@@ -465,21 +465,24 @@ _STARTUP_ACTIVATION: dict[str, dict[str, bool]] = {
         "me.user": True,
         "me.learned": True,
         "company": True,
-        "rules": True,
+        "rules.environment": True,
+        "rules.role": True,
     },
     "workflow": {
         "persona": False,
         "me.user": True,
         "me.learned": True,
         "company": True,
-        "rules": True,
+        "rules.environment": True,
+        "rules.role": True,
     },
     "authoring": {
         "persona": False,
         "me.user": True,
         "me.learned": True,
         "company": True,
-        "rules": True,
+        "rules.environment": True,
+        "rules.role": True,
     },
 }
 
@@ -516,9 +519,12 @@ def startup(mode: str, path: Path | None = None) -> dict[str, SourceSetting]:
     """
     defaults = default_startup(mode)
     context = _table(_table(_table(_load(path), "startup"), mode), "context")
+    legacy_rules = _legacy_rules_table(context)
     resolved: dict[str, SourceSetting] = {}
     for source in context_source.ALL_SOURCES:
         table = _source_table(context, source.key)
+        if not table and source in context_source.RULE_AXES:
+            table = legacy_rules
         default = defaults[source.key]
         activated = default.activated
         if source.activatable and isinstance(table.get("activated"), bool):
@@ -528,6 +534,30 @@ def startup(mode: str, path: Path | None = None) -> dict[str, SourceSetting]:
             compression = cast("bool", table["compression"])
         resolved[source.key] = SourceSetting(activated=activated, compression=compression)
     return resolved
+
+
+def _legacy_rules_table(context: dict[str, object]) -> dict[str, object]:
+    """Return a pre-split scalar ``rules`` table, or ``{}`` when there is none.
+
+    Rules used to be one source; they are now two (``rules.environment``/``rules.role``).
+    A config written before the split holds ``activated``/``compression`` directly under
+    ``rules`` rather than nested axis tables, which tells the two shapes apart without a
+    version marker. The old value is honoured for both axes so a user who deliberately
+    switched rules off never has that silently undone by the rename.
+
+    Args:
+        context: The ``[startup.<mode>.context]`` table.
+
+    Returns:
+        The legacy table, or ``{}`` when absent or already in the new nested shape.
+    """
+    table = context.get("rules")
+    if not isinstance(table, dict):
+        return {}
+    legacy = cast("dict[str, object]", table)
+    if any(isinstance(legacy.get(axis), dict) for axis in ("environment", "role")):
+        return {}
+    return legacy
 
 
 def _source_table(context: dict[str, object], key: str) -> dict[str, object]:

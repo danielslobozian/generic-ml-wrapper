@@ -34,6 +34,7 @@ from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
+from generic_ml_wrapper.application.domain.model.rule_catalog import RuleAxis, RuleGroup
 from generic_ml_wrapper.common import i18n
 
 
@@ -70,6 +71,11 @@ def _no_sessions(_job: str) -> list[SessionChoice]:
 def _no_usage_view(job: str) -> UsageView:
     """Default usage view when the app runs unwired (tests): an empty report."""
     return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
+
+
+def _no_rules() -> tuple[RuleGroup, ...]:
+    """Default rule catalogue when the app runs unwired (tests): the user has none."""
+    return ()
 
 
 def _no_save(_job: str) -> str:
@@ -293,8 +299,11 @@ _TOP_MENU = (
     ("🗂", "tui.job", "menu:job", ""),
     ("⚙", "tui.workflow", "menu:workflow", ""),
     ("🎛", "tui.config", "menu:config", ""),
+    ("📏", "tui.rules", "menu:rules", ""),
     ("🚪", "tui.quit", "quit", ""),
 )
+# The icon per rule axis, so a group reads as a place or a craft at a glance.
+_AXIS_ICON = {RuleAxis.ENVIRONMENT: "🌍", RuleAxis.ROLE: "🎓"}
 
 
 def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[_Item]:
@@ -430,16 +439,16 @@ class _MenuScreen(Screen[None]):
 
 
 class TopMenuScreen(_MenuScreen):
-    """The front door: Job · Workflow · Config · Quit, under the banner."""
+    """The front door: Job · Workflow · Config · Rules · Quit, under the banner."""
 
     show_banner = True
 
     def menu_items(self) -> list[_Item]:
-        """The object rows: Job, Workflow, Config, Quit."""
+        """The object rows: Job, Workflow, Config, Rules, Quit."""
         return _menu(_TOP_MENU)
 
     def handle(self, item: _Item) -> None:
-        """Quit, or open the Job/Workflow/Config sub-menu."""
+        """Quit, or open the Job/Workflow/Config/Rules sub-menu."""
         if item.action == "quit":
             self.menu_app.exit(None)
         elif item.action == "menu:job":
@@ -448,6 +457,8 @@ class TopMenuScreen(_MenuScreen):
             self.menu_app.push_screen(WorkflowMenuScreen())
         elif item.action == "menu:config":
             self.menu_app.push_screen(ConfigMenuScreen())
+        elif item.action == "menu:rules":
+            self.menu_app.push_screen(RulesMenuScreen())
 
     def action_back(self) -> None:
         """At the front door, Back leaves gmlw (there is nothing to pop to)."""
@@ -1564,6 +1575,139 @@ class ConfigListScreen(Screen[None]):
         self.menu_app.pop_screen()
 
 
+class RulesMenuScreen(_MenuScreen):
+    """The rule axes that actually hold rules — nothing to walk into that would be empty.
+
+    A user with no rules yet sees the empty hint rather than two barren branches, because
+    rules are not authored here: they are captured mid-session, active immediately, and land
+    under the environment in play or the role being worn.
+    """
+
+    empty_key = "tui.rules.none"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Rules (localised)."""
+        return f"gmlw > {i18n.active().t('tui.rules')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per axis holding at least one populated group."""
+        t = i18n.active().t
+        rows: list[_Item] = []
+        for axis in RuleAxis:
+            groups = [g for g in self.menu_app.rule_groups() if g.axis is axis]
+            if not groups:
+                continue
+            drafts = sum(g.draft_count for g in groups)
+            rows.append(
+                _Item(
+                    _AXIS_ICON[axis],
+                    t(f"tui.rules.axis.{axis.value}"),
+                    t(f"tui.rules.axis.{axis.value}.d"),
+                    f"rules:axis:{axis.value}",
+                    note=t("tui.rules.drafts", count=drafts) if drafts else "",
+                )
+            )
+        return rows
+
+    def handle(self, item: _Item) -> None:
+        """Open the chosen axis's groups."""
+        _, _, value = item.action.rpartition(":")
+        self.menu_app.push_screen(RuleAxisScreen(RuleAxis(value)))
+
+
+class RuleAxisScreen(_MenuScreen):
+    """The environments (or roles) on one axis that hold rules."""
+
+    empty_key = "tui.rules.none"
+
+    def __init__(self, axis: RuleAxis) -> None:
+        """Bind the screen to the axis whose groups it lists.
+
+        Args:
+            axis: The axis to browse.
+        """
+        super().__init__()
+        self._axis = axis
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Rules > <axis>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.rules')} > {t(f'tui.rules.axis.{self._axis.value}')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per populated group on this axis, labelled as the user named it."""
+        t = i18n.active().t
+        return [
+            _Item(
+                _AXIS_ICON[group.axis],
+                group.label,
+                t("tui.rules.count", count=len(group.rules)),
+                f"rules:group:{group.slug}",
+                note=t("tui.rules.drafts", count=group.draft_count) if group.draft_count else "",
+            )
+            for group in self.menu_app.rule_groups()
+            if group.axis is self._axis
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Open the chosen group's rules."""
+        _, _, slug = item.action.rpartition(":")
+        group = next(
+            (g for g in self.menu_app.rule_groups() if g.axis is self._axis and g.slug == slug),
+            None,
+        )
+        if group is not None:
+            self.menu_app.push_screen(RuleListScreen(group))
+
+
+class RuleListScreen(_MenuScreen):
+    """One group's rules. Read-only: the detail panel shows the highlighted rule.
+
+    A rule is active from creation; a draft is one the user has since switched off, and it
+    is injected into no session. Both are listed and distinguished, because "which of these
+    is actually live" is the question this screen exists to answer.
+    """
+
+    empty_key = "tui.rules.none"
+
+    def __init__(self, group: RuleGroup) -> None:
+        """Bind the screen to the group whose rules it lists.
+
+        Args:
+            group: The environment or role to browse.
+        """
+        super().__init__()
+        self._group = group
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Rules > <axis> > <group label>."""
+        t = i18n.active().t
+        axis = t(f"tui.rules.axis.{self._group.axis.value}")
+        return f"gmlw > {t('tui.rules')} > {axis} > {self._group.label}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per rule: its slug, the instruction itself, and its status."""
+        t = i18n.active().t
+        rows: list[_Item] = []
+        for rule in self._group.rules:
+            status = t("tui.rules.draft") if rule.draft else t("tui.rules.active")
+            if rule.strength:
+                status = f"{status} · {rule.strength}"
+            rows.append(
+                _Item(
+                    "📝" if rule.draft else "📏",
+                    rule.slug,
+                    rule.rule or t("tui.rules.norule"),
+                    "rules:rule",
+                    note=f"{status}\n{rule.when}" if rule.when else status,
+                )
+            )
+        return rows
+
+    def handle(self, item: _Item) -> None:
+        """Rules are read-only here; the detail panel already shows the selection."""
+
+
 class MenuApp(App[MenuChoice | None]):
     """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
@@ -1607,6 +1751,7 @@ class MenuApp(App[MenuChoice | None]):
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
         workflows: list[str] | None = None,
+        rules: Callable[[], tuple[RuleGroup, ...]] | None = None,
         clients: Callable[[], list[ClientRow]] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
@@ -1630,6 +1775,9 @@ class MenuApp(App[MenuChoice | None]):
                 save-to-file Export destination (lazily, per job); defaults to a no-op.
             workflows: The runnable workflow names, for the Workflow Run/List/Edit screens;
                 defaults to none.
+            rules: Lists the environments and roles holding rules, for the Rules browser;
+                read once on first use and cached, so walking the tree never re-reads disk.
+                Defaults to none, so the app runs unwired in tests.
             clients: Lists the supported clients + versions for the Config Clients view (on a
                 worker thread); ``None`` leaves that verb stubbed, so the app runs unwired.
             config: The settings + setter the Config Get/Set browsers read and call; ``None``
@@ -1646,9 +1794,25 @@ class MenuApp(App[MenuChoice | None]):
         self.usage_view = usage_view or _no_usage_view
         self.save_usage = save_usage or _no_save
         self.workflows = workflows or []
+        self.rules = rules or _no_rules
+        self._rule_cache: tuple[RuleGroup, ...] | None = None
         self.clients = clients
         self.config = config
         self.current_client = current_client
+
+    def rule_groups(self) -> tuple[RuleGroup, ...]:
+        """The populated rule groups, read once and cached for the app's lifetime.
+
+        Cached because every screen in the Rules tree asks for the whole catalogue to
+        filter it, and re-walking the rule folders on each cursor move would put disk I/O
+        on the keystroke path.
+
+        Returns:
+            Every environment and role holding at least one rule.
+        """
+        if self._rule_cache is None:
+            self._rule_cache = self.rules()
+        return self._rule_cache
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

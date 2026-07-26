@@ -84,7 +84,7 @@ class FakeWorkflows(WorkflowSourcePort):
     def meta_guide(self) -> str:
         raise NotImplementedError
 
-    def compile(self, mode: CompileMode, name: str | None = None) -> str:
+    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
         self.compiled.append((mode, name))
         if mode is CompileMode.DEFAULT:
             return self._baseline

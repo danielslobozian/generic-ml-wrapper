@@ -63,13 +63,17 @@ class ContextSource:
         return self.kind.value if self.kind is not None else None
 
 
-# The five cross-cutting sources, in composed order (identity/tone first, then facts,
+# The six cross-cutting sources, in composed order (identity/tone first, then facts,
 # then reflexes). Governed by the per-mode activation matrix.
 PERSONA = ContextSource("persona", None)
 ME_USER = ContextSource("me.user", CompressorKind.HUMAN_TOUCH)
 ME_LEARNED = ContextSource("me.learned", CompressorKind.HUMAN_TOUCH)
 COMPANY = ContextSource("company", None)
-RULES = ContextSource("rules", CompressorKind.RULES)
+# Rules are a projection of the user, so they sit on the two axes that describe one: the
+# environment (the place — its processes and standards) and the role (the craft). Each is
+# separately activatable; there is no global tier and no per-workflow tier.
+RULES_ENVIRONMENT = ContextSource("rules.environment", CompressorKind.RULES)
+RULES_ROLE = ContextSource("rules.role", CompressorKind.RULES)
 
 # The workflow-only sources, always present in a workflow/authoring run (a workflow
 # without its steps is meaningless); only their compression is configurable.
@@ -79,8 +83,12 @@ STEPS = ContextSource("steps", CompressorKind.TECHNICAL, activatable=False)
 # The identity/facts family, composed together (ahead of rules) in every mode.
 PROFILE_FAMILY: tuple[ContextSource, ...] = (PERSONA, ME_USER, ME_LEARNED, COMPANY)
 
+# The rule axes, in composed order: the role's preferences first, then the environment's
+# constraints, which outrank them on conflict and so sit closest to the model.
+RULE_AXES: tuple[ContextSource, ...] = (RULES_ROLE, RULES_ENVIRONMENT)
+
 # The cross-cutting sources every mode considers, in composed order.
-CROSS_CUTTING: tuple[ContextSource, ...] = (*PROFILE_FAMILY, RULES)
+CROSS_CUTTING: tuple[ContextSource, ...] = (*PROFILE_FAMILY, *RULE_AXES)
 
 # Every source, in composed order (used to seed defaults and iterate config).
 ALL_SOURCES: tuple[ContextSource, ...] = (*CROSS_CUTTING, BASE, STEPS)

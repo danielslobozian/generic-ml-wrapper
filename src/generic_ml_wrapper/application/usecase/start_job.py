@@ -132,13 +132,15 @@ class StartJobUseCase(StartJob):
         return replace(run, context=context)
 
     def _attach_baseline(self, run: RunContext) -> RunContext:
-        """Inject the always-on baseline context (profile/learned/persona) on a plain run.
+        """Inject the always-on baseline context (snapshot/profile/learned/persona).
 
         A plain ``gmlw start`` (no workflow) still composes the user's profile so every
-        session — on any client — inherits who the user is and how they work. Left
-        untouched when the baseline is empty, so nothing is written for a fresh install.
+        session — on any client — inherits who the user is and how they work. The compiled
+        context now always carries at least the session snapshot, so on a fresh install the
+        client still learns which environment, role and job it is in even before the user
+        has written a word of profile.
         """
-        context = self._workflows.compile(CompileMode.DEFAULT)
+        context = self._workflows.compile(CompileMode.DEFAULT, job=run.job)
         return run if not context else replace(run, context=context)
 
     def _attach_workflow(self, run: RunContext, workflow: str) -> RunContext:
@@ -153,7 +155,7 @@ class StartJobUseCase(StartJob):
         )
         return replace(
             run,
-            context=self._workflows.compile(CompileMode.WORKFLOW, workflow),
+            context=self._workflows.compile(CompileMode.WORKFLOW, workflow, job=run.job),
             kickoff=kickoff,
             env=tuple(self._credentials.resolve(workflow).items()),
         )

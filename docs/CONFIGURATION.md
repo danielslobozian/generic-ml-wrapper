@@ -152,8 +152,10 @@ On every run gmlw composes an operating context from a fixed set of sources.
 - `company` — `environments/<env>/*.md`, where `<env>` is the active
   `[profile] default_environment` (the config key stays `company`; only its on-disk home
   moved from the old `profile/company/`)
-- `rules` — `rules/*.md`, plus the active role's `profile/roles/<role>/rules/*.md`
-  (role-scoped reflexes), where `<role>` is the active `[profile] default_role`
+- `rules.environment` — `environments/<env>/rules/*.rule.md`, the place's constraints
+- `rules.role` — `profile/roles/<role>/rules/*.rule.md`, your own craft preferences. The
+  environment's rules compose last and outrank the role's on conflict. There is no global
+  and no per-workflow rule tier.
 - `persona` — the selected persona plus the shared floor (see [`[companion]`](#companion))
 - `base` / `steps` — a workflow run also composes its `base` and `steps`
 
@@ -161,7 +163,8 @@ Each source is configured as `{ activated = <bool>, compression = <bool> }`. The
 nest by source group:
 
 - `[startup.<mode>.context.me]` holds `user` and `learned`.
-- `[startup.<mode>.context]` holds `company`, `rules`, and `persona`.
+- `[startup.<mode>.context.rules]` holds `environment` and `role`.
+- `[startup.<mode>.context]` holds `company` and `persona`.
 - `[startup.workflow.context]` also holds `base` and `steps` — in workflow and
   authoring modes these are **always active**, so only their `compression` is read
   (`activated` is ignored).
@@ -174,9 +177,12 @@ written out explicitly:
 user    = { activated = true,  compression = false }
 learned = { activated = true,  compression = false }
 
+[startup.default.context.rules]
+environment = { activated = true, compression = false }
+role        = { activated = true, compression = false }
+
 [startup.default.context]
 company = { activated = true,  compression = false }
-rules   = { activated = false, compression = false }
 persona = { activated = false, compression = false }
 ```
 
@@ -231,7 +237,7 @@ The compression prompt is chosen by the source's **kind**:
 | --- | --- |
 | `human-touch` | `me.user` + `me.learned` |
 | `technical` | workflow `base` + `steps` |
-| `rules` | `rules` |
+| `rules` | `rules.environment` + `rules.role` |
 
 `company` and `persona` are always verbatim (never compressed). Under
 `[compress.prompts]` you supply a prompt file per kind, or per **specific source key**

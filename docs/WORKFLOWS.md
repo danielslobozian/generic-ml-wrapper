@@ -64,7 +64,6 @@ A workflow lives under `~/.gmlw/workflows/<name>/`:
       create-workflow/      # the meta-workflow — never runnable
       <name>/
         workflow.md         # required: the ordered steps
-        rules/              # optional: workflow-scoped rules
         scripts/            # optional: scripted mechanical steps
 
 Only `workflow.md` is required. The hidden `_common/` and `create-workflow/` folders
@@ -79,15 +78,21 @@ receive it via a context-file or initial instruction (see [CLIENTS.md](CLIENTS.m
 
 The stages are assembled in this **fixed order**:
 
-    _common/base.md  →  profile/*  →  global rules  →  workflow rules  →  workflow steps
+    session snapshot  →  profile/*  →  role rules  →  environment rules  →  _common/base.md  →  workflow steps
 
+- session snapshot — the active environment, role, persona and job, as a small JSON
+  block, so the client can answer "which role am I in?" by reading a field.
 - `_common/base.md` — the shared "how to behave" base (orient first, one step at a
   time, work in the user's language, offer to capture rules).
 - `profile/me/` — your `me/` context; place-specific context comes from the active
   `environments/<env>/`.
-- global rules — `~/.gmlw/rules/*`.
-- workflow rules — the workflow's own `rules/`.
+- role rules — `~/.gmlw/profile/roles/<role>/rules/*`.
+- environment rules — `~/.gmlw/environments/<env>/rules/*`. These come *last* of the two
+  because they outrank the role's on conflict.
 - workflow steps — this workflow's `workflow.md`.
+
+There are **no workflow-scoped rules**. If a workflow behaves wrongly, fix the workflow so
+it is right the next time it runs; rules describe the user, not a procedure.
 
 Each stage passes through the interceptor chain on its way in (see
 [CONFIGURATION.md](CONFIGURATION.md) for interceptors and the per-mode context
@@ -95,17 +100,20 @@ matrix that decides which sources are activated and compressed).
 
 **Rule cleaning** happens on every rule, always, and is lossless: the YAML
 frontmatter and the `Origin`/`Notes` sections are stripped before the model sees the
-rule, and any rule marked `status: draft` is skipped entirely.
+rule, and any rule the user has switched off with `status: draft` is skipped entirely.
 
 ## Rules
 
 A rule is a *reusable reflex* — a standard you want held to on every future run, not
-a one-off decision about a single task. Rules live at
-`~/.gmlw/rules/<slug>.rule.md`:
+a one-off decision about a single task. A rule is a projection of *you*, so it lives on
+one of the two axes that describe you: the **environment** (the place's constraints) at
+`~/.gmlw/environments/<env>/rules/<slug>.rule.md`, or the **role** (your own craft
+preferences) at `~/.gmlw/profile/roles/<role>/rules/<slug>.rule.md`. At the moment a rule
+is born exactly one of each is active, so the choice is between two concrete folders:
 
     ---
     name: <slug>
-    status: draft
+    status: active
     ---
     # <slug>
 
@@ -119,11 +127,12 @@ Fields: `Rule`, `When`, `Signals`, `Strength` (`soft` | `hard`), `Origin`
 (provenance, stripped before the model), and an optional `Precedence: <n>` (higher
 wins) added only when a rule may conflict with another.
 
-A rule with `status: draft` is **not injected** until you promote it to `active` by
-editing that field. Rule capture is **always-on**, in any session (not only a
-workflow): when you are dissatisfied with something and want it to never happen again,
-the client offers to record it as a draft for your approval. Before proposing, it reads
-your existing rules and updates or supersedes a match rather than stacking a
+A rule is **active from the moment it is recorded** — you demanded it, so it applies.
+Setting `status: draft` is your own off-switch, for retiring a rule later without deleting
+it; a draft is injected into no session. Rule capture is **always-on**, in any session (not
+only a workflow): when you are dissatisfied with something and want it to never happen again,
+the client offers to record it, proposing an axis and letting you redirect it. Before
+proposing, it reads your existing rules and updates or supersedes a match rather than stacking a
 near-duplicate; and if the rule is mechanically enforceable, it offers to realise it as
 a small script or check rather than a standing reminder.
 

@@ -30,6 +30,11 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     UsageView,
     _Row,
 )
+from generic_ml_wrapper.application.domain.model.rule_catalog import (
+    RuleAxis,
+    RuleGroup,
+    RuleSummary,
+)
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
 
@@ -1048,3 +1053,86 @@ def test_config_setup_exits_with_the_init_choice() -> None:
 
     asyncio.run(scenario())
     assert result["value"] == MenuChoice(action="init")
+
+
+def _rules_app(groups: tuple[RuleGroup, ...]) -> MenuApp:
+    """A menu app whose Rules browser reads a fixture catalogue."""
+    return MenuApp(_JOBS, rules=lambda: groups)
+
+
+async def _open_rules(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top menu -> Rules (the fourth row, above Quit)."""
+    await pilot.press("down", "down", "down", "enter")
+
+
+def test_rules_menu_is_empty_until_a_rule_exists() -> None:
+    """With no rules the browser explains where they come from rather than showing branches."""
+    text: dict[str, object] = {}
+    app = _rules_app(())
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_rules(pilot)
+            text["empty"] = str(app.screen.query_one("#empty", Static).render())
+
+    asyncio.run(scenario())
+    assert "captured during a session" in str(text["empty"])
+
+
+def test_rules_menu_lists_only_axes_that_hold_rules() -> None:
+    """A role rule exists and no environment rule does, so only Role is offered."""
+    groups = (
+        RuleGroup(
+            axis=RuleAxis.ROLE,
+            slug="software-engineer",
+            label="Software engineer",
+            rules=(RuleSummary(slug="no-transactional", rule="No @Transactional."),),
+        ),
+    )
+    titles: dict[str, object] = {}
+    app = _rules_app(groups)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_rules(pilot)
+            rows = app.screen.query_one("#menu", ListView).query(_Row)
+            titles["seq"] = [r.item.title for r in rows]
+
+    asyncio.run(scenario())
+    assert titles["seq"] == ["Role"]  # no Environment branch to walk into
+
+
+def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
+    """Rules > Role > Software engineer lists the rule; the detail panel shows it."""
+    groups = (
+        RuleGroup(
+            axis=RuleAxis.ROLE,
+            slug="software-engineer",
+            label="Software engineer",
+            rules=(
+                RuleSummary(
+                    slug="no-transactional",
+                    rule="No @Transactional in a use case.",
+                    strength="hard",
+                    draft=True,
+                ),
+            ),
+        ),
+    )
+    seen: dict[str, object] = {}
+    app = _rules_app(groups)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_rules(pilot)
+            await pilot.press("enter")  # the Role axis
+            await pilot.press("enter")  # the Software engineer group
+            rows = app.screen.query_one("#menu", ListView).query(_Row)
+            seen["titles"] = [r.item.title for r in rows]
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["titles"] == ["no-transactional"]
+    detail = str(seen["detail"])
+    assert "No @Transactional in a use case." in detail
+    assert "draft" in detail  # a draft is injected into no session; the browser must say so

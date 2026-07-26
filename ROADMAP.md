@@ -148,9 +148,9 @@ costume and makeup, briefs the director, then cedes the screen ([[wrapper-not-st
 
 Deferred but homed: a detached model call to synthesise a `role.md` for an unfamiliar role
 (e.g. product owner) is a natural future consumer of the 0.3.0 `pre-launch` seam — parked,
-not built. **Persona *previews* moved to 0.10.0** — sample lines are only worth shipping once
+not built. **Persona *previews* moved to 0.9.0** — sample lines are only worth shipping once
 the personas behind them are proven to actually differ, and doing them in French requires
-localising persona content, which is the same job (see 0.10.0).
+localising persona content, which is the same job (see 0.9.0).
 
 ### 0.5.0 — discoverability & progressive disclosure
 Reframed around the real metric for a new user: **time to a first live session**, and then
@@ -252,7 +252,6 @@ than only configurable — plus a round of data-screen and localisation fixes.
   / Config verb**, including launching a fresh session (Job → New) and resuming a *specific*
   named session, not just the latest. It never replaces argv: the CLI stays the fast lane and
   the menu is there to browse. Built additively, de-spiked into shape, and localised.
-  (Distinct from the text-UX consistency pass, which stays its own release below.)
 - **Create a role or environment (`CreateAxis`)** — the movie-set axes introduced in 0.4.0
   become **first-class slug-folders** (a stable slug plus a human label and description), with
   a use case and CLI to *create* a new role or environment, not only select among the seeded
@@ -289,41 +288,7 @@ pass that ends with a guard, so the debt cannot quietly come back.
 
 ## Planned
 
-### 0.9.0 — TUI refactoring: the terminal UX as one system
-The discoverability surfaces landed piecemeal across 0.4.0–0.6.0 — the first-run chooser, the
-bare-`gmlw` index, `help` topics, `config list`, the exit receipt, the ambient card, the
-pre-launch workflow chooser. Each was built when its feature needed it. This release stops
-adding surfaces and makes the ones that exist read as **one system**: a consistency and
-quality pass over the terminal UX, from the design deliverable in `generic-ml-wrapper-030-ui-concepts.md`.
-
-**Not a TUI app.** The curses/full-screen "Hub" (that doc's Concept 3) stays **dropped** — it
-carries the only real dependency bill, and a persistent full-screen surface pulls against
-[[wrapper-not-standalone]]. "TUI refactoring" here means refactoring the *text* UX gmlw already
-owns, not adopting a widget toolkit. gmlw's UI lives only on the five legal surfaces and never
-as a persistent UI over a live session.
-
-- **The five surfaces, made consistent** — utility commands (S1), pre-launch (S2), the handoff
-  (S3), ambient in-client greeting/statusline (S4), and **the return** (S5). Audit each for the
-  house rules the codebase already implies: chrome to stderr so stdout stays clean for `--json`,
-  non-TTY degrades to silent/scriptable, and anything shown at the handoff (S3, instantly wiped)
-  is duplicated at S4/S5 so nothing is lost.
-- **Next-action footers everywhere** — the core mechanic of the enriched CLI: every
-  run-and-return command ends with 1–2 contextual next commands, so discovery rides on commands
-  the user already runs. Make it uniform across *all* listings/inspections, not just the ones
-  that happen to have it.
-- **The chooser teaches the fast path** — the pre-launch chooser always echoes the equivalent
-  one-liner before handoff, and `?` at any prompt prints the relevant `help` topic inline then
-  re-prompts, so interactive use graduates the user out of the chooser. Full argv still means
-  zero interaction, always.
-- **Receipt / card parity** — the exit receipt (S5) and the ambient capability card (S4) must
-  describe the same command surface in the same vocabulary, so "what can gmlw do" gets the same
-  answer whether asked mid-session or read on the return. One suppressible, usage-driven tip per
-  return, rotated, never off-TTY.
-- **A visual-consistency pass** — shared alignment, colour/emphasis conventions, and the
-  status-of vs manual split (statusline = ambient *state*; card = ambient *manual*) applied
-  uniformly, so the surfaces look like one product rather than several sittings.
-
-### 0.10.0 — personas, proven (and multilingual)
+### 0.9.0 — personas, proven (and multilingual)
 Today "personas shape tone" is an **untested claim**. A persona ships a tone block, but
 nothing demonstrates that `mentor` and `terse` actually answer differently — and the tone
 block is injected *on top of* each client's own system prompt, which may simply swamp it.
@@ -375,9 +340,33 @@ is an evaluation loop, not a feature.
 
 **Sequencing, resolved:** *per-workflow persona* used to sit in 0.6.0, ahead of the release
 that proves personas are distinct at all — building composition on an unproven foundation. It
-now lives here in 0.10.0, after the harness and the tuning, so the composition follows the
+now lives here in 0.9.0, after the harness and the tuning, so the composition follows the
 proof. If the matrix shows personas collapse even after tuning, per-workflow persona is
 reconsidered in place rather than shipped on sand.
+
+### 0.10.0 — the documentation release
+The docs grew alongside the features: seven files under `docs/` plus a README that has absorbed
+every new capability since 0.1.0. This release treats documentation as the deliverable rather
+than the residue — one pass over what exists, plus the thing missing entirely, a first-contact
+install path.
+
+- **A one-line install, on both platforms** — a `sh` script for Linux/macOS and a PowerShell
+  script for Windows, served from the repo and pasted into the README. Each does one job: ensure
+  `uv` is present (Astral's own installer when it is not), then `uv tool install
+  generic-ml-wrapper`. **No Python prerequisite** — `uv` fetches its own interpreter, so the
+  usual "which Python, is it recent enough, is it the distro's broken split package" logic never
+  arises. Two separate scripts rather than one with branches: the PATH story differs too much
+  between them to share code honestly.
+- **PATH, said out loud** — the common failure for a tool installed this way is a shim directory
+  that is not on `PATH`, and the second most common is a shell that has not been restarted. The
+  scripts detect both and say so loudly rather than exiting silently successful; the README
+  carries the same note so it is findable without re-running anything.
+- **Hosted from the repo, not a site** — the raw GitHub URL is stable and CDN-cached. The cost is
+  no server-side OS detection, so the README shows both commands, labelled. Accepted deliberately:
+  a dedicated install page is not worth standing up a web property for.
+- **A pass over the existing docs** — README, `USER_GUIDE`, `CLI`, `CONFIGURATION`, `CLIENTS`,
+  `WORKFLOWS`, `TROUBLESHOOTING` audited against the surface that actually ships, so what they
+  describe and what gmlw does are the same thing.
 
 ## Parked
 
