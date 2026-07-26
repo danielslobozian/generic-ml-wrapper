@@ -286,6 +286,26 @@ pass that ends with a guard, so the debt cannot quietly come back.
   screen. Boundaries around the exchange, the upstream read, post-response bookkeeping, and the
   accept loop, all recorded through the port.
 
+### 0.8.1 — rules, scoped to the axes
+A rule is a projection of the user, so it lives on one of the two axes that describe one —
+and the tiers that sat outside them are gone.
+
+- **Rules move onto the environment and role axes** — the place's constraints at
+  `~/.gmlw/environments/<env>/rules/`, your own craft preferences at
+  `~/.gmlw/profile/roles/<role>/rules/`. The global `~/.gmlw/rules/` and per-workflow
+  `<workflow>/rules/` tiers are removed: a workflow that behaves wrongly is fixed in the
+  workflow, not patched by a rule beside it. Existing files must be moved by hand.
+- **The environment wins on conflict** — a constraint is not overridden by a preference, so
+  environment rules compose last, closest to the model. `Precedence:` decides within an axis.
+- **Active from creation** — the user demanded the correction, so it applies; `status: draft`
+  becomes their off-switch rather than a promotion gate. Draft-ness is read from frontmatter
+  instead of a substring search that silently dropped live rules mentioning drafting.
+- **One rule format, on disk** — `~/.gmlw/templates/rule.template.md`, seeded once and read
+  by the capture directive, replacing two hand-synced copies that could drift.
+- **A Rules browser in `gmlw tui`**, plus a **session snapshot** heading every compiled
+  context (environment · role · persona · user · language · job), so a client reads which
+  role it is in rather than inferring it.
+
 ## Planned
 
 ### 0.9.0 — personas, proven (and multilingual)
