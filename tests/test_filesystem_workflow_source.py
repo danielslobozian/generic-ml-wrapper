@@ -164,9 +164,9 @@ def test_compile_skips_draft_rules(tmp_path: Path) -> None:
         "---\nname: d\nstatus: draft\n---\n\n**Rule:** not yet.", encoding="utf-8"
     )
     _add_workflow(workflows, "doc-review")
-    compiled = FilesystemWorkflowSource(
-        workflows, None, environments_root=environments
-    ).compile(CompileMode.WORKFLOW, "doc-review")
+    compiled = FilesystemWorkflowSource(workflows, None, environments_root=environments).compile(
+        CompileMode.WORKFLOW, "doc-review"
+    )
     assert "not yet" not in compiled
 
 
@@ -183,9 +183,9 @@ def test_default_mode_composes_profile_and_rules_not_the_workflow(tmp_path: Path
     (workflows / "_common").mkdir(parents=True)
     (workflows / "_common" / "base.md").write_text("How to run a workflow", encoding="utf-8")
 
-    compiled = FilesystemWorkflowSource(
-        workflows, profile, environments_root=environments
-    ).compile(CompileMode.DEFAULT)
+    compiled = FilesystemWorkflowSource(workflows, profile, environments_root=environments).compile(
+        CompileMode.DEFAULT
+    )
 
     assert "I like short answers." in compiled  # me.user, on by default
     assert "ACME Corp." in compiled  # company, on by default

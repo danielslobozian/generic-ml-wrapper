@@ -1653,11 +1653,7 @@ class RuleAxisScreen(_MenuScreen):
         """Open the chosen group's rules."""
         _, _, slug = item.action.rpartition(":")
         group = next(
-            (
-                g
-                for g in self.menu_app.rule_groups()
-                if g.axis is self._axis and g.slug == slug
-            ),
+            (g for g in self.menu_app.rule_groups() if g.axis is self._axis and g.slug == slug),
             None,
         )
         if group is not None:
