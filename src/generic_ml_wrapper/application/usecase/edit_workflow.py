@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
@@ -15,6 +16,7 @@ from generic_ml_wrapper.application.domain.service.session_naming import next_se
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflow,
     EditWorkflowCommand,
+    NoEditToResumeError,
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
@@ -85,13 +87,14 @@ class EditWorkflowUseCase(EditWorkflow):
         # The authoring store is rooted apart from real work jobs (composition injects the
         # authoring root), so the job is just the workflow name.
         job = name
+        if command.resume_latest:
+            return self._reopen(job, folder)
         session = Session(
             session_id=next_session_id(job, self._store.ids_for_job(job)),
             job=job,
             client=command.client,
             uuid=self._uuid_factory(),
         )
-        self._store.record(session)
 
         guide = (
             "Guided facilitation is on — follow the guided layer in your context. "
@@ -114,6 +117,55 @@ class EditWorkflowUseCase(EditWorkflow):
             ),
         )
         caller = self._callers.for_run(run)
+        # Record where it ran and whether its caller can reopen it — both previously
+        # unset, which left an interrupted edit with no folder to return to and no
+        # capability recorded, however able its client was.
+        self._store.record(replace(session, cwd=folder, resumable=caller.can_resume()))
+        return run_with_hooks(caller, run, self._hooks)
+
+    def _reopen(self, job: str, folder: str) -> int:
+        """Reopen this workflow's most recent editing session, in its own folder.
+
+        Only sessions that ran *in the workflow's folder* count. ``gmlw run <workflow>``
+        and ``gmlw workflow edit <workflow>`` both file under a job named after the
+        workflow, so the job's latest session is just as likely to be a run — and
+        reopening one of those here would relaunch it in the wrong directory, where a
+        cwd-scoped client (Claude) correctly reports no such conversation. An edit is
+        exactly the session whose folder is this one.
+
+        That also excludes edits recorded before the folder was stored: their ``cwd`` is
+        ``None``, so they cannot be told apart from a run, and guessing would reopen the
+        wrong conversation rather than none.
+
+        No context is re-injected: the client still holds the edit conversation, and
+        re-sending it would talk over that history.
+
+        Raises:
+            NoEditToResumeError: If the workflow has no editing session, or its client
+                cannot reopen one.
+        """
+        edits = [s for s in self._store.sessions_for_job(job) if s.cwd == folder]
+        if not edits:
+            message = f"no editing session to resume for {job!r}"
+            raise NoEditToResumeError(message)
+        session = edits[-1]
+        run = RunContext(
+            job=job,
+            session_id=session.session_id,
+            client=session.client,
+            uuid=session.uuid,
+            resume=True,
+            cwd=folder,
+            kickoff=(
+                f"You are picking up an interrupted edit of the workflow {job!r}. Your "
+                f"working directory is its folder ({folder}). Take stock of what you had "
+                "already changed, tell me, then carry on from there — do not start over."
+            ),
+        )
+        caller = self._callers.for_run(run)
+        if not caller.can_resume():
+            message = f"{session.client} cannot reopen {session.session_id}"
+            raise NoEditToResumeError(message)
         return run_with_hooks(caller, run, self._hooks)
 
     def _authoring_context(self, *, guided: bool, job: str) -> str:

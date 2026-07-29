@@ -61,6 +61,7 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
 )
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflowCommand,
+    NoEditToResumeError,
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
@@ -391,6 +392,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     )
     edit = workflow_sub.add_parser("edit", help=i18n.t("cli.cmd.workflow_edit"))
     edit.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
+    edit.add_argument(
+        "--resume-latest",
+        action="store_true",
+        help=i18n.t("cli.flag.resume_edit"),
+    )
     edit.add_argument(
         "--client",
         default=None,
@@ -1893,26 +1899,39 @@ def _workflow_resume(args: argparse.Namespace) -> int:
 
 
 def _workflow_edit(args: argparse.Namespace) -> int:
-    """Edit an existing workflow (guide instead of launching when the client isn't ready)."""
-    return _edit_workflow(str(args.name), _client(args.client), _resolve_guided(args))
+    """Edit an existing workflow (guide instead of launching when the client isn't ready).
+
+    Resuming skips the authoring-depth prompt: the guided choice was made when the edit
+    started, and the reopened session already carries it.
+    """
+    resume = bool(args.resume_latest)
+    guided = False if resume else _resolve_guided(args)
+    return _edit_workflow(str(args.name), _client(args.client), guided, resume_latest=resume)
 
 
-def _edit_workflow(name: str, client: str, guided: bool) -> int:
+def _edit_workflow(name: str, client: str, guided: bool, *, resume_latest: bool = False) -> int:
     """Edit an existing workflow — shared by ``gmlw workflow edit`` and the TUI Edit verb.
 
     Args:
         name: The workflow to edit.
         client: The resolved client to wrap.
         guided: Whether to use the guided (facilitative) authoring experience.
+        resume_latest: Reopen the workflow's most recent editing session instead of
+            starting a fresh one. The client comes from that session, not from here.
 
     Returns:
         The process exit code.
     """
-    if not _preflight_client(client):
+    if not _preflight_client(client) and not resume_latest:
         return 2
     try:
-        command = EditWorkflowCommand(name=name, client=client, guided=guided)
+        command = EditWorkflowCommand(
+            name=name, client=client, guided=guided, resume_latest=resume_latest
+        )
         return build_edit_workflow().execute(command)
+    except NoEditToResumeError as error:
+        print(i18n.t("workflow.edit.nothing_to_resume", error=error), file=sys.stderr)
+        return 2
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))
         return 2

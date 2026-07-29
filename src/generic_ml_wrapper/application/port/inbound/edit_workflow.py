@@ -17,15 +17,23 @@ class EditWorkflowCommand:
         client: The client to run the authoring session on.
         guided: Whether to add the guided-facilitation layer (a richer, costlier
             authoring experience) on top of the core interview.
+        resume_latest: Reopen this workflow's most recent editing session instead of
+            starting a fresh one — an edit interrupted halfway is picked up where it
+            stopped rather than begun again.
     """
 
     name: str
     client: str
     guided: bool = False
+    resume_latest: bool = False
 
 
 class WorkflowNotFoundError(ValueError):
     """Raised when the workflow to edit does not exist."""
+
+
+class NoEditToResumeError(ValueError):
+    """Raised when a resume was asked for and the workflow has no reopenable session."""
 
 
 class EditWorkflow(ABC):
@@ -44,4 +52,5 @@ class EditWorkflow(ABC):
         Raises:
             WorkflowNameError: If the name is invalid or reserved.
             WorkflowNotFoundError: If no workflow with that name exists.
+            NoEditToResumeError: If a resume was asked for and there is nothing to reopen.
         """
