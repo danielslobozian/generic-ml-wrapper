@@ -298,6 +298,7 @@
   "tui.cfg.col.default": "Défaut",
   "tui.cfg.col.type": "Type",
   "tui.export.keys": "↑↓ PgHaut/PgBas défiler · Échap retour",
+  "tui.clients.keys": "↑↓ déplacer · ⏎ définir par défaut · Échap retour",
   "export.dest.view": "Afficher le résumé ici",
   "export.dest.view.d": "Totaux, par modèle et par session — affichés dans le terminal",
   "export.dest.file": "Enregistrer le rapport complet dans un fichier",

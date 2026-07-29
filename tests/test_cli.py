@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
@@ -1645,3 +1646,42 @@ def test_preflight_resume_cwd_blocks_and_names_a_deleted_folder(
     err = capsys.readouterr().err
     assert str(gone) in err  # the missing folder is named plainly
     assert "Traceback" not in err
+
+
+class _Tty(io.StringIO):
+    """A stdin/stdout stand-in that claims to be a terminal, so ``_tui`` builds the menu."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_tui_reads_the_default_client_after_the_menu_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A default-client switch made *inside* the menu must apply to the launch that follows it,
+    # not only to the next run of gmlw: the client is resolved after run() returns, not before.
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+
+    class _MenuSwitchingTheClient:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            self.opened_with = kwargs["current_client"]
+
+        def run(self) -> tui.MenuChoice:  # the user switches the default, then starts a job
+            path = app.config.config_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('[client]\ndefault = "codex"\n', encoding="utf-8")
+            return tui.MenuChoice(action="start", job="alpha")
+
+    monkeypatch.setattr(tui, "MenuApp", _MenuSwitchingTheClient)
+    launched: list[str] = []
+
+    def _record_launch(
+        _job: str, _resume: bool, _session: str | None, _cwd: str | None, client: str
+    ) -> int:
+        launched.append(client)
+        return 0
+
+    monkeypatch.setattr(app, "_tui_launch_job", _record_launch)
+    assert app._tui() == 0
+    assert launched == ["codex"]  # the switch just made, not the default the menu opened on

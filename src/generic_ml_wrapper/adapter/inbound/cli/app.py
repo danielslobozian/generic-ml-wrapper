@@ -1342,6 +1342,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
                 version=_client_version_label(status, loc),
                 resumable=loc.t("clients.yes") if status.resumable else loc.t("clients.no"),
                 default=loc.t("clients.default_marker") if status.is_default else "",
+                name=status.name,  # not shown: the id written when the row is made the default
             )
             for status in build_list_clients().execute()
         ]
@@ -1426,6 +1427,9 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
         )
 
+    def _set_default_client(name: str) -> ConfigSetResult:  # Config → Clients: pick the default
+        return _apply_setting("client.default", name)
+
     config_catalog = ConfigCatalog(
         crumb=f"gmlw > {t('tui.config')}",
         settings=_config_settings(),
@@ -1448,7 +1452,9 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             return t("tui.wf.invalid")
         return None
 
-    client = _client(None)  # the default client (ignored on resume: the session carries its own)
+    # The menu opens on a *snapshot* of the default client, for the rows that mention it.
+    # The launch below re-reads it, because the user may have changed it in Config while
+    # the menu was up -- resolving it once, here, would launch the client they just left.
     choice = MenuApp(
         jobs,
         switchers=switchers,
@@ -1460,11 +1466,16 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         workflows=build_list_workflows().execute(),
         rules=build_list_rules().execute,
         clients=_clients,
+        set_default_client=_set_default_client,
         config=config_catalog,
-        current_client=client,
+        current_client=_client(None),
     ).run()  # blocks; terminal restored on return
     if choice is None:
         return 0
+    # Read *after* the menu: a default-client switch made in Config (or in the Clients view)
+    # must apply to this launch, not only to the next run of gmlw. Ignored on resume -- a
+    # resumed session carries its own client.
+    client = _client(None)
     if choice.action == "init":  # Config → Setup: re-run the interview on the restored terminal
         return _run_init()
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
@@ -1858,9 +1869,7 @@ def _workflow_list(args: argparse.Namespace) -> int:
     """List the runnable workflows with the words behind their slugs."""
     flows = build_list_workflow_catalog().execute()
     print(
-        _as_json([asdict(flow) for flow in flows])
-        if bool(args.json)
-        else format_workflows(flows)
+        _as_json([asdict(flow) for flow in flows]) if bool(args.json) else format_workflows(flows)
     )
     return 0
 

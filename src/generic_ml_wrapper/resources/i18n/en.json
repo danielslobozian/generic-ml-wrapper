@@ -298,6 +298,7 @@
   "tui.cfg.col.default": "Default",
   "tui.cfg.col.type": "Type",
   "tui.export.keys": "↑↓ PgUp/PgDn scroll · Esc back",
+  "tui.clients.keys": "↑↓ move · ⏎ make default · Esc back",
   "export.dest.view": "View summary here",
   "export.dest.view.d": "Totals, by model, and by session — rendered in the terminal",
   "export.dest.file": "Save full report to a file",

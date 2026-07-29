@@ -202,7 +202,8 @@ gmlw export billing-api --json
 List the supported clients (Claude Code, Cursor CLI, OpenAI Codex CLI, Mistral Vibe),
 each with its installed on-disk version, whether it can resume a session, and which is
 the configured default. Uninstalled clients are shown as such. Also available in the
-interactive menu under `gmlw tui` → Config → Clients.
+interactive menu under `gmlw tui` → Config → Clients, where selecting a row also makes
+that client the default (the same write as `gmlw config set client.default <name>`).
 
 ```
 gmlw clients [--json]

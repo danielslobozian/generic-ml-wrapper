@@ -88,9 +88,9 @@ class FakeArchive(WorkflowArchivePort):
 # ── export ──
 def test_exporting_packs_the_workflows_own_folder(tmp_path: Path) -> None:
     archive = FakeArchive()
-    written = ExportWorkflowUseCase(
-        FakeWorkflows(tmp_path, {"nightly-etl"}), archive
-    ).execute("nightly-etl")
+    written = ExportWorkflowUseCase(FakeWorkflows(tmp_path, {"nightly-etl"}), archive).execute(
+        "nightly-etl"
+    )
     assert archive.packed == (tmp_path / "nightly-etl", "nightly-etl")
     assert written == "/exports/nightly-etl.zip"
 

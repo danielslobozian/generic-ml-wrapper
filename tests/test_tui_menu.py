@@ -948,8 +948,8 @@ def test_workflow_edit_picks_a_workflow_then_quick() -> None:
 # --- Config Clients (worker-loaded DataTable of clients + versions) -----------------------
 
 _CLIENTS = [
-    ClientRow("Claude Code", "1.2.3", "yes", "●"),
-    ClientRow("OpenAI Codex CLI", "not installed", "no", ""),
+    ClientRow("Claude Code", "1.2.3", "yes", "●", name="claude"),
+    ClientRow("OpenAI Codex CLI", "not installed", "no", "", name="codex"),
 ]
 
 
@@ -1199,3 +1199,129 @@ def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:
 
     asyncio.run(scenario())
     assert app.return_value is None  # still in the form, nothing handed back
+
+
+def test_config_picker_highlight_reads_as_selected_while_the_filter_holds_focus() -> None:
+    """The first row is really marked, and painted at focused strength, on open and on filter.
+
+    Two failures met here: the rebuild set the index on rows that ``clear()`` was still
+    removing, so *no* row ended up marked; and the list never holds focus (the Input does),
+    so the highlight would have been painted at the dim, unfocused strength anyway. Either
+    one makes the first Down look like it skipped a row.
+    """
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, config=_config_catalog())
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_get(pilot)
+            menu = app.screen.query_one("#menu", ListView)
+            row = menu.highlighted_child
+            seen["focused_is_input"] = isinstance(app.focused, Input)
+            seen["index"] = menu.index
+            seen["marked"] = row is not None and row.has_class("-highlight")
+            seen["alpha"] = None if row is None else row.styles.background.a
+            await pilot.press("l", "o", "g")  # filtering rebuilds the rows: still marked
+            await pilot.pause()
+            filtered = app.screen.query_one("#menu", ListView).highlighted_child
+            seen["marked_after_filter"] = filtered is not None and filtered.has_class("-highlight")
+
+    asyncio.run(scenario())
+    assert seen["focused_is_input"] is True  # the filter, not the list, has focus
+    assert seen["index"] == 0  # the first row *is* the selection...
+    assert seen["marked"] is True  # ...it carries the highlight class...
+    assert seen["alpha"] == 0.25  # ...and is painted at focused strength, not the dim 15%
+    assert seen["marked_after_filter"] is True
+
+
+# --- Config Clients: making the highlighted client the default ----------------------------
+
+
+def _clients_app(
+    apply: Callable[[str], ConfigSetResult] | None = None,
+) -> MenuApp:
+    """A menu wired with the clients view and (unless told otherwise) a default-client setter."""
+    return MenuApp(
+        _JOBS,
+        clients=lambda: _CLIENTS,
+        set_default_client=apply or (lambda name: ConfigSetResult(ok=True, message=f"→ {name}")),
+        current_client="claude",
+    )
+
+
+async def _load_config_clients(app: MenuApp, pilot: Pilot[MenuChoice | None]) -> DataTable[str]:
+    """Open Config → Clients, let the worker land, and hand back the table.
+
+    Nothing here forces focus: the table takes it on mount, which is what makes ↑↓/⏎ reach
+    the rows at all — a test that focused it by hand would hide the day that stops being true.
+    """
+    await _open_config_clients(pilot)
+    await _drain_workers(app)
+    await pilot.pause()
+    return cast("DataTable[str]", app.screen.query_one("#clients", DataTable))
+
+
+def test_config_clients_enter_makes_the_highlighted_client_the_default() -> None:
+    """Enter on a row writes that client as the default and moves the marker onto it."""
+    picked: list[str] = []
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _clients_app(lambda name: (picked.append(name), ConfigSetResult(True, "set"))[1])
+        async with app.run_test(size=(100, 40)) as pilot:
+            table = await _load_config_clients(app, pilot)
+            seen["focused_is_table"] = app.focused is table  # the keys reach the rows unaided
+            await pilot.press("down", "enter")  # the second row: codex
+            await pilot.pause()
+            seen["was"] = list(table.get_row_at(0))[3]  # claude's marker cell, now cleared
+            seen["now"] = list(table.get_row_at(1))[3]  # codex's, now marked
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["current"] = app.current_client
+
+    asyncio.run(scenario())
+    assert seen["focused_is_table"] is True
+    assert picked == ["codex"]  # the client *id*, not the display name
+    assert seen["was"] == ""  # the marker moved rather than being duplicated
+    assert seen["now"] == "●"
+    assert "✓" in str(seen["detail"])
+    assert seen["current"] == "codex"  # so the resume picker's "will launch on" notes stay true
+
+
+def test_config_clients_keeps_the_marker_when_the_set_is_rejected() -> None:
+    """A refused value explains itself and changes nothing (defensive: the rows are valid)."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _clients_app(lambda _name: ConfigSetResult(ok=False, message="nope"))
+        async with app.run_test(size=(100, 40)) as pilot:
+            table = await _load_config_clients(app, pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["marker"] = list(table.get_row_at(0))[3]
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["current"] = app.current_client
+
+    asyncio.run(scenario())
+    assert seen["marker"] == "●"  # untouched
+    assert "✗ nope" in str(seen["detail"])
+    assert seen["current"] == "claude"
+
+
+def test_config_clients_stays_read_only_without_a_setter() -> None:
+    """Wired for viewing only: Enter does nothing, and the key bar never offers the switch."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, clients=lambda: _CLIENTS, current_client="claude")  # no setter
+        async with app.run_test(size=(100, 40)) as pilot:
+            table = await _load_config_clients(app, pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["marker"] = list(table.get_row_at(0))[3]
+            seen["keys"] = str(app.screen.query_one("#keys", Static).render())
+            seen["current"] = app.current_client
+
+    asyncio.run(scenario())
+    assert seen["marker"] == "●"  # nothing moved
+    assert "default" not in str(seen["keys"])  # the hint bar promises only scrolling + back
+    assert seen["current"] == "claude"
