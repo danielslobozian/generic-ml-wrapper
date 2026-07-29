@@ -4,6 +4,7 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -650,3 +651,38 @@ def test_a_caller_with_no_session_store_still_runs(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     CodexCliCaller(_codex_run(), _METERING)._bind_session_id("019f-abc")
     assert not (tmp_path / "session_index.jsonl").exists()
+
+
+# ── passthrough launch arguments reach every client's argv ──
+def _with_args(client: str, argv_run: RunContext) -> list[str]:
+    caller = {"claude": _claude, "codex": _codex, "vibe": _vibe}[client](argv_run)
+    return caller.command("GO")
+
+
+def test_passthrough_args_land_before_the_prompt_on_every_client() -> None:
+    # The prompt is positional on all four clients, so anything appended after it would be
+    # read as part of the prompt rather than as a flag.
+    for client, run in (
+        ("claude", _run(resume=False, uuid=None, kickoff="GO")),
+        ("codex", RunContext("JOB-1", "JOB-1_001", "codex", None, False)),
+        ("vibe", RunContext("JOB-1", "JOB-1_001", "vibe", None, False)),
+    ):
+        argv = _with_args(client, replace(run, client_args=("--yolo", "--verbose")))
+        assert argv[-3:] == ["--yolo", "--verbose", "GO"], client
+
+
+def test_cursor_also_carries_the_passthrough_args() -> None:
+    run = replace(_cursor_run(resume=False), client_args=("--yolo",))
+    argv = CursorCliCaller(run).command("GO")
+    assert argv[-2:] == ["--yolo", "GO"]
+
+
+def test_no_configured_args_leaves_the_command_untouched() -> None:
+    assert _codex(RunContext("JOB-1", "JOB-1_001", "codex", None, False)).command() == ["codex"]
+
+
+def test_passthrough_args_survive_a_codex_resume() -> None:
+    run = RunContext("JOB-1", "JOB-1_001", "codex", "019f-abc", True, client_args=("--yolo",))
+    argv = _codex(run).command()
+    assert argv[:3] == ["codex", "resume", "019f-abc"]
+    assert "--yolo" in argv

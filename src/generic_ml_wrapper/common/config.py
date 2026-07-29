@@ -65,6 +65,7 @@ def current_values(path: Path | None = None) -> dict[str, object]:
     compress_settings = compress(path)
     return {
         "client.default": default_client(path),
+        "client.args": client_args(path),
         "language.code": language(path),
         "profile.default_role": default_role(path),
         "profile.default_environment": default_environment(path),
@@ -148,6 +149,37 @@ def default_client(path: Path | None = None) -> str:
     """
     value = _table(_load(path), "client").get("default")
     return value if isinstance(value, str) and value else _DEFAULT_CLIENT
+
+
+def client_args(path: Path | None = None) -> dict[str, str]:
+    """Return the per-client launch arguments table, or ``{}`` when unset.
+
+    Reads ``[client] args`` — written either as an inline table or as a ``[client.args]``
+    sub-table, which TOML treats as the same structure. Tolerant like every reader here:
+    a non-table value, or an entry whose name or value is not a string, is skipped rather
+    than raised on.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        A ``client -> raw argument string`` map.
+    """
+    table = _table(_table(_load(path), "client"), "args")
+    return {name: value for name, value in table.items() if isinstance(value, str)}
+
+
+def client_args_for(client: str, path: Path | None = None) -> str:
+    """Return the raw argument string configured for one client, or ``""``.
+
+    Args:
+        client: The client the run will launch.
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The configured argument string, or ``""`` when the client has none.
+    """
+    return client_args(path).get(client, "")
 
 
 def init_version(path: Path | None = None) -> str | None:

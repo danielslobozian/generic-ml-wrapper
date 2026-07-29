@@ -124,7 +124,7 @@ class VibeCliCaller(CliCaller):
         Returns:
             The argv list to execute.
         """
-        argv = [BINARY, *self._provider_flags()]
+        argv = [BINARY, *self._provider_flags(), *self.run.client_args]
         if opening is not None:
             argv.append(opening)
         return argv

@@ -314,6 +314,7 @@ def build_start_job() -> StartJob:
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
+        client_args=config.client_args_for,
     )
 
 

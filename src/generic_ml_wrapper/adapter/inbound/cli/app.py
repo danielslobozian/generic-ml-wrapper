@@ -318,6 +318,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         default=None,
         help=i18n.t("cli.flag.workflow"),
     )
+    start.add_argument(
+        "--client-args",
+        default=None,
+        help=i18n.t("cli.flag.client_args"),
+    )
 
     run = sub.add_parser("run", help=i18n.t("cli.cmd.run"))
     run.add_argument(
@@ -330,6 +335,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         "--client",
         default=None,
         help=i18n.t("cli.flag.client"),
+    )
+    run.add_argument(
+        "--client-args",
+        default=None,
+        help=i18n.t("cli.flag.client_args"),
     )
 
     jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
@@ -1449,6 +1459,7 @@ def _start(args: argparse.Namespace) -> int:
         client=client,
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
+        client_args=args.client_args,
     )
     if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2
@@ -1486,15 +1497,17 @@ def _run(args: argparse.Namespace) -> int:
     workflow = _resolve_workflow(args.workflow)
     if workflow is None:
         return 2
-    return _run_workflow(workflow, _client(args.client))
+    return _run_workflow(workflow, _client(args.client), args.client_args)
 
 
-def _run_workflow(workflow: str, client: str) -> int:
+def _run_workflow(workflow: str, client: str, client_args: str | None = None) -> int:
     """Launch the client on a workflow's own job — shared by ``gmlw run`` and the TUI Run verb.
 
     Args:
         workflow: The workflow to run (also the job name it accumulates sessions under).
         client: The resolved client to wrap.
+        client_args: Passthrough launch arguments for this call, or ``None`` to use the
+            client's configured value. The TUI passes ``None`` — it has no flag surface.
 
     Returns:
         The process exit code.
@@ -1504,6 +1517,7 @@ def _run_workflow(workflow: str, client: str) -> int:
         client=client,
         resume_latest=False,
         workflow=workflow,
+        client_args=client_args,
     )
     if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2

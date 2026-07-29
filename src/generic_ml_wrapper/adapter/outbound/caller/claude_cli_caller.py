@@ -119,6 +119,7 @@ class ClaudeCliCaller(CliCaller):
                 argv += ["--session-id", run.uuid]
             if context_file is not None:
                 argv += ["--append-system-prompt-file", context_file]
+        argv += run.client_args  # the user's own flags, last so they win a collision
         if run.kickoff is not None:
             argv.append(run.kickoff)
         return argv

@@ -173,7 +173,7 @@ class CodexCliCaller(CliCaller):
             The argv list to execute.
         """
         head = [BINARY, "resume", self.run.uuid] if self.run.resume and self.run.uuid else [BINARY]
-        argv = [*head, *self._provider_flags()]
+        argv = [*head, *self._provider_flags(), *self.run.client_args]
         if opening is not None:
             argv.append(opening)
         return argv

@@ -66,7 +66,7 @@ class CursorCliCaller(CliCaller):
         Returns:
             The argv list to execute.
         """
-        argv = [BINARY, "--resume", self.run.session_id]
+        argv = [BINARY, "--resume", self.run.session_id, *self.run.client_args]
         if opening is not None:
             argv.append(opening)
         return argv

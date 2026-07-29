@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
@@ -68,6 +68,8 @@ class UpdateConfigUseCase(ConfigCommands):
 
     def set(self, key: str, raw: str) -> SetOutcome:
         """Validate ``raw`` against the registry and persist it, surfacing the change."""
+        if settings_registry.is_table(key):  # raises Unknown before any write
+            return self._set_entry(key, raw)
         coerced = settings_registry.coerce(key, raw)  # raises Unknown/Invalid before any write
         path = self._config_file()
         old = config.current_values(path)[key]
@@ -76,6 +78,26 @@ class UpdateConfigUseCase(ConfigCommands):
         # set from a no-op; compare effective values to decide whether anything changed.
         self._writer.merge(path, [(table, field, coerced)])
         return SetOutcome(key=key, old=old, new=coerced, changed=old != coerced)
+
+    def _set_entry(self, key: str, raw: str) -> SetOutcome:
+        """Set or clear one entry of a table setting, keeping the rest of the table.
+
+        The table is read, the single entry applied, and the whole table written back —
+        so ``config set client.args codex="…"`` never drops the claude entry beside it.
+        An empty value (``claude=``) removes that entry rather than storing "".
+        """
+        name, value = settings_registry.parse_entry(key, raw)
+        path = self._config_file()
+        current = config.current_values(path)[key]
+        old: dict[str, str] = cast("dict[str, str]", current) if isinstance(current, dict) else {}
+        entries = dict(old)
+        if value is None:
+            entries.pop(name, None)
+        else:
+            entries[name] = value
+        table, field = key.split(".", 1)
+        self._writer.merge(path, [(table, field, entries)])
+        return SetOutcome(key=key, old=old, new=entries, changed=old != entries)
 
     @staticmethod
     def _row(key: str) -> settings_registry.SettingRow:

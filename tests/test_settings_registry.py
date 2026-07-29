@@ -18,6 +18,7 @@ def _write(tmp_path: Path, body: str) -> Path:
 def test_registry_covers_the_settable_scalar_keys() -> None:
     assert set(settings_registry.keys()) == {
         "client.default",
+        "client.args",
         "language.code",
         "profile.default_role",
         "profile.default_environment",
@@ -116,3 +117,49 @@ def test_config_defaults_match_the_registry(tmp_path: Path) -> None:
     assert compress.adapter == settings_registry.default_for("compress.adapter")
     assert compress.model == settings_registry.default_for("compress.model")
     assert compress.effort == settings_registry.default_for("compress.effort")
+
+
+# ── table settings (a key whose value is a map of entries) ──
+def test_a_table_setting_is_reported_as_one() -> None:
+    assert settings_registry.is_table("client.args") is True
+    assert settings_registry.is_table("client.default") is False
+
+
+def test_a_table_setting_renders_its_own_type_label() -> None:
+    row = next(r for r in settings_registry.registry_rows() if r.key == "client.args")
+    assert row.type_name == "table"
+    assert row.default == {}
+
+
+def test_an_entry_argument_splits_into_name_and_value() -> None:
+    # The entry name rides in the VALUE, not the key, so the dotted key stays two levels
+    # and lookup/help/validation need no special case for it.
+    assert settings_registry.parse_entry("client.args", "claude=--yolo") == ("claude", "--yolo")
+
+
+def test_an_entry_value_may_itself_contain_an_equals_sign() -> None:
+    assert settings_registry.parse_entry("client.args", "codex=-c model=o3") == (
+        "codex",
+        "-c model=o3",
+    )
+
+
+def test_an_empty_entry_value_means_clear_it() -> None:
+    assert settings_registry.parse_entry("client.args", "claude=") == ("claude", None)
+
+
+def test_an_entry_argument_without_an_equals_is_rejected() -> None:
+    with pytest.raises(settings_registry.InvalidSettingValueError):
+        settings_registry.parse_entry("client.args", "claude")
+
+
+def test_an_entry_argument_without_a_name_is_rejected() -> None:
+    with pytest.raises(settings_registry.InvalidSettingValueError):
+        settings_registry.parse_entry("client.args", "=--yolo")
+
+
+def test_coercing_a_table_setting_is_a_programming_error() -> None:
+    # A table's persisted value is the whole merged map, which needs the file's current
+    # contents — outside what coercing one raw string can know.
+    with pytest.raises(TypeError):
+        settings_registry.coerce("client.args", "claude=--yolo")
