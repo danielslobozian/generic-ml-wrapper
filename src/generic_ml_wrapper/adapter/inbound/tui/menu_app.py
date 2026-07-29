@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar, cast
 
 from textual import work
@@ -90,7 +91,8 @@ class MenuChoice:
     Job launchers use ``job`` (and, for ``"resume"``, the specific ``session``). Workflow
     launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
     open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
-    new workflow whose name is proposed at the end). A ``None`` return means "do nothing".
+    new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
+    ``archive`` to install from. A ``None`` return means "do nothing".
     """
 
     action: str
@@ -98,6 +100,7 @@ class MenuChoice:
     session: str | None = None
     workflow: str | None = None
     guided: bool = False
+    archive: str | None = None
 
 
 @dataclass(frozen=True)
@@ -279,6 +282,8 @@ _WORKFLOW_MENU = (
     ("✨", "tui.wf.create", "wf:create", "gmlw workflow new <name>"),
     ("✏️", "tui.wf.edit", "wf:edit", "gmlw workflow edit <name>"),
     ("📋", "tui.wf.list", "wf:list", "gmlw workflow list"),
+    ("📦", "tui.wf.export", "wf:export", "gmlw workflow export <workflow>"),
+    ("📥", "tui.wf.import", "wf:import", "gmlw workflow import <archive>"),
 )
 _CONFIG_MENU = (
     ("📃", "tui.cfg.list", "cfg:list", "gmlw config list"),
@@ -511,6 +516,10 @@ class WorkflowMenuScreen(_MenuScreen):
             self.menu_app.push_screen(NewWorkflowScreen())
         elif item.action == "wf:list":
             self.menu_app.push_screen(WorkflowListScreen())
+        elif item.action == "wf:export":
+            self.menu_app.push_screen(WorkflowPickerScreen("export"))
+        elif item.action == "wf:import":
+            self.menu_app.push_screen(ImportWorkflowScreen())
         else:
             self._stub(item)
 
@@ -551,9 +560,9 @@ class WorkflowPickerScreen(_MenuScreen):
         self._mode = mode
 
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Workflow > Run|Edit."""
+        """Breadcrumb: gmlw > Workflow > Run|Edit|Export."""
         t = i18n.active().t
-        verb = t("tui.wf.run") if self._mode == "run" else t("tui.wf.edit")
+        verb = t(f"tui.wf.{self._mode}")
         return f"gmlw > {t('tui.workflow')} > {verb}"
 
     def menu_items(self) -> list[_Item]:
@@ -566,6 +575,8 @@ class WorkflowPickerScreen(_MenuScreen):
             return
         if self._mode == "run":
             self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
+        elif self._mode == "export":
+            self.menu_app.exit(MenuChoice(action="workflow_export", workflow=item.payload))
         else:  # edit — choose the authoring depth, then launch the edit session
             self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
 
@@ -606,6 +617,56 @@ class NewWorkflowScreen(Screen[None]):
             self.query_one("#detail", Static).update(f"✗ {error}")
             return
         self.menu_app.push_screen(GuidedChoiceScreen("workflow_new", name or None))
+
+    def action_cancel(self) -> None:
+        """Abandon the form and return to the Workflow menu."""
+        self.menu_app.pop_screen()
+
+
+class ImportWorkflowScreen(Screen[None]):
+    """Type or paste the path of an archive to import — a text-entry launcher.
+
+    A path rather than a picker because the archive a user wants is usually the one a
+    colleague just sent them, sitting wherever their browser put it, not in gmlw's own
+    exports folder. The path is checked here so a typo is fixed in the form rather than
+    tearing the menu down to fail at the prompt.
+
+    The import itself runs after the menu exits: replacing an existing workflow asks a
+    question, and that needs the restored terminal.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the archive-path input, a status line, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.workflow')} > {t('tui.wf.import')}", id="crumb")
+        yield Input(placeholder=t("tui.wf.import.placeholder"), id="archive")
+        with Container(id="status"):
+            yield Static(t("tui.wf.import.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can paste straight away."""
+        self.query_one("#archive", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Check the archive is there, then hand the path back to the wiring."""
+        raw = event.value.strip()
+        if not raw:
+            return
+        archive = Path(raw).expanduser()
+        if not archive.is_file():
+            self.query_one("#detail", Static).update(
+                f"✗ {i18n.active().t('tui.wf.import.missing')}"
+            )
+            return
+        self.menu_app.exit(MenuChoice(action="workflow_import", archive=str(archive)))
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Workflow menu."""

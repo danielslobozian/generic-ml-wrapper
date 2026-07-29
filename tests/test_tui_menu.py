@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 from typing import cast
 
 from textual.pilot import Pilot
@@ -1136,3 +1137,65 @@ def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
     detail = str(seen["detail"])
     assert "No @Transactional in a use case." in detail
     assert "draft" in detail  # a draft is injected into no session; the browser must say so
+
+
+# ── workflow export / import ──
+def _workflow_app() -> MenuApp:
+    return MenuApp(_JOBS, workflows=["doc-review", "nightly-etl"])
+
+
+async def _open_workflow_menu(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Workflow."""
+    await pilot.press("down", "enter")
+    await pilot.pause()
+
+
+def test_export_picks_a_workflow_and_hands_it_back() -> None:
+    # Export runs after the menu exits, through the same code path as the CLI verb.
+    app = _workflow_app()
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "down", "down", "down", "enter")  # Export
+            await pilot.pause()
+            await pilot.press("enter")  # the first workflow
+
+    asyncio.run(scenario())
+    assert app.return_value == MenuChoice(action="workflow_export", workflow="doc-review")
+
+
+def test_import_hands_back_the_archive_path(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    app = _workflow_app()
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "down", "down", "down", "down", "enter")  # Import
+            await pilot.pause()
+            app.screen.query_one("#archive", Input).value = str(archive)
+            await pilot.press("enter")
+
+    asyncio.run(scenario())
+    assert app.return_value == MenuChoice(action="workflow_import", archive=str(archive))
+
+
+def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:
+    # Checked in-form so a typo is fixed here rather than tearing the menu down to fail
+    # at the prompt.
+    app = _workflow_app()
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "down", "down", "down", "down", "enter")
+            await pilot.pause()
+            app.screen.query_one("#archive", Input).value = "/nope/missing.zip"
+            await pilot.press("enter")
+            await pilot.pause()
+            assert "✗" in str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert app.return_value is None  # still in the form, nothing handed back

@@ -1469,6 +1469,11 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         return _run_init()
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return _run_workflow(choice.workflow, client)
+    if choice.action == "workflow_export" and choice.workflow is not None:
+        return _export_workflow(choice.workflow)
+    if choice.action == "workflow_import" and choice.archive is not None:
+        # Asked on the restored terminal: the replace prompt needs a tty the TUI had.
+        return _import_workflow(choice.archive)
     if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
         return _new_workflow(choice.workflow, client, choice.guided)
     if choice.action == "workflow_edit" and choice.workflow is not None:
@@ -1923,8 +1928,20 @@ def _announce_new_workflow(result: NewWorkflowResult) -> None:
 
 def _workflow_export(args: argparse.Namespace) -> int:
     """Pack a workflow into ``~/.gmlw/exports`` for sharing."""
+    return _export_workflow(str(args.name))
+
+
+def _export_workflow(name: str) -> int:
+    """Export a workflow — shared by ``gmlw workflow export`` and the TUI Export verb.
+
+    Args:
+        name: The workflow's slug.
+
+    Returns:
+        The process exit code.
+    """
     try:
-        written = build_export_workflow().execute(str(args.name))
+        written = build_export_workflow().execute(name)
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))
         return 2
@@ -1933,19 +1950,31 @@ def _workflow_export(args: argparse.Namespace) -> int:
 
 
 def _workflow_import(args: argparse.Namespace) -> int:
-    """Install a workflow from an archive, asking before displacing one of the same name.
+    """Install a workflow from an archive."""
+    return _import_workflow(str(args.archive), replace=bool(args.replace))
+
+
+def _import_workflow(archive: str, *, replace: bool = False) -> int:
+    """Import a workflow — shared by ``gmlw workflow import`` and the TUI Import verb.
 
     The use case reports a name clash rather than resolving it, so the question is asked
     here where a person can answer it — and only when there is someone to ask. Off a tty
     the import is refused rather than silently overwriting.
+
+    Args:
+        archive: The archive to install from.
+        replace: Displace an existing workflow of the same name without asking.
+
+    Returns:
+        The process exit code.
     """
     try:
-        result = build_import_workflow().execute(str(args.archive), replace=bool(args.replace))
+        result = build_import_workflow().execute(archive, replace=replace)
         if result.outcome is ImportOutcome.REFUSED:
             if not _confirm_replace(result.name):
                 print(i18n.t("workflow.import.kept", name=result.name), file=sys.stderr)
                 return 2
-            result = build_import_workflow().execute(str(args.archive), replace=True)
+            result = build_import_workflow().execute(archive, replace=True)
     except (ArchiveUnreadableError, WorkflowNameError) as error:
         print(i18n.t("error.generic", error=error))
         return 2
