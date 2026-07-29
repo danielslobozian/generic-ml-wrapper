@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
@@ -44,10 +46,17 @@ def test_several_flags_become_several_tokens() -> None:
     assert client_args.split("--yolo --verbose") == ("--yolo", "--verbose")
 
 
+# What a quoted value looks like once split, per platform. Windows splits in non-posix
+# mode on purpose (there a backslash is a path separator, not an escape), which leaves the
+# quotes inside the token -- subprocess re-quotes it correctly on that side. The claim the
+# tests make is the same either way: it is *one* token.
+QUOTED_PATH = "/two words" if os.name != "nt" else '"/two words"'
+
+
 def test_a_quoted_value_stays_one_token() -> None:
     # The whole point of shell-splitting rather than str.split: a path with a space must
     # arrive as a single argument, not two.
-    assert client_args.split('--add-dir "/two words"') == ("--add-dir", "/two words")
+    assert client_args.split('--add-dir "/two words"') == ("--add-dir", QUOTED_PATH)
 
 
 def test_blank_and_whitespace_yield_no_tokens() -> None:

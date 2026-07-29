@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
+import os
+
 import pytest
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
@@ -21,6 +23,10 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+
+# A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
+# the quotes stay inside the token there. See ``common.client_args`` for why.
+QUOTED_PATH = "/two words" if os.name != "nt" else '"/two words"'
 
 
 class FakeStore(SessionStorePort):
@@ -443,7 +449,8 @@ def test_configured_args_reach_the_run_split_into_tokens() -> None:
         StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
-    assert provider.run.client_args == ("--yolo", "--add-dir", "/two words")
+    # Quoting survives per platform — see QUOTED_PATH's note in test_client_args.
+    assert provider.run.client_args == ("--yolo", "--add-dir", QUOTED_PATH)
 
 
 def test_a_client_with_no_configured_args_gets_none() -> None:

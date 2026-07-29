@@ -92,7 +92,9 @@ def test_exporting_packs_the_workflows_own_folder(tmp_path: Path) -> None:
         "nightly-etl"
     )
     assert archive.packed == (tmp_path / "nightly-etl", "nightly-etl")
-    assert written == "/exports/nightly-etl.zip"
+    # Through Path, so the separator is the platform's -- the claim is that the archive's
+    # own path comes back, not that it is spelled with a slash.
+    assert written == str(Path("/exports/nightly-etl.zip"))
 
 
 def test_exporting_an_unknown_workflow_is_refused(tmp_path: Path) -> None:

@@ -65,8 +65,8 @@ def test_a_round_trip_restores_what_travelled(tmp_path: Path) -> None:
     archive = _archive(tmp_path / "exports")
     written = archive.pack(_a_workflow(tmp_path / "wf"), "nightly-etl")
     archive.unpack(written, tmp_path / "restored")
-    restored = sorted(
-        str(p.relative_to(tmp_path / "restored"))
+    restored = sorted(  # posix-rendered: the expectation is about *which* files, not os.sep
+        p.relative_to(tmp_path / "restored").as_posix()
         for p in (tmp_path / "restored").rglob("*")
         if p.is_file()
     )
