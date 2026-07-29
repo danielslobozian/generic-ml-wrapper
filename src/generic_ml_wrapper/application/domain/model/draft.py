@@ -25,3 +25,28 @@ class DraftMarker:
 
     name: str | None
     finished: bool
+
+
+@dataclass(frozen=True)
+class Draft:
+    """An authoring draft still on disk, and what its marker says about it.
+
+    A draft outlives the session that made it: an interview the user walked away from
+    leaves its folder behind so nothing is lost. Until the marker says otherwise the
+    workflow has no name, so the draft is identified by the authoring session that
+    created it — ``create_draft`` keys the folder by ``session_id``, which is what makes
+    a draft findable again without storing a path anywhere.
+
+    Attributes:
+        key: The authoring session id the folder is named after (``create-workflow_007``).
+        path: The absolute path to the draft folder.
+        name: The workflow name its marker proposes, or ``None`` while unnamed.
+        finished: Whether its marker declares the workflow ready to deploy. A finished
+            draft that is still here was blocked from deploying — its name was taken, or
+            was unusable.
+    """
+
+    key: str
+    path: str
+    name: str | None
+    finished: bool

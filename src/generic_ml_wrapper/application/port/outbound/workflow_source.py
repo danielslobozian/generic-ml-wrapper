@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.context_source import CompileMode
-    from generic_ml_wrapper.application.domain.model.draft import DraftMarker
+    from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 
 
 class WorkflowSourcePort(ABC):
@@ -75,6 +75,18 @@ class WorkflowSourcePort(ABC):
 
         Returns:
             The absolute path to the created draft folder.
+        """
+
+    @abstractmethod
+    def drafts(self) -> list[Draft]:
+        """Return the drafts still on disk, newest first.
+
+        Every authoring session that did not deploy leaves its folder behind, so this is
+        the record of unfinished work. The folder name is the authoring session id, which
+        is what lets a draft be reopened without a path having been stored anywhere.
+
+        Returns:
+            The drafts with their markers read, newest first (empty when there are none).
         """
 
     @abstractmethod

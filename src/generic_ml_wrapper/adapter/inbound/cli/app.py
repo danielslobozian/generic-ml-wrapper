@@ -35,6 +35,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
 )
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind
+from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
     IdentifierError,
@@ -70,6 +71,7 @@ from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSum
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
     NewWorkflowResult,
+    NoSuchDraftError,
     WorkflowExistsError,
     WorkflowNameError,
     WorkflowOutcome,
@@ -93,6 +95,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_guided_chooser,
     build_init,
     build_list_clients,
+    build_list_drafts,
     build_list_jobs,
     build_list_personas,
     build_list_plugins,
@@ -377,6 +380,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         help=i18n.t("cli.flag.client"),
     )
     _add_guided_flags(new)
+    drafts_parser = workflow_sub.add_parser("drafts", help=i18n.t("cli.cmd.workflow_drafts"))
+    _add_json_flag(drafts_parser)
+    resume = workflow_sub.add_parser("resume", help=i18n.t("cli.cmd.workflow_resume"))
+    resume.add_argument(
+        "draft",
+        nargs="?",
+        default=None,
+        help=i18n.t("cli.arg.draft_optional"),
+    )
     edit = workflow_sub.add_parser("edit", help=i18n.t("cli.cmd.workflow_edit"))
     edit.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
     edit.add_argument(
@@ -595,6 +607,32 @@ def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.
     return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
 
 
+def format_drafts(drafts: list[Draft], loc: i18n.Localizer | None = None) -> str:
+    """Render the unfinished authoring drafts as human-readable lines.
+
+    Args:
+        drafts: The drafts to render, newest first.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    if not drafts:
+        return loc.t("draft.none")
+    lines = [loc.t("draft.count", count=len(drafts)), ""]
+    lines += [
+        loc.t(
+            "draft.row",
+            draft=draft.key,
+            state=loc.t("draft.finished" if draft.finished else "draft.unfinished"),
+            name=draft.name or loc.t("draft.unnamed"),
+        )
+        for draft in drafts
+    ]
+    return "\n".join(lines)
+
+
 def format_workflows(names: list[str], loc: i18n.Localizer | None = None) -> str:
     """Render the runnable workflow names as human-readable lines.
 
@@ -719,7 +757,7 @@ def main(argv: list[str] | None = None) -> int:
 #: gone on the next redraw. They go to the rolling log file only (issue #59).
 _HANDOVER_COMMANDS = frozenset({"start", "run", "tui"})
 #: The same, for `workflow <action>` — authoring launches a client just as `start` does.
-_HANDOVER_WORKFLOW_ACTIONS = frozenset({"new", "edit"})
+_HANDOVER_WORKFLOW_ACTIONS = frozenset({"new", "edit", "resume"})
 
 
 def _hands_over_the_terminal(args: argparse.Namespace) -> bool:
@@ -1767,6 +1805,12 @@ def _workflow(args: argparse.Namespace) -> int:
         return _workflow_new(args)
     if args.workflow_command == "edit":
         return _workflow_edit(args)
+    if args.workflow_command == "resume":
+        return _workflow_resume(args)
+    if args.workflow_command == "drafts":
+        drafts = build_list_drafts().execute()
+        print(_as_json([asdict(d) for d in drafts]) if bool(args.json) else format_drafts(drafts))
+        return 0
     if args.workflow_command == "list":
         names = build_list_workflows().execute()
         print(_as_json(names) if bool(args.json) else format_workflows(names))
@@ -1823,6 +1867,29 @@ def _announce_new_workflow(result: NewWorkflowResult) -> None:
         )
     else:  # INCOMPLETE — no finished marker; the draft is kept so nothing is lost
         print(i18n.t("workflow.new.incomplete", draft=result.draft_path), file=sys.stderr)
+
+
+def _workflow_resume(args: argparse.Namespace) -> int:
+    """Reopen an unfinished authoring draft — the named one, or the most recent.
+
+    The client is not chosen here: a draft belongs to the session that made it, so the
+    use case reopens it on that session's own client.
+    """
+    draft = None if args.draft is None else str(args.draft)
+    try:
+        result = build_new_workflow().execute(
+            NewWorkflowCommand(
+                name=None,
+                client=_client(None),  # unused on a resume; the session carries its own
+                resume_draft=draft,
+                resume_latest=draft is None,
+            )
+        )
+    except NoSuchDraftError as error:
+        print(i18n.t("draft.cannot_resume", error=error), file=sys.stderr)
+        return 2
+    _announce_new_workflow(result)
+    return result.exit_code
 
 
 def _workflow_edit(args: argparse.Namespace) -> int:

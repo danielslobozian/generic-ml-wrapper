@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
-from generic_ml_wrapper.application.domain.model.draft import DraftMarker
+from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE, rule_capture_directive
 from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
@@ -198,6 +198,27 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         folder = self._drafts_root / key
         folder.mkdir(parents=True, exist_ok=True)
         return str(folder)
+
+    def drafts(self) -> list[Draft]:
+        """Return the drafts still on disk, newest first (by folder mtime).
+
+        The folder name *is* the authoring session id, so a draft needs no stored path
+        to be found again — which is what makes an abandoned interview reopenable even
+        though it was never recorded anywhere as resumable.
+        """
+        if not self._drafts_root.is_dir():
+            return []
+        folders = [folder for folder in self._drafts_root.iterdir() if folder.is_dir()]
+        folders.sort(key=lambda folder: folder.stat().st_mtime, reverse=True)
+        return [
+            Draft(
+                key=folder.name,
+                path=str(folder),
+                name=(marker := self.read_draft_marker(str(folder))).name,
+                finished=marker.finished,
+            )
+            for folder in folders
+        ]
 
     def read_draft_marker(self, draft_path: str) -> DraftMarker:
         """Read ``<draft>/meta.json`` into a :class:`DraftMarker`, tolerantly.

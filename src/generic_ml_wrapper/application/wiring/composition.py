@@ -88,6 +88,7 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkfl
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
+from generic_ml_wrapper.application.port.inbound.list_drafts import ListDrafts
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
@@ -115,6 +116,7 @@ from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUse
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
+from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
@@ -345,6 +347,15 @@ def build_list_sessions() -> ListSessions:
         A ready-to-run ListSessions.
     """
     return ListSessionsUseCase(store=SqliteSessionStore(_ledger()))
+
+
+def build_list_drafts() -> ListDrafts:
+    """Build the ListDrafts use case wired to the filesystem workflow source.
+
+    Returns:
+        A ready-to-run ListDrafts.
+    """
+    return ListDraftsUseCase(workflows=_workflow_source(InterceptorChain(())))
 
 
 def build_list_workflows() -> ListWorkflows:

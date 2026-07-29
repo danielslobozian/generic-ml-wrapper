@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -16,6 +18,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
     NewWorkflowCommand,
     NewWorkflowResult,
+    NoSuchDraftError,
     WorkflowExistsError,
     WorkflowNameError,
     WorkflowOutcome,
@@ -77,6 +80,8 @@ class NewWorkflowUseCase(NewWorkflow):
             WorkflowExistsError: If a given name already exists (fail fast, up front).
         """
         self._workflows.seed()
+        if command.resume_draft is not None or command.resume_latest:
+            return self._reopen(command)
         if command.name is not None:  # a seed name lets a known collision fail fast
             self._validate(command.name)
             if self._workflows.exists(command.name):
@@ -93,8 +98,6 @@ class NewWorkflowUseCase(NewWorkflow):
             client=command.client,
             uuid=self._uuid_factory(),
         )
-        self._store.record(session)
-
         draft = self._workflows.create_draft(session.session_id)
         run = RunContext(
             job=job,
@@ -107,8 +110,76 @@ class NewWorkflowUseCase(NewWorkflow):
             kickoff=self._kickoff(command.name, draft, guided=command.guided),
         )
         caller = self._callers.for_run(run)
+        # Record where it ran and whether its caller can reopen it. Both were previously
+        # left unset, which is what made an interrupted interview unrecoverable: the
+        # session claimed a folder it had not stored, on a client nobody had asked.
+        self._store.record(replace(session, cwd=draft, resumable=caller.can_resume()))
         exit_code = run_with_hooks(caller, run, self._hooks)
         return self._finalize(exit_code, draft)
+
+    def _reopen(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+        """Reopen an unfinished draft and carry on the interview that made it.
+
+        The draft folder is named after the authoring session that created it, so the
+        session id is recovered from the folder rather than from anything we stored —
+        which is what lets drafts made before this existed be reopened too.
+
+        The client is the session's own, not the command's: the conversation belongs to
+        the client that held it, and reopening it on another one would start from
+        nothing. No context is re-injected for the same reason — the client already has
+        the interview in its history, and re-sending it would talk over that.
+
+        Raises:
+            NoSuchDraftError: If the named draft is gone, nothing is resumable, or the
+                session behind it was never recorded.
+        """
+        draft = self._target_draft(command)
+        session = next(
+            (s for s in self._store.sessions_for_job(_META) if s.session_id == draft.key), None
+        )
+        if session is None:
+            message = f"draft {draft.key!r} has no recorded session to resume"
+            raise NoSuchDraftError(message)
+        run = RunContext(
+            job=_META,
+            session_id=session.session_id,
+            client=session.client,
+            uuid=session.uuid,
+            resume=True,
+            cwd=draft.path,
+            kickoff=(
+                "You are picking up an unfinished create-workflow interview. Your draft "
+                f"folder is {draft.path} and your earlier work is there. Take stock of "
+                "where it stands, tell me, then carry on from that point — do not start over."
+            ),
+        )
+        caller = self._callers.for_run(run)
+        if not caller.can_resume():
+            message = f"{session.client} cannot reopen {session.session_id}"
+            raise NoSuchDraftError(message)
+        exit_code = run_with_hooks(caller, run, self._hooks)
+        return self._finalize(exit_code, draft.path)
+
+    def _target_draft(self, command: NewWorkflowCommand) -> Draft:
+        """The draft to reopen: the one named, else the most recent unfinished one.
+
+        A *finished* draft is skipped by ``--resume-latest`` because it is not waiting on
+        the user — it converged and was blocked from deploying (its name was taken, or
+        unusable), and reopening it silently would hide that. Naming it explicitly still
+        works, which is how a user fixes exactly that.
+        """
+        drafts = self._workflows.drafts()
+        if command.resume_draft is not None:
+            found = next((d for d in drafts if d.key == command.resume_draft), None)
+            if found is None:
+                message = f"no such draft: {command.resume_draft!r}"
+                raise NoSuchDraftError(message)
+            return found
+        unfinished = next((d for d in drafts if not d.finished), None)
+        if unfinished is None:
+            message = "no unfinished draft to resume"
+            raise NoSuchDraftError(message)
+        return unfinished
 
     def _finalize(self, exit_code: int, draft: str) -> NewWorkflowResult:
         """Deploy the draft if the session named it and declared it finished.
