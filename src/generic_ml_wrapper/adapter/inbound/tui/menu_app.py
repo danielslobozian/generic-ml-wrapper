@@ -37,6 +37,7 @@ from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.application.domain.model.rule_catalog import RuleAxis, RuleGroup
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.common import i18n
 
 
@@ -317,6 +318,18 @@ _TOP_MENU = (
 _AXIS_ICON = {RuleAxis.ENVIRONMENT: "🌍", RuleAxis.ROLE: "🎓"}
 
 
+def _wf_display(flow: Workflow) -> tuple[str, str]:
+    """A workflow's row title and subtitle: its label, with the slug dimmed beneath.
+
+    The slug is what ``gmlw run`` takes, so it stays on screen as the subtitle to identify
+    the row. A workflow predating the sidecar has label == slug and no second line -- it
+    reads exactly as its folder name always did.
+    """
+    if flow.label == flow.slug:
+        return flow.slug, ""
+    return flow.label, flow.slug
+
+
 def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[_Item]:
     """Resolve a menu spec into localised rows (subtitle key = title key + ``.d``)."""
     t = i18n.active().t
@@ -543,8 +556,8 @@ class WorkflowListScreen(_MenuScreen):
     def menu_items(self) -> list[_Item]:
         """One row per workflow; the detail panel shows how to run it."""
         return [
-            _Item("📄", name, "", "wf:listrow", example=f"gmlw run {name}")
-            for name in self.menu_app.workflows
+            _Item("📄", *_wf_display(flow), "wf:listrow", example=f"gmlw run {flow.slug}")
+            for flow in self.menu_app.workflows
         ]
 
     def handle(self, item: _Item) -> None:
@@ -572,8 +585,11 @@ class WorkflowPickerScreen(_MenuScreen):
         return f"gmlw > {t('tui.workflow')} > {verb}"
 
     def menu_items(self) -> list[_Item]:
-        """One row per workflow, carrying its name as payload."""
-        return [_Item("⏵", name, "", "wf:pick", payload=name) for name in self.menu_app.workflows]
+        """One row per workflow: its label to read, its slug carried as the payload."""
+        return [
+            _Item("⏵", *_wf_display(flow), "wf:pick", payload=flow.slug)
+            for flow in self.menu_app.workflows
+        ]
 
     def handle(self, item: _Item) -> None:
         """Run exits with the choice; Edit moves to the authoring-depth chooser."""
@@ -1880,7 +1896,7 @@ class MenuApp(App[MenuChoice | None]):
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
-        workflows: list[str] | None = None,
+        workflows: list[Workflow] | None = None,
         rules: Callable[[], tuple[RuleGroup, ...]] | None = None,
         clients: Callable[[], list[ClientRow]] | None = None,
         set_default_client: Callable[[str], ConfigSetResult] | None = None,
@@ -1904,8 +1920,9 @@ class MenuApp(App[MenuChoice | None]):
                 the Export view (lazily, per job, on a worker thread); defaults to empty.
             save_usage: Writes a job's full report to a file and returns the path, for the
                 save-to-file Export destination (lazily, per job); defaults to a no-op.
-            workflows: The runnable workflow names, for the Workflow Run/List/Edit screens;
-                defaults to none.
+            workflows: The runnable workflows (slug + label + description), for the Workflow
+                Run/List/Edit/Export screens; the pickers show the label and carry the slug.
+                Defaults to none.
             rules: Lists the environments and roles holding rules, for the Rules browser;
                 read once on first use and cached, so walking the tree never re-reads disk.
                 Defaults to none, so the app runs unwired in tests.

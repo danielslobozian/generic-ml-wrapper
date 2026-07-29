@@ -1470,7 +1470,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         sessions_for=_sessions_for,
         usage_view=_usage_view,
         save_usage=_save_usage,
-        workflows=build_list_workflows().execute(),
+        workflows=build_list_workflow_catalog().execute(),
         rules=build_list_rules().execute,
         clients=_clients,
         set_default_client=_set_default_client,
