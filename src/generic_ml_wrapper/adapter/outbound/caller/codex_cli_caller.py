@@ -24,6 +24,25 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 BINARY = "codex"
+# Codex's own status-line items, ordered to mirror gmlw's line for claude:
+# git · folder · model · context · usage windows. Verified rendering against
+# codex-cli 0.145.0; `five-hour-limit` is omitted by codex until that window has
+# something to report, which is why a fresh session shows six of the seven.
+#
+# These are codex's vocabulary, not ours, and it is safe to name one it may not
+# know: codex validates the *shape* of this value (it must be a sequence) but not
+# the item names, so an unrecognised item is silently omitted rather than refused.
+# Verified on 0.145.0 — a malformed value fails config loading before the terminal
+# is even checked, while `["not-a-real-item"]` loads cleanly.
+_STATUS_LINE = (
+    "git-branch",
+    "project-name",
+    "model",
+    "context-used",
+    "context-window-size",
+    "five-hour-limit",
+    "weekly-limit",
+)
 # ChatGPT-sign-in upstream (the verified default). API-key mode would target
 # api.openai.com with a /v1 prefix; a config-driven option is a later follow-up.
 _UPSTREAM = "https://chatgpt.com"
@@ -140,6 +159,29 @@ class CodexCliCaller(CliCaller):
             self._relay.stop()
             self._relay = None
 
+    def _status_line_flags(self) -> list[str]:
+        """Override codex's status line so it reads like the one gmlw gives claude.
+
+        Chosen to mirror the wrapper's own line block for block, in the same order:
+        branch, folder, model, context fill, then the usage windows. Cost has no codex
+        key and is simply absent — codex does not know what a turn cost.
+
+        ``context-used`` rather than ``context-remaining`` deliberately: gmlw shows
+        consumption everywhere else, and a bar that reads "22% left" where the eye is
+        trained on "78% used" is worse than no bar at all.
+
+        Applied whether or not the relay came up — it is presentation, not metering —
+        and passed as ``-c``, which codex layers over ``config.toml`` for this launch
+        only. Nothing is written to disk, so there is nothing to restore afterwards
+        (unlike claude, where the status line is installed into ``settings.json``).
+
+        A user who wants a different line can pass their own ``-c tui.status_line=…``
+        through ``[client.args]``: those arrive after these, and the last ``-c`` for a
+        key wins.
+        """
+        items = ",".join(f'"{item}"' for item in _STATUS_LINE)
+        return ["-c", f"tui.status_line=[{items}]"]
+
     def _provider_flags(self) -> list[str]:
         if self._relay is None:
             return []
@@ -173,7 +215,7 @@ class CodexCliCaller(CliCaller):
             The argv list to execute.
         """
         head = [BINARY, "resume", self.run.uuid] if self.run.resume and self.run.uuid else [BINARY]
-        argv = [*head, *self._provider_flags(), *self.run.client_args]
+        argv = [*head, *self._status_line_flags(), *self._provider_flags(), *self.run.client_args]
         if opening is not None:
             argv.append(opening)
         return argv

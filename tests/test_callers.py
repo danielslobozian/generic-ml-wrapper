@@ -370,9 +370,10 @@ def _codex_run(*, context: str | None = None, kickoff: str | None = None) -> Run
 
 
 def test_codex_bare_command_is_codex_plus_opening() -> None:
-    caller = _codex(_codex_run())  # before start_metering: no relay, plain command
-    assert caller.command() == ["codex"]
-    assert caller.command("go") == ["codex", "go"]
+    caller = _codex(_codex_run())  # before start_metering: no relay, no provider flags
+    assert caller.command()[0] == "codex"
+    assert not any(a.startswith("model_provider") for a in caller.command())
+    assert caller.command("go")[-1] == "go"
 
 
 def test_codex_meters_but_delivers_no_statusline() -> None:
@@ -606,13 +607,13 @@ def test_codex_resume_keeps_the_subcommand_ahead_of_the_provider_flags() -> None
 
 
 def test_a_fresh_codex_run_does_not_resume() -> None:
-    assert _codex(_codex_run()).command() == ["codex"]
+    assert "resume" not in _codex(_codex_run()).command()
 
 
 def test_a_resume_without_an_id_falls_back_to_a_plain_launch() -> None:
     # Belt-and-braces: can_resume already refuses this, so it should never be built --
     # and if it ever were, `codex resume` with no id opens a picker rather than the session.
-    assert _codex(_codex_resume_run(None)).command() == ["codex"]
+    assert "resume" not in _codex(_codex_resume_run(None)).command()
 
 
 def test_the_learned_session_id_is_bound_to_the_session_and_registered_with_codex(
@@ -677,8 +678,12 @@ def test_cursor_also_carries_the_passthrough_args() -> None:
     assert argv[-2:] == ["--yolo", "GO"]
 
 
-def test_no_configured_args_leaves_the_command_untouched() -> None:
-    assert _codex(RunContext("JOB-1", "JOB-1_001", "codex", None, False)).command() == ["codex"]
+def test_no_configured_args_add_nothing_to_the_command() -> None:
+    bare = _codex(RunContext("JOB-1", "JOB-1_001", "codex", None, False)).command()
+    with_args = _codex(
+        RunContext("JOB-1", "JOB-1_001", "codex", None, False, client_args=("--yolo",))
+    ).command()
+    assert with_args == [*bare, "--yolo"]
 
 
 def test_passthrough_args_survive_a_codex_resume() -> None:
@@ -686,3 +691,51 @@ def test_passthrough_args_survive_a_codex_resume() -> None:
     argv = _codex(run).command()
     assert argv[:3] == ["codex", "resume", "019f-abc"]
     assert "--yolo" in argv
+
+
+# ── codex status line ──
+def test_codex_launches_with_the_gmlw_status_line() -> None:
+    argv = _codex(_codex_run()).command()
+    flag = argv[argv.index("-c") + 1]
+    assert flag.startswith("tui.status_line=[")
+    # Order is the point: it mirrors gmlw's own line block for block.
+    assert flag == (
+        'tui.status_line=["git-branch","project-name","model","context-used",'
+        '"context-window-size","five-hour-limit","weekly-limit"]'
+    )
+
+
+def test_the_status_line_shows_context_used_not_remaining() -> None:
+    # gmlw shows consumption everywhere else; a codex bar reading "22% left" where the
+    # eye is trained on "78% used" is the false-parity trap.
+    flag = " ".join(_codex(_codex_run()).command())
+    assert "context-used" in flag
+    assert "context-remaining" not in flag
+
+
+def test_the_status_line_is_applied_even_without_a_relay() -> None:
+    # Presentation, not metering: a failed relay launches codex unmetered but still themed.
+    caller = _codex(_codex_run())
+    assert caller._relay is None
+    assert any(a.startswith("tui.status_line=") for a in caller.command())
+
+
+def test_the_status_line_survives_a_resume() -> None:
+    argv = _codex(_codex_resume_run("019f-abc")).command()
+    assert argv[:3] == ["codex", "resume", "019f-abc"]
+    assert any(a.startswith("tui.status_line=") for a in argv)
+
+
+def test_user_status_line_args_come_after_ours_so_they_win() -> None:
+    # No refusal list by design: a user's own -c overrides ours because codex takes the
+    # last value for a key, so [client.args] is the escape hatch.
+    run = replace(_codex_run(), client_args=("-c", 'tui.status_line=["model"]'))
+    argv = _codex(run).command()
+    ours = argv.index("tui.status_line=" + argv[argv.index("-c") + 1].split("=", 1)[1])
+    assert argv.index('tui.status_line=["model"]') > ours
+
+
+def test_the_status_line_precedes_the_prompt() -> None:
+    argv = _codex(_codex_run()).command("GO")
+    assert argv[-1] == "GO"
+    assert any(a.startswith("tui.status_line=") for a in argv[:-1])
