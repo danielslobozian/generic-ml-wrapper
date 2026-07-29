@@ -8,6 +8,7 @@ from generic_ml_wrapper.application.domain.model.context_source import CompileMo
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
@@ -48,6 +49,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def exists(self, name: str) -> bool:
         return self._existing
 
+    def catalog(self) -> list[Workflow]:
+        return []
+
     def create(self, name: str) -> str:
         return f"/workflows/{name}"
 
@@ -64,7 +68,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def read_draft_marker(self, draft_path: str) -> DraftMarker:
         return self._marker
 
-    def deploy_draft(self, draft_path: str, name: str) -> str:
+    def deploy_draft(
+        self, draft_path: str, name: str, label: str, description: str, created: str
+    ) -> str:
         self.deployed = (draft_path, name)
         return f"/workflows/{name}"
 
@@ -135,7 +141,7 @@ def test_authoring_runs_in_a_draft_under_the_create_workflow_job() -> None:
     provider = CapturingProvider()
 
     result = _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name=None, client="claude")
+        NewWorkflowCommand(label=None, client="claude")
     )
 
     assert result.exit_code == 0
@@ -155,7 +161,7 @@ def test_deploys_a_finished_named_draft() -> None:
     workflows = FakeWorkflows(marker=DraftMarker("nightly-etl", finished=True))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(name=None, client="claude")
+        NewWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.DEPLOYED
@@ -168,25 +174,42 @@ def test_a_seed_name_seeds_the_kickoff() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, FakeStore(), provider).execute(
-        NewWorkflowCommand(name="foo", client="claude")
+        NewWorkflowCommand(label="foo", client="claude")
     )
 
     assert provider.run is not None
     assert "foo" in (provider.run.kickoff or "")
 
 
-@pytest.mark.parametrize("name", ["Bad Name", "_common", "create-workflow", ""])
-def test_rejects_invalid_or_reserved_seed_names(name: str) -> None:
+@pytest.mark.parametrize("label", ["", "   ", "!!!", "create-workflow", "Create Workflow"])
+def test_rejects_a_seed_label_that_yields_nothing_usable(label: str) -> None:
+    # Either the label slugifies to nothing, or it slugifies onto a reserved folder --
+    # note "Create Workflow" reaches the same slug as "create-workflow" and is refused
+    # for the same reason.
     with pytest.raises(WorkflowNameError):
         _use_case(FakeWorkflows(), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(name=name, client="claude")
+            NewWorkflowCommand(label=label, client="claude")
         )
+
+
+@pytest.mark.parametrize(
+    ("label", "slug"), [("Bad Name", "bad-name"), ("Nightly ETL", "nightly-etl")]
+)
+def test_a_label_with_spaces_and_capitals_is_now_fine(label: str, slug: str) -> None:
+    # The point of the change: the author writes words, gmlw derives the slug. These
+    # were rejected when the positional had to be kebab-case already.
+    workflows = FakeWorkflows(marker=DraftMarker(None, finished=True, label=label))
+    result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
+        NewWorkflowCommand(label=label, client="claude")
+    )
+    assert result.outcome is WorkflowOutcome.DEPLOYED
+    assert result.name == slug
 
 
 def test_a_taken_seed_name_fails_fast() -> None:
     with pytest.raises(WorkflowExistsError):
         _use_case(FakeWorkflows(existing=True), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(name="doc-review", client="claude")
+            NewWorkflowCommand(label="doc-review", client="claude")
         )
 
 
@@ -195,7 +218,7 @@ def test_a_taken_name_at_deploy_keeps_the_draft() -> None:
     workflows = FakeWorkflows(existing=True, marker=DraftMarker("taken", finished=True))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(name=None, client="claude")
+        NewWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.COLLISION
@@ -208,7 +231,7 @@ def test_incomplete_when_the_marker_is_absent_or_unfinished() -> None:
     workflows = FakeWorkflows(marker=DraftMarker("foo", finished=False))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(name=None, client="claude")
+        NewWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.INCOMPLETE
@@ -220,7 +243,7 @@ def test_a_proposed_unusable_name_is_incomplete() -> None:
     workflows = FakeWorkflows(marker=DraftMarker("Bad Name", finished=True))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(name=None, client="claude")
+        NewWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.INCOMPLETE
@@ -232,7 +255,7 @@ def test_guided_appends_the_facilitation_layer() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, FakeStore(), provider).execute(
-        NewWorkflowCommand(name=None, client="claude", guided=True)
+        NewWorkflowCommand(label=None, client="claude", guided=True)
     )
 
     assert provider.run is not None
@@ -245,7 +268,7 @@ def test_quick_omits_the_facilitation_layer() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, FakeStore(), provider).execute(
-        NewWorkflowCommand(name=None, client="claude", guided=False)
+        NewWorkflowCommand(label=None, client="claude", guided=False)
     )
 
     assert provider.run is not None
@@ -267,7 +290,7 @@ def test_a_new_session_records_the_draft_it_runs_in() -> None:
     workflows = FakeWorkflows()
     store = FakeStore()
     _use_case(workflows, store, CapturingProvider()).execute(
-        NewWorkflowCommand(name=None, client="claude")
+        NewWorkflowCommand(label=None, client="claude")
     )
     recorded = store.recorded[0]
     assert recorded.cwd == f"/drafts/{recorded.session_id}"
@@ -280,7 +303,7 @@ def test_resuming_the_latest_draft_reopens_it_in_its_own_folder() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
     )
 
     assert provider.run is not None
@@ -296,7 +319,7 @@ def test_resuming_does_not_re_inject_the_authoring_context() -> None:
     store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
     provider = CapturingProvider()
     _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
     )
     assert provider.run is not None
     assert provider.run.context is None
@@ -309,7 +332,7 @@ def test_resuming_uses_the_sessions_own_client_not_the_commands() -> None:
     store = FakeStore(sessions=[_authoring_session("create-workflow_007", client="cursor")])
     provider = CapturingProvider()
     _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
     )
     assert provider.run is not None
     assert provider.run.client == "cursor"
@@ -325,7 +348,7 @@ def test_resuming_a_named_draft_picks_that_one() -> None:
     )
     provider = CapturingProvider()
     _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name=None, client="claude", resume_draft="create-workflow_007")
+        NewWorkflowCommand(label=None, client="claude", resume_draft="create-workflow_007")
     )
     assert provider.run is not None
     assert provider.run.session_id == "create-workflow_007"
@@ -348,7 +371,7 @@ def test_resume_latest_skips_a_finished_draft() -> None:
     )
     provider = CapturingProvider()
     _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
     )
     assert provider.run is not None
     assert provider.run.session_id == "create-workflow_007"
@@ -359,14 +382,14 @@ def test_resuming_an_unknown_draft_is_refused() -> None:
     store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
     with pytest.raises(NoSuchDraftError):
         _use_case(workflows, store, CapturingProvider()).execute(
-            NewWorkflowCommand(name=None, client="claude", resume_draft="create-workflow_404")
+            NewWorkflowCommand(label=None, client="claude", resume_draft="create-workflow_404")
         )
 
 
 def test_resuming_with_no_drafts_is_refused() -> None:
     with pytest.raises(NoSuchDraftError):
         _use_case(FakeWorkflows(), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+            NewWorkflowCommand(label=None, client="claude", resume_latest=True)
         )
 
 
@@ -376,7 +399,7 @@ def test_a_draft_whose_session_was_never_recorded_is_refused() -> None:
     workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
     with pytest.raises(NoSuchDraftError):
         _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+            NewWorkflowCommand(label=None, client="claude", resume_latest=True)
         )
 
 
@@ -388,7 +411,7 @@ def test_a_resumed_draft_still_deploys_when_it_converges() -> None:
     )
     store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
     result = _use_case(workflows, store, CapturingProvider()).execute(
-        NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
     )
     assert result.outcome is WorkflowOutcome.DEPLOYED
     assert workflows.deployed == ("/drafts/create-workflow_007", "nightly-etl")
@@ -400,5 +423,5 @@ def test_a_draft_on_a_client_that_cannot_reopen_is_refused() -> None:
     store = FakeStore(sessions=[_authoring_session("create-workflow_007", client="vibe")])
     with pytest.raises(NoSuchDraftError):
         _use_case(workflows, store, CapturingProvider(can_resume=False)).execute(
-            NewWorkflowCommand(name=None, client="claude", resume_latest=True)
+            NewWorkflowCommand(label=None, client="claude", resume_latest=True)
         )

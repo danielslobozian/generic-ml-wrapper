@@ -57,4 +57,5 @@ If the conversation is compacted, re-read both files and continue from them.
   workflow is theirs.
 
 Then finish through the core steps: converge on the lean `workflow.md` from your `draft.md`,
-name it, and write the `meta.json` marker.
+settle on a label and a one-line description with the user, and write the `meta.json`
+marker. Write the words, not a slug — gmlw derives the folder name from the label.

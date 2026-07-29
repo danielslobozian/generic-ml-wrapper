@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft
@@ -27,6 +28,7 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPro
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
+from generic_ml_wrapper.common.slug import slugify
 
 _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
@@ -43,13 +45,14 @@ class NewWorkflowUseCase(NewWorkflow):
     the final name still comes from the marker.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  (its outbound ports, plus the clock for the sidecar)
         self,
         workflows: WorkflowSourcePort,
         store: SessionStorePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
         hooks: HookRunner,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -59,12 +62,15 @@ class NewWorkflowUseCase(NewWorkflow):
             callers: Resolves the client caller for the run.
             uuid_factory: Mints a client-side session uuid.
             hooks: The lifecycle hooks bracketing the authoring client run.
+            clock: Returns "now" for the deployed folder's ``.about.toml`` ``created``
+                stamp; injectable so tests are deterministic.
         """
         self._workflows = workflows
         self._store = store
         self._callers = callers
         self._uuid_factory = uuid_factory
         self._hooks = hooks
+        self._clock = clock
 
     def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
         """Run the authoring session for a new workflow and deploy its draft.
@@ -82,10 +88,11 @@ class NewWorkflowUseCase(NewWorkflow):
         self._workflows.seed()
         if command.resume_draft is not None or command.resume_latest:
             return self._reopen(command)
-        if command.name is not None:  # a seed name lets a known collision fail fast
-            self._validate(command.name)
-            if self._workflows.exists(command.name):
-                message = f"workflow already exists: {command.name!r}"
+        if command.label is not None:  # a seed label lets a known collision fail fast
+            seed = slugify(command.label)
+            self._validate(seed)
+            if self._workflows.exists(seed):
+                message = f"workflow already exists: {seed!r}"
                 raise WorkflowExistsError(message)
 
         # Authoring always runs under the create-workflow job (its store is rooted apart
@@ -107,7 +114,7 @@ class NewWorkflowUseCase(NewWorkflow):
             resume=False,
             cwd=draft,
             context=self._authoring_context(guided=command.guided, job=job),
-            kickoff=self._kickoff(command.name, draft, guided=command.guided),
+            kickoff=self._kickoff(command.label, draft, guided=command.guided),
         )
         caller = self._callers.for_run(run)
         # Record where it ran and whether its caller can reopen it. Both were previously
@@ -182,23 +189,32 @@ class NewWorkflowUseCase(NewWorkflow):
         return unfinished
 
     def _finalize(self, exit_code: int, draft: str) -> NewWorkflowResult:
-        """Deploy the draft if the session named it and declared it finished.
+        """Deploy the draft if the session settled it and declared it finished.
 
-        A missing/unfinished marker, an unusable proposed name, or a name already taken
-        each leaves the draft in place (nothing is lost); only a finished, valid, free
-        name is deployed into ``workflows/<name>/``.
+        The slug comes from the label the session chose, the same way a role's or an
+        environment's does — the author names the workflow in words and never has to
+        think in kebab-case. An older interview that wrote a bare ``name`` instead still
+        works: that name is taken as both slug and label.
+
+        A missing/unfinished marker, a label that slugifies to nothing, or a slug already
+        taken each leaves the draft in place (nothing is lost); only a finished, valid,
+        free slug is deployed into ``workflows/<slug>/``.
         """
         marker = self._workflows.read_draft_marker(draft)
-        if not marker.finished or marker.name is None:
+        label = marker.label or marker.name
+        if not marker.finished or label is None:
             return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
+        slug = slugify(label) if marker.label else label
         try:
-            self._validate(marker.name)
-        except WorkflowNameError:  # the session proposed an unusable name — keep the draft
-            return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
-        if self._workflows.exists(marker.name):
-            return NewWorkflowResult(exit_code, WorkflowOutcome.COLLISION, marker.name, draft)
-        deployed = self._workflows.deploy_draft(draft, marker.name)
-        return NewWorkflowResult(exit_code, WorkflowOutcome.DEPLOYED, marker.name, deployed)
+            self._validate(slug)
+        except WorkflowNameError:  # the label yielded nothing usable — keep the draft
+            return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, slug or label, draft)
+        if self._workflows.exists(slug):
+            return NewWorkflowResult(exit_code, WorkflowOutcome.COLLISION, slug, draft)
+        deployed = self._workflows.deploy_draft(
+            draft, slug, label, marker.description, self._clock().isoformat()
+        )
+        return NewWorkflowResult(exit_code, WorkflowOutcome.DEPLOYED, slug, deployed)
 
     def _authoring_context(self, *, guided: bool, job: str) -> str:
         """The authoring context, with the guided-facilitation layer added when chosen."""

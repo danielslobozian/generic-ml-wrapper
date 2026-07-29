@@ -14,10 +14,12 @@ class NewWorkflowCommand:
     """A request to author a new workflow.
 
     Attributes:
-        name: A suggested name (lowercase letters, digits, dashes), or ``None`` to let
-            the authoring session propose one at convergence. When given, it is only a
-            seed — the session may rename it, and the final name comes from the draft
-            marker — but it lets a known name fail fast on a collision before any work.
+        label: A suggested human name, or ``None`` to let the authoring session settle
+            on one at convergence. Only a seed — the session may choose differently, and
+            the final label comes from the draft marker — but it lets a name that is
+            already taken fail fast, before any work. The slug is derived from it, so the
+            author never types kebab-case.
+        description: A fuller line to carry into the workflow, or empty.
         client: The client to run the authoring session on.
         guided: Whether to add the guided-facilitation layer (a richer, costlier
             authoring experience) on top of the core interview.
@@ -27,8 +29,9 @@ class NewWorkflowCommand:
             fresh interview. Ignored when ``resume_draft`` names one.
     """
 
-    name: str | None
+    label: str | None
     client: str
+    description: str = ""
     guided: bool = False
     resume_draft: str | None = None
     resume_latest: bool = False

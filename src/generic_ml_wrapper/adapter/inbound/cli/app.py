@@ -48,6 +48,7 @@ from generic_ml_wrapper.application.domain.model.migration import (
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
@@ -102,6 +103,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_plugins,
     build_list_rules,
     build_list_sessions,
+    build_list_workflow_catalog,
     build_list_workflows,
     build_localizer,
     build_migrate_layout,
@@ -370,10 +372,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     )
     new = workflow_sub.add_parser("new", help=i18n.t("cli.cmd.workflow_new"))
     new.add_argument(
-        "name",
+        "label",
         nargs="?",
         default=None,
-        help=i18n.t("cli.arg.workflow_name_optional"),
+        help=i18n.t("cli.arg.workflow_label_optional"),
+    )
+    new.add_argument(
+        "--description",
+        default="",
+        help=i18n.t("cli.flag.workflow_description"),
     )
     new.add_argument(
         "--client",
@@ -639,21 +646,33 @@ def format_drafts(drafts: list[Draft], loc: i18n.Localizer | None = None) -> str
     return "\n".join(lines)
 
 
-def format_workflows(names: list[str], loc: i18n.Localizer | None = None) -> str:
-    """Render the runnable workflow names as human-readable lines.
+def format_workflows(workflows: list[Workflow], loc: i18n.Localizer | None = None) -> str:
+    """Render the runnable workflows as human-readable lines.
+
+    Shows the slug the user types beside the label its author gave it. A workflow
+    predating the sidecar has the two the same and no description, so it renders exactly
+    as it always did.
 
     Args:
-        names: The workflow names to render.
+        workflows: The workflows to render, sorted by slug.
         loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
     loc = loc or i18n.active()
-    if not names:
+    if not workflows:
         return loc.t("workflow.none")
-    lines = [loc.t("workflow.count", count=len(names)), ""]
-    lines += [f"  {name}" for name in names]
+    lines = [loc.t("workflow.count", count=len(workflows)), ""]
+    lines += [
+        loc.t(
+            "workflow.row",
+            workflow=flow.slug,
+            label="" if flow.label == flow.slug else flow.label,
+            description=flow.description,
+        ).rstrip()
+        for flow in workflows
+    ]
     return "\n".join(lines)
 
 
@@ -1818,8 +1837,12 @@ def _workflow(args: argparse.Namespace) -> int:
         print(_as_json([asdict(d) for d in drafts]) if bool(args.json) else format_drafts(drafts))
         return 0
     if args.workflow_command == "list":
-        names = build_list_workflows().execute()
-        print(_as_json(names) if bool(args.json) else format_workflows(names))
+        flows = build_list_workflow_catalog().execute()
+        print(
+            _as_json([asdict(flow) for flow in flows])
+            if bool(args.json)
+            else format_workflows(flows)
+        )
         return 0
     return 0
 
@@ -1831,17 +1854,21 @@ def _workflow_new(args: argparse.Namespace) -> int:
     after which gmlw deploys the draft. A name given up front is a seed that fails fast
     on a collision. The draft's fate on the return is reported from the result.
     """
-    name = None if args.name is None else str(args.name)
-    return _new_workflow(name, _client(args.client), _resolve_guided(args))
+    label = None if args.label is None else str(args.label)
+    return _new_workflow(
+        label, _client(args.client), _resolve_guided(args), description=str(args.description)
+    )
 
 
-def _new_workflow(name: str | None, client: str, guided: bool) -> int:
+def _new_workflow(label: str | None, client: str, guided: bool, *, description: str = "") -> int:
     """Author a new workflow — shared by ``gmlw workflow new`` and the TUI Create verb.
 
     Args:
-        name: A suggested name, or ``None`` to let the session propose one at the end.
+        label: A suggested human name, or ``None`` to let the session settle on one at
+            the end. Only a seed: the slug is derived from whatever the session chooses.
         client: The resolved client to wrap.
         guided: Whether to use the guided (facilitative) authoring experience.
+        description: A fuller line to carry into the workflow, or empty.
 
     Returns:
         The process exit code.
@@ -1850,10 +1877,10 @@ def _new_workflow(name: str | None, client: str, guided: bool) -> int:
         return 2
     try:
         result = build_new_workflow().execute(
-            NewWorkflowCommand(name=name, client=client, guided=guided)
+            NewWorkflowCommand(label=label, client=client, guided=guided, description=description)
         )
     except WorkflowExistsError:  # a seed name that already exists — point at editing it
-        print(i18n.t("workflow.new.exists", name=name), file=sys.stderr)
+        print(i18n.t("workflow.new.exists", name=label), file=sys.stderr)
         return 2
     except WorkflowNameError as error:
         print(i18n.t("error.generic", error=error))
@@ -1885,7 +1912,7 @@ def _workflow_resume(args: argparse.Namespace) -> int:
     try:
         result = build_new_workflow().execute(
             NewWorkflowCommand(
-                name=None,
+                label=None,
                 client=_client(None),  # unused on a resume; the session carries its own
                 resume_draft=draft,
                 resume_latest=draft is None,

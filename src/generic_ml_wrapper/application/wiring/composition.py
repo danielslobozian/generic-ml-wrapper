@@ -94,6 +94,7 @@ from generic_ml_wrapper.application.port.inbound.list_personas import ListPerson
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
+from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import ListWorkflowCatalog
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
@@ -122,6 +123,9 @@ from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUse
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
+from generic_ml_wrapper.application.usecase.list_workflow_catalog import (
+    ListWorkflowCatalogUseCase,
+)
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
@@ -347,6 +351,15 @@ def build_list_sessions() -> ListSessions:
         A ready-to-run ListSessions.
     """
     return ListSessionsUseCase(store=SqliteSessionStore(_ledger()))
+
+
+def build_list_workflow_catalog() -> ListWorkflowCatalog:
+    """Build the ListWorkflowCatalog use case wired to the filesystem workflow source.
+
+    Returns:
+        A ready-to-run ListWorkflowCatalog.
+    """
+    return ListWorkflowCatalogUseCase(workflows=_workflow_source(InterceptorChain(())))
 
 
 def build_list_drafts() -> ListDrafts:

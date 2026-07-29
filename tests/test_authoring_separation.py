@@ -36,7 +36,7 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
         uuid_factory=lambda: "u",
         hooks=HookRunner(()),
     )
-    new_workflow.execute(NewWorkflowCommand(name="doc-review", client="claude"))
+    new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))
 
     # `gmlw jobs` reads the work kind only -- untouched by authoring.
     assert ListJobsUseCase(SqliteSessionStore(ledger, kind="work")).execute() == []

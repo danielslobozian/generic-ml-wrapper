@@ -19,12 +19,19 @@ class DraftMarker:
     never deployed.
 
     Attributes:
-        name: The workflow name the session settled on, or ``None`` if unnamed.
+        name: The workflow name the session settled on, or ``None`` if unnamed. Older
+            interviews wrote a kebab-case name here directly; newer ones write a
+            ``label`` instead and let gmlw derive the slug from it.
         finished: Whether the session declared the workflow ready to deploy.
+        label: The human name the session settled on, or ``None``. When present it is
+            what the slug is derived from, and what the deployed folder records.
+        description: A fuller line describing the workflow, or empty.
     """
 
     name: str | None
     finished: bool
+    label: str | None = None
+    description: str = ""
 
 
 @dataclass(frozen=True)

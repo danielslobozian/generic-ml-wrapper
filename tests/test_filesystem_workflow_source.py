@@ -11,6 +11,7 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.persona import Persona
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
@@ -77,9 +78,13 @@ def test_deploy_draft_moves_the_draft_and_drops_the_marker(tmp_path: Path) -> No
     source = FilesystemWorkflowSource(workflows)
     draft = Path(source.create_draft("create-workflow_001"))
     (draft / "workflow.md").write_text("# nightly-etl", encoding="utf-8")
-    (draft / "meta.json").write_text('{"name": "nightly-etl", "status": "finished"}', "utf-8")
+    (draft / "meta.json").write_text(
+        '{"label": "Nightly ETL", "description": "Runs nightly.", "status": "finished"}', "utf-8"
+    )
 
-    deployed = source.deploy_draft(str(draft), "nightly-etl")
+    deployed = source.deploy_draft(
+        str(draft), "nightly-etl", "Nightly ETL", "Runs nightly.", "2026-07-29T09:00:00+00:00"
+    )
 
     deployed_dir = workflows / "nightly-etl"
     assert Path(deployed) == deployed_dir
@@ -505,3 +510,62 @@ def test_snapshot_renders_unset_selections_as_empty(tmp_path: Path) -> None:
     assert payload["ai_persona"] == ""
     assert payload["job_name"] == ""
     assert payload["user_environment"] == "work"  # the built-in default
+
+
+# ── the label/description sidecar ──
+def test_deploying_records_the_label_and_description_beside_the_slug(tmp_path: Path) -> None:
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    draft = Path(source.create_draft("create-workflow_001"))
+    (draft / "workflow.md").write_text("# steps", encoding="utf-8")
+    source.deploy_draft(
+        str(draft), "nightly-etl", "Nightly ETL", "Runs the ETL overnight.", "2026-07-29T09:00:00Z"
+    )
+    catalog = source.catalog()
+    assert catalog == [
+        Workflow(slug="nightly-etl", label="Nightly ETL", description="Runs the ETL overnight.")
+    ]
+
+
+def test_a_workflow_without_a_sidecar_reports_its_slug_as_its_label(tmp_path: Path) -> None:
+    # Everything authored before the sidecar existed. Nothing is migrated: it lists
+    # exactly as it always did.
+    root = tmp_path / "workflows"
+    (root / "legacy").mkdir(parents=True)
+    (root / "legacy" / "workflow.md").write_text("# steps", encoding="utf-8")
+    assert FilesystemWorkflowSource(root).catalog() == [
+        Workflow(slug="legacy", label="legacy", description="")
+    ]
+
+
+def test_a_malformed_sidecar_degrades_to_the_slug(tmp_path: Path) -> None:
+    root = tmp_path / "workflows"
+    (root / "broken").mkdir(parents=True)
+    (root / "broken" / "workflow.md").write_text("# steps", encoding="utf-8")
+    (root / "broken" / ".about.toml").write_text("not = [valid", encoding="utf-8")
+    assert FilesystemWorkflowSource(root).catalog() == [
+        Workflow(slug="broken", label="broken", description="")
+    ]
+
+
+def test_the_marker_carries_the_label_and_description(tmp_path: Path) -> None:
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    draft = Path(source.create_draft("create-workflow_001"))
+    (draft / "meta.json").write_text(
+        '{"label": "Nightly ETL", "description": "Overnight.", "status": "finished"}',
+        encoding="utf-8",
+    )
+    marker = source.read_draft_marker(str(draft))
+    assert marker.label == "Nightly ETL"
+    assert marker.description == "Overnight."
+    assert marker.finished is True
+
+
+def test_an_older_marker_with_only_a_name_still_parses(tmp_path: Path) -> None:
+    # Interviews written before labels existed wrote a bare kebab-case name.
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    draft = Path(source.create_draft("create-workflow_001"))
+    (draft / "meta.json").write_text('{"name": "nightly-etl", "status": "finished"}', "utf-8")
+    marker = source.read_draft_marker(str(draft))
+    assert marker.name == "nightly-etl"
+    assert marker.label is None
+    assert marker.description == ""
