@@ -13,7 +13,7 @@ import os
 import platform
 import signal
 import sys
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -66,6 +66,10 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
+from generic_ml_wrapper.application.port.inbound.import_workflow import (
+    ArchiveUnreadableError,
+    ImportOutcome,
+)
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -94,7 +98,9 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_diagnostics,
     build_edit_workflow,
     build_export_usage,
+    build_export_workflow,
     build_guided_chooser,
+    build_import_workflow,
     build_init,
     build_list_clients,
     build_list_drafts,
@@ -388,6 +394,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         help=i18n.t("cli.flag.client"),
     )
     _add_guided_flags(new)
+    export_wf = workflow_sub.add_parser("export", help=i18n.t("cli.cmd.workflow_export"))
+    export_wf.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
+    import_wf = workflow_sub.add_parser("import", help=i18n.t("cli.cmd.workflow_import"))
+    import_wf.add_argument("archive", help=i18n.t("cli.arg.workflow_archive"))
+    import_wf.add_argument(
+        "--replace",
+        action="store_true",
+        help=i18n.t("cli.flag.workflow_replace"),
+    )
     drafts_parser = workflow_sub.add_parser("drafts", help=i18n.t("cli.cmd.workflow_drafts"))
     _add_json_flag(drafts_parser)
     resume = workflow_sub.add_parser("resume", help=i18n.t("cli.cmd.workflow_resume"))
@@ -783,6 +798,8 @@ def main(argv: list[str] | None = None) -> int:
 _HANDOVER_COMMANDS = frozenset({"start", "run", "tui"})
 #: The same, for `workflow <action>` — authoring launches a client just as `start` does.
 _HANDOVER_WORKFLOW_ACTIONS = frozenset({"new", "edit", "resume"})
+# Accepted as "yes" when confirming a replacement, in either shipped language.
+_AFFIRMATIVE = frozenset({"y", "yes", "o", "oui"})
 
 
 def _hands_over_the_terminal(args: argparse.Namespace) -> bool:
@@ -1825,26 +1842,28 @@ def _setting_payload(view: SettingView) -> dict[str, object]:
     }
 
 
-def _workflow(args: argparse.Namespace) -> int:
-    if args.workflow_command == "new":
-        return _workflow_new(args)
-    if args.workflow_command == "edit":
-        return _workflow_edit(args)
-    if args.workflow_command == "resume":
-        return _workflow_resume(args)
-    if args.workflow_command == "drafts":
-        drafts = build_list_drafts().execute()
-        print(_as_json([asdict(d) for d in drafts]) if bool(args.json) else format_drafts(drafts))
-        return 0
-    if args.workflow_command == "list":
-        flows = build_list_workflow_catalog().execute()
-        print(
-            _as_json([asdict(flow) for flow in flows])
-            if bool(args.json)
-            else format_workflows(flows)
-        )
-        return 0
+def _workflow_drafts(args: argparse.Namespace) -> int:
+    """List the unfinished authoring drafts."""
+    drafts = build_list_drafts().execute()
+    print(_as_json([asdict(d) for d in drafts]) if bool(args.json) else format_drafts(drafts))
     return 0
+
+
+def _workflow_list(args: argparse.Namespace) -> int:
+    """List the runnable workflows with the words behind their slugs."""
+    flows = build_list_workflow_catalog().execute()
+    print(
+        _as_json([asdict(flow) for flow in flows])
+        if bool(args.json)
+        else format_workflows(flows)
+    )
+    return 0
+
+
+def _workflow(args: argparse.Namespace) -> int:
+    """Dispatch a ``gmlw workflow <verb>``; an unknown or absent verb is a no-op."""
+    handler = _WORKFLOW_VERBS.get(args.workflow_command)
+    return handler(args) if handler is not None else 0
 
 
 def _workflow_new(args: argparse.Namespace) -> int:
@@ -1900,6 +1919,53 @@ def _announce_new_workflow(result: NewWorkflowResult) -> None:
         )
     else:  # INCOMPLETE — no finished marker; the draft is kept so nothing is lost
         print(i18n.t("workflow.new.incomplete", draft=result.draft_path), file=sys.stderr)
+
+
+def _workflow_export(args: argparse.Namespace) -> int:
+    """Pack a workflow into ``~/.gmlw/exports`` for sharing."""
+    try:
+        written = build_export_workflow().execute(str(args.name))
+    except (WorkflowNameError, WorkflowNotFoundError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
+    print(i18n.t("workflow.export.written", path=written), file=sys.stderr)
+    return 0
+
+
+def _workflow_import(args: argparse.Namespace) -> int:
+    """Install a workflow from an archive, asking before displacing one of the same name.
+
+    The use case reports a name clash rather than resolving it, so the question is asked
+    here where a person can answer it — and only when there is someone to ask. Off a tty
+    the import is refused rather than silently overwriting.
+    """
+    try:
+        result = build_import_workflow().execute(str(args.archive), replace=bool(args.replace))
+        if result.outcome is ImportOutcome.REFUSED:
+            if not _confirm_replace(result.name):
+                print(i18n.t("workflow.import.kept", name=result.name), file=sys.stderr)
+                return 2
+            result = build_import_workflow().execute(str(args.archive), replace=True)
+    except (ArchiveUnreadableError, WorkflowNameError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
+    if result.outcome is ImportOutcome.REPLACED:
+        print(
+            i18n.t("workflow.import.replaced", name=result.name, backup=result.backup),
+            file=sys.stderr,
+        )
+    else:
+        print(i18n.t("workflow.import.done", name=result.name), file=sys.stderr)
+    return 0
+
+
+def _confirm_replace(name: str) -> bool:
+    """Ask whether to displace an existing workflow; ``False`` when nobody can answer."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        print(i18n.t("workflow.import.exists_no_tty", name=name), file=sys.stderr)
+        return False
+    print(i18n.t("workflow.import.exists", name=name), file=sys.stderr)
+    return input(i18n.t("workflow.import.confirm")).strip().lower() in _AFFIRMATIVE
 
 
 def _workflow_resume(args: argparse.Namespace) -> int:
@@ -1962,6 +2028,17 @@ def _edit_workflow(name: str, client: str, guided: bool, *, resume_latest: bool 
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))
         return 2
+
+
+_WORKFLOW_VERBS: dict[str, Callable[[argparse.Namespace], int]] = {
+    "new": _workflow_new,
+    "edit": _workflow_edit,
+    "resume": _workflow_resume,
+    "export": _workflow_export,
+    "import": _workflow_import,
+    "drafts": _workflow_drafts,
+    "list": _workflow_list,
+}
 
 
 def _resolve_guided(args: argparse.Namespace) -> bool:
