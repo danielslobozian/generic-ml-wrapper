@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -115,7 +114,11 @@ class StartJobUseCase(StartJob):
         # Persist only once every precondition (workflow, caller, resume) has passed, so
         # a rejected start never leaves a ghost session that burns an id and could be resumed.
         if session is not None:
-            self._store.record(session)
+            # Whether a session can be reopened is the *caller's* answer, not a property
+            # of its name: a caller supplied through `[callers]` or a plugin is absent
+            # from the built-in catalog, and deciding from that list alone recorded every
+            # such session as unresumable however capable its adapter was.
+            self._store.record(replace(session, resumable=caller.can_resume()))
         exit_code = run_with_hooks(caller, run, self._hooks)
         return StartJobResult(exit_code=exit_code, job=run.job, session_id=run.session_id)
 
@@ -230,14 +233,13 @@ class StartJobUseCase(StartJob):
         target = self._resume_target(command)
         if target is not None:
             return self._resumed_run(target), None
-        info = client_catalog.by_name(command.client)
         session = Session(
             session_id=next_session_id(command.job, self._store.ids_for_job(command.job)),
             job=command.job,
             client=command.client,
             uuid=self._uuid_factory(),
             cwd=self._cwd_factory(),  # the folder this session runs in (resume relaunches here)
-            resumable=info.resumable if info is not None else False,
+            # `resumable` is settled at record time, from the caller — see `execute`.
         )
         run = RunContext(
             job=session.job,

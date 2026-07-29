@@ -23,6 +23,7 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     UnsupportedClientError,
 )
 from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -382,15 +383,31 @@ def test_codex_meters_but_delivers_no_statusline() -> None:
     assert caller.can_meter_per_call() is True
 
 
-def test_codex_and_vibe_cannot_resume_while_others_can() -> None:
-    # Resume is the default (claude/cursor support it) because they let the wrapper set a
-    # session id at launch. Vibe never can. Codex cannot *at launch* either -- but unlike
-    # vibe it can once its own id has been learned from the wire (see below).
-    assert _BareCaller(_run(resume=False, uuid=None)).can_resume() is True
+def test_each_caller_declares_its_own_resumability() -> None:
+    # Declared by the adapter, like can_meter_per_call and can_deliver_statusline -- NOT
+    # looked up by client name. A caller that says nothing resumes nothing, so an adapter
+    # arriving through [callers] or a plugin is never assumed incapable *or* capable.
+    assert _BareCaller(_run(resume=False, uuid=None)).can_resume() is False
     assert _claude(_run(resume=False, uuid=None)).can_resume() is True
     assert CursorCliCaller(_cursor_run(resume=False)).can_resume() is True
-    assert _codex(_codex_run()).can_resume() is False
     assert _vibe(_vibe_run()).can_resume() is False
+    # Codex answers per session rather than per client: not until it has learned its id.
+    assert _codex(_codex_run()).can_resume() is False
+
+
+def test_a_caller_outside_the_catalog_can_still_declare_itself_resumable() -> None:
+    # The cursor-mitm case. Its client name is absent from the built-in catalog, which
+    # used to settle the question on the adapter's behalf and always answered "no".
+    class _PluginCaller(CliCaller):
+        def can_resume(self) -> bool:
+            return True
+
+        def start_client(self) -> int:
+            return 0
+
+    run = RunContext("JOB-1", "JOB-1_001", "cursor-mitm", None, False)
+    assert client_catalog.by_name("cursor-mitm") is None, "precondition: not a built-in"
+    assert _PluginCaller(run).can_resume() is True
 
 
 def test_codex_metering_points_provider_at_the_relay() -> None:

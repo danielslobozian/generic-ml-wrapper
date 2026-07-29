@@ -65,6 +65,10 @@ class ClaudeCliCaller(CliCaller):
         self._snapshot: StatusLineSnapshot | None = None
         self._relay: MeteringRelay | None = None
 
+    def can_resume(self) -> bool:
+        """Claude reopens a session by the id we handed it at launch."""
+        return True
+
     def can_deliver_statusline(self) -> bool:
         """Claude Code hosts a command-backed status line the wrapper renders into."""
         return True

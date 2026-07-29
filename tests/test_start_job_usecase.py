@@ -482,3 +482,31 @@ def test_a_resume_takes_the_arguments_of_the_sessions_own_client() -> None:
     assert provider.run is not None
     assert provider.run.client == "codex"
     assert provider.run.client_args == ("--ask",)
+
+
+# ── the recorded `resumable` comes from the caller, not from the client's name ──
+def test_a_session_is_recorded_resumable_when_its_caller_says_so() -> None:
+    # The cursor-mitm case end to end: the client name is unknown to the built-in catalog,
+    # so the old lookup recorded resumable=False and every listing showed it that way,
+    # even though the adapter could reopen the session perfectly well.
+    store = FakeStore(ids=[])
+    provider = FakeProvider(can_resume=True)
+    _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="cursor-mitm"))
+    assert store.recorded[0].resumable is True
+
+
+def test_a_session_is_recorded_unresumable_when_its_caller_says_so() -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider(can_resume=False)
+    _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="cursor-mitm"))
+    assert store.recorded[0].resumable is False
+
+
+def test_the_recorded_flag_matches_what_the_resume_gate_will_ask() -> None:
+    # One answer, asked twice: if the stored flag and the gate could disagree, a session
+    # would either display as resumable and then be refused, or the reverse.
+    for declared in (True, False):
+        store = FakeStore(ids=[])
+        provider = FakeProvider(can_resume=declared)
+        _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="anything"))
+        assert store.recorded[0].resumable is declared

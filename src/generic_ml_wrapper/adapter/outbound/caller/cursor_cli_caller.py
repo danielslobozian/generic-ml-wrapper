@@ -57,6 +57,10 @@ class CursorCliCaller(CliCaller):
         if self._snapshot is not None:
             status_line_config.restore(_CONFIG, self._snapshot)
 
+    def can_resume(self) -> bool:
+        """cursor-agent reopens a chat by the session id we name it with."""
+        return True
+
     def command(self, opening: str | None = None) -> list[str]:
         """Build the ``cursor-agent`` command line for this run.
 

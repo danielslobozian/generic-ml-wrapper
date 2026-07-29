@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.run import RunContext
 
 
@@ -54,19 +53,24 @@ class CliCaller(ABC):
         return False
 
     def can_resume(self) -> bool:
-        """Whether this client can resume a prior session, from the client catalog.
+        """Whether a session this caller created can be reopened. Default: ``False``.
 
-        ``True`` for clients whose launch can reopen a session we named/identified
-        (Claude / cursor-agent ``--resume``); ``False`` for those that mint their own id
-        we can't target (Codex, Vibe). ``--resume-latest`` is refused when this is
-        ``False`` rather than silently starting a new session. The catalog's
-        ``resumable`` flag is the single source of truth.
+        Declared by the caller, like :meth:`can_meter_per_call` and
+        :meth:`can_deliver_statusline` — only the adapter knows whether its launch can
+        target a session it has already run. This used to be answered by looking the
+        *client name* up in the built-in catalog, which meant a caller supplied through
+        ``[callers]`` or a plugin could never be resumable however capable it was: it
+        was not on the list, so the wrapper decided on its behalf.
+
+        ``--resume-latest`` is refused when this is ``False``, rather than silently
+        starting a new session. The answer may also be per-session rather than
+        per-client — Codex learns its own id mid-run, so it answers ``False`` until it
+        has one.
 
         Returns:
-            ``True`` if this caller can resume a prior session.
+            ``True`` if this caller can reopen a session it created.
         """
-        info = client_catalog.by_name(self.run.client)
-        return info is not None and info.resumable
+        return False
 
     def start_metering(self) -> None:  # noqa: B027  (optional hook; default no-op by design)
         """Set up metering before launch. Default: do nothing."""
