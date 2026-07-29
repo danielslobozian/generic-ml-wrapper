@@ -6,6 +6,65 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-07-29
+
+Work that survives leaving. A codex session you can come back to, an authoring interview
+that outlives the crash that interrupted it, and a workflow that travels to someone else's
+machine — plus the client parity and TUI corrections that came with them.
+
+### Added
+- **Codex sessions resume.** Codex mints its own session id and takes no launch flag to
+  accept one, so the wrapper simply marked it unresumable. The fix inverts the direction:
+  the relay *learns* the id from the first metered turn's `client_metadata.session_id`,
+  binds it to the session record, and registers the session's `<job>_NNN` name in codex's
+  own `session_index.jsonl` — so `codex resume <job>_NNN` works with or without gmlw. What
+  rotates on the wire is `turn_id`, sitting right beside it; binding that would rebind the
+  session every turn and resume nothing, and a test pins the distinction. Every resume is
+  gated on the rollout file existing, because `codex resume <unknown>` does not fail — it
+  silently starts a *new* session, handing back an empty one wearing a resumed session's
+  name.
+- **`gmlw workflow export <name>` and `gmlw workflow import <path>`.** A workflow's own
+  folder packs into a zip and installs back on another machine, asking before it replaces
+  an existing workflow. Both are in the TUI's Workflow menu; import takes a typed path
+  rather than a picker, because the archive you want is usually the one a colleague just
+  sent you, sitting wherever your browser put it.
+- **Authoring survives an interruption.** A crash, a Ctrl+C, a closed laptop used to take
+  the whole interview with it. `workflow new` and `workflow edit` now write the draft as
+  they go and reopen where they stopped.
+- **A status line for codex**, reading like the wrapper's own, so moving between clients no
+  longer means losing the bar. Session and job durations now show there.
+- **`[client.args]`** passes user-supplied arguments straight through to the client,
+  per-client — so a machine configured for claude doesn't inherit claude's flags.
+
+### Changed
+- **A workflow is named in words**, with the slug derived from the name: what you type
+  reads like a title, what lands on disk stays a safe identifier.
+- **`can_resume` moved onto the caller.** It was looked up by client *name* in the built-in
+  catalog, which meant a caller supplied through `[callers]` or a plugin could never be
+  resumable however capable it was. Resumability is now a property of the session, not the
+  client: codex answers false at launch and true from the first turn, once the relay has
+  bound the id.
+
+### Fixed
+- **The clients listing stopped lying about codex.** It still read the catalog's
+  launch-time flag and printed `resume: no` long after codex started resuming. The flag now
+  means what the listing says, and carries the condition:
+  `resume: yes (once its id is bound, after the first turn)`. Five doc pages said
+  otherwise; they no longer do.
+- **A config change applies to the launch that follows it.** The default client was
+  resolved *before* the Textual app ran, so switching it in Config took effect only on the
+  next run of gmlw — the job you started right after launched on the client you had just
+  left.
+- **The settings picker's first row is really selected.** It rebuilt its rows and set the
+  highlight in the same breath, but `ListView.clear()` removes asynchronously, so the index
+  landed on rows already on their way out and nothing ended up marked — the first Down
+  looked like it skipped a row. The row is also painted at focused strength there, since
+  the filter `Input` holds focus and the list itself never does.
+- **Config → Clients answers "use that one"**, not just "what have I got". Enter on a row
+  writes `client.default`, moves the marker in place, and keeps the menu's notion of the
+  default in step, so the resume picker's "will launch on X" notes stay honest.
+- **The TUI's workflow-name rule describes what the validator actually enforces.**
+
 ## [0.8.1] - 2026-07-26
 
 A rule is a projection of the user, so it belongs on one of the two axes that describe one:
@@ -417,7 +476,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.6.0...v0.7.0

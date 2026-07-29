@@ -306,6 +306,25 @@ and the tiers that sat outside them are gone.
   context (environment · role · persona · user · language · job), so a client reads which
   role it is in rather than inferring it.
 
+### 0.8.2 — work that survives leaving
+A session, an interview, a workflow — none of them should end because you did.
+
+- **Codex sessions resume.** The relay learns the id codex minted from the first metered
+  turn and registers the session's `<job>_NNN` name in codex's own index, so
+  `codex resume <job>_NNN` works with or without gmlw. Resumability becomes a property of
+  the *session*, not the client — which also frees callers supplied through `[callers]` to
+  be resumable at all.
+- **Workflows leave the machine** — `workflow export` packs one into a zip, `workflow
+  import` installs it back, both from the CLI and the TUI.
+- **Authoring survives an interruption** — `workflow new` and `workflow edit` write the
+  draft as they go and reopen where they stopped; a workflow is named in words, with the
+  slug derived from the name.
+- **Client parity** — a status line for codex, `[client.args]` passthrough per client, and
+  a clients listing that no longer claims codex cannot resume.
+- **TUI corrections** — a config change applies to the launch that follows it, the settings
+  picker's first row is really selected, and Config → Clients sets the default rather than
+  just listing.
+
 ## Planned
 
 ### 0.9.0 — personas, proven (and multilingual)
