@@ -36,6 +36,7 @@ from generic_ml_wrapper.application.domain.model.rule_catalog import (
     RuleGroup,
     RuleSummary,
 )
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
 
@@ -799,7 +800,10 @@ def test_job_export_view_is_read_only_and_esc_returns() -> None:
 
 # --- Workflow Run + List ------------------------------------------------------------------
 
-_WORKFLOWS = ["nightly-etl", "release-notes"]
+_WORKFLOWS = [
+    Workflow(slug="nightly-etl", label="Nightly ETL", description="the overnight load"),
+    Workflow(slug="release-notes", label="release-notes", description=""),  # legacy: no sidecar
+]
 
 
 async def _open_workflow(pilot: Pilot[MenuChoice | None]) -> None:
@@ -838,7 +842,8 @@ def test_workflow_list_shows_the_runnable_workflows() -> None:
             seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
 
     asyncio.run(scenario())
-    assert seen["titles"] == _WORKFLOWS
+    # The label leads; a legacy workflow with no sidecar still shows its slug.
+    assert seen["titles"] == ["Nightly ETL", "release-notes"]
 
 
 def test_workflow_run_empty_shows_the_create_hint() -> None:
@@ -1148,7 +1153,13 @@ def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
 
 # ── workflow export / import ──
 def _workflow_app() -> MenuApp:
-    return MenuApp(_JOBS, workflows=["doc-review", "nightly-etl"])
+    return MenuApp(
+        _JOBS,
+        workflows=[
+            Workflow(slug="doc-review", label="Doc Review", description="review the docs"),
+            Workflow(slug="nightly-etl", label="Nightly ETL", description=""),
+        ],
+    )
 
 
 async def _open_workflow_menu(pilot: Pilot[MenuChoice | None]) -> None:
@@ -1161,14 +1172,19 @@ def test_export_picks_a_workflow_and_hands_it_back() -> None:
     # Export runs after the menu exits, through the same code path as the CLI verb.
     app = _workflow_app()
 
+    seen: dict[str, object] = {}
+
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_workflow_menu(pilot)
             await pilot.press("down", "down", "down", "down", "enter")  # Export
             await pilot.pause()
+            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
             await pilot.press("enter")  # the first workflow
 
     asyncio.run(scenario())
+    # The picker reads by label, but hands back the slug the export verb takes.
+    assert seen["titles"] == ["Doc Review", "Nightly ETL"]
     assert app.return_value == MenuChoice(action="workflow_export", workflow="doc-review")
 
 
