@@ -325,6 +325,7 @@
   "clients.no": "non",
   "clients.default": "  (par défaut)",
   "clients.default_marker": "●",
+  "client.resume_hint.codex": "une fois son id lié, après le premier tour",
   "clients.col.client": "Client",
   "clients.col.version": "Version",
   "clients.col.resumable": "Reprise",

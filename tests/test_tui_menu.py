@@ -949,7 +949,14 @@ def test_workflow_edit_picks_a_workflow_then_quick() -> None:
 
 _CLIENTS = [
     ClientRow("Claude Code", "1.2.3", "yes", "●", name="claude"),
-    ClientRow("OpenAI Codex CLI", "not installed", "no", "", name="codex"),
+    ClientRow(
+        "OpenAI Codex CLI",
+        "not installed",
+        "yes",
+        "",
+        name="codex",
+        note="Resumable: once its id is bound, after the first turn",
+    ),
 ]
 
 
@@ -1325,3 +1332,26 @@ def test_config_clients_stays_read_only_without_a_setter() -> None:
     assert seen["marker"] == "●"  # nothing moved
     assert "default" not in str(seen["keys"])  # the hint bar promises only scrolling + back
     assert seen["current"] == "claude"
+
+
+def test_config_clients_shows_the_resume_caveat_for_the_cursored_row() -> None:
+    """A qualified resume answer explains itself in the detail line, not in the cell."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _clients_app()
+        async with app.run_test(size=(100, 40)) as pilot:
+            table = await _load_config_clients(app, pilot)
+            detail = app.screen.query_one("#detail", Static)
+            seen["claude_cell"] = list(table.get_row_at(0))[2]
+            seen["claude_note"] = str(detail.render())  # unconditional: nothing to explain
+            await pilot.press("down")  # onto codex
+            await pilot.pause()
+            seen["codex_cell"] = list(table.get_row_at(1))[2]
+            seen["codex_note"] = str(detail.render())
+
+    asyncio.run(scenario())
+    assert seen["claude_cell"] == "yes"
+    assert seen["claude_note"] == ""
+    assert seen["codex_cell"] == "yes"  # the column stays a clean yes...
+    assert "once its id is bound" in str(seen["codex_note"])  # ...the caveat is below it

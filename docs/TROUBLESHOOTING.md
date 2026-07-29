@@ -22,11 +22,16 @@ delete the text containing the `/`. It is independent of what `gmlw` renders int
 status line, and the wrapper has no hook into Cursor's input mode to prevent it. Remove
 the `/` (or send/clear the input) and the status line comes back.
 
-## Why can't Codex or Vibe resume?
+## Why can't this Codex session resume? Why can't Vibe?
 
-Codex and Vibe don't expose a stable client-side session id, so the wrapper has nothing
-to reattach to on the next launch. `--resume-latest` therefore only works for **claude**
-and **cursor**. For codex/vibe, start a fresh session each time. See
+Neither takes a session id at launch, so the wrapper cannot name the session up front the
+way it does for **claude** and **cursor**. The difference is what happens next: Codex mints
+its own id and announces it on the wire, so the relay binds it to the session on the first
+metered turn — from there `--resume-latest` works. A codex session that never completed a
+turn has no id, and one you deleted in codex itself is gone from its index; both are shown
+as not resumable rather than reopened as a fresh, empty session wearing the old name.
+
+Vibe exposes no stable client-side id at all, so every vibe run is a new session. See
 [CLIENTS.md](CLIENTS.md).
 
 ## Why did a run launch unmetered?

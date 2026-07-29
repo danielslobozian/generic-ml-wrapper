@@ -525,7 +525,9 @@ def test_clients_command_prints_the_table(
 ) -> None:
     statuses = [
         ClientStatus("claude", "Claude Code", True, "1.2.3", True, True),
-        ClientStatus("codex", "OpenAI Codex CLI", False, None, False, False),
+        ClientStatus(
+            "codex", "OpenAI Codex CLI", False, None, True, False, "client.resume_hint.codex"
+        ),
     ]
     monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
     assert app.main(["clients"]) == 0
@@ -534,6 +536,9 @@ def test_clients_command_prints_the_table(
     assert "1.2.3" in out
     assert "(default)" in out  # the default marker on claude
     assert "not installed" in out  # codex absent
+    # A qualified yes carries its condition on the row; an unconditional one stays bare.
+    assert "resume: yes (once its id is bound, after the first turn)" in out
+    assert "resume: yes  (default)" in out  # claude's, unqualified
 
 
 def test_clients_command_json_output(

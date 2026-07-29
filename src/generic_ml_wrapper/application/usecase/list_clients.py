@@ -51,6 +51,7 @@ class ListClientsUseCase(ListClients):
                     version=self._version.installed(info) if installed else None,
                     resumable=info.resumable,
                     is_default=info.name == default,
+                    resume_hint=info.resume_hint,
                 )
             )
         return statuses

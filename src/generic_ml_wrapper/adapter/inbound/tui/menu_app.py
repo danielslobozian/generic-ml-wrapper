@@ -242,8 +242,10 @@ class ClientRow:
     """One supported client's row for the Config Clients table, pre-rendered by the wiring.
 
     All cells are display strings (``version`` reads "not installed" when absent, ``default``
-    is a marker or empty) so the screen only fills the table. ``name`` is the odd one out: not
-    shown, it is the client *id* the screen writes when the row is made the default.
+    is a marker or empty) so the screen only fills the table. Two fields are not cells:
+    ``name`` is the client *id* the screen writes when the row is made the default, and
+    ``note`` is the caveat on the resumable cell (codex resumes only once its id is bound),
+    shown in the detail line rather than crammed into the column.
     """
 
     client: str
@@ -251,6 +253,7 @@ class ClientRow:
     resumable: str
     default: str
     name: str = ""
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -1614,6 +1617,15 @@ class ClientsScreen(Screen[None]):
         )
         table.add_rows((row.client, row.version, row.resumable, row.default) for row in rows)
         self.query_one("#report", Container).loading = False
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Follow the cursor: show the highlighted client's resume caveat, if it has one.
+
+        Enter does not move the cursor, so a confirmation written by a switch survives until
+        the user moves on -- the same one-shot behaviour the menu screens' flash has.
+        """
+        if 0 <= event.cursor_row < len(self._rows):
+            self.query_one("#detail", Static).update(self._rows[event.cursor_row].note)
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Make the selected client the default: persist it, move the marker, confirm."""

@@ -759,6 +759,8 @@ def format_clients(statuses: list[ClientStatus], loc: i18n.Localizer | None = No
     version_width = max(len(version) for version in versions)
     for status, version in zip(statuses, versions, strict=True):
         resumable = loc.t("clients.yes") if status.resumable else loc.t("clients.no")
+        if status.resume_hint:  # a yes with a condition on it (codex: only once bound)
+            resumable += f" ({loc.t(status.resume_hint)})"
         default = loc.t("clients.default") if status.is_default else ""
         lines.append(
             loc.t(
@@ -1343,6 +1345,11 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
                 resumable=loc.t("clients.yes") if status.resumable else loc.t("clients.no"),
                 default=loc.t("clients.default_marker") if status.is_default else "",
                 name=status.name,  # not shown: the id written when the row is made the default
+                note=(  # the caveat on the resume cell, kept out of the column
+                    f"{loc.t('clients.col.resumable')}: {loc.t(status.resume_hint)}"
+                    if status.resume_hint
+                    else ""
+                ),
             )
             for status in build_list_clients().execute()
         ]

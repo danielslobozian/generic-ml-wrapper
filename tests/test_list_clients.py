@@ -49,8 +49,11 @@ def test_list_clients_composes_status_versions_and_default() -> None:
     assert by_name["cursor"].installed is True
     assert by_name["cursor"].version is None  # installed, but --version unreadable
     assert by_name["codex"].installed is False
-    assert by_name["codex"].resumable is False  # from the catalog
+    assert by_name["codex"].resumable is True  # from the catalog: resumes once bound
+    assert by_name["codex"].resume_hint == "client.resume_hint.codex"  # ...which it says so
     assert by_name["claude"].resumable is True
+    assert by_name["claude"].resume_hint == ""  # an unconditional yes needs no footnote
+    assert by_name["vibe"].resumable is False
 
 
 def test_list_clients_skips_version_probe_for_absent_clients() -> None:

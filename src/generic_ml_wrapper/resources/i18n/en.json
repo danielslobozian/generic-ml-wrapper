@@ -325,6 +325,7 @@
   "clients.no": "no",
   "clients.default": "  (default)",
   "clients.default_marker": "●",
+  "client.resume_hint.codex": "once its id is bound, after the first turn",
   "clients.col.client": "Client",
   "clients.col.version": "Version",
   "clients.col.resumable": "Resumable",

@@ -58,10 +58,12 @@ Four clients, one surface — but they are **not** identical. What each supports
 |---|:---:|:---:|:---:|---|
 | **claude** (`claude`) | ✅ | ✅ | ✅ | native `--append-system-prompt-file` |
 | **cursor** (`cursor-agent`) | ❌ | ✅ | ✅ | context-file instruction |
-| **codex** (`codex`) | ✅ | ❌ | ❌ | initial instruction |
+| **codex** (`codex`) | ✅ | ✅ ¹ | ❌ | initial instruction |
 | **vibe** (`vibe`) | ✅ | ❌ | ❌ | initial instruction |
 
-Cursor isn't metered by the open-source wrapper (its usage isn't on an interceptable API); Codex and Vibe don't resume. See [`docs/CLIENTS.md`](docs/CLIENTS.md) for the per-client detail and setup.
+¹ Codex resumes from its first completed turn onward: it mints its own session id, which the wrapper binds off the wire rather than handing it one at launch.
+
+Cursor isn't metered by the open-source wrapper (its usage isn't on an interceptable API); Vibe doesn't resume. See [`docs/CLIENTS.md`](docs/CLIENTS.md) for the per-client detail and setup.
 
 ## The job
 
@@ -140,7 +142,7 @@ Workflows (above) are *optional* and separate from this personal layer. Every li
 ## What gmlw does not do
 
 - It is **not a sandbox** — it launches the real client with your credentials (see [`SECURITY.md`](SECURITY.md)).
-- It does **not** meter Cursor, and does **not** resume Codex or Vibe (see the [matrix](#clients-at-a-glance)).
+- It does **not** meter Cursor, and does **not** resume Vibe (see the [matrix](#clients-at-a-glance)).
 - It does **not** call models itself — the optional context compressor records through [`generic-ml-cache`](https://github.com/danielslobozian/generic-ml-cache).
 - It ships **no** compression prompts — the compressor stays inert until you configure one.
 

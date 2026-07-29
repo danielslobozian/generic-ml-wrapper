@@ -19,6 +19,8 @@ class ClientStatus:
         version: The installed on-disk version, or ``None`` when absent or unreadable.
         resumable: Whether a session on this client can be resumed.
         is_default: Whether this is the configured default client.
+        resume_hint: The catalogue key for the caveat on ``resumable`` (Codex resumes only
+            once the id it minted is bound), or ``""`` when the answer needs no footnote.
     """
 
     name: str
@@ -27,6 +29,7 @@ class ClientStatus:
     version: str | None
     resumable: bool
     is_default: bool
+    resume_hint: str = ""
 
 
 class ListClients(ABC):
