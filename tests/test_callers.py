@@ -700,17 +700,18 @@ def test_codex_launches_with_the_gmlw_status_line() -> None:
     assert flag.startswith("tui.status_line=[")
     # Order is the point: it mirrors gmlw's own line block for block.
     assert flag == (
-        'tui.status_line=["git-branch","project-name","model","context-used",'
-        '"context-window-size","five-hour-limit","weekly-limit"]'
+        'tui.status_line=["project-name","git-branch","current-dir","model",'
+        '"context-window-size","context-used","five-hour-limit","weekly-limit"]'
     )
 
 
-def test_the_status_line_shows_context_used_not_remaining() -> None:
-    # gmlw shows consumption everywhere else; a codex bar reading "22% left" where the
-    # eye is trained on "78% used" is the false-parity trap.
+def test_the_status_line_names_only_items_with_a_gmlw_equivalent() -> None:
+    # The near-misses are the trap: branch-changes is commits-vs-default rather than
+    # working-tree dirt, and used-tokens is session-cumulative rather than window
+    # occupancy, so either would answer a different question than the block it replaced.
     flag = " ".join(_codex(_codex_run()).command())
-    assert "context-used" in flag
-    assert "context-remaining" not in flag
+    assert "branch-changes" not in flag
+    assert "used-tokens" not in flag
 
 
 def test_the_status_line_is_applied_even_without_a_relay() -> None:

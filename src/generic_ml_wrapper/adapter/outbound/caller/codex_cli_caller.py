@@ -24,22 +24,34 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 BINARY = "codex"
-# Codex's own status-line items, ordered to mirror gmlw's line for claude:
-# git · folder · model · context · usage windows. Verified rendering against
-# codex-cli 0.145.0; `five-hour-limit` is omitted by codex until that window has
-# something to report, which is why a fresh session shows six of the seven.
+# Codex's status-line items, chosen to mirror gmlw's own first line block for block
+# and in the same left-to-right order:
 #
-# These are codex's vocabulary, not ours, and it is safe to name one it may not
-# know: codex validates the *shape* of this value (it must be a sequence) but not
-# the item names, so an unrecognised item is silently omitted rather than refused.
-# Verified on 0.145.0 — a malformed value fails config loading before the terminal
-# is even checked, while `["not-a-real-item"]` loads cleanly.
+#   git <repo>/<branch>  ·  folder  ·  model  ·  ctx …/<window> (<pct>%)  ·  quota 5h · wk
+#   project-name,git-branch current-dir model  context-window-size,context-used
+#                                                            five-hour-limit,weekly-limit
+#
+# Only items with a true equivalent are listed. gmlw's short sha, dirty count, the
+# context numerator, the quota reset countdown and cost have no codex key and are
+# absent rather than approximated: `branch-changes` is commits-vs-default-branch, not
+# working-tree dirt, and `used-tokens` is session-cumulative, not window occupancy, so
+# either would answer a different question than the block it stood in for.
+#
+# Polarity is codex's to decide — it reports the rate limits as remaining where gmlw
+# shows consumed. Both say how the allowance is going, and gmlw's own rendering does
+# not change to match. Fixed here, deliberately not configurable.
+#
+# Naming an item codex may not know is safe: it validates the *shape* of this value
+# (it must be a sequence) but not the item names, so an unrecognised item is silently
+# omitted rather than refused. Verified on 0.145.0 — a malformed value fails config
+# loading before the terminal is even checked, while `["not-a-real-item"]` loads.
 _STATUS_LINE = (
-    "git-branch",
     "project-name",
+    "git-branch",
+    "current-dir",
     "model",
-    "context-used",
     "context-window-size",
+    "context-used",
     "five-hour-limit",
     "weekly-limit",
 )
