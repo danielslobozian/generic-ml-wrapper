@@ -23,7 +23,8 @@ Job ids are validated (`[A-Za-z0-9][A-Za-z0-9_-]{0,63}`, no path separators). A 
 ## 2. Resume the latest session
 
 Add `--resume-latest` to continue where the previous session left off instead of starting fresh.
-Only the **claude** and **cursor** clients can resume; codex and vibe always begin a new session
+**claude** and **cursor** resume any session; **codex** resumes one that has taken at least one
+turn (that is when the wrapper learns the id codex minted); **vibe** always begins a new session
 (see the resume column in [CLIENTS.md](CLIENTS.md)).
 
 ```

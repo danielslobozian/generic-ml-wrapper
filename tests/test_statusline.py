@@ -4,11 +4,14 @@
 
 import json
 
+import pytest
+
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
+    format_age,
     render_statusline,
     render_usage_row,
 )
@@ -200,13 +203,17 @@ def test_render_usage_row_session_label() -> None:
 
 # ── use case ──
 def _use_case(
-    usage: FakeUsageStore, workspace: Workspace, turns: FakePerTurnStore | None = None
+    usage: FakeUsageStore,
+    workspace: Workspace,
+    turns: FakePerTurnStore | None = None,
+    now: float = 0.0,
 ) -> RenderStatuslineUseCase:
     return RenderStatuslineUseCase(
         ClaudeStatusParser(clock=_clock),
         usage,
         FakeWorkspaceInspector(workspace),
         turns or FakePerTurnStore(),
+        clock=lambda: now,
     )
 
 
@@ -264,3 +271,78 @@ def test_use_case_tolerates_bad_json() -> None:
     line = _use_case(usage, _NO_WORKSPACE).execute("not json", "J", "J_1")
     assert line == ""
     assert usage.recorded == []
+
+
+# ── elapsed time on the footer rows ──
+@pytest.mark.parametrize(
+    ("seconds", "rendered"),
+    [
+        (0, "0s"),
+        (45, "45s"),
+        (12 * 60, "12m"),
+        (2 * 3600, "2h"),  # the second unit is dropped when it is zero
+        (2 * 3600 + 45 * 60, "2h45m"),
+        (3600 + 5 * 60, "1h05m"),  # zero-padded so the width does not jump
+        (5 * 86400, "5d"),
+        (86400 + 20 * 3600, "1d20h"),
+        (-10, "0s"),  # a clock that went backwards is not a negative age
+    ],
+)
+def test_format_age_uses_two_significant_units(seconds: int, rendered: str) -> None:
+    assert format_age(seconds) == rendered
+
+
+def test_the_age_is_bound_to_the_name_not_added_as_a_field() -> None:
+    # Layout B: the dot separators read as a list of measurements -- turns, tokens,
+    # dollars -- and the age is a property of the thing measured, not one more of them.
+    row = render_usage_row("session", "JOB-1_002", 3, 45194, 0.43, 6300)
+    assert row.startswith("  session JOB-1_002 (1h45m) · ")
+
+
+def test_a_row_without_an_age_is_unchanged() -> None:
+    # A session launched but never prompted has no first turn, so it has no age.
+    assert render_usage_row("session", "JOB-1_002", 0, 0, 0.0) == "  session JOB-1_002 · $0.00"
+
+
+_EPOCH = 1_700_000_000.0  # a real wall-clock, not the 0.0 that means "not recorded"
+
+
+def test_the_footer_shows_how_long_the_session_and_job_have_been_going() -> None:
+    # The session's age runs from its own first turn; the job's from the first turn of
+    # any of its sessions -- so a job outlives the session you happen to be in.
+    hour = 3600.0
+    turns = FakePerTurnStore(
+        [
+            TurnUsage("JOB-1_001", 10, 5, None, "m", timestamp=_EPOCH),  # an earlier session
+            TurnUsage("JOB-1_002", 10, 5, None, "m", timestamp=_EPOCH + 20 * hour),
+        ]
+    )
+    line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 24 * hour).execute(
+        "{}", "JOB-1", "JOB-1_002"
+    )
+    assert "session JOB-1_002 (4h)" in line
+    assert "job JOB-1 (1d)" in line
+
+
+def test_a_session_with_no_turns_yet_shows_no_age() -> None:
+    turns = FakePerTurnStore([TurnUsage("JOB-1_001", 10, 5, None, "m", timestamp=_EPOCH)])
+    line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 3600.0).execute(
+        "{}", "JOB-1", "JOB-1_002"
+    )
+    assert "session JOB-1_002 · " in line  # named, but no parenthesised age
+    assert "session JOB-1_002 (" not in line
+
+
+def test_a_turn_with_no_recorded_time_does_not_anchor_the_age() -> None:
+    # TurnUsage.timestamp defaults to 0.0 meaning "not recorded". Letting that count
+    # would date every job to 1970 the moment one unstamped turn slipped in.
+    turns = FakePerTurnStore(
+        [
+            TurnUsage("JOB-1_002", 10, 5, None, "m"),  # unstamped
+            TurnUsage("JOB-1_002", 10, 5, None, "m", timestamp=_EPOCH),
+        ]
+    )
+    line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 7200.0).execute(
+        "{}", "JOB-1", "JOB-1_002"
+    )
+    assert "(2h)" in line

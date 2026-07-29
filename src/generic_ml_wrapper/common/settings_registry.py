@@ -53,6 +53,16 @@ class ClientSettings(_Section):
     """The ``[client]`` section."""
 
     default: Annotated[str, Field(description="setting.client.default")] = "claude"
+    # Per-client launch arguments, keyed by client name. A table rather than a scalar
+    # because the arguments only mean anything to the client they were written for —
+    # a claude flag handed to codex is an error, and the config outlives the choice of
+    # client. TOML accepts either shape for this and both land here identically:
+    #     [client]           args = { claude = "--foo" }
+    #     [client.args]      claude = "--foo"
+    # The key stays two levels (``client.args``) so lookup, help and validation need no
+    # special case; ``config set`` addresses an entry by putting the client in the value
+    # (``client.args claude="--foo"``) rather than in the key.
+    args: Annotated[dict[str, str], Field(description="setting.client.args")] = {}
 
 
 class LanguageSettings(_Section):
@@ -263,15 +273,66 @@ def _is_optional_str(field: FieldInfo) -> bool:
     return type(None) in get_args(field.annotation)
 
 
+def _is_table(field: FieldInfo) -> bool:
+    """Report whether a field holds a ``dict[str, str]`` (a TOML table of entries)."""
+    return get_origin(field.annotation) is dict
+
+
 def _type_name(field: FieldInfo) -> str:
     """Return a short type label for a field."""
     if _choices(field) is not None:
         return "choice"
     if field.annotation is bool:
         return "bool"
+    if _is_table(field):
+        return "table"
     if _is_optional_str(field):
         return "str?"
     return "str"
+
+
+def is_table(key: str) -> bool:
+    """Whether a setting holds a table of entries rather than a single value.
+
+    A table key is set one entry at a time (see :func:`parse_entry`) and merged into
+    whatever the file already holds, so setting one entry never drops the others.
+
+    Args:
+        key: The dotted key.
+
+    Returns:
+        ``True`` if the setting is a table.
+
+    Raises:
+        UnknownSettingError: If the key is not registered.
+    """
+    return _is_table(_field(key))
+
+
+def parse_entry(key: str, raw: str) -> tuple[str, str | None]:
+    """Split a table setting's ``entry=value`` argument into its two halves.
+
+    Table settings are addressed as ``config set client.args claude="--foo"``: the entry
+    name rides in the *value*, not the key, so the dotted key stays two levels and every
+    other part of the registry (lookup, help, validation) needs no special case.
+
+    An empty right-hand side (``claude=``) clears that one entry rather than setting it
+    to the empty string — the same "empty clears" convention optional scalars use.
+
+    Args:
+        key: The dotted key being set.
+        raw: The ``entry=value`` argument as typed.
+
+    Returns:
+        The entry name and its value, or ``None`` as the value to clear the entry.
+
+    Raises:
+        InvalidSettingValueError: If ``raw`` has no ``=``, or an empty entry name.
+    """
+    name, separator, value = raw.partition("=")
+    if not separator or not name.strip():
+        raise InvalidSettingValueError(key, raw, None)
+    return name.strip(), value or None
 
 
 def keys() -> tuple[str, ...]:
@@ -333,6 +394,12 @@ def coerce(key: str, raw: str) -> object:
         InvalidSettingValueError: If the value is not valid for the key.
     """
     field = _field(key)
+    if _is_table(field):
+        # A table's persisted value is the whole merged map, which needs the file's
+        # current contents — outside what coercing one raw string can know. Callers
+        # branch on `is_table` and use `parse_entry` instead; reaching here is a bug.
+        message = f"{key} is a table setting; set one entry with parse_entry"
+        raise TypeError(message)
     choices = _choices(field)
     if field.annotation is bool:
         low = raw.strip().lower()

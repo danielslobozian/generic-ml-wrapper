@@ -4,6 +4,7 @@
 
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -22,6 +23,7 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     UnsupportedClientError,
 )
 from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -369,9 +371,10 @@ def _codex_run(*, context: str | None = None, kickoff: str | None = None) -> Run
 
 
 def test_codex_bare_command_is_codex_plus_opening() -> None:
-    caller = _codex(_codex_run())  # before start_metering: no relay, plain command
-    assert caller.command() == ["codex"]
-    assert caller.command("go") == ["codex", "go"]
+    caller = _codex(_codex_run())  # before start_metering: no relay, no provider flags
+    assert caller.command()[0] == "codex"
+    assert not any(a.startswith("model_provider") for a in caller.command())
+    assert caller.command("go")[-1] == "go"
 
 
 def test_codex_meters_but_delivers_no_statusline() -> None:
@@ -380,15 +383,31 @@ def test_codex_meters_but_delivers_no_statusline() -> None:
     assert caller.can_meter_per_call() is True
 
 
-def test_codex_and_vibe_cannot_resume_while_others_can() -> None:
-    # Resume is the default (claude/cursor support it) because they let the wrapper set a
-    # session id at launch. Vibe never can. Codex cannot *at launch* either -- but unlike
-    # vibe it can once its own id has been learned from the wire (see below).
-    assert _BareCaller(_run(resume=False, uuid=None)).can_resume() is True
+def test_each_caller_declares_its_own_resumability() -> None:
+    # Declared by the adapter, like can_meter_per_call and can_deliver_statusline -- NOT
+    # looked up by client name. A caller that says nothing resumes nothing, so an adapter
+    # arriving through [callers] or a plugin is never assumed incapable *or* capable.
+    assert _BareCaller(_run(resume=False, uuid=None)).can_resume() is False
     assert _claude(_run(resume=False, uuid=None)).can_resume() is True
     assert CursorCliCaller(_cursor_run(resume=False)).can_resume() is True
-    assert _codex(_codex_run()).can_resume() is False
     assert _vibe(_vibe_run()).can_resume() is False
+    # Codex answers per session rather than per client: not until it has learned its id.
+    assert _codex(_codex_run()).can_resume() is False
+
+
+def test_a_caller_outside_the_catalog_can_still_declare_itself_resumable() -> None:
+    # The cursor-mitm case. Its client name is absent from the built-in catalog, which
+    # used to settle the question on the adapter's behalf and always answered "no".
+    class _PluginCaller(CliCaller):
+        def can_resume(self) -> bool:
+            return True
+
+        def start_client(self) -> int:
+            return 0
+
+    run = RunContext("JOB-1", "JOB-1_001", "cursor-mitm", None, False)
+    assert client_catalog.by_name("cursor-mitm") is None, "precondition: not a built-in"
+    assert _PluginCaller(run).can_resume() is True
 
 
 def test_codex_metering_points_provider_at_the_relay() -> None:
@@ -605,13 +624,13 @@ def test_codex_resume_keeps_the_subcommand_ahead_of_the_provider_flags() -> None
 
 
 def test_a_fresh_codex_run_does_not_resume() -> None:
-    assert _codex(_codex_run()).command() == ["codex"]
+    assert "resume" not in _codex(_codex_run()).command()
 
 
 def test_a_resume_without_an_id_falls_back_to_a_plain_launch() -> None:
     # Belt-and-braces: can_resume already refuses this, so it should never be built --
     # and if it ever were, `codex resume` with no id opens a picker rather than the session.
-    assert _codex(_codex_resume_run(None)).command() == ["codex"]
+    assert "resume" not in _codex(_codex_resume_run(None)).command()
 
 
 def test_the_learned_session_id_is_bound_to_the_session_and_registered_with_codex(
@@ -650,3 +669,91 @@ def test_a_caller_with_no_session_store_still_runs(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     CodexCliCaller(_codex_run(), _METERING)._bind_session_id("019f-abc")
     assert not (tmp_path / "session_index.jsonl").exists()
+
+
+# ── passthrough launch arguments reach every client's argv ──
+def _with_args(client: str, argv_run: RunContext) -> list[str]:
+    caller = {"claude": _claude, "codex": _codex, "vibe": _vibe}[client](argv_run)
+    return caller.command("GO")
+
+
+def test_passthrough_args_land_before_the_prompt_on_every_client() -> None:
+    # The prompt is positional on all four clients, so anything appended after it would be
+    # read as part of the prompt rather than as a flag.
+    for client, run in (
+        ("claude", _run(resume=False, uuid=None, kickoff="GO")),
+        ("codex", RunContext("JOB-1", "JOB-1_001", "codex", None, False)),
+        ("vibe", RunContext("JOB-1", "JOB-1_001", "vibe", None, False)),
+    ):
+        argv = _with_args(client, replace(run, client_args=("--yolo", "--verbose")))
+        assert argv[-3:] == ["--yolo", "--verbose", "GO"], client
+
+
+def test_cursor_also_carries_the_passthrough_args() -> None:
+    run = replace(_cursor_run(resume=False), client_args=("--yolo",))
+    argv = CursorCliCaller(run).command("GO")
+    assert argv[-2:] == ["--yolo", "GO"]
+
+
+def test_no_configured_args_add_nothing_to_the_command() -> None:
+    bare = _codex(RunContext("JOB-1", "JOB-1_001", "codex", None, False)).command()
+    with_args = _codex(
+        RunContext("JOB-1", "JOB-1_001", "codex", None, False, client_args=("--yolo",))
+    ).command()
+    assert with_args == [*bare, "--yolo"]
+
+
+def test_passthrough_args_survive_a_codex_resume() -> None:
+    run = RunContext("JOB-1", "JOB-1_001", "codex", "019f-abc", True, client_args=("--yolo",))
+    argv = _codex(run).command()
+    assert argv[:3] == ["codex", "resume", "019f-abc"]
+    assert "--yolo" in argv
+
+
+# ── codex status line ──
+def test_codex_launches_with_the_gmlw_status_line() -> None:
+    argv = _codex(_codex_run()).command()
+    flag = argv[argv.index("-c") + 1]
+    assert flag.startswith("tui.status_line=[")
+    # Order is the point: it mirrors gmlw's own line block for block.
+    assert flag == (
+        'tui.status_line=["project-name","git-branch","current-dir","model",'
+        '"context-window-size","context-used","five-hour-limit","weekly-limit"]'
+    )
+
+
+def test_the_status_line_names_only_items_with_a_gmlw_equivalent() -> None:
+    # The near-misses are the trap: branch-changes is commits-vs-default rather than
+    # working-tree dirt, and used-tokens is session-cumulative rather than window
+    # occupancy, so either would answer a different question than the block it replaced.
+    flag = " ".join(_codex(_codex_run()).command())
+    assert "branch-changes" not in flag
+    assert "used-tokens" not in flag
+
+
+def test_the_status_line_is_applied_even_without_a_relay() -> None:
+    # Presentation, not metering: a failed relay launches codex unmetered but still themed.
+    caller = _codex(_codex_run())
+    assert caller._relay is None
+    assert any(a.startswith("tui.status_line=") for a in caller.command())
+
+
+def test_the_status_line_survives_a_resume() -> None:
+    argv = _codex(_codex_resume_run("019f-abc")).command()
+    assert argv[:3] == ["codex", "resume", "019f-abc"]
+    assert any(a.startswith("tui.status_line=") for a in argv)
+
+
+def test_user_status_line_args_come_after_ours_so_they_win() -> None:
+    # No refusal list by design: a user's own -c overrides ours because codex takes the
+    # last value for a key, so [client.args] is the escape hatch.
+    run = replace(_codex_run(), client_args=("-c", 'tui.status_line=["model"]'))
+    argv = _codex(run).command()
+    ours = argv.index("tui.status_line=" + argv[argv.index("-c") + 1].split("=", 1)[1])
+    assert argv.index('tui.status_line=["model"]') > ours
+
+
+def test_the_status_line_precedes_the_prompt() -> None:
+    argv = _codex(_codex_run()).command("GO")
+    assert argv[-1] == "GO"
+    assert any(a.startswith("tui.status_line=") for a in argv[:-1])

@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
+import os
+
 import pytest
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
-from generic_ml_wrapper.application.domain.model.draft import DraftMarker
+from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.port.inbound.start_job import (
@@ -20,6 +23,10 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+
+# A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
+# the quotes stay inside the token there. See ``common.client_args`` for why.
+QUOTED_PATH = "/two words" if os.name != "nt" else '"/two words"'
 
 
 class FakeStore(SessionStorePort):
@@ -70,11 +77,17 @@ class FakeWorkflows(WorkflowSourcePort):
     def exists(self, name: str) -> bool:
         return name == self._present
 
+    def catalog(self) -> list[Workflow]:
+        return []
+
     def create(self, name: str) -> str:
         raise NotImplementedError
 
     def folder(self, name: str) -> str:
         return f"/workflows/{name}"
+
+    def drafts(self) -> list[Draft]:
+        raise NotImplementedError
 
     def create_draft(self, key: str) -> str:
         raise NotImplementedError
@@ -82,7 +95,9 @@ class FakeWorkflows(WorkflowSourcePort):
     def read_draft_marker(self, draft_path: str) -> DraftMarker:
         raise NotImplementedError
 
-    def deploy_draft(self, draft_path: str, name: str) -> str:
+    def deploy_draft(
+        self, draft_path: str, name: str, label: str, description: str, created: str
+    ) -> str:
         raise NotImplementedError
 
     def meta_guide(self) -> str:
@@ -155,6 +170,7 @@ def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the
     hooks: HookRunner | None = None,
     greeting: str | None = None,
     capability_card: str | None = None,
+    client_args: dict[str, str] | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -166,6 +182,8 @@ def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the
         hooks=hooks or HookRunner(()),
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
+        # configured per client; a client with no entry has no arguments
+        client_args=lambda client: (client_args or {}).get(client, ""),
     )
 
 
@@ -421,3 +439,90 @@ def test_workflow_is_not_injected_when_resuming() -> None:
 
     assert provider.run is not None
     assert provider.run.context is None
+
+
+# ── passthrough launch arguments ──
+def test_configured_args_reach_the_run_split_into_tokens() -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    _use_case(store, provider, client_args={"claude": '--yolo --add-dir "/two words"'}).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    # Quoting survives per platform — see QUOTED_PATH's note in test_client_args.
+    assert provider.run.client_args == ("--yolo", "--add-dir", QUOTED_PATH)
+
+
+def test_a_client_with_no_configured_args_gets_none() -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    _use_case(store, provider, client_args={"codex": "--profile work"}).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
+    assert provider.run is not None
+    assert provider.run.client_args == ()
+
+
+def test_an_explicit_override_replaces_the_configured_value() -> None:
+    # The flag names the arguments for *this* launch; it does not add to the configured
+    # ones, so a user can deliberately launch without them.
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    _use_case(store, provider, client_args={"claude": "--yolo"}).execute(
+        StartJobCommand(job="JOB-1", client="claude", client_args="--verbose")
+    )
+    assert provider.run is not None
+    assert provider.run.client_args == ("--verbose",)
+
+
+def test_an_empty_override_launches_with_no_arguments() -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    _use_case(store, provider, client_args={"claude": "--yolo"}).execute(
+        StartJobCommand(job="JOB-1", client="claude", client_args="")
+    )
+    assert provider.run is not None
+    assert provider.run.client_args == ()
+
+
+def test_a_resume_takes_the_arguments_of_the_sessions_own_client() -> None:
+    # The decisive case for keying the table by client: the run's client on a resume comes
+    # from the stored session, not the command, so a resumed codex session must never be
+    # handed the flags configured for claude.
+    recorded = Session("JOB-1_001", "JOB-1", "codex", "u-1", cwd="/work/svc-a")
+    store = FakeStore(latest=recorded, sessions=[recorded])
+    provider = FakeProvider()
+    _use_case(
+        store, provider, client_args={"claude": "--dangerously-skip-permissions", "codex": "--ask"}
+    ).execute(StartJobCommand(job="JOB-1", client="claude", resume_latest=True))
+    assert provider.run is not None
+    assert provider.run.client == "codex"
+    assert provider.run.client_args == ("--ask",)
+
+
+# ── the recorded `resumable` comes from the caller, not from the client's name ──
+def test_a_session_is_recorded_resumable_when_its_caller_says_so() -> None:
+    # The cursor-mitm case end to end: the client name is unknown to the built-in catalog,
+    # so the old lookup recorded resumable=False and every listing showed it that way,
+    # even though the adapter could reopen the session perfectly well.
+    store = FakeStore(ids=[])
+    provider = FakeProvider(can_resume=True)
+    _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="cursor-mitm"))
+    assert store.recorded[0].resumable is True
+
+
+def test_a_session_is_recorded_unresumable_when_its_caller_says_so() -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider(can_resume=False)
+    _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="cursor-mitm"))
+    assert store.recorded[0].resumable is False
+
+
+def test_the_recorded_flag_matches_what_the_resume_gate_will_ask() -> None:
+    # One answer, asked twice: if the stored flag and the gate could disagree, a session
+    # would either display as resumable and then be refused, or the reverse.
+    for declared in (True, False):
+        store = FakeStore(ids=[])
+        provider = FakeProvider(can_resume=declared)
+        _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="anything"))
+        assert store.recorded[0].resumable is declared

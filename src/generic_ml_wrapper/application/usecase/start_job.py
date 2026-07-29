@@ -7,7 +7,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -26,6 +25,7 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
+from generic_ml_wrapper.common.client_args import split as split_client_args
 
 
 class StartJobUseCase(StartJob):
@@ -42,6 +42,7 @@ class StartJobUseCase(StartJob):
         hooks: HookRunner,
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],
+        client_args: Callable[[str], str] = lambda _client: "",
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -59,6 +60,10 @@ class StartJobUseCase(StartJob):
             capability_card: Renders the ambient "how do I …" card, or ``None`` when the
                 (off-by-default) ambient card is disabled — appended to a new session's
                 context so the client can answer gmlw questions mid-session.
+            client_args: Returns the configured passthrough launch arguments for a client.
+                Consulted with the *run's* client, which on a resume comes from the stored
+                session rather than the command — so a resumed codex session never receives
+                arguments configured for claude. Defaults to none configured.
         """
         self._store = store
         self._workflows = workflows
@@ -69,6 +74,7 @@ class StartJobUseCase(StartJob):
         self._hooks = hooks
         self._greeting = greeting
         self._capability_card = capability_card
+        self._client_args = client_args
 
     def execute(self, command: StartJobCommand) -> StartJobResult:
         """Resolve the session, optionally inject a workflow, run the client.
@@ -85,6 +91,7 @@ class StartJobUseCase(StartJob):
                 caller cannot resume a session.
         """
         run, session = self._resolve(command)
+        run = self._with_client_args(run, command.client_args)
         if not run.resume:
             if command.workflow is not None:
                 run = self._attach_workflow(run, command.workflow)
@@ -107,9 +114,27 @@ class StartJobUseCase(StartJob):
         # Persist only once every precondition (workflow, caller, resume) has passed, so
         # a rejected start never leaves a ghost session that burns an id and could be resumed.
         if session is not None:
-            self._store.record(session)
+            # Whether a session can be reopened is the *caller's* answer, not a property
+            # of its name: a caller supplied through `[callers]` or a plugin is absent
+            # from the built-in catalog, and deciding from that list alone recorded every
+            # such session as unresumable however capable its adapter was.
+            self._store.record(replace(session, resumable=caller.can_resume()))
         exit_code = run_with_hooks(caller, run, self._hooks)
         return StartJobResult(exit_code=exit_code, job=run.job, session_id=run.session_id)
+
+    def _with_client_args(self, run: RunContext, override: str | None) -> RunContext:
+        """Attach the passthrough launch arguments for this run's client.
+
+        An explicit ``--client-args`` replaces the configured value outright rather than
+        adding to it: the flag names the arguments for *this* launch, and a user who wants
+        the configured ones as well can type them.
+
+        The lookup is keyed on the run's client, which on a resume is the session's own —
+        so resuming a codex session never picks up arguments configured for claude.
+        """
+        text = override if override is not None else self._client_args(run.client)
+        tokens = split_client_args(text)
+        return run if not tokens else replace(run, client_args=tokens)
 
     def _with_greeting(self, run: RunContext) -> RunContext:
         """Prepend the host greeting to a new session's context, when the companion is on.
@@ -208,14 +233,13 @@ class StartJobUseCase(StartJob):
         target = self._resume_target(command)
         if target is not None:
             return self._resumed_run(target), None
-        info = client_catalog.by_name(command.client)
         session = Session(
             session_id=next_session_id(command.job, self._store.ids_for_job(command.job)),
             job=command.job,
             client=command.client,
             uuid=self._uuid_factory(),
             cwd=self._cwd_factory(),  # the folder this session runs in (resume relaunches here)
-            resumable=info.resumable if info is not None else False,
+            # `resumable` is settled at record time, from the caller — see `execute`.
         )
         run = RunContext(
             job=session.job,

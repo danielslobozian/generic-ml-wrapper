@@ -5,10 +5,11 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
@@ -32,6 +33,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         usage: UsageStorePort,
         workspace: WorkspaceInspectorPort,
         turns: PerTurnMeteringPort,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -40,11 +42,14 @@ class RenderStatuslineUseCase(RenderStatusline):
             usage: Where recorded session cost is persisted and read.
             workspace: The inspector for the client-agnostic environment facts.
             turns: The per-turn store, read for the job's cumulative usage footer.
+            clock: Returns the current epoch seconds, for the session/job ages;
+                injectable so tests are deterministic.
         """
         self._parser = parser
         self._usage = usage
         self._workspace = workspace
         self._turns = turns
+        self._clock = clock
 
     def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
         """Parse the payload, record usage, and render the status line.
@@ -89,6 +94,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                     len(session_turns),
                     _tokens(session_turns),
                     costs.get(session, 0.0),
+                    self._age(session_turns),
                 )
             )
             spans_other_sessions = any(turn.session_id != session for turn in turns) or any(
@@ -97,9 +103,31 @@ class RenderStatuslineUseCase(RenderStatusline):
             if not spans_other_sessions:
                 return rows[0]
         rows.append(
-            render_usage_row("job", job, len(turns), _tokens(turns), round(sum(costs.values()), 2))
+            render_usage_row(
+                "job",
+                job,
+                len(turns),
+                _tokens(turns),
+                round(sum(costs.values()), 2),
+                self._age(turns),
+            )
         )
         return "\n".join(rows)
+
+    def _age(self, turns: Sequence[TurnUsage]) -> float | None:
+        """How long ago this scope's first recorded turn was, or ``None`` when it has none.
+
+        Measured from the first *turn* rather than from when the session was recorded:
+        the status line has no session store to ask, the difference is seconds, and it
+        answers the better question anyway — how long work has been going, not how long
+        ago a row was written. A session launched and never prompted has no age, which
+        is the honest answer rather than a zero.
+
+        This is calendar age, not time spent: a job touched for an hour on Monday reads
+        ``4d`` on Friday.
+        """
+        stamps = [turn.timestamp for turn in turns if turn.timestamp]
+        return self._clock() - min(stamps) if stamps else None
 
 
 def _tokens(turns: Sequence[TurnUsage]) -> int:

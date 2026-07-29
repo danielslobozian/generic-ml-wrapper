@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: 2026 Daniel Slobozian
+# SPDX-License-Identifier: Apache-2.0
+"""The ExportWorkflow use case: pack a workflow for sharing."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
+from generic_ml_wrapper.application.port.inbound.edit_workflow import WorkflowNotFoundError
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
+
+if TYPE_CHECKING:
+    from generic_ml_wrapper.application.port.outbound.workflow_archive import WorkflowArchivePort
+    from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+
+_RESERVED = frozenset({"create-workflow", "_common"})
+
+
+class ExportWorkflowUseCase(ExportWorkflow):
+    """Pack a workflow folder into an archive through the archive port."""
+
+    def __init__(self, workflows: WorkflowSourcePort, archive: WorkflowArchivePort) -> None:
+        """Wire the use case to the workflow source and the archive.
+
+        Args:
+            workflows: Resolves and checks the workflow's folder.
+            archive: Packs the folder, and decides what a shared workflow consists of.
+        """
+        self._workflows = workflows
+        self._archive = archive
+
+    def execute(self, name: str) -> str:
+        """Export a workflow, returning the path to the archive written."""
+        try:
+            WorkflowName(name)
+        except IdentifierError as error:
+            raise WorkflowNameError(str(error)) from error
+        if name in _RESERVED:
+            message = f"reserved workflow name: {name!r}"
+            raise WorkflowNameError(message)
+        self._workflows.seed()
+        if not self._workflows.exists(name):
+            message = f"unknown workflow: {name!r}"
+            raise WorkflowNotFoundError(message)
+        return str(self._archive.pack(Path(self._workflows.folder(name)), name))

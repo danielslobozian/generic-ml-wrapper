@@ -22,6 +22,9 @@ class RunContext:
         kickoff: An opening message to start the session on, or ``None``.
         env: Extra environment variables to export for the run (name/value pairs),
             e.g. a workflow's resolved credentials.
+        client_args: Extra launch arguments to hand the client verbatim, already split
+            into tokens. Opaque to the wrapper: whatever the user configured for this
+            client, passed through unexamined. Empty when none is configured.
     """
 
     job: str
@@ -33,3 +36,4 @@ class RunContext:
     context: str | None = None
     kickoff: str | None = None
     env: tuple[tuple[str, str], ...] = ()
+    client_args: tuple[str, ...] = ()

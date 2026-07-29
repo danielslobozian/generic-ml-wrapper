@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.context_source import CompileMode
-    from generic_ml_wrapper.application.domain.model.draft import DraftMarker
+    from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
+    from generic_ml_wrapper.application.domain.model.workflow import Workflow
 
 
 class WorkflowSourcePort(ABC):
@@ -38,6 +39,19 @@ class WorkflowSourcePort(ABC):
 
         Returns:
             ``True`` if the workflow has a ``workflow.md``.
+        """
+
+    @abstractmethod
+    def catalog(self) -> list[Workflow]:
+        """Return the runnable workflows with the human words behind their slugs.
+
+        The richer counterpart to :meth:`names`, for listings that show a workflow as its
+        author described it. A workflow with no ``.about.toml`` reports its slug as its
+        label and an empty description, so one authored before the sidecar existed still
+        lists — unmigrated and unchanged.
+
+        Returns:
+            The workflows, sorted by slug (empty if none exist).
         """
 
     @abstractmethod
@@ -78,6 +92,18 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
+    def drafts(self) -> list[Draft]:
+        """Return the drafts still on disk, newest first.
+
+        Every authoring session that did not deploy leaves its folder behind, so this is
+        the record of unfinished work. The folder name is the authoring session id, which
+        is what lets a draft be reopened without a path having been stored anywhere.
+
+        Returns:
+            The drafts with their markers read, newest first (empty when there are none).
+        """
+
+    @abstractmethod
     def read_draft_marker(self, draft_path: str) -> DraftMarker:
         """Read the convergence marker an authoring session left in its draft folder.
 
@@ -90,15 +116,24 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
-    def deploy_draft(self, draft_path: str, name: str) -> str:
-        """Move a finished draft into ``workflows/<name>/``.
+    def deploy_draft(
+        self, draft_path: str, name: str, label: str, description: str, created: str
+    ) -> str:
+        """Move a finished draft into ``workflows/<name>/`` and record what it is.
 
         The move is atomic (a directory rename on the same filesystem). The caller is
-        responsible for validating the name and confirming it is free first.
+        responsible for deriving the slug, validating it, and confirming it is free.
+
+        The human words are written into the deployed folder's ``.about.toml``, the same
+        sidecar roles and environments use — so the slug stays the id while the label and
+        description stay readable.
 
         Args:
             draft_path: The draft folder to deploy.
-            name: The workflow name to deploy it as.
+            name: The slug to deploy it as (the folder name).
+            label: The human name behind the slug.
+            description: A fuller line, or empty when none was given.
+            created: An ISO-8601 timestamp for when the workflow appeared.
 
         Returns:
             The absolute path to the deployed workflow folder.

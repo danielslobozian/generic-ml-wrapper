@@ -37,9 +37,35 @@ def test_codex_home_follows_the_environment_override(
     assert codex_session_index.home() == tmp_path / "elsewhere"
 
 
-def test_codex_home_defaults_to_the_dot_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_codex_home_defaults_to_a_dot_folder_directly_under_the_user_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``.codex`` folder sitting directly in the user's home — on every OS.
+
+    Deliberately asserted as a *shape* rather than as ``Path.home() / ".codex"``. That
+    equality would only restate the implementation: it passes by construction, and would
+    keep passing on Windows even if this resolved to ``%APPDATA%``.
+
+    Stated as a shape, the CI matrix gives it teeth — the suite runs on windows-latest,
+    where an ``%APPDATA%``-style branch would put the folder under ``AppData/Roaming``
+    and fail the ``parent`` assertion on the runner that matters.
+
+    What no test here can establish is where codex *itself* looks; that is codex's fact,
+    and a green CI is not evidence about it. The evidence is codex's own resolution in
+    ``codex-rs/utils/home-dir/src/lib.rs``::
+
+        /// specified by the `CODEX_HOME` environment variable. If not set, defaults to
+        /// `~/.codex`.
+        None => { let mut p = home_dir()?; p.push(".codex"); }
+
+    ``dirs::home_dir()`` is the user profile on Windows too, so codex's path is uniform
+    across platforms and ours must stay uniform with it. If that ever changes upstream,
+    this test will not notice — re-read that file, do not trust this suite for it.
+    """
     monkeypatch.delenv("CODEX_HOME", raising=False)
-    assert codex_session_index.home() == Path.home() / ".codex"
+    home = codex_session_index.home()
+    assert home.name == ".codex"
+    assert home.parent == Path.home()
 
 
 # ── knows ──

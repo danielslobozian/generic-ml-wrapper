@@ -206,3 +206,36 @@ def test_transcript_reads_enabled_and_root(tmp_path: Path) -> None:
     settings = config.transcript(path)
     assert settings.enabled is True
     assert settings.root == "/some/dir"
+
+
+# ── per-client launch arguments ──
+def test_client_args_is_empty_when_unset(tmp_path: Path) -> None:
+    assert config.client_args(_write(tmp_path, '[client]\ndefault = "claude"\n')) == {}
+    assert config.client_args_for("claude", tmp_path / "missing.toml") == ""
+
+
+def test_client_args_reads_the_sub_table_form(tmp_path: Path) -> None:
+    path = _write(tmp_path, '[client.args]\nclaude = "--yolo"\ncodex = "--profile work"\n')
+    assert config.client_args(path) == {"claude": "--yolo", "codex": "--profile work"}
+
+
+def test_client_args_reads_the_inline_table_form(tmp_path: Path) -> None:
+    # TOML expresses the same structure two ways and the reader must not care which the
+    # user wrote -- `config set` produces one shape, a hand-edited file may use the other.
+    path = _write(tmp_path, '[client]\nargs = { claude = "--yolo", codex = "--profile work" }\n')
+    assert config.client_args(path) == {"claude": "--yolo", "codex": "--profile work"}
+
+
+def test_client_args_are_looked_up_per_client(tmp_path: Path) -> None:
+    path = _write(tmp_path, '[client.args]\nclaude = "--yolo"\n')
+    assert config.client_args_for("claude", path) == "--yolo"
+    assert config.client_args_for("codex", path) == ""  # never another client's flags
+
+
+def test_client_args_ignores_a_non_table_value(tmp_path: Path) -> None:
+    assert config.client_args(_write(tmp_path, '[client]\nargs = "--yolo"\n')) == {}
+
+
+def test_client_args_drops_entries_that_are_not_strings(tmp_path: Path) -> None:
+    path = _write(tmp_path, '[client.args]\nclaude = "--yolo"\ncodex = 42\n')
+    assert config.client_args(path) == {"claude": "--yolo"}

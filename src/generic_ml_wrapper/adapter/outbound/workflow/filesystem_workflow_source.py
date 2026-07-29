@@ -5,17 +5,20 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from importlib import resources
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.adapter.outbound.bootstrap.about import ABOUT, write_about
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
-from generic_ml_wrapper.application.domain.model.draft import DraftMarker
+from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE, rule_capture_directive
 from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service import rule_parser
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
@@ -162,6 +165,27 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         """
         return (self._root / name / "workflow.md").is_file()
 
+    def catalog(self) -> list[Workflow]:
+        """Return the runnable workflows with their ``.about.toml`` words, sorted by slug.
+
+        Read tolerantly and per folder: an unreadable or malformed sidecar degrades that
+        one workflow to its slug rather than failing the listing.
+        """
+        return [self._described(slug) for slug in self.names()]
+
+    def _described(self, slug: str) -> Workflow:
+        about = self._root / slug / ABOUT
+        label, description = slug, ""
+        if about.is_file():
+            try:
+                data = tomllib.loads(about.read_text(encoding="utf-8"))
+            except (OSError, tomllib.TOMLDecodeError):
+                return Workflow(slug=slug, label=slug, description="")
+            raw_label, raw_description = data.get("label"), data.get("description")
+            label = raw_label if isinstance(raw_label, str) and raw_label else slug
+            description = raw_description if isinstance(raw_description, str) else ""
+        return Workflow(slug=slug, label=label, description=description)
+
     def create(self, name: str) -> str:
         """Create ``<root>/<name>/``.
 
@@ -199,6 +223,27 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         folder.mkdir(parents=True, exist_ok=True)
         return str(folder)
 
+    def drafts(self) -> list[Draft]:
+        """Return the drafts still on disk, newest first (by folder mtime).
+
+        The folder name *is* the authoring session id, so a draft needs no stored path
+        to be found again — which is what makes an abandoned interview reopenable even
+        though it was never recorded anywhere as resumable.
+        """
+        if not self._drafts_root.is_dir():
+            return []
+        folders = [folder for folder in self._drafts_root.iterdir() if folder.is_dir()]
+        folders.sort(key=lambda folder: folder.stat().st_mtime, reverse=True)
+        return [
+            Draft(
+                key=folder.name,
+                path=str(folder),
+                name=(marker := self.read_draft_marker(str(folder))).name,
+                finished=marker.finished,
+            )
+            for folder in folders
+        ]
+
     def read_draft_marker(self, draft_path: str) -> DraftMarker:
         """Read ``<draft>/meta.json`` into a :class:`DraftMarker`, tolerantly.
 
@@ -220,18 +265,32 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             return DraftMarker(None, finished=False)
         fields = cast("dict[str, object]", data)
         raw_name = fields.get("name")
-        name = raw_name if isinstance(raw_name, str) and raw_name else None
-        return DraftMarker(name, finished=fields.get("status") == _FINISHED)
+        raw_label = fields.get("label")
+        raw_description = fields.get("description")
+        return DraftMarker(
+            raw_name if isinstance(raw_name, str) and raw_name else None,
+            finished=fields.get("status") == _FINISHED,
+            label=raw_label if isinstance(raw_label, str) and raw_label else None,
+            description=raw_description if isinstance(raw_description, str) else "",
+        )
 
-    def deploy_draft(self, draft_path: str, name: str) -> str:
+    def deploy_draft(
+        self, draft_path: str, name: str, label: str, description: str, created: str
+    ) -> str:
         """Move a finished draft into ``<root>/<name>/`` (an atomic directory rename).
 
         The transient marker is removed first so it does not linger in the deployed
-        workflow. The caller must have validated the name and confirmed it is free.
+        workflow, and the human words it carried are rewritten as the folder's
+        ``.about.toml`` — the marker is scaffolding, the sidecar is the record.
+
+        The caller must have derived and validated the slug and confirmed it is free.
 
         Args:
             draft_path: The draft folder to deploy.
-            name: The workflow name to deploy it as.
+            name: The slug to deploy it as (the folder name).
+            label: The human name behind the slug.
+            description: A fuller line, or empty when none was given.
+            created: An ISO-8601 timestamp for when the workflow appeared.
 
         Returns:
             The absolute path to the deployed workflow folder.
@@ -241,6 +300,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         target = self._root / name
         self._root.mkdir(parents=True, exist_ok=True)
         draft.rename(target)
+        write_about(target, label, description, created)
         return str(target)
 
     def meta_guide(self) -> str:

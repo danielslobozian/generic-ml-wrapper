@@ -47,6 +47,12 @@ STATE = HOME / "state"
 # User-facing usage report exports, one JSON file per save (exports/<job>-<timestamp>.json),
 # written by the TUI's Export → save-to-file destination.
 EXPORTS = HOME / "exports"
+
+# Workflows displaced by an import. Deliberately a sibling of WORKFLOWS rather than a
+# folder inside it: anything under WORKFLOWS with a workflow.md lists as runnable, so
+# keeping backups out makes "a backup is never a workflow" structural instead of a
+# filter that has to be remembered.
+WORKFLOW_BACKUPS = HOME / "workflow-backups"
 # The wrapper's own rolling diagnostics. A wrapped session cannot write diagnostics to
 # stderr — that is the client's screen — so they land here instead, where they survive
 # the session and can actually be read afterwards.

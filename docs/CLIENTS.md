@@ -17,7 +17,7 @@ section for the client you use.
 | ------ | ------ | -------- | ------ | ----------- | ---------------- |
 | claude | `claude` | Yes — Anthropic SSE | Yes | Yes | Native `--append-system-prompt-file` + `--session-id` |
 | cursor | `cursor-agent` | **No** | Yes | Yes | Context-file instruction; status-line install only, no relay |
-| codex | `codex` | Yes — OpenAI Responses | **No** | No | Initial instruction; relay → `chatgpt.com/backend-api/codex` |
+| codex | `codex` | Yes — OpenAI Responses | Yes — once bound | No | Initial instruction; relay → `chatgpt.com/backend-api/codex` |
 | vibe | `vibe` | Yes — Mistral / Chat Completions | **No** | No | Initial instruction; throwaway `VIBE_HOME` repointed at the relay |
 
 You install and log into each client yourself. `gmlw` is not a sandbox and ships no
@@ -73,9 +73,14 @@ the local relay and points codex's upstream at it (`/backend-api/codex` on
 `chatgpt.com`), teeing the response to read usage. Per-turn tokens and cost land in the
 ledger.
 
-**Resume:** **Not supported.** `can_resume` is false — the wrapper cannot bind or resume a
-codex session by its own id. Every `gmlw start` on a codex job is a fresh session;
-`--resume-latest` has nothing to attach to.
+**Resume:** Supported, one turn in. Codex mints its own session id and takes no flag to
+accept ours, so there is nothing to target at launch. The relay reads the id off the wire on
+the first metered turn and binds it to the session; from then on `--resume-latest` and the
+menu's Resume both work, and the id is registered in codex's own name index so
+`codex resume <job>_NNN` works outside the wrapper too. Two consequences: a session that
+never completed a turn has no id and cannot be resumed, and deleting the session in codex
+itself takes the resume with it (`can_resume` re-checks that index rather than promising a
+resume that would silently open a fresh, empty session).
 
 **Status line:** **Not supported.** Codex has no status-line surface the wrapper can install
 into, so no live `gmlw statusline` output during codex runs. Metering is still recorded — use
@@ -109,15 +114,18 @@ same throwaway-`VIBE_HOME` relay path used for metering.
   that supports all three.
 - **Want resume and a status line but don't need wrapper metering?** **cursor** works, with the
   clear caveat that cost/token numbers won't be captured.
-- **Want metering on OpenAI or Mistral models?** **codex** or **vibe** meter fully, but each
-  run is a fresh session (no resume) and there is no status line — read costs with
-  `gmlw export`.
+- **Want metering on OpenAI models?** **codex** meters fully and resumes once a session has
+  taken its first turn; there is no status line, so read costs with `gmlw export`.
+- **Want metering on Mistral models?** **vibe** meters fully, but every run is a fresh session
+  (no resume) and there is no status line.
 
 ## Known limitations
 
 - **Cursor is not metered.** Its usage isn't on an interceptable API; cursor runs have no
   token or cost figures.
-- **Codex does not resume.** No session-id binding; `--resume-latest` has nothing to attach to.
+- **Codex resumes only after its first turn.** The id it minted has to be bound off the wire
+  first, so a session that never completed a turn — or that you deleted in codex itself — has
+  nothing to attach to.
 - **Vibe does not resume.** Throwaway `VIBE_HOME` keeps no durable session; every run is fresh.
 - **Codex and vibe have no status line.** Use `gmlw export <job>` for their numbers instead.
 - **Not a sandbox.** Every client runs as you, with your credentials; on the loopback relay hop

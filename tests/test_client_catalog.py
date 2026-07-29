@@ -43,12 +43,21 @@ def test_only_vibe_needs_a_prerequisite_and_it_is_uv() -> None:
     )
 
 
-def test_resumable_flag_marks_only_claude_and_cursor() -> None:
-    # The single source of truth for CliCaller.can_resume: claude/cursor can be told a
-    # session id at launch; codex/vibe mint their own and cannot be targeted.
+def test_resumable_flag_excludes_only_vibe() -> None:
+    # What the clients listing tells the user, not how the launch works: claude/cursor are
+    # told the id we named, codex learns the one it minted mid-run and binds it -- all three
+    # resume. Only vibe keeps no durable session to reopen.
     assert client_catalog.CLAUDE.resumable is True
     assert client_catalog.CURSOR.resumable is True
-    assert client_catalog.CODEX.resumable is False
+    assert client_catalog.CODEX.resumable is True
     assert client_catalog.VIBE.resumable is False
     resumable = {info.name for info in client_catalog.SUPPORTED if info.resumable}
-    assert resumable == {"claude", "cursor"}
+    assert resumable == {"claude", "cursor", "codex"}
+
+
+def test_only_codex_qualifies_its_resumable_yes() -> None:
+    # Codex resumes a turn late (the id it minted has to be bound first), so its yes carries
+    # a caveat -- a catalogue key, like login_hint, because this data is built at import time.
+    assert client_catalog.CODEX.resume_hint == "client.resume_hint.codex"
+    hinted = {info.name for info in client_catalog.SUPPORTED if info.resume_hint}
+    assert hinted == {"codex"}  # everyone else's answer needs no footnote

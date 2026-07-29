@@ -59,6 +59,10 @@ def _context(status: ClientStatus) -> str | None:
     return None if pct is None else f"ctx {pct}%"
 
 
+_MINUTE = 60
+_HOUR = 3600
+_DAY = 86400
+
 _BILLION = 1_000_000_000
 _MILLION = 1_000_000
 _THOUSAND = 1_000
@@ -86,12 +90,46 @@ def _trim(value: float) -> str:
     return text[:-2] if text.endswith(".0") else text
 
 
-def render_usage_row(label: str, name: str, turns: int, tokens: int, cost_usd: float) -> str:
-    """Render one usage footer row -- ``<label> <name> · N turns · tok · $`` -- indented.
+def format_age(seconds: float) -> str:
+    """Render an elapsed time as two significant units: ``5d``, ``1d20h``, ``2h45m``.
+
+    Two units rather than one because the coarse form loses the half a session is
+    usually made of -- ``2h`` reads the same at two hours and at two hours fifty-nine.
+    The second unit is dropped when it is zero, so a round duration stays short.
+
+    Deliberately separate from the parser's own single-unit duration, which renders a
+    quota reset marker where a glance ("about an hour") is all that is wanted.
+
+    Args:
+        seconds: The elapsed seconds; negative values are treated as zero.
+
+    Returns:
+        The compact duration (``45s`` at the shortest).
+    """
+    whole = int(max(seconds, 0))
+    days, whole = divmod(whole, _DAY)
+    hours, whole = divmod(whole, _HOUR)
+    minutes, whole = divmod(whole, _MINUTE)
+    if days:
+        return f"{days}d{hours}h" if hours else f"{days}d"
+    if hours:
+        return f"{hours}h{minutes:02d}m" if minutes else f"{hours}h"
+    return f"{minutes}m" if minutes else f"{whole}s"
+
+
+def render_usage_row(  # noqa: PLR0913  (one row's worth of fields)
+    label: str, name: str, turns: int, tokens: int, cost_usd: float, age_s: float | None = None
+) -> str:
+    """Render one usage footer row -- ``<label> <name> (age) · N turns · tok · $``.
 
     Used for both the current-session row (``label="session"``) and the whole-job
     total (``label="job"``). Turns/tokens show only when deep-metered (``turns`` > 0);
     the cost always shows. The leading indent sets the footer apart from the live line.
+
+    The age is bound to the name in parentheses rather than added as another
+    ``·``-separated field: the separators read as a list of measurements -- turns,
+    tokens, dollars -- and how old the thing is is a property of it, not one more
+    measurement to scan past.
 
     Args:
         label: The scope label, ``"session"`` or ``"job"``.
@@ -99,11 +137,14 @@ def render_usage_row(label: str, name: str, turns: int, tokens: int, cost_usd: f
         turns: The recorded turn count for this scope (``0`` if unmetered).
         tokens: The total tokens across those turns (input + output + cache).
         cost_usd: The scope's cumulative cost.
+        age_s: How long ago this scope's first recorded turn was, or ``None`` when it
+            has none -- a session launched but never prompted has no age to show.
 
     Returns:
         The footer row (no trailing newline).
     """
-    parts = [f"{label} {name}"]
+    head = f"{label} {name}" if age_s is None else f"{label} {name} ({format_age(age_s)})"
+    parts = [head]
     if turns:
         parts.append(f"{turns} turns")
         parts.append(f"{_compact(tokens)} tok")  # k/M/G so a heavy job's total stays scannable

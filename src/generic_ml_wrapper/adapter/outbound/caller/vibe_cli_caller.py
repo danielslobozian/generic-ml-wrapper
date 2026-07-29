@@ -63,6 +63,10 @@ class VibeCliCaller(CliCaller):
         self._relay: MeteringRelay | None = None
         self._vibe_home: str | None = None
 
+    def can_resume(self) -> bool:
+        """Vibe mints its own uuid and takes no session id at launch."""
+        return False
+
     def can_meter_per_call(self) -> bool:
         """This caller records per-turn usage via its metering relay."""
         return True
@@ -124,7 +128,7 @@ class VibeCliCaller(CliCaller):
         Returns:
             The argv list to execute.
         """
-        argv = [BINARY, *self._provider_flags()]
+        argv = [BINARY, *self._provider_flags(), *self.run.client_args]
         if opening is not None:
             argv.append(opening)
         return argv

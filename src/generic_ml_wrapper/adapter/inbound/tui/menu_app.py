@@ -23,12 +23,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import ClassVar, cast
 
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, VerticalScroll
+from textual.coordinate import Coordinate
 from textual.screen import Screen
 from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
 from textual.worker import Worker, WorkerState
@@ -90,7 +92,8 @@ class MenuChoice:
     Job launchers use ``job`` (and, for ``"resume"``, the specific ``session``). Workflow
     launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
     open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
-    new workflow whose name is proposed at the end). A ``None`` return means "do nothing".
+    new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
+    ``archive`` to install from. A ``None`` return means "do nothing".
     """
 
     action: str
@@ -98,6 +101,7 @@ class MenuChoice:
     session: str | None = None
     workflow: str | None = None
     guided: bool = False
+    archive: str | None = None
 
 
 @dataclass(frozen=True)
@@ -238,13 +242,18 @@ class ClientRow:
     """One supported client's row for the Config Clients table, pre-rendered by the wiring.
 
     All cells are display strings (``version`` reads "not installed" when absent, ``default``
-    is a marker or empty) so the screen only fills the table.
+    is a marker or empty) so the screen only fills the table. Two fields are not cells:
+    ``name`` is the client *id* the screen writes when the row is made the default, and
+    ``note`` is the caveat on the resumable cell (codex resumes only once its id is bound),
+    shown in the detail line rather than crammed into the column.
     """
 
     client: str
     version: str
     resumable: str
     default: str
+    name: str = ""
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -279,6 +288,8 @@ _WORKFLOW_MENU = (
     ("✨", "tui.wf.create", "wf:create", "gmlw workflow new <name>"),
     ("✏️", "tui.wf.edit", "wf:edit", "gmlw workflow edit <name>"),
     ("📋", "tui.wf.list", "wf:list", "gmlw workflow list"),
+    ("📦", "tui.wf.export", "wf:export", "gmlw workflow export <workflow>"),
+    ("📥", "tui.wf.import", "wf:import", "gmlw workflow import <archive>"),
 )
 _CONFIG_MENU = (
     ("📃", "tui.cfg.list", "cfg:list", "gmlw config list"),
@@ -511,6 +522,10 @@ class WorkflowMenuScreen(_MenuScreen):
             self.menu_app.push_screen(NewWorkflowScreen())
         elif item.action == "wf:list":
             self.menu_app.push_screen(WorkflowListScreen())
+        elif item.action == "wf:export":
+            self.menu_app.push_screen(WorkflowPickerScreen("export"))
+        elif item.action == "wf:import":
+            self.menu_app.push_screen(ImportWorkflowScreen())
         else:
             self._stub(item)
 
@@ -551,9 +566,9 @@ class WorkflowPickerScreen(_MenuScreen):
         self._mode = mode
 
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Workflow > Run|Edit."""
+        """Breadcrumb: gmlw > Workflow > Run|Edit|Export."""
         t = i18n.active().t
-        verb = t("tui.wf.run") if self._mode == "run" else t("tui.wf.edit")
+        verb = t(f"tui.wf.{self._mode}")
         return f"gmlw > {t('tui.workflow')} > {verb}"
 
     def menu_items(self) -> list[_Item]:
@@ -566,6 +581,8 @@ class WorkflowPickerScreen(_MenuScreen):
             return
         if self._mode == "run":
             self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
+        elif self._mode == "export":
+            self.menu_app.exit(MenuChoice(action="workflow_export", workflow=item.payload))
         else:  # edit — choose the authoring depth, then launch the edit session
             self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
 
@@ -606,6 +623,56 @@ class NewWorkflowScreen(Screen[None]):
             self.query_one("#detail", Static).update(f"✗ {error}")
             return
         self.menu_app.push_screen(GuidedChoiceScreen("workflow_new", name or None))
+
+    def action_cancel(self) -> None:
+        """Abandon the form and return to the Workflow menu."""
+        self.menu_app.pop_screen()
+
+
+class ImportWorkflowScreen(Screen[None]):
+    """Type or paste the path of an archive to import — a text-entry launcher.
+
+    A path rather than a picker because the archive a user wants is usually the one a
+    colleague just sent them, sitting wherever their browser put it, not in gmlw's own
+    exports folder. The path is checked here so a typo is fixed in the form rather than
+    tearing the menu down to fail at the prompt.
+
+    The import itself runs after the menu exits: replacing an existing workflow asks a
+    question, and that needs the restored terminal.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the archive-path input, a status line, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.workflow')} > {t('tui.wf.import')}", id="crumb")
+        yield Input(placeholder=t("tui.wf.import.placeholder"), id="archive")
+        with Container(id="status"):
+            yield Static(t("tui.wf.import.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can paste straight away."""
+        self.query_one("#archive", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Check the archive is there, then hand the path back to the wiring."""
+        raw = event.value.strip()
+        if not raw:
+            return
+        archive = Path(raw).expanduser()
+        if not archive.is_file():
+            self.query_one("#detail", Static).update(
+                f"✗ {i18n.active().t('tui.wf.import.missing')}"
+            )
+            return
+        self.menu_app.exit(MenuChoice(action="workflow_import", archive=str(archive)))
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Workflow menu."""
@@ -897,22 +964,28 @@ class ConfigPickerScreen(_MenuScreen):
             note += t("tui.cfg.setting.allowed", choices=", ".join(setting.choices))
         return note
 
-    def on_input_changed(self, event: Input.Changed) -> None:
+    async def on_input_changed(self, event: Input.Changed) -> None:
         """Refilter the list as the user types."""
         self._filter = event.value
-        self._rebuild()
+        await self._rebuild()
 
-    def on_screen_resume(self) -> None:
+    async def on_screen_resume(self) -> None:
         """Returning from a value editor: rebuild (a set may have changed a value), then flash."""
-        self._rebuild()
+        await self._rebuild()
         if self._flash is not None:  # a confirmation queued by the editor before it popped
             message, self._flash = self._flash, None
             self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
 
-    def _rebuild(self) -> None:
-        """Rebuild the list rows from the current filter and settings, highlighting the first."""
+    async def _rebuild(self) -> None:
+        """Rebuild the list rows from the current filter and settings, highlighting the first.
+
+        The clear is *awaited*: ``ListView.clear`` removes its rows asynchronously, so setting
+        the highlight straight after would land it on a row already on its way out -- leaving
+        the rebuilt list with nothing marked, and making the first Down look like it skipped a
+        row. Awaiting means the index is set on the rows the user is actually looking at.
+        """
         menu = self.query_one("#menu", ListView)
-        menu.clear()
+        await menu.clear()  # also resets the index to None, so setting it below re-highlights
         items = self.menu_items()
         for item in items:
             menu.append(_Row(item))
@@ -1477,10 +1550,25 @@ class ClientsScreen(Screen[None]):
     """The supported clients + versions, loaded on a worker into a DataTable.
 
     Reads each installed version (a subprocess that can hang), so it loads on a background
-    thread with a spinner, like the Export summary. Read-only; Esc goes back.
+    thread with a spinner, like the Export summary. Esc goes back.
+
+    The one thing this view can *change* is which client is the default: the table already
+    answers "what have I got?", so answering "use that one" here saves a trip through
+    Config > Set to type a key. Selecting a row writes ``client.default`` through the injected
+    setter and moves the marker in place. Without that setter (unwired, in tests) it stays
+    read-only. A client that is not installed can still be picked, exactly as
+    ``gmlw config set client.default`` allows -- the launch preflight is what guides you.
     """
 
     BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
+    # The Default column, whose marker moves as the user switches (client · version ·
+    # resumable · default).
+    _DEFAULT_COLUMN = 3
+
+    def __init__(self) -> None:
+        """Start with no rows; the worker fills them (and the setter reads them back)."""
+        super().__init__()
+        self._rows: list[ClientRow] = []
 
     @property
     def menu_app(self) -> MenuApp:
@@ -1488,12 +1576,15 @@ class ClientsScreen(Screen[None]):
         return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
     def compose(self) -> ComposeResult:
-        """A breadcrumb, the (initially loading) clients table, and the key hints."""
+        """A breadcrumb, the (initially loading) clients table, then detail + key hints."""
         t = i18n.active().t
         yield Static(f"gmlw > {t('tui.config')} > {t('tui.cfg.clients')}", id="crumb")
         with Container(id="report"):
             yield DataTable(id="clients", cursor_type="row", zebra_stripes=True)
-        yield Static(t("tui.export.keys"), id="keys")
+        with Container(id="status"):
+            yield Static("", id="detail")
+            keys = "tui.clients.keys" if self.menu_app.set_default_client else "tui.export.keys"
+            yield Static(t(keys), id="keys")
 
     def on_mount(self) -> None:
         """Show the spinner and kick the version reads onto a worker thread."""
@@ -1516,6 +1607,7 @@ class ClientsScreen(Screen[None]):
     def _populate(self, rows: list[ClientRow]) -> None:
         """Fill the clients DataTable from the loaded rows."""
         t = i18n.active().t
+        self._rows = rows
         table = cast("DataTable[str]", self.query_one("#clients", DataTable))
         table.add_columns(
             t("clients.col.client"),
@@ -1525,6 +1617,40 @@ class ClientsScreen(Screen[None]):
         )
         table.add_rows((row.client, row.version, row.resumable, row.default) for row in rows)
         self.query_one("#report", Container).loading = False
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Follow the cursor: show the highlighted client's resume caveat, if it has one.
+
+        Enter does not move the cursor, so a confirmation written by a switch survives until
+        the user moves on -- the same one-shot behaviour the menu screens' flash has.
+        """
+        if 0 <= event.cursor_row < len(self._rows):
+            self.query_one("#detail", Static).update(self._rows[event.cursor_row].note)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Make the selected client the default: persist it, move the marker, confirm."""
+        apply = self.menu_app.set_default_client
+        if apply is None or not 0 <= event.cursor_row < len(self._rows):
+            return
+        row = self._rows[event.cursor_row]
+        result = apply(row.name)
+        detail = self.query_one("#detail", Static)
+        if not result.ok:  # defensive: the rows are the supported clients, so always valid
+            detail.update(f"✗ {result.message}")
+            return
+        # Keep the app's notion of the default in step, so the resume picker's "will launch
+        # on <client>" notes stay honest for the rest of this menu session.
+        self.menu_app.current_client = row.name
+        self._mark_default(row.name)
+        detail.update(f"✓ {result.message}")
+
+    def _mark_default(self, name: str) -> None:
+        """Move the default marker onto the newly chosen client's row (in place)."""
+        marker = i18n.active().t("clients.default_marker")
+        table = cast("DataTable[str]", self.query_one("#clients", DataTable))
+        for index, row in enumerate(self._rows):
+            value = marker if row.name == name else ""
+            table.update_cell_at(Coordinate(index, self._DEFAULT_COLUMN), value)
 
     def action_back(self) -> None:
         """Pop back to the Config menu."""
@@ -1737,6 +1863,10 @@ class MenuApp(App[MenuChoice | None]):
     ListItem { height: auto; padding: 0 1; background: transparent; }
     ListView > ListItem.-highlight { background: cyan 15%; }
     ListView:focus > ListItem.-highlight { background: cyan 25%; color: $text; }
+    /* The settings picker drives its list from a focused Input, so the ListView itself never
+       holds focus and the rule above never fires -- the cursored row read as unselected, and
+       the first Down looked like it skipped a row. Highlight it at focused strength there. */
+    ConfigPickerScreen ListView > ListItem.-highlight { background: cyan 25%; color: $text; }
     """
     TITLE = "gmlw"
 
@@ -1753,6 +1883,7 @@ class MenuApp(App[MenuChoice | None]):
         workflows: list[str] | None = None,
         rules: Callable[[], tuple[RuleGroup, ...]] | None = None,
         clients: Callable[[], list[ClientRow]] | None = None,
+        set_default_client: Callable[[str], ConfigSetResult] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
     ) -> None:
@@ -1780,6 +1911,8 @@ class MenuApp(App[MenuChoice | None]):
                 Defaults to none, so the app runs unwired in tests.
             clients: Lists the supported clients + versions for the Config Clients view (on a
                 worker thread); ``None`` leaves that verb stubbed, so the app runs unwired.
+            set_default_client: Writes the default client picked in the Clients view; ``None``
+                leaves that view read-only, so the app runs unwired in tests.
             config: The settings + setter the Config Get/Set browsers read and call; ``None``
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
@@ -1797,6 +1930,7 @@ class MenuApp(App[MenuChoice | None]):
         self.rules = rules or _no_rules
         self._rule_cache: tuple[RuleGroup, ...] | None = None
         self.clients = clients
+        self.set_default_client = set_default_client
         self.config = config
         self.current_client = current_client
 

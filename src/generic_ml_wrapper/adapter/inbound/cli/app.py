@@ -13,7 +13,7 @@ import os
 import platform
 import signal
 import sys
-from collections.abc import Generator, Iterable
+from collections.abc import Callable, Generator, Iterable
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,6 +35,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
 )
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind
+from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
     IdentifierError,
@@ -47,6 +48,7 @@ from generic_ml_wrapper.application.domain.model.migration import (
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
@@ -60,9 +62,14 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
 )
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflowCommand,
+    NoEditToResumeError,
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
+from generic_ml_wrapper.application.port.inbound.import_workflow import (
+    ArchiveUnreadableError,
+    ImportOutcome,
+)
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
@@ -70,6 +77,7 @@ from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSum
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
     NewWorkflowResult,
+    NoSuchDraftError,
     WorkflowExistsError,
     WorkflowNameError,
     WorkflowOutcome,
@@ -90,14 +98,18 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_diagnostics,
     build_edit_workflow,
     build_export_usage,
+    build_export_workflow,
     build_guided_chooser,
+    build_import_workflow,
     build_init,
     build_list_clients,
+    build_list_drafts,
     build_list_jobs,
     build_list_personas,
     build_list_plugins,
     build_list_rules,
     build_list_sessions,
+    build_list_workflow_catalog,
     build_list_workflows,
     build_localizer,
     build_migrate_layout,
@@ -318,6 +330,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         default=None,
         help=i18n.t("cli.flag.workflow"),
     )
+    start.add_argument(
+        "--client-args",
+        default=None,
+        help=i18n.t("cli.flag.client_args"),
+    )
 
     run = sub.add_parser("run", help=i18n.t("cli.cmd.run"))
     run.add_argument(
@@ -330,6 +347,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         "--client",
         default=None,
         help=i18n.t("cli.flag.client"),
+    )
+    run.add_argument(
+        "--client-args",
+        default=None,
+        help=i18n.t("cli.flag.client_args"),
     )
 
     jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
@@ -356,10 +378,15 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     )
     new = workflow_sub.add_parser("new", help=i18n.t("cli.cmd.workflow_new"))
     new.add_argument(
-        "name",
+        "label",
         nargs="?",
         default=None,
-        help=i18n.t("cli.arg.workflow_name_optional"),
+        help=i18n.t("cli.arg.workflow_label_optional"),
+    )
+    new.add_argument(
+        "--description",
+        default="",
+        help=i18n.t("cli.flag.workflow_description"),
     )
     new.add_argument(
         "--client",
@@ -367,8 +394,31 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         help=i18n.t("cli.flag.client"),
     )
     _add_guided_flags(new)
+    export_wf = workflow_sub.add_parser("export", help=i18n.t("cli.cmd.workflow_export"))
+    export_wf.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
+    import_wf = workflow_sub.add_parser("import", help=i18n.t("cli.cmd.workflow_import"))
+    import_wf.add_argument("archive", help=i18n.t("cli.arg.workflow_archive"))
+    import_wf.add_argument(
+        "--replace",
+        action="store_true",
+        help=i18n.t("cli.flag.workflow_replace"),
+    )
+    drafts_parser = workflow_sub.add_parser("drafts", help=i18n.t("cli.cmd.workflow_drafts"))
+    _add_json_flag(drafts_parser)
+    resume = workflow_sub.add_parser("resume", help=i18n.t("cli.cmd.workflow_resume"))
+    resume.add_argument(
+        "draft",
+        nargs="?",
+        default=None,
+        help=i18n.t("cli.arg.draft_optional"),
+    )
     edit = workflow_sub.add_parser("edit", help=i18n.t("cli.cmd.workflow_edit"))
     edit.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
+    edit.add_argument(
+        "--resume-latest",
+        action="store_true",
+        help=i18n.t("cli.flag.resume_edit"),
+    )
     edit.add_argument(
         "--client",
         default=None,
@@ -585,21 +635,59 @@ def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.
     return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
 
 
-def format_workflows(names: list[str], loc: i18n.Localizer | None = None) -> str:
-    """Render the runnable workflow names as human-readable lines.
+def format_drafts(drafts: list[Draft], loc: i18n.Localizer | None = None) -> str:
+    """Render the unfinished authoring drafts as human-readable lines.
 
     Args:
-        names: The workflow names to render.
+        drafts: The drafts to render, newest first.
         loc: The localiser to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
     loc = loc or i18n.active()
-    if not names:
+    if not drafts:
+        return loc.t("draft.none")
+    lines = [loc.t("draft.count", count=len(drafts)), ""]
+    lines += [
+        loc.t(
+            "draft.row",
+            draft=draft.key,
+            state=loc.t("draft.finished" if draft.finished else "draft.unfinished"),
+            name=draft.name or loc.t("draft.unnamed"),
+        )
+        for draft in drafts
+    ]
+    return "\n".join(lines)
+
+
+def format_workflows(workflows: list[Workflow], loc: i18n.Localizer | None = None) -> str:
+    """Render the runnable workflows as human-readable lines.
+
+    Shows the slug the user types beside the label its author gave it. A workflow
+    predating the sidecar has the two the same and no description, so it renders exactly
+    as it always did.
+
+    Args:
+        workflows: The workflows to render, sorted by slug.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    if not workflows:
         return loc.t("workflow.none")
-    lines = [loc.t("workflow.count", count=len(names)), ""]
-    lines += [f"  {name}" for name in names]
+    lines = [loc.t("workflow.count", count=len(workflows)), ""]
+    lines += [
+        loc.t(
+            "workflow.row",
+            workflow=flow.slug,
+            label="" if flow.label == flow.slug else flow.label,
+            description=flow.description,
+        ).rstrip()
+        for flow in workflows
+    ]
     return "\n".join(lines)
 
 
@@ -671,6 +759,8 @@ def format_clients(statuses: list[ClientStatus], loc: i18n.Localizer | None = No
     version_width = max(len(version) for version in versions)
     for status, version in zip(statuses, versions, strict=True):
         resumable = loc.t("clients.yes") if status.resumable else loc.t("clients.no")
+        if status.resume_hint:  # a yes with a condition on it (codex: only once bound)
+            resumable += f" ({loc.t(status.resume_hint)})"
         default = loc.t("clients.default") if status.is_default else ""
         lines.append(
             loc.t(
@@ -709,7 +799,9 @@ def main(argv: list[str] | None = None) -> int:
 #: gone on the next redraw. They go to the rolling log file only (issue #59).
 _HANDOVER_COMMANDS = frozenset({"start", "run", "tui"})
 #: The same, for `workflow <action>` — authoring launches a client just as `start` does.
-_HANDOVER_WORKFLOW_ACTIONS = frozenset({"new", "edit"})
+_HANDOVER_WORKFLOW_ACTIONS = frozenset({"new", "edit", "resume"})
+# Accepted as "yes" when confirming a replacement, in either shipped language.
+_AFFIRMATIVE = frozenset({"y", "yes", "o", "oui"})
 
 
 def _hands_over_the_terminal(args: argparse.Namespace) -> bool:
@@ -1252,6 +1344,12 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
                 version=_client_version_label(status, loc),
                 resumable=loc.t("clients.yes") if status.resumable else loc.t("clients.no"),
                 default=loc.t("clients.default_marker") if status.is_default else "",
+                name=status.name,  # not shown: the id written when the row is made the default
+                note=(  # the caveat on the resume cell, kept out of the column
+                    f"{loc.t('clients.col.resumable')}: {loc.t(status.resume_hint)}"
+                    if status.resume_hint
+                    else ""
+                ),
             )
             for status in build_list_clients().execute()
         ]
@@ -1336,6 +1434,9 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
         )
 
+    def _set_default_client(name: str) -> ConfigSetResult:  # Config → Clients: pick the default
+        return _apply_setting("client.default", name)
+
     config_catalog = ConfigCatalog(
         crumb=f"gmlw > {t('tui.config')}",
         settings=_config_settings(),
@@ -1358,7 +1459,9 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
             return t("tui.wf.invalid")
         return None
 
-    client = _client(None)  # the default client (ignored on resume: the session carries its own)
+    # The menu opens on a *snapshot* of the default client, for the rows that mention it.
+    # The launch below re-reads it, because the user may have changed it in Config while
+    # the menu was up -- resolving it once, here, would launch the client they just left.
     choice = MenuApp(
         jobs,
         switchers=switchers,
@@ -1370,15 +1473,25 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         workflows=build_list_workflows().execute(),
         rules=build_list_rules().execute,
         clients=_clients,
+        set_default_client=_set_default_client,
         config=config_catalog,
-        current_client=client,
+        current_client=_client(None),
     ).run()  # blocks; terminal restored on return
     if choice is None:
         return 0
+    # Read *after* the menu: a default-client switch made in Config (or in the Clients view)
+    # must apply to this launch, not only to the next run of gmlw. Ignored on resume -- a
+    # resumed session carries its own client.
+    client = _client(None)
     if choice.action == "init":  # Config → Setup: re-run the interview on the restored terminal
         return _run_init()
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return _run_workflow(choice.workflow, client)
+    if choice.action == "workflow_export" and choice.workflow is not None:
+        return _export_workflow(choice.workflow)
+    if choice.action == "workflow_import" and choice.archive is not None:
+        # Asked on the restored terminal: the replace prompt needs a tty the TUI had.
+        return _import_workflow(choice.archive)
     if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
         return _new_workflow(choice.workflow, client, choice.guided)
     if choice.action == "workflow_edit" and choice.workflow is not None:
@@ -1449,6 +1562,7 @@ def _start(args: argparse.Namespace) -> int:
         client=client,
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
+        client_args=args.client_args,
     )
     if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2
@@ -1486,15 +1600,17 @@ def _run(args: argparse.Namespace) -> int:
     workflow = _resolve_workflow(args.workflow)
     if workflow is None:
         return 2
-    return _run_workflow(workflow, _client(args.client))
+    return _run_workflow(workflow, _client(args.client), args.client_args)
 
 
-def _run_workflow(workflow: str, client: str) -> int:
+def _run_workflow(workflow: str, client: str, client_args: str | None = None) -> int:
     """Launch the client on a workflow's own job — shared by ``gmlw run`` and the TUI Run verb.
 
     Args:
         workflow: The workflow to run (also the job name it accumulates sessions under).
         client: The resolved client to wrap.
+        client_args: Passthrough launch arguments for this call, or ``None`` to use the
+            client's configured value. The TUI passes ``None`` — it has no flag surface.
 
     Returns:
         The process exit code.
@@ -1504,6 +1620,7 @@ def _run_workflow(workflow: str, client: str) -> int:
         client=client,
         resume_latest=False,
         workflow=workflow,
+        client_args=client_args,
     )
     if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2
@@ -1748,16 +1865,26 @@ def _setting_payload(view: SettingView) -> dict[str, object]:
     }
 
 
-def _workflow(args: argparse.Namespace) -> int:
-    if args.workflow_command == "new":
-        return _workflow_new(args)
-    if args.workflow_command == "edit":
-        return _workflow_edit(args)
-    if args.workflow_command == "list":
-        names = build_list_workflows().execute()
-        print(_as_json(names) if bool(args.json) else format_workflows(names))
-        return 0
+def _workflow_drafts(args: argparse.Namespace) -> int:
+    """List the unfinished authoring drafts."""
+    drafts = build_list_drafts().execute()
+    print(_as_json([asdict(d) for d in drafts]) if bool(args.json) else format_drafts(drafts))
     return 0
+
+
+def _workflow_list(args: argparse.Namespace) -> int:
+    """List the runnable workflows with the words behind their slugs."""
+    flows = build_list_workflow_catalog().execute()
+    print(
+        _as_json([asdict(flow) for flow in flows]) if bool(args.json) else format_workflows(flows)
+    )
+    return 0
+
+
+def _workflow(args: argparse.Namespace) -> int:
+    """Dispatch a ``gmlw workflow <verb>``; an unknown or absent verb is a no-op."""
+    handler = _WORKFLOW_VERBS.get(args.workflow_command)
+    return handler(args) if handler is not None else 0
 
 
 def _workflow_new(args: argparse.Namespace) -> int:
@@ -1767,17 +1894,21 @@ def _workflow_new(args: argparse.Namespace) -> int:
     after which gmlw deploys the draft. A name given up front is a seed that fails fast
     on a collision. The draft's fate on the return is reported from the result.
     """
-    name = None if args.name is None else str(args.name)
-    return _new_workflow(name, _client(args.client), _resolve_guided(args))
+    label = None if args.label is None else str(args.label)
+    return _new_workflow(
+        label, _client(args.client), _resolve_guided(args), description=str(args.description)
+    )
 
 
-def _new_workflow(name: str | None, client: str, guided: bool) -> int:
+def _new_workflow(label: str | None, client: str, guided: bool, *, description: str = "") -> int:
     """Author a new workflow — shared by ``gmlw workflow new`` and the TUI Create verb.
 
     Args:
-        name: A suggested name, or ``None`` to let the session propose one at the end.
+        label: A suggested human name, or ``None`` to let the session settle on one at
+            the end. Only a seed: the slug is derived from whatever the session chooses.
         client: The resolved client to wrap.
         guided: Whether to use the guided (facilitative) authoring experience.
+        description: A fuller line to carry into the workflow, or empty.
 
     Returns:
         The process exit code.
@@ -1786,10 +1917,10 @@ def _new_workflow(name: str | None, client: str, guided: bool) -> int:
         return 2
     try:
         result = build_new_workflow().execute(
-            NewWorkflowCommand(name=name, client=client, guided=guided)
+            NewWorkflowCommand(label=label, client=client, guided=guided, description=description)
         )
     except WorkflowExistsError:  # a seed name that already exists — point at editing it
-        print(i18n.t("workflow.new.exists", name=name), file=sys.stderr)
+        print(i18n.t("workflow.new.exists", name=label), file=sys.stderr)
         return 2
     except WorkflowNameError as error:
         print(i18n.t("error.generic", error=error))
@@ -1811,30 +1942,148 @@ def _announce_new_workflow(result: NewWorkflowResult) -> None:
         print(i18n.t("workflow.new.incomplete", draft=result.draft_path), file=sys.stderr)
 
 
+def _workflow_export(args: argparse.Namespace) -> int:
+    """Pack a workflow into ``~/.gmlw/exports`` for sharing."""
+    return _export_workflow(str(args.name))
+
+
+def _export_workflow(name: str) -> int:
+    """Export a workflow — shared by ``gmlw workflow export`` and the TUI Export verb.
+
+    Args:
+        name: The workflow's slug.
+
+    Returns:
+        The process exit code.
+    """
+    try:
+        written = build_export_workflow().execute(name)
+    except (WorkflowNameError, WorkflowNotFoundError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
+    print(i18n.t("workflow.export.written", path=written), file=sys.stderr)
+    return 0
+
+
+def _workflow_import(args: argparse.Namespace) -> int:
+    """Install a workflow from an archive."""
+    return _import_workflow(str(args.archive), replace=bool(args.replace))
+
+
+def _import_workflow(archive: str, *, replace: bool = False) -> int:
+    """Import a workflow — shared by ``gmlw workflow import`` and the TUI Import verb.
+
+    The use case reports a name clash rather than resolving it, so the question is asked
+    here where a person can answer it — and only when there is someone to ask. Off a tty
+    the import is refused rather than silently overwriting.
+
+    Args:
+        archive: The archive to install from.
+        replace: Displace an existing workflow of the same name without asking.
+
+    Returns:
+        The process exit code.
+    """
+    try:
+        result = build_import_workflow().execute(archive, replace=replace)
+        if result.outcome is ImportOutcome.REFUSED:
+            if not _confirm_replace(result.name):
+                print(i18n.t("workflow.import.kept", name=result.name), file=sys.stderr)
+                return 2
+            result = build_import_workflow().execute(archive, replace=True)
+    except (ArchiveUnreadableError, WorkflowNameError) as error:
+        print(i18n.t("error.generic", error=error))
+        return 2
+    if result.outcome is ImportOutcome.REPLACED:
+        print(
+            i18n.t("workflow.import.replaced", name=result.name, backup=result.backup),
+            file=sys.stderr,
+        )
+    else:
+        print(i18n.t("workflow.import.done", name=result.name), file=sys.stderr)
+    return 0
+
+
+def _confirm_replace(name: str) -> bool:
+    """Ask whether to displace an existing workflow; ``False`` when nobody can answer."""
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        print(i18n.t("workflow.import.exists_no_tty", name=name), file=sys.stderr)
+        return False
+    print(i18n.t("workflow.import.exists", name=name), file=sys.stderr)
+    return input(i18n.t("workflow.import.confirm")).strip().lower() in _AFFIRMATIVE
+
+
+def _workflow_resume(args: argparse.Namespace) -> int:
+    """Reopen an unfinished authoring draft — the named one, or the most recent.
+
+    The client is not chosen here: a draft belongs to the session that made it, so the
+    use case reopens it on that session's own client.
+    """
+    draft = None if args.draft is None else str(args.draft)
+    try:
+        result = build_new_workflow().execute(
+            NewWorkflowCommand(
+                label=None,
+                client=_client(None),  # unused on a resume; the session carries its own
+                resume_draft=draft,
+                resume_latest=draft is None,
+            )
+        )
+    except NoSuchDraftError as error:
+        print(i18n.t("draft.cannot_resume", error=error), file=sys.stderr)
+        return 2
+    _announce_new_workflow(result)
+    return result.exit_code
+
+
 def _workflow_edit(args: argparse.Namespace) -> int:
-    """Edit an existing workflow (guide instead of launching when the client isn't ready)."""
-    return _edit_workflow(str(args.name), _client(args.client), _resolve_guided(args))
+    """Edit an existing workflow (guide instead of launching when the client isn't ready).
+
+    Resuming skips the authoring-depth prompt: the guided choice was made when the edit
+    started, and the reopened session already carries it.
+    """
+    resume = bool(args.resume_latest)
+    guided = False if resume else _resolve_guided(args)
+    return _edit_workflow(str(args.name), _client(args.client), guided, resume_latest=resume)
 
 
-def _edit_workflow(name: str, client: str, guided: bool) -> int:
+def _edit_workflow(name: str, client: str, guided: bool, *, resume_latest: bool = False) -> int:
     """Edit an existing workflow — shared by ``gmlw workflow edit`` and the TUI Edit verb.
 
     Args:
         name: The workflow to edit.
         client: The resolved client to wrap.
         guided: Whether to use the guided (facilitative) authoring experience.
+        resume_latest: Reopen the workflow's most recent editing session instead of
+            starting a fresh one. The client comes from that session, not from here.
 
     Returns:
         The process exit code.
     """
-    if not _preflight_client(client):
+    if not _preflight_client(client) and not resume_latest:
         return 2
     try:
-        command = EditWorkflowCommand(name=name, client=client, guided=guided)
+        command = EditWorkflowCommand(
+            name=name, client=client, guided=guided, resume_latest=resume_latest
+        )
         return build_edit_workflow().execute(command)
+    except NoEditToResumeError as error:
+        print(i18n.t("workflow.edit.nothing_to_resume", error=error), file=sys.stderr)
+        return 2
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(i18n.t("error.generic", error=error))
         return 2
+
+
+_WORKFLOW_VERBS: dict[str, Callable[[argparse.Namespace], int]] = {
+    "new": _workflow_new,
+    "edit": _workflow_edit,
+    "resume": _workflow_resume,
+    "export": _workflow_export,
+    "import": _workflow_import,
+    "drafts": _workflow_drafts,
+    "list": _workflow_list,
+}
 
 
 def _resolve_guided(args: argparse.Namespace) -> bool:

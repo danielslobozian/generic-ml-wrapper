@@ -65,6 +65,10 @@ class ClaudeCliCaller(CliCaller):
         self._snapshot: StatusLineSnapshot | None = None
         self._relay: MeteringRelay | None = None
 
+    def can_resume(self) -> bool:
+        """Claude reopens a session by the id we handed it at launch."""
+        return True
+
     def can_deliver_statusline(self) -> bool:
         """Claude Code hosts a command-backed status line the wrapper renders into."""
         return True
@@ -119,6 +123,7 @@ class ClaudeCliCaller(CliCaller):
                 argv += ["--session-id", run.uuid]
             if context_file is not None:
                 argv += ["--append-system-prompt-file", context_file]
+        argv += run.client_args  # the user's own flags, last so they win a collision
         if run.kickoff is not None:
             argv.append(run.kickoff)
         return argv

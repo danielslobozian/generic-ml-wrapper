@@ -10,12 +10,14 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
 from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     CheckClientReady,
@@ -46,6 +48,9 @@ from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, Li
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
+from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import (
+    ListWorkflowCatalog,
+)
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -520,7 +525,9 @@ def test_clients_command_prints_the_table(
 ) -> None:
     statuses = [
         ClientStatus("claude", "Claude Code", True, "1.2.3", True, True),
-        ClientStatus("codex", "OpenAI Codex CLI", False, None, False, False),
+        ClientStatus(
+            "codex", "OpenAI Codex CLI", False, None, True, False, "client.resume_hint.codex"
+        ),
     ]
     monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
     assert app.main(["clients"]) == 0
@@ -529,6 +536,9 @@ def test_clients_command_prints_the_table(
     assert "1.2.3" in out
     assert "(default)" in out  # the default marker on claude
     assert "not installed" in out  # codex absent
+    # A qualified yes carries its condition on the row; an unconditional one stays bare.
+    assert "resume: yes (once its id is bound, after the first turn)" in out
+    assert "resume: yes  (default)" in out  # claude's, unqualified
 
 
 def test_clients_command_json_output(
@@ -1153,7 +1163,7 @@ def _deploying_use_case(seen: dict[str, NewWorkflowCommand]) -> NewWorkflow:
             return NewWorkflowResult(
                 exit_code=0,
                 outcome=WorkflowOutcome.DEPLOYED,
-                name=command.name or "nightly-etl",
+                name=command.label or "nightly-etl",
                 draft_path="/drafts/create-workflow_001",
             )
 
@@ -1166,7 +1176,7 @@ def test_workflow_new_dispatches_to_the_use_case(
     seen: dict[str, NewWorkflowCommand] = {}
     monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
     assert app.main(["workflow", "new", "doc-review"]) == 0
-    assert seen["command"] == NewWorkflowCommand(name="doc-review", client="claude")
+    assert seen["command"] == NewWorkflowCommand(label="doc-review", client="claude")
     assert "created" in capsys.readouterr().err  # the deployed announcement
 
 
@@ -1174,7 +1184,7 @@ def test_workflow_new_without_a_name_is_allowed(monkeypatch: pytest.MonkeyPatch)
     seen: dict[str, NewWorkflowCommand] = {}
     monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
     assert app.main(["workflow", "new"]) == 0
-    assert seen["command"] == NewWorkflowCommand(name=None, client="claude")  # name optional
+    assert seen["command"] == NewWorkflowCommand(label=None, client="claude")  # name optional
 
 
 def test_workflow_new_reports_a_seed_name_collision(
@@ -1246,34 +1256,47 @@ def test_format_workflows_empty() -> None:
 
 
 def test_format_workflows_lists_each() -> None:
-    text = app.format_workflows(["doc-review", "release"])
+    text = app.format_workflows(
+        [
+            Workflow("doc-review", "Doc review", "Reviews a document."),
+            Workflow("release", "release", ""),  # no sidecar: label is the slug
+        ]
+    )
     assert "2 workflow(s):" in text
     assert "doc-review" in text
+    assert "Doc review" in text
     assert "release" in text
+    # A workflow with no sidecar must not print its slug twice.
+    assert text.count("release") == 1
 
 
 def test_workflow_list_prints_the_names(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListWorkflows):
-        def execute(self) -> list[str]:
-            return ["doc-review"]
+    class FakeUseCase(ListWorkflowCatalog):
+        def execute(self) -> list[Workflow]:
+            return [Workflow("doc-review", "Doc review", "Reviews a document.")]
 
-    monkeypatch.setattr(app, "build_list_workflows", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_list_workflow_catalog", lambda: FakeUseCase())
     assert app.main(["workflow", "list"]) == 0
-    assert "doc-review" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "doc-review" in out  # the slug the user types
+    assert "Doc review" in out  # and the words its author gave it
+    assert "Reviews a document." in out
 
 
 def test_workflow_list_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListWorkflows):
-        def execute(self) -> list[str]:
-            return ["doc-review", "release"]
+    class FakeUseCase(ListWorkflowCatalog):
+        def execute(self) -> list[Workflow]:
+            return [Workflow("doc-review", "Doc review", "Reviews a document.")]
 
-    monkeypatch.setattr(app, "build_list_workflows", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_list_workflow_catalog", lambda: FakeUseCase())
     assert app.main(["workflow", "list", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == ["doc-review", "release"]
+    assert json.loads(capsys.readouterr().out) == [
+        {"slug": "doc-review", "label": "Doc review", "description": "Reviews a document."}
+    ]
 
 
 def test_build_list_workflows_wires_a_real_use_case() -> None:
@@ -1628,3 +1651,42 @@ def test_preflight_resume_cwd_blocks_and_names_a_deleted_folder(
     err = capsys.readouterr().err
     assert str(gone) in err  # the missing folder is named plainly
     assert "Traceback" not in err
+
+
+class _Tty(io.StringIO):
+    """A stdin/stdout stand-in that claims to be a terminal, so ``_tui`` builds the menu."""
+
+    def isatty(self) -> bool:
+        return True
+
+
+def test_tui_reads_the_default_client_after_the_menu_closes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A default-client switch made *inside* the menu must apply to the launch that follows it,
+    # not only to the next run of gmlw: the client is resolved after run() returns, not before.
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+
+    class _MenuSwitchingTheClient:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            self.opened_with = kwargs["current_client"]
+
+        def run(self) -> tui.MenuChoice:  # the user switches the default, then starts a job
+            path = app.config.config_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('[client]\ndefault = "codex"\n', encoding="utf-8")
+            return tui.MenuChoice(action="start", job="alpha")
+
+    monkeypatch.setattr(tui, "MenuApp", _MenuSwitchingTheClient)
+    launched: list[str] = []
+
+    def _record_launch(
+        _job: str, _resume: bool, _session: str | None, _cwd: str | None, client: str
+    ) -> int:
+        launched.append(client)
+        return 0
+
+    monkeypatch.setattr(app, "_tui_launch_job", _record_launch)
+    assert app._tui() == 0
+    assert launched == ["codex"]  # the switch just made, not the default the menu opened on

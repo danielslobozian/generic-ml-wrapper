@@ -54,15 +54,18 @@ step, the instruction is to run its script; for a judgment step, the instruction
 to decide. Revise until they agree.
 
 ### 5. Name it, and mark it finished
-Propose a short name for the workflow (lowercase letters, digits, and dashes) and confirm
-it with the user — this is the name they will `gmlw run`. Then write a `meta.json` file in
+Propose a short **label** for the workflow — a human name in ordinary words, capitals and
+spaces welcome ("Nightly ETL", "Invoice extraction") — and confirm it with the user. Then
+propose a one-line **description** of what it does. Write both to a `meta.json` file in
 your working directory:
 
 ```json
-{"name": "<the-name>", "status": "finished"}
+{"label": "<the label>", "description": "<one line>", "status": "finished"}
 ```
 
-gmlw reads this when the session ends and deploys your draft to `workflows/<name>/`.
-Tell the user the workflow is ready and how to run it (`gmlw run <name>`), then stop.
-If the name they want is already taken, gmlw will keep the draft and point them at
-`gmlw workflow edit` instead.
+gmlw derives the folder name from the label (`Nightly ETL` becomes `nightly-etl`), which
+is what the user will `gmlw run`, and keeps the label and description beside it. Do not
+write the slug yourself — write the words, and let gmlw shorten them.
+
+Tell the user the workflow is ready and how to run it, then stop. If the derived name is
+already taken, gmlw keeps the draft and points them at `gmlw workflow edit` instead.

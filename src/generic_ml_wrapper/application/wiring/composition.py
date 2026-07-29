@@ -74,6 +74,7 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteU
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
+from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import ZipWorkflowArchive
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspector,
 )
@@ -86,13 +87,17 @@ from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCo
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflow
 from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
+from generic_ml_wrapper.application.port.inbound.list_drafts import ListDrafts
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
+from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import ListWorkflowCatalog
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
@@ -113,13 +118,19 @@ from generic_ml_wrapper.application.usecase.check_client_ready import CheckClien
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
+from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
+from generic_ml_wrapper.application.usecase.list_workflow_catalog import (
+    ListWorkflowCatalogUseCase,
+)
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
@@ -314,6 +325,7 @@ def build_start_job() -> StartJob:
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
+        client_args=config.client_args_for,
     )
 
 
@@ -344,6 +356,50 @@ def build_list_sessions() -> ListSessions:
         A ready-to-run ListSessions.
     """
     return ListSessionsUseCase(store=SqliteSessionStore(_ledger()))
+
+
+def build_export_workflow() -> ExportWorkflow:
+    """Build the ExportWorkflow use case wired to the zip archive under ~/.gmlw/exports.
+
+    Returns:
+        A ready-to-run ExportWorkflow.
+    """
+    return ExportWorkflowUseCase(
+        workflows=_workflow_source(InterceptorChain(())),
+        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
+    )
+
+
+def build_import_workflow() -> ImportWorkflow:
+    """Build the ImportWorkflow use case wired to the zip archive and the backup root.
+
+    Returns:
+        A ready-to-run ImportWorkflow.
+    """
+    return ImportWorkflowUseCase(
+        workflows=_workflow_source(InterceptorChain(())),
+        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
+        backups_root=paths.WORKFLOW_BACKUPS,
+        clock=lambda: datetime.now(UTC),
+    )
+
+
+def build_list_workflow_catalog() -> ListWorkflowCatalog:
+    """Build the ListWorkflowCatalog use case wired to the filesystem workflow source.
+
+    Returns:
+        A ready-to-run ListWorkflowCatalog.
+    """
+    return ListWorkflowCatalogUseCase(workflows=_workflow_source(InterceptorChain(())))
+
+
+def build_list_drafts() -> ListDrafts:
+    """Build the ListDrafts use case wired to the filesystem workflow source.
+
+    Returns:
+        A ready-to-run ListDrafts.
+    """
+    return ListDraftsUseCase(workflows=_workflow_source(InterceptorChain(())))
 
 
 def build_list_workflows() -> ListWorkflows:
