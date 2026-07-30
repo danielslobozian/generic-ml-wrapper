@@ -155,9 +155,11 @@ down after). `CliCallerProvider.for_run(run)` resolves the caller, honouring
 
 ```python
 caller = provider.for_run(run)
-caller.start_metering()          # stand up the relay / install the status line
-try:    rc = caller.start_client()   # launch the CLI, BLOCKS until the user quits
-finally: caller.end_metering()       # tear down
+caller.start_metering()  # stand up the relay / install the status line
+try:
+    rc = caller.start_client()  # launch the CLI, BLOCKS until the user quits
+finally:
+    caller.end_metering()  # tear down
 ```
 
 `start_client` is a blocking foreground process, so **quit is the stop signal** —

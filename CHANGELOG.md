@@ -6,6 +6,32 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-07-30
+
+Personas, proven. "Personas shape tone" was an untested claim — an external evaluation
+(three independent judges, blind attribution) checked it and fed the fixes back in.
+
+### Added
+- **Persona `dimensions` in frontmatter.** Warmth, Verbosity, Formality, and Proactivity
+  move from the injected tone body into frontmatter — declared for `gmlw persona list`
+  and for evaluation, without spending context restating them on every turn.
+- **A floor invariant: persona colors prose, never artifacts.** Commit messages, code,
+  code comments, JSON, and tool arguments now read the same under every persona.
+
+### Changed
+- **Five personas tuned against evaluation findings.** `mentor` was statistically
+  indistinguishable from the client's own default voice and now leads with the
+  mechanism; `butler` dropped contractions, caps itself to one anticipatory offer, and
+  stopped fabricating facts it doesn't have; `plain`/`terse` moved from the same dial at
+  two strengths to genuinely different mechanical dials; `companion` was given a
+  "light polish" that, once all five were tested together, turned out to have traded
+  away its actual distinctiveness — reverted once the numbers showed it.
+
+### Fixed
+- **TUI pickers show workflow labels, not slugs.** Run, Edit, Export, and the List
+  screen were fed bare folder slugs; they now use the same labelled catalog that
+  `gmlw workflow list` already had.
+
 ## [0.8.2] - 2026-07-29
 
 Work that survives leaving. A codex session you can come back to, an authoring interview
@@ -476,7 +502,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.7.0...v0.8.0

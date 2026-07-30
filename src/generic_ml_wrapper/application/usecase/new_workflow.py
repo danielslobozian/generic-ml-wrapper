@@ -45,7 +45,7 @@ class NewWorkflowUseCase(NewWorkflow):
     the final name still comes from the marker.
     """
 
-    def __init__(  # noqa: PLR0913  (its outbound ports, plus the clock for the sidecar)
+    def __init__(  # noqa: PLR0913, PLR0917  (its outbound ports, plus the clock for the sidecar)
         self,
         workflows: WorkflowSourcePort,
         store: SessionStorePort,

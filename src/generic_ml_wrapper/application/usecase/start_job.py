@@ -31,7 +31,7 @@ from generic_ml_wrapper.common.client_args import split as split_client_args
 class StartJobUseCase(StartJob):
     """Resolve a session (new or resumed), optionally attach a workflow, run it."""
 
-    def __init__(  # noqa: PLR0913  (a use case binding its full set of outbound ports)
+    def __init__(  # noqa: PLR0913, PLR0917  (a use case binding its full set of outbound ports)
         self,
         store: SessionStorePort,
         workflows: WorkflowSourcePort,

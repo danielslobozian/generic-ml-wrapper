@@ -117,7 +117,7 @@ def format_age(seconds: float) -> str:
     return f"{minutes}m" if minutes else f"{whole}s"
 
 
-def render_usage_row(  # noqa: PLR0913  (one row's worth of fields)
+def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     label: str, name: str, turns: int, tokens: int, cost_usd: float, age_s: float | None = None
 ) -> str:
     """Render one usage footer row -- ``<label> <name> (age) · N turns · tok · $``.
