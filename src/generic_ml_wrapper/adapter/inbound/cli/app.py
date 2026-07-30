@@ -122,6 +122,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_workflow_chooser,
 )
 from generic_ml_wrapper.common import config, i18n, paths, settings_registry
+from generic_ml_wrapper.common.errors import DomainError
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
 from generic_ml_wrapper.common.spec_loader import SpecLoadError
@@ -793,6 +794,18 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
+def _render_error(error: Exception) -> str:
+    """Render a caught error in the active language.
+
+    A :class:`DomainError` carries its own catalogue key and params -- localising it is
+    just reading them back. Anything else reaches here only through a bug, so it falls
+    back to the generic, unlocalised shell rather than pretending to translate it.
+    """
+    if isinstance(error, DomainError):
+        return error.localized(i18n.active())
+    return i18n.t("error.generic", error=error)
+
+
 #: Commands after which another program owns the terminal — a client takes it over, or
 #: the TUI paints a full-screen surface. Diagnostics must not go to stderr for these:
 #: stderr is that program's screen, so a line written there corrupts its display and is
@@ -890,7 +903,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         CredentialsUnreadableError,
         SpecLoadError,
     ) as error:
-        print(i18n.t("error.generic", error=error), file=sys.stderr)
+        print(_render_error(error), file=sys.stderr)
         return 2
     if view is None:
         parser.print_help()
@@ -1429,7 +1442,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         try:  # a value out of range keeps the editor open with the localised reason
             outcome = config_commands.set(key, raw)
         except settings_registry.InvalidSettingValueError as error:
-            return ConfigSetResult(ok=False, message=i18n.t("error.generic", error=error))
+            return ConfigSetResult(ok=False, message=_render_error(error))
         return ConfigSetResult(
             ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
         )
@@ -1545,7 +1558,7 @@ def _tui_launch_job(
         except _Terminated:
             return 143
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(i18n.t("error.generic", error=error), file=sys.stderr)
+            print(_render_error(error), file=sys.stderr)
             return 2
     _print_exit_receipt(result)
     return result.exit_code
@@ -1580,7 +1593,7 @@ def _start(args: argparse.Namespace) -> int:
         except _Terminated:
             return 143  # 128 + SIGTERM: terminated, but teardown ran
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(i18n.t("error.generic", error=error))
+            print(_render_error(error))
             return 2
     farewell = _farewell()
     if farewell:
@@ -1632,7 +1645,7 @@ def _run_workflow(workflow: str, client: str, client_args: str | None = None) ->
         except _Terminated:
             return 143  # 128 + SIGTERM: terminated, but teardown ran
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(i18n.t("error.generic", error=error))
+            print(_render_error(error))
             return 2
     farewell = _farewell()
     if farewell:
@@ -1730,7 +1743,7 @@ def _axis(kind: AxisKind, subcommand: str | None, args: argparse.Namespace) -> i
             )
         )
     except (AxisLabelError, AxisExistsError) as error:
-        print(i18n.t("error.generic", error=error), file=sys.stderr)
+        print(_render_error(error), file=sys.stderr)
         return 2
     print(i18n.t("axis.created", kind=kind.value, label=result.label, slug=result.slug))
     if result.made_default:
@@ -1831,7 +1844,7 @@ def _config_set(commands: ConfigCommands, key: str, value: str) -> int:
         print(i18n.t("config.unknown_key", key=key), file=sys.stderr)
         return 2
     except settings_registry.InvalidSettingValueError as error:
-        print(i18n.t("error.generic", error=error), file=sys.stderr)
+        print(_render_error(error), file=sys.stderr)
         return 2
     print(_format_set_outcome(outcome))
     return 0
@@ -1923,7 +1936,7 @@ def _new_workflow(label: str | None, client: str, guided: bool, *, description: 
         print(i18n.t("workflow.new.exists", name=label), file=sys.stderr)
         return 2
     except WorkflowNameError as error:
-        print(i18n.t("error.generic", error=error))
+        print(_render_error(error))
         return 2
     _announce_new_workflow(result)
     return result.exit_code
@@ -1959,7 +1972,7 @@ def _export_workflow(name: str) -> int:
     try:
         written = build_export_workflow().execute(name)
     except (WorkflowNameError, WorkflowNotFoundError) as error:
-        print(i18n.t("error.generic", error=error))
+        print(_render_error(error))
         return 2
     print(i18n.t("workflow.export.written", path=written), file=sys.stderr)
     return 0
@@ -1992,7 +2005,7 @@ def _import_workflow(archive: str, *, replace: bool = False) -> int:
                 return 2
             result = build_import_workflow().execute(archive, replace=True)
     except (ArchiveUnreadableError, WorkflowNameError) as error:
-        print(i18n.t("error.generic", error=error))
+        print(_render_error(error))
         return 2
     if result.outcome is ImportOutcome.REPLACED:
         print(
@@ -2030,7 +2043,7 @@ def _workflow_resume(args: argparse.Namespace) -> int:
             )
         )
     except NoSuchDraftError as error:
-        print(i18n.t("draft.cannot_resume", error=error), file=sys.stderr)
+        print(i18n.t("draft.cannot_resume", error=_render_error(error)), file=sys.stderr)
         return 2
     _announce_new_workflow(result)
     return result.exit_code
@@ -2068,10 +2081,12 @@ def _edit_workflow(name: str, client: str, guided: bool, *, resume_latest: bool 
         )
         return build_edit_workflow().execute(command)
     except NoEditToResumeError as error:
-        print(i18n.t("workflow.edit.nothing_to_resume", error=error), file=sys.stderr)
+        print(
+            i18n.t("workflow.edit.nothing_to_resume", error=_render_error(error)), file=sys.stderr
+        )
         return 2
     except (WorkflowNameError, WorkflowNotFoundError) as error:
-        print(i18n.t("error.generic", error=error))
+        print(_render_error(error))
         return 2
 
 

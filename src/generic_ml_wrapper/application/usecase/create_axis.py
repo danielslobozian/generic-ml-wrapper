@@ -68,11 +68,9 @@ class CreateAxisUseCase(CreateAxis):
         """
         slug = slugify(command.label)
         if not slug:
-            message = f"cannot derive a slug from label: {command.label!r}"
-            raise AxisLabelError(message)
+            raise AxisLabelError("error.axis.label_invalid", label=command.label)
         if self._catalog.exists(command.kind, slug):
-            message = f"{command.kind.value} already exists: {slug!r}"
-            raise AxisExistsError(message)
+            raise AxisExistsError(f"error.axis.exists.{command.kind.value}", slug=slug)
         self._catalog.create(
             command.kind, slug, command.label, command.description, self._clock().isoformat()
         )

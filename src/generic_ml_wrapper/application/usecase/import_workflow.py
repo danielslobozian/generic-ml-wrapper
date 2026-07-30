@@ -59,8 +59,7 @@ class ImportWorkflowUseCase(ImportWorkflow):
         """Import a workflow from an archive."""
         source = Path(archive)
         if not source.is_file():
-            message = f"no such archive: {archive}"
-            raise ArchiveUnreadableError(message)
+            raise ArchiveUnreadableError("error.archive.not_found", archive=archive)
         name = self._name_from(source)
         self._workflows.seed()
         target = Path(self._workflows.folder(name))
@@ -72,8 +71,7 @@ class ImportWorkflowUseCase(ImportWorkflow):
         backup = self._displace(name, target) if target.exists() else None
         self._archive.unpack(source, target)
         if not (target / _STEPS).is_file():
-            message = f"{archive} carries no {_STEPS}"
-            raise ArchiveUnreadableError(message)
+            raise ArchiveUnreadableError("error.archive.no_workflow", archive=archive, steps=_STEPS)
         outcome = ImportOutcome.REPLACED if backup else ImportOutcome.IMPORTED
         return ImportWorkflowResult(outcome, name, str(target), backup)
 
@@ -91,10 +89,9 @@ class ImportWorkflowUseCase(ImportWorkflow):
         try:
             WorkflowName(stem)
         except IdentifierError as error:
-            raise WorkflowNameError(str(error)) from error
+            raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if stem in _RESERVED:
-            message = f"reserved workflow name: {stem!r}"
-            raise WorkflowNameError(message)
+            raise WorkflowNameError("error.workflow.reserved_name", name=stem)
         return stem
 
     def _displace(self, name: str, target: Path) -> str:

@@ -349,46 +349,22 @@ attribution) checked the claim and fed the fixes back in. Not a harness built in
 
 ## Planned
 
-### 0.9.1 — personas, multilingual (and the harness, for real)
-0.9.0's tuning came from a manual, external evaluation, run by hand. This release makes
-that a real, repeatable part of gmlw, and finishes the two things that couldn't happen
-before the personas were proven apart: multilingual content and previews.
+### 0.9.1 — i18n, the remaining gaps
+0.8.0 was a sweep, not a permanent guarantee — new code lands after a sweep ends, and the
+AST drift guard only catches what it was built to catch. This release re-audits the app
+against the 0.8.0 bar and closes what has slipped through since: literals introduced by
+code that landed after the sweep, and any call-site shape the guard doesn't recognise yet.
 
-- **A persona evaluation harness, in-repo** — run every persona against a fixed question
-  set and compare. Two design calls, both deliberate:
-  - **Questions curated against the declared dimensions, not scraped.** Generic benchmark
-    sets measure *correctness* and would show almost no tone variance. The set probes
-    `Warmth · Verbosity · Formality · Proactivity` directly, plus the high-divergence
-    moments — being corrected, delivering bad news, being handed a half-formed request.
-  - **A distinctness metric, not eyeballing.** A judge scores each answer on the declared
-    dimensions and yields a **pairwise distance matrix**, so a collapsed pair is named
-    rather than sensed. Runs go through **generic-ml-cache**, so re-running one persona
-    after a tweak replays the other four for free and keeps iterations deterministic and
-    diffable.
-- **Persona content becomes multilingual** — required for previews in French, and a real
-  gap today: only the *prompt header* is localised, so a French user gets an English
-  description and an **English greeting at every launch**. This is not a strings port:
-  French carries a `tu`/`vous` register English cannot express, and a butler is *defined*
-  by register — so the directives themselves need per-language authoring, not translation.
-  - Layout: a **folder per persona** — a language-neutral `body.md` (dimensions, do/don't)
-    plus `en.md` / `fr.md` carrying description, greeting, register notes, and samples.
-  - **A flat `<name>.md` must keep working.** Users author personas by dropping a file in
-    `~/.gmlw/personas/`; a folder gets the full treatment, a flat file behaves as it does
-    today (English, no samples, falls back to its description). Breaking user-authored
-    personas to gain previews would be a bad trade.
-- **Previews, as a byproduct** — once the answers are generated, reviewed, and committed as
-  data, the first-run chooser can show a real sample line per persona. It stays **static** at
-  runtime: generated at authoring time, read from disk, **zero tokens and zero latency**, so
-  choosing still costs nothing. Length forces a split — one short line inline in the chooser,
-  the full side-by-side behind `gmlw persona preview`. Samples are labelled as indicative:
-  they come from one model at authoring time, and the user's client may differ.
-- **Per-workflow persona, composed as voice over method** — a workflow can carry its own
-  persona instead of the single global tone. Persona is **manner**; the facilitative +
-  constructive authoring behavior (0.6.0) is **method**. They compose by layer: the method
-  lives in the mode floor (guaranteed, persona-independent), and the persona colors delivery
-  on top — it can voice the invariants but not break them. Personas carry an
-  **authoring-friendliness** expectation, so a voice built around brutal efficiency can't
-  sabotage the facilitation.
+- **Re-sweep everything added since 0.8.0** — every `print` / `log.*` / argparse
+  `help`/`description`/`epilog`/`metavar` / Textual `Binding` call site introduced by code
+  that landed after commit `e3f120f`, checked against the same bar the 0.8.0 sweep set.
+- **Close drift-guard blind spots** — find call-site shapes the AST guard in
+  `tests/test_no_untranslated_literals.py` doesn't check today (f-strings built from
+  literals, string concatenation, literals passed through a helper before reaching a
+  logged/printed call) and either catch them mechanically or fix them by hand.
+- **Re-run the EN/FR key-parity and registry-coverage checks** — confirm no new setting
+  or catalogue drift crept in since 0.8.0, and extend the guard so the same class of gap
+  fails the build going forward rather than needing another manual re-audit.
 
 ### 0.10.0 — the documentation release
 The docs grew alongside the features: seven files under `docs/` plus a README that has absorbed

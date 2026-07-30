@@ -105,12 +105,13 @@ class StartJobUseCase(StartJob):
             # all; others (codex) can, but only a session whose client-side id we managed
             # to learn — one that died before its first turn, or was deleted client-side,
             # has none. Say which, because the fixes are not the same.
-            message = (
-                f"session resume not supported on {run.client}"
-                if run.uuid is None
-                else f"{run.session_id} cannot be resumed: {run.client} no longer has it"
+            if run.uuid is None:
+                raise ResumeNotSupportedError(
+                    "error.workflow.resume_unsupported", client=run.client
+                )
+            raise ResumeNotSupportedError(
+                "error.workflow.resume_lost", session_id=run.session_id, client=run.client
             )
-            raise ResumeNotSupportedError(message)
         # Persist only once every precondition (workflow, caller, resume) has passed, so
         # a rejected start never leaves a ghost session that burns an id and could be resumed.
         if session is not None:
@@ -179,8 +180,7 @@ class StartJobUseCase(StartJob):
     def _attach_workflow(self, run: RunContext, workflow: str) -> RunContext:
         self._workflows.seed()
         if not self._workflows.exists(workflow):
-            message = f"unknown workflow: {workflow!r}"
-            raise UnknownWorkflowError(message)
+            raise UnknownWorkflowError("error.workflow.unknown", name=workflow)
         kickoff = (
             f"You are running the {workflow!r} workflow for {run.job}. Orient first — "
             "read your context, look at what already exists, report where things stand, "

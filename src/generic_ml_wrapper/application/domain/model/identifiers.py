@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import re
 
+from generic_ml_wrapper.common.errors import DomainError
+
 # A job id is a single safe path segment: letters, digits, '-' and '_', starting
 # with a letter or digit, at most 64 chars. No '.', '/', '\\', or NUL -- so no
 # '..' traversal, no absolute path, no separator can reach a filesystem path.
@@ -24,7 +26,7 @@ _WORKFLOW_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 _ENV_VAR_NAME = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
 
-class IdentifierError(ValueError):
+class IdentifierError(DomainError, ValueError):
     """Raised when a string is not a valid identifier of its kind."""
 
 
@@ -36,11 +38,7 @@ class JobId(str):
     def __new__(cls, value: str) -> JobId:
         """Return the validated job id, or raise :class:`IdentifierError`."""
         if not _JOB_ID.match(value):
-            message = (
-                f"invalid job id {value!r}: allowed characters are letters, digits, "
-                "'-' and '_'; it must start with a letter or digit and be at most 64 characters"
-            )
-            raise IdentifierError(message)
+            raise IdentifierError("error.identifier.job_id", value=value)
         return super().__new__(cls, value)
 
 
@@ -52,11 +50,7 @@ class WorkflowName(str):
     def __new__(cls, value: str) -> WorkflowName:
         """Return the validated workflow name, or raise :class:`IdentifierError`."""
         if not _WORKFLOW_NAME.match(value):
-            message = (
-                f"invalid workflow name {value!r}: allowed characters are lowercase "
-                "letters, digits and '-'; it must start with a letter or digit"
-            )
-            raise IdentifierError(message)
+            raise IdentifierError("error.identifier.workflow_name", value=value)
         return super().__new__(cls, value)
 
 
@@ -68,9 +62,5 @@ class EnvVarName(str):
     def __new__(cls, value: str) -> EnvVarName:
         """Return the validated env-var name, or raise :class:`IdentifierError`."""
         if not _ENV_VAR_NAME.match(value):
-            message = (
-                f"invalid environment-variable name {value!r}: allowed characters are "
-                "letters, digits and '_'; it must not start with a digit"
-            )
-            raise IdentifierError(message)
+            raise IdentifierError("error.identifier.env_var_name", value=value)
         return super().__new__(cls, value)

@@ -7,6 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from generic_ml_wrapper.common.errors import DomainError
+
 
 @dataclass(frozen=True)
 class EditWorkflowCommand:
@@ -28,11 +30,11 @@ class EditWorkflowCommand:
     resume_latest: bool = False
 
 
-class WorkflowNotFoundError(ValueError):
+class WorkflowNotFoundError(DomainError, ValueError):
     """Raised when the workflow to edit does not exist."""
 
 
-class NoEditToResumeError(ValueError):
+class NoEditToResumeError(DomainError, ValueError):
     """Raised when a resume was asked for and the workflow has no reopenable session."""
 
 

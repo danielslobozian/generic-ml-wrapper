@@ -11,7 +11,10 @@ This closes that half:
 1. **No literal at a message call site.** ``print``, ``log.*``, argparse help/metavar,
    and Textual key bindings must resolve their text through ``i18n.t``.
 2. **Every key used exists.** A ``t("...")`` call naming a key no catalogue defines
-   renders as the raw key to the user — silent, and invisible to parity.
+   renders as the raw key to the user — silent, and invisible to parity. The same check
+   covers a :class:`~generic_ml_wrapper.common.errors.DomainError` subclass raised with a
+   literal catalogue key (0.9.1): the key is exactly as checkable as a ``t()`` call, since
+   :meth:`DomainError.localized` is just ``loc.t(self.catalogue_key, **self.params)``.
 3. **Every setting is described.** A new registry field must arrive with its
    ``setting.<key>`` entry, since its description is a key resolved at render time.
 
@@ -29,7 +32,9 @@ from importlib import resources
 from pathlib import Path
 
 import generic_ml_wrapper
+import generic_ml_wrapper.adapter.inbound.cli.app  # pyright: ignore[reportUnusedImport]
 from generic_ml_wrapper.common import settings_registry
+from generic_ml_wrapper.common.errors import DomainError
 from generic_ml_wrapper.common.i18n import SUPPORTED_LANGUAGES
 
 SRC = Path(generic_ml_wrapper.__file__).parent
@@ -53,6 +58,20 @@ def _catalogue(lang: str) -> dict[str, str]:
 
 def _rel(path: Path) -> str:
     return path.relative_to(SRC).as_posix()
+
+
+def _domain_error_subclass_names() -> frozenset[str]:
+    """Every :class:`DomainError` subclass name reachable from the app's entry point.
+
+    Importing the CLI app (above) pulls in every port/usecase module, so every subclass
+    has registered itself with Python by the time this walks ``__subclasses__``.
+    """
+
+    def _all(cls: type) -> set[type]:
+        direct = set(cls.__subclasses__())
+        return direct | {grandchild for child in direct for grandchild in _all(child)}
+
+    return frozenset(cls.__name__ for cls in _all(DomainError))
 
 
 def _literals_outside_t(node: ast.AST) -> list[str]:
@@ -127,8 +146,10 @@ def test_no_user_facing_literal_at_a_message_call_site() -> None:
 
 def test_every_key_used_in_the_code_exists_in_the_catalogue() -> None:
     # A key that never reached the catalogue renders as the raw key to the user, and key
-    # parity cannot see it: both languages are equally missing it.
+    # parity cannot see it: both languages are equally missing it. A DomainError subclass
+    # raised with a literal key is the same failure mode, so it is checked the same way.
     english = _catalogue("en")
+    domain_errors = _domain_error_subclass_names()
     unknown: list[str] = []
     for path in sorted(SRC.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -137,7 +158,7 @@ def test_every_key_used_in_the_code_exists_in_the_catalogue() -> None:
                 continue
             func = node.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-            if name != "t" or not node.args:
+            if (name != "t" and name not in domain_errors) or not node.args:
                 continue
             first = node.args[0]
             # Only literal keys are checkable; a computed key is checked by its callers.
@@ -147,7 +168,9 @@ def test_every_key_used_in_the_code_exists_in_the_catalogue() -> None:
                 and first.value not in english
             ):
                 unknown.append(f"{_rel(path)}:{node.lineno}  {first.value!r}")
-    assert not unknown, "i18n.t() called with keys absent from en.json:\n  " + "\n  ".join(unknown)
+    assert not unknown, (
+        "i18n.t()/DomainError raised with keys absent from en.json:\n  " + "\n  ".join(unknown)
+    )
 
 
 def test_every_setting_has_a_localised_description() -> None:

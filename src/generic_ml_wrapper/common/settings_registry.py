@@ -34,6 +34,7 @@ from pydantic_settings import (
 )
 
 from generic_ml_wrapper.common import i18n, paths
+from generic_ml_wrapper.common.errors import DomainError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -212,7 +213,7 @@ class UnknownSettingError(KeyError):
         return f"unknown setting {self.key!r}"
 
 
-class InvalidSettingValueError(ValueError):
+class InvalidSettingValueError(DomainError, ValueError):
     """Raised when a value is not valid for a setting (bad type or not an allowed value)."""
 
     def __init__(self, key: str, value: str, choices: tuple[str, ...] | None) -> None:
@@ -226,8 +227,12 @@ class InvalidSettingValueError(ValueError):
         self.key = key
         self.value = value
         self.choices = choices
-        allowed = f" (allowed: {', '.join(choices)})" if choices else ""
-        super().__init__(f"invalid value {value!r} for {key}{allowed}")
+        if choices:
+            super().__init__(
+                "error.setting.invalid_choice", key=key, value=value, choices=", ".join(choices)
+            )
+        else:
+            super().__init__("error.setting.invalid_value", key=key, value=value)
 
 
 @dataclass(frozen=True)

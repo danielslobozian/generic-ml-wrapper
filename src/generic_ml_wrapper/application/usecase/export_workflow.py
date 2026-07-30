@@ -37,12 +37,10 @@ class ExportWorkflowUseCase(ExportWorkflow):
         try:
             WorkflowName(name)
         except IdentifierError as error:
-            raise WorkflowNameError(str(error)) from error
+            raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
-            message = f"reserved workflow name: {name!r}"
-            raise WorkflowNameError(message)
+            raise WorkflowNameError("error.workflow.reserved_name", name=name)
         self._workflows.seed()
         if not self._workflows.exists(name):
-            message = f"unknown workflow: {name!r}"
-            raise WorkflowNotFoundError(message)
+            raise WorkflowNotFoundError("error.workflow.not_found", name=name)
         return str(self._archive.pack(Path(self._workflows.folder(name)), name))
