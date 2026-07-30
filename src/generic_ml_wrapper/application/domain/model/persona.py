@@ -5,10 +5,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 
-_NO_DIMENSIONS: Mapping[str, str] = MappingProxyType({})
+
+def _no_dimensions() -> Mapping[str, str]:
+    """The default for a persona that declares no dimensions.
+
+    A plain ``MappingProxyType({})`` class-level default is rejected by Python 3.11's
+    dataclass field check (fixed in 3.12+, but 3.11 is still a supported floor) — a
+    ``default_factory`` sidesteps that check entirely, on every supported version.
+    """
+    return MappingProxyType({})
 
 
 @dataclass(frozen=True)
@@ -32,4 +40,4 @@ class Persona:
     description: str
     greeting: str
     body: str
-    dimensions: Mapping[str, str] = _NO_DIMENSIONS
+    dimensions: Mapping[str, str] = field(default_factory=_no_dimensions)
