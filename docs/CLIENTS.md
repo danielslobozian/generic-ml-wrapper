@@ -3,9 +3,9 @@
 `gmlw` drives four coding CLIs behind one surface: `--client claude | cursor | codex | vibe`
 (default set by `[client] default` in config). The commands you run — `gmlw start`,
 `gmlw jobs`, `gmlw export` — are identical whichever client you pick. But the clients are
-not identical. What the wrapper can meter, resume, render into a status line, or deliver
-context through depends entirely on the underlying tool's API and CLI. This page is the
-per-client truth.
+not identical, and *why* is explained once in
+[CONCEPTS.md § Why client capabilities differ](CONCEPTS.md#why-client-capabilities-differ).
+This page is the concrete per-client matrix and setup.
 
 Each caller declares three capability flags — `can_meter_per_call`, `can_resume`,
 `can_deliver_statusline` — and the wrapper adapts to them. Read the matrix, then the
@@ -134,6 +134,7 @@ same throwaway-`VIBE_HOME` relay path used for metering.
 
 ## See also
 
+- [CONCEPTS.md](CONCEPTS.md) — why these capabilities differ across clients.
 - [CONFIGURATION.md](CONFIGURATION.md) — `[client] default`, `[callers]`, interceptors, and
   the startup context matrix.
 - [WORKFLOWS.md](WORKFLOWS.md) — how compiled context and workflows are assembled and injected.

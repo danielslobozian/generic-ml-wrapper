@@ -25,7 +25,7 @@ Run **claude**, **cursor**, **codex**, or **vibe** exactly as you know them — 
 
 <br>
 
-[Why a wrapper](#why-a-wrapper) &nbsp;•&nbsp; [Clients](#clients-at-a-glance) &nbsp;•&nbsp; [The job](#the-job) &nbsp;•&nbsp; [Install](#install) &nbsp;•&nbsp; [Workflows](#workflows) &nbsp;•&nbsp; [What it records](#what-it-records) &nbsp;•&nbsp; [Guides](#guides) &nbsp;•&nbsp; [Design](docs/DESIGN.md)
+[Why a wrapper](#why-a-wrapper) &nbsp;•&nbsp; [Clients](#clients-at-a-glance) &nbsp;•&nbsp; [The job](#the-job) &nbsp;•&nbsp; [Install](#install) &nbsp;•&nbsp; [Workflows](#workflows) &nbsp;•&nbsp; [What it records](#what-it-records) &nbsp;•&nbsp; [Concepts](docs/CONCEPTS.md) &nbsp;•&nbsp; [Guides](#guides) &nbsp;•&nbsp; [Design](docs/DESIGN.md)
 
 </div>
 
@@ -128,14 +128,7 @@ For **Claude Code** and **Cursor**, the wrapper renders a rich status line strai
 
 ## Your operating context, carried across clients
 
-Beyond metering, `gmlw` builds a portable operating context that follows you from one client to the next — none of it locked inside a single tool:
-
-- **Profile & company** — who you are and your project's conventions (`profile/me`, `profile/company`), composed into every session.
-- **Learned notebook** — what your tools notice about how you work, in one file they all mirror into; negatives ("what to avoid") are first-class.
-- **Personas** — a selectable tone with a free, local greeting at launch (`gmlw persona list`).
-- **Rules** — corrections you've demanded, captured as reusable reflexes and filed by axis: the environment's constraints (`~/.gmlw/environments/<env>/rules/`) or your role's craft preferences (`~/.gmlw/profile/roles/<role>/rules/`). Browse them with `gmlw tui` → Rules.
-- **Mode-aware packaging** — a `[startup.<mode>]` matrix decides which sources compose for a plain session, a workflow, or authoring, with optional typed compression.
-- **Plugins & overrides** — swap a client's caller by id (`gmlw plugins list`, `[callers]`).
+Beyond metering, `gmlw` builds a portable operating context that follows you from one client to the next — who you are, your project's conventions, a learned notebook, a selectable persona, and rules you've demanded be held to — composed from four independent axes and packaged per launch mode. See [docs/CONCEPTS.md](docs/CONCEPTS.md) for the full model.
 
 Workflows (above) are *optional* and separate from this personal layer. Every listing/reporting command also speaks `--json` for automation.
 
@@ -148,13 +141,13 @@ Workflows (above) are *optional* and separate from this personal layer. Every li
 
 ## Guides
 
-- [User guide](docs/USER_GUIDE.md) — task-oriented, first launch through daily work.
-- [CLI reference](docs/CLI.md) — every command, flag, and `--json` option.
-- [Configuration](docs/CONFIGURATION.md) — every `config.toml` section, with examples.
-- [Clients](docs/CLIENTS.md) — per-client behaviour, setup, and limitations.
-- [Workflows](docs/WORKFLOWS.md) — authoring, layout, scripts, rules, credentials.
-- [Troubleshooting](docs/TROUBLESHOOTING.md) — failures, diagnostics, reset/recovery.
-- [Design](docs/DESIGN.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
+See **[docs/README.md](docs/README.md)** for the full map. Start with
+[Concepts](docs/CONCEPTS.md) for the mental model, then the
+[User guide](docs/USER_GUIDE.md) for task-oriented recipes, or jump straight to the
+[CLI reference](docs/CLI.md) · [Configuration](docs/CONFIGURATION.md) ·
+[Clients](docs/CLIENTS.md) · [Workflows](docs/WORKFLOWS.md) ·
+[Troubleshooting](docs/TROUBLESHOOTING.md) · [Design](docs/DESIGN.md) ·
+[Security](SECURITY.md) · [Contributing](CONTRIBUTING.md).
 
 ## Develop
 

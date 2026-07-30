@@ -6,7 +6,7 @@
 # Seeds a throwaway ~/.gmlw ledger + a demo git repo in a temp $HOME (nothing
 # touches your real ~/.gmlw), then renders each tape with charmbracelet/vhs.
 # No client is launched and no network call is made -- the demos exercise only
-# the read/render paths (jobs/sessions/export and the status line).
+# the read/render paths (jobs/sessions/export, the status line, and built-in help).
 #
 # Requires: vhs, ffmpeg, git, and `gmlw` resolvable (activate the dev env, e.g.
 # `uv sync --extra dev` then the project's venv, or set GMLW_BIN=/path/to/gmlw).
@@ -45,5 +45,6 @@ export PATH="$(dirname "$gmlw_bin"):$PATH"
 
 vhs docs/tapes/usage.tape
 vhs docs/tapes/statusline.tape
+vhs docs/tapes/help.tape
 
-echo "wrote docs/images/gmlw-usage.gif and docs/images/gmlw-statusline.gif"
+echo "wrote docs/images/gmlw-usage.gif, gmlw-statusline.gif, and gmlw-help.gif"
