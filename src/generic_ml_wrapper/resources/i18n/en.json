@@ -249,6 +249,8 @@
   "tui.wf.list": "List",
   "tui.wf.export": "Export",
   "tui.wf.import": "Import",
+  "tui.wf.export.d": "Pack a workflow into a .zip to share",
+  "tui.wf.import.d": "Install a workflow from a .zip",
   "tui.wf.list.d": "Browse the runnable workflows",
   "tui.wf.none": "No workflows yet — create one with Workflow > Create.",
   "tui.wf.invalid": "lowercase letters, digits and dashes; must start with a letter or digit",

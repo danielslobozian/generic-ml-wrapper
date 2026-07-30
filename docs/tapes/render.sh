@@ -6,10 +6,12 @@
 # Seeds a throwaway ~/.gmlw ledger + a demo git repo in a temp $HOME (nothing
 # touches your real ~/.gmlw), then renders each tape with charmbracelet/vhs.
 # No client is launched and no network call is made -- the demos exercise only
-# the read/render paths (jobs/sessions/export, the status line, and built-in help).
+# the read/render paths (jobs/sessions/export, the status line, built-in help, and
+# a browse-only tour of the TUI's read-only screens).
 #
-# Requires: vhs, ffmpeg, git, and `gmlw` resolvable (activate the dev env, e.g.
-# `uv sync --extra dev` then the project's venv, or set GMLW_BIN=/path/to/gmlw).
+# Requires: vhs, ffmpeg, git, ttyd (a VHS dependency), and `gmlw` resolvable
+# (activate the dev env, e.g. `uv sync --extra dev` then the project's venv, or set
+# GMLW_BIN=/path/to/gmlw).
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -25,7 +27,7 @@ py="$(dirname "$gmlw_bin")/python"
 demo="$(mktemp -d)"
 trap 'rm -rf "$demo"' EXIT
 
-# 1. Seed the ledger (job REFACTOR-42 with sessions/turns/costs).
+# 1. Seed the ledger (job REFACTOR-42 with sessions/turns/costs) and one workflow.
 "$py" docs/tapes/seed.py "$demo" >/dev/null
 
 # 2. A clean demo git repo so the status line has a real branch to show.
@@ -46,5 +48,6 @@ export PATH="$(dirname "$gmlw_bin"):$PATH"
 vhs docs/tapes/usage.tape
 vhs docs/tapes/statusline.tape
 vhs docs/tapes/help.tape
+vhs docs/tapes/tui.tape
 
-echo "wrote docs/images/gmlw-usage.gif, gmlw-statusline.gif, and gmlw-help.gif"
+echo "wrote docs/images/gmlw-usage.gif, gmlw-statusline.gif, gmlw-help.gif, and gmlw-tui.gif"
