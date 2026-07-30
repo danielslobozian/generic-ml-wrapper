@@ -146,6 +146,19 @@ Two equivalent knobs, `warning` by default:
 Levels are `debug | info | warning | error`. Debug is the right setting when diagnosing
 any of the issues above. See [CONFIGURATION.md](CONFIGURATION.md).
 
+## How do I turn off the exit-receipt tips or the update notice?
+
+Both are on by default and both are one config key:
+
+```
+gmlw config set hints.show false
+gmlw config set update.check false
+```
+
+The update check is also cached and rate-limited on its own (at most once every 24
+hours) — turning it off just stops that check from ever running. See
+[CONFIGURATION.md](CONFIGURATION.md).
+
 ## See also
 
 - [CONCEPTS.md](CONCEPTS.md) · [CLIENTS.md](CLIENTS.md) · [WORKFLOWS.md](WORKFLOWS.md)

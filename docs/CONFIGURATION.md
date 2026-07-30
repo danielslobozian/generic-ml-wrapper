@@ -324,6 +324,38 @@ max_bytes = 1048576
 backup_count = 5
 ```
 
+## `[hints]`
+
+Controls the exit receipt's usage-driven tips — one shown per launched session, each
+only once ever (which have been shown is tracked in a small state file under
+`~/.gmlw/state/`).
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `show` | show one tip on the exit receipt | `true` |
+
+```toml
+[hints]
+show = false
+```
+
+## `[update]`
+
+Controls the exit receipt's "a newer gmlw is out" notice. At most once every 24
+hours, `gmlw` asks PyPI for the latest published version (a cached, best-effort
+`GET` — never blocking, never breaking the receipt on failure) and prints the
+`uv tool upgrade generic-ml-wrapper` line when a newer one exists. The last check is
+cached at `~/.gmlw/state/update-check.json`.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `check` | check PyPI for a newer release | `true` |
+
+```toml
+[update]
+check = false
+```
+
 ## See also
 
 - [CONCEPTS.md](CONCEPTS.md) — the four context axes and rules these keys configure.

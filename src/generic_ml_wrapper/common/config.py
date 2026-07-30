@@ -81,6 +81,7 @@ def current_values(path: Path | None = None) -> dict[str, object]:
         "compress.model": compress_settings.model,
         "compress.effort": compress_settings.effort,
         "hints.show": hints_show(path),
+        "update.check": update_check(path),
         "ambient.capability_card": ambient_capability_card(path),
     }
 
@@ -95,6 +96,19 @@ def hints_show(path: Path | None = None) -> bool:
         The ``[hints] show`` value, or ``True`` when unset.
     """
     value = _table(_load(path), "hints").get("show")
+    return value if isinstance(value, bool) else True
+
+
+def update_check(path: Path | None = None) -> bool:
+    """Return whether to check PyPI for a newer release (``[update] check``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[update] check`` value, or ``True`` when unset.
+    """
+    value = _table(_load(path), "update").get("check")
     return value if isinstance(value, bool) else True
 
 

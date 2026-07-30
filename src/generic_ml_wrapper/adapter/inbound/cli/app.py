@@ -93,6 +93,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
+    build_check_for_update,
     build_config_commands,
     build_create_axis,
     build_diagnostics,
@@ -1707,6 +1708,9 @@ def _print_exit_receipt(result: StartJobResult) -> None:
         log.debug(i18n.t("log.receipt_failed", error=error))
     print(loc.t("receipt.resume", job=result.job), file=sys.stderr)
     print(loc.t("receipt.report", job=result.job), file=sys.stderr)
+    latest = build_check_for_update().execute()
+    if latest:
+        print(loc.t("receipt.update", latest=latest, current=__version__), file=sys.stderr)
     tip = next_hint(loc)
     if tip:
         print(tip, file=sys.stderr)
