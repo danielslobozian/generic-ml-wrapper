@@ -10,14 +10,16 @@ from generic_ml_wrapper.application.domain.model.persona import Persona
 
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
 _QUOTED_MIN_LEN = 2  # a quoted value is at least the opening and closing quote
+_DIMENSION_SEP = "·"  # separates the axes on the single ``dimensions:`` line
 
 
 def parse_persona(fallback_name: str, text: str) -> Persona:
     """Parse a persona file into its metadata and tone body.
 
     The optional leading ``---`` frontmatter supplies ``name``/``description``/
-    ``greeting`` (simple ``key: value`` lines, values optionally quoted); everything
-    after it is the tone body. A file with no frontmatter is all body.
+    ``greeting``/``dimensions`` (simple ``key: value`` lines, values optionally quoted);
+    everything after it is the tone body. A file with no frontmatter is all body — as is
+    a persona that predates ``dimensions``, which simply declares none.
 
     Args:
         fallback_name: The name to use when frontmatter omits ``name`` (the file stem).
@@ -35,7 +37,22 @@ def parse_persona(fallback_name: str, text: str) -> Persona:
         description=meta.get("description", ""),
         greeting=meta.get("greeting", ""),
         body=match.group(2).strip(),
+        dimensions=_parse_dimensions(meta.get("dimensions", "")),
     )
+
+
+def _parse_dimensions(value: str) -> dict[str, str]:
+    """Split an ``Axis: level · Axis: level`` line into its named axes.
+
+    Parts without a ``:``, or with an empty axis or level, are skipped — a malformed
+    dimensions line costs its own axes, never the rest of the persona.
+    """
+    dimensions: dict[str, str] = {}
+    for part in value.split(_DIMENSION_SEP):
+        axis, separator, level = part.partition(":")
+        if separator and axis.strip() and level.strip():
+            dimensions[axis.strip()] = level.strip()
+    return dimensions
 
 
 def _parse_meta(block: str) -> dict[str, str]:
