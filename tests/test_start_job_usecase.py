@@ -162,7 +162,7 @@ class RecordingHook(Hook):
         self._log.append(f"{context.phase.value}:{context.client}:{context.exit_code}")
 
 
-def _use_case(  # noqa: PLR0913  (mirrors the use case's full port set, plus the greeting)
+def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set, plus the greeting)
     store: FakeStore,
     provider: FakeProvider,
     workflows: FakeWorkflows | None = None,

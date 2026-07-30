@@ -56,7 +56,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
     injected startup policy.
     """
 
-    def __init__(  # noqa: PLR0913  (a composition adapter binding several ~/.gmlw roots)
+    def __init__(  # noqa: PLR0913, PLR0917  (a composition adapter binding several ~/.gmlw roots)
         self,
         root: Path,
         profile_root: Path | None = None,

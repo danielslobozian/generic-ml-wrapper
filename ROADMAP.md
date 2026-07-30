@@ -325,45 +325,51 @@ A session, an interview, a workflow — none of them should end because you did.
   picker's first row is really selected, and Config → Clients sets the default rather than
   just listing.
 
+### 0.9.0 — personas, proven
+Going in, "personas shape tone" was an **untested claim**. A persona ships a tone block, but
+nothing demonstrated that `mentor` and `terse` actually answer differently — and the tone
+block is injected *on top of* each client's own system prompt, which could simply swamp it.
+An external, manual evaluation (three independent judges — Claude, codex, composer — blind
+attribution) checked the claim and fed the fixes back in. Not a harness built into gmlw yet
+— a one-time pass whose *outcome* shipped; the reusable harness itself is 0.9.1.
+
+- **Persona `dimensions` move into frontmatter** — Warmth · Verbosity · Formality ·
+  Proactivity, declared for `gmlw persona list` and for evaluation, without spending
+  context restating them on every turn.
+- **A floor invariant: persona colors prose, never artifacts** — commit messages, code,
+  code comments, JSON, and tool arguments read the same under every persona.
+- **Five personas tuned against what the judges found** — `mentor` was statistically
+  indistinguishable from the client's own default voice and now leads with the mechanism;
+  `butler` dropped contractions, caps itself to one anticipatory offer, and stopped
+  fabricating facts it doesn't have; `plain`/`terse` moved from the same dial at two
+  strengths to genuinely different mechanical dials; `companion` was given a "light polish"
+  that — found only once all five were finally tested together — traded away its actual
+  distinctiveness (warmth) for a generic efficiency habit, and was reverted once the numbers
+  showed it.
+
 ## Planned
 
-### 0.9.0 — personas, proven (and multilingual)
-Today "personas shape tone" is an **untested claim**. A persona ships a tone block, but
-nothing demonstrates that `mentor` and `terse` actually answer differently — and the tone
-block is injected *on top of* each client's own system prompt, which may simply swamp it.
-This release makes the claim falsifiable first, then builds on it. Its own initiative: it
-is an evaluation loop, not a feature.
+### 0.9.1 — personas, multilingual (and the harness, for real)
+0.9.0's tuning came from a manual, external evaluation, run by hand. This release makes
+that a real, repeatable part of gmlw, and finishes the two things that couldn't happen
+before the personas were proven apart: multilingual content and previews.
 
-- **A persona evaluation harness** — the core of the release. Run every persona against a
-  fixed question set and compare. Two design calls, both deliberate:
+- **A persona evaluation harness, in-repo** — run every persona against a fixed question
+  set and compare. Two design calls, both deliberate:
   - **Questions curated against the declared dimensions, not scraped.** Generic benchmark
-    sets measure *correctness* and would show almost no tone variance. Each persona already
-    declares `Warmth · Verbosity · Formality · Proactivity`, so the set probes exactly those,
-    plus the high-divergence moments — being corrected, delivering bad news, being handed a
-    half-formed request.
+    sets measure *correctness* and would show almost no tone variance. The set probes
+    `Warmth · Verbosity · Formality · Proactivity` directly, plus the high-divergence
+    moments — being corrected, delivering bad news, being handed a half-formed request.
   - **A distinctness metric, not eyeballing.** A judge scores each answer on the declared
-    dimensions and yields a **pairwise distance matrix**, so collapsed pairs are named rather
-    than sensed (`plain`/`terse` and `companion`/`mentor` are the likely offenders). Runs go
-    through **generic-ml-cache**, so re-running one persona after a tweak replays the other
-    four for free and keeps iterations deterministic and diffable.
-- **Tune until distinct** — the back-and-forth the harness exists to serve: adapt each tone
-  block, re-run, watch the matrix separate. The honest possible outcome is that personas must
-  become **bolder** to survive a client's own voice — or that they differentiate on some
-  clients and not others. That finding is a deliverable, not a failure.
-- **Per-workflow persona, composed as voice over method** — a workflow can carry its own
-  persona instead of the single global tone. Persona is **manner**; the facilitative +
-  constructive authoring behavior (0.6.0) is **method**. They compose by layer: the method
-  lives in the mode floor (guaranteed, persona-independent), and the persona colors delivery
-  on top — it can voice the invariants but not break them. Personas carry an
-  **authoring-friendliness** expectation, so a voice built around brutal efficiency can't
-  sabotage the facilitation. *Landed here, after the harness proves the personas actually
-  differ* — layering per-workflow persona on top of personas that collapse would build on
-  sand, so composition follows the proof rather than preceding it.
-- **Persona content becomes multilingual** — required for previews in French, and a real gap
-  today: only the *prompt header* is localised, so a French user gets an English description
-  and an **English greeting at every launch**. This is not a strings port: French carries a
-  `tu`/`vous` register English cannot express, and a butler is *defined* by register — so the
-  directives themselves need per-language authoring, not translation.
+    dimensions and yields a **pairwise distance matrix**, so a collapsed pair is named
+    rather than sensed. Runs go through **generic-ml-cache**, so re-running one persona
+    after a tweak replays the other four for free and keeps iterations deterministic and
+    diffable.
+- **Persona content becomes multilingual** — required for previews in French, and a real
+  gap today: only the *prompt header* is localised, so a French user gets an English
+  description and an **English greeting at every launch**. This is not a strings port:
+  French carries a `tu`/`vous` register English cannot express, and a butler is *defined*
+  by register — so the directives themselves need per-language authoring, not translation.
   - Layout: a **folder per persona** — a language-neutral `body.md` (dimensions, do/don't)
     plus `en.md` / `fr.md` carrying description, greeting, register notes, and samples.
   - **A flat `<name>.md` must keep working.** Users author personas by dropping a file in
@@ -376,12 +382,13 @@ is an evaluation loop, not a feature.
   choosing still costs nothing. Length forces a split — one short line inline in the chooser,
   the full side-by-side behind `gmlw persona preview`. Samples are labelled as indicative:
   they come from one model at authoring time, and the user's client may differ.
-
-**Sequencing, resolved:** *per-workflow persona* used to sit in 0.6.0, ahead of the release
-that proves personas are distinct at all — building composition on an unproven foundation. It
-now lives here in 0.9.0, after the harness and the tuning, so the composition follows the
-proof. If the matrix shows personas collapse even after tuning, per-workflow persona is
-reconsidered in place rather than shipped on sand.
+- **Per-workflow persona, composed as voice over method** — a workflow can carry its own
+  persona instead of the single global tone. Persona is **manner**; the facilitative +
+  constructive authoring behavior (0.6.0) is **method**. They compose by layer: the method
+  lives in the mode floor (guaranteed, persona-independent), and the persona colors delivery
+  on top — it can voice the invariants but not break them. Personas carry an
+  **authoring-friendliness** expectation, so a voice built around brutal efficiency can't
+  sabotage the facilitation.
 
 ### 0.10.0 — the documentation release
 The docs grew alongside the features: seven files under `docs/` plus a README that has absorbed
