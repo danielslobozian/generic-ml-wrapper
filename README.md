@@ -89,10 +89,29 @@ Nothing about the client changes — you get its full TUI. The wrapper owns the 
 
 ## Install
 
-Requires Python 3.11–3.14 and [`uv`](https://docs.astral.sh/uv/), plus **one supported coding CLI already installed and logged in** (`claude`, `cursor-agent`, `codex`, or `vibe`). The console script is `gmlw`.
+Requires **one supported coding CLI already installed and logged in** (`claude`, `cursor-agent`, `codex`, or `vibe`). The console script is `gmlw`.
+
+**Linux / macOS:**
+
+```sh
+curl -LsSf https://raw.githubusercontent.com/danielslobozian/generic-ml-wrapper/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/danielslobozian/generic-ml-wrapper/main/install.ps1 | iex
+```
+
+Each script ensures [`uv`](https://docs.astral.sh/uv/) is present — installing it first if not — then runs `uv tool install generic-ml-wrapper`. **No Python prerequisite**: `uv` fetches its own interpreter. Already have `uv`?
 
 ```sh
 uv tool install generic-ml-wrapper     # or: uv sync --extra dev  (from a clone)
+```
+
+Either way:
+
+```sh
 gmlw start MY-FIRST-JOB                # first run self-seeds ~/.gmlw (owner-only)
 ```
 
