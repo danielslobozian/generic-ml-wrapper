@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 
+from generic_ml_wrapper.common.errors import DomainError
+
 
 class ImportOutcome(Enum):
     """How an import resolved.
@@ -40,7 +42,7 @@ class ImportWorkflowResult:
     backup: str | None = None
 
 
-class ArchiveUnreadableError(ValueError):
+class ArchiveUnreadableError(DomainError, ValueError):
     """Raised when the archive is missing, not a zip, or holds no workflow."""
 
 

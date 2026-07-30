@@ -7,6 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from generic_ml_wrapper.common.errors import DomainError
+
 
 @dataclass(frozen=True)
 class StartJobCommand:
@@ -46,11 +48,11 @@ class StartJobResult:
     session_id: str
 
 
-class UnknownWorkflowError(ValueError):
+class UnknownWorkflowError(DomainError, ValueError):
     """Raised when a requested workflow does not exist."""
 
 
-class ResumeNotSupportedError(ValueError):
+class ResumeNotSupportedError(DomainError, ValueError):
     """Raised when resuming is requested for a client that cannot resume (e.g. codex)."""
 
 

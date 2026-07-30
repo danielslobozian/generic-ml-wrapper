@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 
+from generic_ml_wrapper.common.errors import DomainError
+
 
 @dataclass(frozen=True)
 class NewWorkflowCommand:
@@ -69,7 +71,7 @@ class NewWorkflowResult:
     draft_path: str
 
 
-class WorkflowNameError(ValueError):
+class WorkflowNameError(DomainError, ValueError):
     """Raised when a workflow name is invalid or reserved."""
 
 
@@ -77,7 +79,7 @@ class WorkflowExistsError(ValueError):
     """Raised when a workflow with the requested name already exists."""
 
 
-class NoSuchDraftError(ValueError):
+class NoSuchDraftError(DomainError, ValueError):
     """Raised when a draft asked for by key does not exist, or none is resumable."""
 
 

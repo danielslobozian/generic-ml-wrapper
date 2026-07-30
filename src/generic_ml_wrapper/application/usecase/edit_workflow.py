@@ -74,14 +74,12 @@ class EditWorkflowUseCase(EditWorkflow):
         try:
             WorkflowName(name)
         except IdentifierError as error:
-            raise WorkflowNameError(str(error)) from error
+            raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
-            message = f"reserved workflow name: {name!r}"
-            raise WorkflowNameError(message)
+            raise WorkflowNameError("error.workflow.reserved_name", name=name)
         self._workflows.seed()
         if not self._workflows.exists(name):
-            message = f"unknown workflow: {name!r}"
-            raise WorkflowNotFoundError(message)
+            raise WorkflowNotFoundError("error.workflow.not_found", name=name)
 
         folder = self._workflows.folder(name)  # the existing folder — never (re)created
         # The authoring store is rooted apart from real work jobs (composition injects the
@@ -146,8 +144,7 @@ class EditWorkflowUseCase(EditWorkflow):
         """
         edits = [s for s in self._store.sessions_for_job(job) if s.cwd == folder]
         if not edits:
-            message = f"no editing session to resume for {job!r}"
-            raise NoEditToResumeError(message)
+            raise NoEditToResumeError("error.workflow.no_edit_session", name=job)
         session = edits[-1]
         run = RunContext(
             job=job,
@@ -164,8 +161,11 @@ class EditWorkflowUseCase(EditWorkflow):
         )
         caller = self._callers.for_run(run)
         if not caller.can_resume():
-            message = f"{session.client} cannot reopen {session.session_id}"
-            raise NoEditToResumeError(message)
+            raise NoEditToResumeError(
+                "error.workflow.no_edit_resume_unsupported",
+                client=session.client,
+                session_id=session.session_id,
+            )
         return run_with_hooks(caller, run, self._hooks)
 
     def _authoring_context(self, *, guided: bool, job: str) -> str:

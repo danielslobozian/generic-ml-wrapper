@@ -145,8 +145,7 @@ class NewWorkflowUseCase(NewWorkflow):
             (s for s in self._store.sessions_for_job(_META) if s.session_id == draft.key), None
         )
         if session is None:
-            message = f"draft {draft.key!r} has no recorded session to resume"
-            raise NoSuchDraftError(message)
+            raise NoSuchDraftError("error.draft.no_session", key=draft.key)
         run = RunContext(
             job=_META,
             session_id=session.session_id,
@@ -162,8 +161,11 @@ class NewWorkflowUseCase(NewWorkflow):
         )
         caller = self._callers.for_run(run)
         if not caller.can_resume():
-            message = f"{session.client} cannot reopen {session.session_id}"
-            raise NoSuchDraftError(message)
+            raise NoSuchDraftError(
+                "error.draft.resume_unsupported",
+                client=session.client,
+                session_id=session.session_id,
+            )
         exit_code = run_with_hooks(caller, run, self._hooks)
         return self._finalize(exit_code, draft.path)
 
@@ -179,13 +181,11 @@ class NewWorkflowUseCase(NewWorkflow):
         if command.resume_draft is not None:
             found = next((d for d in drafts if d.key == command.resume_draft), None)
             if found is None:
-                message = f"no such draft: {command.resume_draft!r}"
-                raise NoSuchDraftError(message)
+                raise NoSuchDraftError("error.draft.not_found", key=command.resume_draft)
             return found
         unfinished = next((d for d in drafts if not d.finished), None)
         if unfinished is None:
-            message = "no unfinished draft to resume"
-            raise NoSuchDraftError(message)
+            raise NoSuchDraftError("error.draft.none_unfinished")
         return unfinished
 
     def _finalize(self, exit_code: int, draft: str) -> NewWorkflowResult:
@@ -230,10 +230,9 @@ class NewWorkflowUseCase(NewWorkflow):
         try:
             WorkflowName(name)
         except IdentifierError as error:
-            raise WorkflowNameError(str(error)) from error
+            raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
-            message = f"reserved workflow name: {name!r}"
-            raise WorkflowNameError(message)
+            raise WorkflowNameError("error.workflow.reserved_name", name=name)
 
     @staticmethod
     def _kickoff(name: str | None, draft: str, *, guided: bool) -> str:

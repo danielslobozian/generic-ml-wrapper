@@ -422,9 +422,10 @@ def test_resume_on_client_that_cannot_resume_is_rejected() -> None:
     provider = FakeProvider(can_resume=False)
     use_case = _use_case(FakeStore(latest=latest), provider)
 
-    with pytest.raises(ResumeNotSupportedError, match="codex"):
+    with pytest.raises(ResumeNotSupportedError) as excinfo:
         use_case.execute(StartJobCommand(job="JOB-1", client="codex", resume_latest=True))
 
+    assert excinfo.value.params["client"] == "codex"
     assert provider.log == []  # refused before the client was launched
 
 

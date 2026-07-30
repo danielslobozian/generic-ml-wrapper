@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.common.errors import DomainError
+
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.axis import AxisKind
 
@@ -46,11 +48,11 @@ class CreateAxisResult:
     made_default: bool
 
 
-class AxisLabelError(ValueError):
+class AxisLabelError(DomainError, ValueError):
     """Raised when a label is empty or slugifies to nothing usable."""
 
 
-class AxisExistsError(ValueError):
+class AxisExistsError(DomainError, ValueError):
     """Raised when a folder for the derived slug already exists."""
 
 
