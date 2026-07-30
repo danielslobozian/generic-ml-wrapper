@@ -6,6 +6,28 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-07-30
+
+Every user-facing exception carried a raw English message, interpolated verbatim into
+the CLI's localised error wrapper — a French user saw French wrapped around English.
+The 0.8.0 drift guard never caught this, since it only checked `print`/`log.*`/argparse/
+`Binding` call sites, never `raise` sites.
+
+### Fixed
+- **Domain exceptions are localised.** A new `DomainError` base
+  (`common/errors.py`) gives an exception a catalogue key and structured params instead
+  of a formatted string. The 11 classes that leaked raw English (`IdentifierError`,
+  `WorkflowNameError`, `WorkflowNotFoundError`, `UnknownWorkflowError`,
+  `ResumeNotSupportedError`, `AxisLabelError`, `AxisExistsError`,
+  `InvalidSettingValueError`, `ArchiveUnreadableError`, `NoSuchDraftError`,
+  `NoEditToResumeError`) now carry one, with ~21 new EN/FR catalogue entries rendering
+  them.
+
+### Changed
+- **The drift guard now checks `raise` sites too.** `test_no_untranslated_literals.py`
+  flags a future `raise` site with a missing catalogue key the same way it already
+  flagged a bad `t()` call.
+
 ## [0.9.0] - 2026-07-30
 
 Personas, proven. "Personas shape tone" was an untested claim — an external evaluation
@@ -502,7 +524,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.0...v0.8.1

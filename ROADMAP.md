@@ -347,24 +347,20 @@ attribution) checked the claim and fed the fixes back in. Not a harness built in
   distinctiveness (warmth) for a generic efficiency habit, and was reverted once the numbers
   showed it.
 
+### 0.9.1 — i18n, the remaining gap
+Every user-facing exception carried a raw English message, interpolated verbatim into
+the CLI's localised error wrapper — a French user saw French wrapped around English.
+The 0.8.0 drift guard never caught this, since it only checked `print`/`log.*`/argparse/
+`Binding` call sites, never `raise` sites.
+
+- **Domain exceptions are localised** — a new `DomainError` base gives an exception a
+  catalogue key and structured params instead of a formatted string; the 11 classes that
+  leaked raw English now carry one, with ~21 new EN/FR catalogue entries rendering them.
+- **The drift guard now checks `raise` sites too** — `test_no_untranslated_literals.py`
+  flags a future `raise` site with a missing catalogue key the same way it already
+  flagged a bad `t()` call.
+
 ## Planned
-
-### 0.9.1 — i18n, the remaining gaps
-0.8.0 was a sweep, not a permanent guarantee — new code lands after a sweep ends, and the
-AST drift guard only catches what it was built to catch. This release re-audits the app
-against the 0.8.0 bar and closes what has slipped through since: literals introduced by
-code that landed after the sweep, and any call-site shape the guard doesn't recognise yet.
-
-- **Re-sweep everything added since 0.8.0** — every `print` / `log.*` / argparse
-  `help`/`description`/`epilog`/`metavar` / Textual `Binding` call site introduced by code
-  that landed after commit `e3f120f`, checked against the same bar the 0.8.0 sweep set.
-- **Close drift-guard blind spots** — find call-site shapes the AST guard in
-  `tests/test_no_untranslated_literals.py` doesn't check today (f-strings built from
-  literals, string concatenation, literals passed through a helper before reaching a
-  logged/printed call) and either catch them mechanically or fix them by hand.
-- **Re-run the EN/FR key-parity and registry-coverage checks** — confirm no new setting
-  or catalogue drift crept in since 0.8.0, and extend the guard so the same class of gap
-  fails the build going forward rather than needing another manual re-audit.
 
 ### 0.10.0 — the documentation release
 The docs grew alongside the features: seven files under `docs/` plus a README that has absorbed
