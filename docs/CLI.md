@@ -243,6 +243,10 @@ capability index.
 gmlw tui
 ```
 
+<div align="center">
+<img src="images/gmlw-tui.gif" alt="gmlw tui — the object-first Job / Workflow / Config menu" width="760">
+</div>
+
 Wired actions today: **Job → New** (type a name; gmlw launches a fresh session — the
 `gmlw start <job>` path) and **Job → Resume** (pick a job; it relaunches the latest session
 — the `gmlw start <job> --resume-latest` path), and the **Config** switchers **Persona /

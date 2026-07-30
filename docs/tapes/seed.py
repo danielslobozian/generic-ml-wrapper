@@ -49,4 +49,25 @@ for sid, uuid, sturns, cost in data:
         turns.record(JOB, t)
     costs.record_session_cost(JOB, sid, cost)
 
-print(f"seeded {home/'ledger.db'} — job {JOB}, {len(data)} sessions")
+# A demo workflow, so the TUI's Workflow > List browser has something to show (matches
+# the worked example in docs/WORKFLOWS.md).
+workflow_dir = home / "workflows" / "doc-review"
+workflow_dir.mkdir(parents=True, exist_ok=True)
+(workflow_dir / "workflow.md").write_text(
+    "# doc-review\n\n"
+    "*Review a documentation change for clarity and correctness before it ships.*\n\n"
+    "## Steps\n\n"
+    "### 1. Collect the changed docs\n"
+    "Run `scripts/collect.sh` to list the docs touched on this branch and gather their diffs.\n\n"
+    "### 2. Review clarity and accuracy\n"
+    "Read each changed doc. Flag anything unclear, out of date, or contradicted by the code.\n\n"
+    "### 3. Report and stop\n"
+    "Summarise the findings as a short checklist the author can act on, then stop.\n",
+    encoding="utf-8",
+)
+(workflow_dir / ".about.toml").write_text(
+    'label = "Doc review"\ndescription = "Review a documentation change before it ships."\n',
+    encoding="utf-8",
+)
+
+print(f"seeded {home/'ledger.db'} — job {JOB}, {len(data)} sessions, 1 workflow")
