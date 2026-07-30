@@ -1,9 +1,10 @@
 # User guide
 
-Task-oriented recipes for the `gmlw` CLI (generic-ml-wrapper v0.2.0). Each section is a
-concrete job with the exact command to run. For the full flag reference see [CLI.md](CLI.md),
-for every config key see [CONFIGURATION.md](CONFIGURATION.md), and for per-client behaviour see
-[CLIENTS.md](CLIENTS.md).
+Task-oriented recipes for the `gmlw` CLI. Each section is a concrete job with the exact
+command to run. For the mental model behind these (job/session/workflow, the four
+context axes, rules) see [CONCEPTS.md](CONCEPTS.md); for the full flag reference see
+[CLI.md](CLI.md), for every config key see [CONFIGURATION.md](CONFIGURATION.md), and
+for per-client behaviour see [CLIENTS.md](CLIENTS.md).
 
 ## 1. Track one ticket across multiple sessions
 
@@ -105,34 +106,18 @@ Personas are off and invisible until you set this key.
 
 ## 7. Record a rule
 
-A rule is a projection of *you*, so it lives on one of the two axes that describe you — never
-globally, and never per-workflow:
-
-| Axis | Folder | What belongs there |
-| --- | --- | --- |
-| Environment | `~/.gmlw/environments/<env>/rules/` | Constraints of the place — how docs are written here, how a service is built, the house lint config. Not your taste; it stops applying elsewhere. |
-| Role | `~/.gmlw/profile/roles/<role>/rules/` | Your own preferences about the craft — design patterns, how you approach code. They travel with you. |
-
-When the two conflict the **environment wins**: a constraint is not overridden by a preference.
-Within one axis, an explicit `Precedence: <n>` decides (higher wins).
-
-A rule is **active from the moment it is recorded** — you demanded it, so it applies. Setting
-`status: draft` is your off-switch, to retire a rule later without deleting it; a draft is
-injected into no session. The `Origin` field is stripped before the model sees the rule.
+A rule is filed on the environment or role axis, not globally or per-workflow — see
+[CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (which axis wins on
+conflict, `status: draft`, `Precedence`). In practice, either edit the file directly or
+let the client capture it the moment you correct it:
 
 ```
 $EDITOR ~/.gmlw/profile/roles/engineer/rules/no-force-push.rule.md
 # to retire it later, edit the front matter: status: active  ->  status: draft
 ```
 
-In any session, when you're dissatisfied and want something to never recur, the client offers to
-record the rule for you — proposing an axis and letting you redirect it, updating an existing rule
-instead of duplicating it, and offering to turn a mechanically enforceable one into a script.
-
-Browse what you have with `gmlw tui` → **Rules**, which lists only the environments and roles that
-actually hold rules and marks the ones you have switched off. The format itself is yours to
-reshape: it is a plain file at `~/.gmlw/templates/rule.template.md`, and the client is told to
-follow whatever is in it. See [WORKFLOWS.md](WORKFLOWS.md).
+Browse what you have with `gmlw tui` → **Rules**, which lists only the environments and
+roles that actually hold rules and marks the ones you have switched off.
 
 ## 8. Enable transcripts safely
 
@@ -183,3 +168,4 @@ gmlw plugins list --json
 ```
 
 For the complete command surface, see [CLI.md](CLI.md) and the project [../README.md](../README.md).
+For the mental model behind these recipes, see [CONCEPTS.md](CONCEPTS.md).

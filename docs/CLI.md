@@ -1,9 +1,10 @@
 # CLI reference
 
-Complete command reference for the `gmlw` console script (generic-ml-wrapper v0.2.0).
-This page documents exactly what `build_parser()` exposes — every command, positional,
-and flag. For deeper behaviour, follow the cross-links to [CONFIGURATION.md](CONFIGURATION.md),
-[WORKFLOWS.md](WORKFLOWS.md), and [CLIENTS.md](CLIENTS.md).
+Complete command reference for the `gmlw` console script. This page documents exactly
+what `build_parser()` exposes — every command, positional, and flag. For the concepts
+behind these commands see [CONCEPTS.md](CONCEPTS.md); for deeper behaviour, follow the
+cross-links to [CONFIGURATION.md](CONFIGURATION.md), [WORKFLOWS.md](WORKFLOWS.md), and
+[CLIENTS.md](CLIENTS.md).
 
 ## Synopsis
 
@@ -501,6 +502,7 @@ flat argparse view is still available via `gmlw --help`.
 
 ## See also
 
+- [CONCEPTS.md](CONCEPTS.md) — the mental model behind these commands.
 - [USER_GUIDE.md](USER_GUIDE.md) — task-oriented walkthrough.
 - [CONFIGURATION.md](CONFIGURATION.md) — `~/.gmlw/config.toml`, logging, personas, plugins.
 - [WORKFLOWS.md](WORKFLOWS.md) — authoring and running workflows.

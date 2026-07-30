@@ -104,12 +104,13 @@ rule, and any rule the user has switched off with `status: draft` is skipped ent
 
 ## Rules
 
-A rule is a *reusable reflex* — a standard you want held to on every future run, not
-a one-off decision about a single task. A rule is a projection of *you*, so it lives on
-one of the two axes that describe you: the **environment** (the place's constraints) at
-`~/.gmlw/environments/<env>/rules/<slug>.rule.md`, or the **role** (your own craft
-preferences) at `~/.gmlw/profile/roles/<role>/rules/<slug>.rule.md`. At the moment a rule
-is born exactly one of each is active, so the choice is between two concrete folders:
+See [CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (the environment
+vs role axis, `status: draft`, `Precedence`, always-on capture). The one thing specific
+to workflows: there is **no per-workflow rule tier**. A workflow that behaves wrongly
+is fixed in the workflow's own `workflow.md`, not patched by a rule beside it — rules
+describe the user, not a procedure.
+
+A rule file's shape, for reference:
 
     ---
     name: <slug>
@@ -122,19 +123,6 @@ is born exactly one of each is active, so the choice is between two concrete fol
     **Signals:** <how to recognise you are in that situation>
     **Strength:** hard   (always applies) — or soft (a strong preference)
     **Origin:** <the moment it was demanded — stripped before the model>
-
-Fields: `Rule`, `When`, `Signals`, `Strength` (`soft` | `hard`), `Origin`
-(provenance, stripped before the model), and an optional `Precedence: <n>` (higher
-wins) added only when a rule may conflict with another.
-
-A rule is **active from the moment it is recorded** — you demanded it, so it applies.
-Setting `status: draft` is your own off-switch, for retiring a rule later without deleting
-it; a draft is injected into no session. Rule capture is **always-on**, in any session (not
-only a workflow): when you are dissatisfied with something and want it to never happen again,
-the client offers to record it, proposing an axis and letting you redirect it. Before
-proposing, it reads your existing rules and updates or supersedes a match rather than stacking a
-near-duplicate; and if the rule is mechanically enforceable, it offers to realise it as
-a small script or check rather than a standing reminder.
 
 ## Scripts
 
@@ -194,7 +182,7 @@ one. It is metered and recorded like any other job (`gmlw sessions DOCS-1`,
 
 ---
 
-See also: [USER_GUIDE.md](USER_GUIDE.md) · [CLI.md](CLI.md) ·
+See also: [CONCEPTS.md](CONCEPTS.md) · [USER_GUIDE.md](USER_GUIDE.md) · [CLI.md](CLI.md) ·
 [CONFIGURATION.md](CONFIGURATION.md) · [CLIENTS.md](CLIENTS.md) ·
 [DESIGN.md](DESIGN.md) · [../ROADMAP.md](../ROADMAP.md) ·
 [../SECURITY.md](../SECURITY.md)

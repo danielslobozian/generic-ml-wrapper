@@ -12,6 +12,16 @@ from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 home = Path(sys.argv[1]) / ".gmlw"
 home.mkdir(parents=True, exist_ok=True)
+
+# Mark the demo home as already past `gmlw init` (added in 0.4.0) -- without this,
+# every real command (jobs/sessions/export) hits the forced first-run gate and blocks
+# on an interactive prompt instead of rendering. `statusline` and `help` are exempt
+# from the gate, so this only matters for the read commands the tapes actually run.
+(home / "config.toml").write_text(
+    '[init]\nversion = "1.0.0"   # demo-seeded; real value is written by `gmlw init`\n',
+    encoding="utf-8",
+)
+
 ledger = Ledger(home / "ledger.db")
 sessions = SqliteSessionStore(ledger, kind="work")
 turns = SqlitePerTurnStore(ledger)

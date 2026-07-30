@@ -247,10 +247,9 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
   naming the active environment, role, persona and job. At the moment a session starts
   exactly one of each is in play, so the frame is scalars rather than anything to resolve;
   it is never compressed, because a paraphrase would make it wrong rather than shorter.
-- **Rules are scoped to the user, never to a workflow:** a rule lives on the environment
-  axis (the place's constraints) or the role axis (the user's craft preferences). The
-  environment composes last and outranks the role on conflict. A workflow that behaves
-  wrongly is fixed in the workflow, so there is no per-workflow rule tier.
+- **Rules are scoped to the user, never to a workflow** — see
+  [CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism. The environment
+  composes last in the pipeline above and outranks the role on conflict.
 
 - **Rule capture (always-on):** the `rules` stage leads with a fixed capture directive
   (gmlw's voice, verbatim) whenever the source is active — on by default in every mode,
@@ -415,3 +414,9 @@ mechanism for a client, rather than extending one point of it.)
 6. **The compiled context is self-contained** and lives per-session under `contexts/`
    — never in the user's working directory.
 7. **Quit is the stop signal.** `start_client` blocks; teardown is `finally`.
+
+## See also
+
+- [CONCEPTS.md](CONCEPTS.md) — the user-facing mental model this architecture serves.
+- [CLI.md](CLI.md) · [CONFIGURATION.md](CONFIGURATION.md) · [WORKFLOWS.md](WORKFLOWS.md)
+- [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md) · [../CONTRIBUTING.md](../CONTRIBUTING.md)

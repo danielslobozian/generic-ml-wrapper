@@ -1,9 +1,9 @@
 # Troubleshooting
 
-Recovery and diagnosis for `gmlw` (v0.2.0). Most "problems" below are by-design
-behaviour — the answers say so where that's the case. When something is genuinely
-misconfigured, `gmlw` prefers to fail loudly; turning up logging is usually the
-fastest way to see why.
+Recovery and diagnosis for `gmlw`. Most "problems" below are by-design behaviour — the
+answers say so where that's the case. When something is genuinely misconfigured,
+`gmlw` prefers to fail loudly; turning up logging is usually the fastest way to see
+why.
 
 ## Why is Cursor showing no token cost?
 
@@ -145,3 +145,8 @@ Two equivalent knobs, `warning` by default:
 
 Levels are `debug | info | warning | error`. Debug is the right setting when diagnosing
 any of the issues above. See [CONFIGURATION.md](CONFIGURATION.md).
+
+## See also
+
+- [CONCEPTS.md](CONCEPTS.md) · [CLIENTS.md](CLIENTS.md) · [WORKFLOWS.md](WORKFLOWS.md)
+- [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md)

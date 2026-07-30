@@ -7,8 +7,9 @@ to (at most) the `[client] default` chosen from the clients found on your `PATH`
 Every section is optional. Uncomment and edit only what you need. Delete the file
 entirely to fall back to the built-in defaults.
 
-Related guides: [WORKFLOWS.md](WORKFLOWS.md), [CLIENTS.md](CLIENTS.md),
-[DESIGN.md](DESIGN.md), and the [security model](../SECURITY.md).
+For the concepts behind the sections below (the four context axes, rules) see
+[CONCEPTS.md](CONCEPTS.md). Related guides: [WORKFLOWS.md](WORKFLOWS.md),
+[CLIENTS.md](CLIENTS.md), [DESIGN.md](DESIGN.md), and the [security model](../SECURITY.md).
 
 ## Trusted-code boundary
 
@@ -322,3 +323,9 @@ to_file = true
 max_bytes = 1048576
 backup_count = 5
 ```
+
+## See also
+
+- [CONCEPTS.md](CONCEPTS.md) — the four context axes and rules these keys configure.
+- [WORKFLOWS.md](WORKFLOWS.md) · [CLIENTS.md](CLIENTS.md) · [DESIGN.md](DESIGN.md)
+- [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md)
