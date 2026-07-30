@@ -71,6 +71,7 @@ from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
@@ -83,6 +84,7 @@ from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
+from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
@@ -115,6 +117,7 @@ from generic_ml_wrapper.application.port.outbound.interceptor import Interceptor
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
+from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
@@ -253,6 +256,22 @@ def build_render_greeting() -> RenderGreeting:
         workspace=LocalGitWorkspaceInspector(),
         clock=lambda: datetime.now().astimezone(),
         username=getpass.getuser,
+    )
+
+
+def build_check_for_update() -> CheckForUpdate:
+    """Build the CheckForUpdate use case wired to PyPI and its local cache file.
+
+    Returns:
+        A ready-to-run CheckForUpdate (free, cached, at most one network call a day).
+    """
+    return CheckForUpdateUseCase(
+        checker=PypiVersionChecker(),
+        current_version=__version__,
+        package="generic-ml-wrapper",
+        enabled=config.update_check,
+        clock=lambda: datetime.now(UTC),
+        cache_path=paths.STATE / "update-check.json",
     )
 
 

@@ -136,6 +136,12 @@ class HintsSettings(_Section):
     show: Annotated[bool, Field(description="setting.hints.show")] = True
 
 
+class UpdateSettings(_Section):
+    """The ``[update]`` section: the rate-limited exit-receipt "new version" notice."""
+
+    check: Annotated[bool, Field(description="setting.update.check")] = True
+
+
 class AmbientSettings(_Section):
     """The ``[ambient]`` section: optional in-session context injections."""
 
@@ -158,6 +164,7 @@ class GmlwSettings(BaseSettings):
     transcript: TranscriptSettings = TranscriptSettings()
     compress: CompressSettings = CompressSettings()
     hints: HintsSettings = HintsSettings()
+    update: UpdateSettings = UpdateSettings()
     ambient: AmbientSettings = AmbientSettings()
 
     @classmethod
@@ -192,6 +199,7 @@ _SECTIONS: tuple[tuple[str, type[_Section]], ...] = (
     ("transcript", TranscriptSettings),
     ("compress", CompressSettings),
     ("hints", HintsSettings),
+    ("update", UpdateSettings),
     ("ambient", AmbientSettings),
 )
 
