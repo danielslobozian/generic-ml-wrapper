@@ -81,9 +81,19 @@ You start work at a job and read it back by job:
 gmlw start REFACTOR-42                 # mint + launch a session on the default client
 gmlw start REFACTOR-42 --resume-latest # pick the latest session back up
 gmlw jobs                              # every job with recorded activity
-gmlw sessions REFACTOR-42              # that job's sessions, oldest first
+gmlw sessions REFACTOR-42              # that job's sessions, oldest first ('empty' marks the unused)
 gmlw export REFACTOR-42                # per-turn tokens + cost, totalled by model
 ```
+
+And you clear out what you no longer want, data included:
+
+```sh
+gmlw sessions REFACTOR-42 delete REFACTOR-42_002   # one session you opened and abandoned
+gmlw jobs delete spike-1 throwaway                 # whole jobs, several at a time
+```
+
+Both show exactly what will go — sessions, turns, cost, context and transcript files —
+and ask before removing any of it.
 
 Nothing about the client changes — you get its full TUI. The wrapper owns the identity, the launch, and the persistence around it.
 

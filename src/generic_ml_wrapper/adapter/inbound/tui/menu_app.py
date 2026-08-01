@@ -94,7 +94,13 @@ class MenuChoice:
     launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
     open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
     new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
-    ``archive`` to install from. A ``None`` return means "do nothing".
+    ``archive`` to install from. The deletions carry a *selection* rather than one id:
+    ``"jobs_delete"`` fills ``jobs``, ``"sessions_delete"`` fills ``sessions`` alongside the
+    ``job`` they belong to. A ``None`` return means "do nothing".
+
+    Nothing here has happened yet -- this is what the user *asked for*. The wiring runs it
+    once the terminal is restored, which for a delete is also where the confirmation is
+    asked.
     """
 
     action: str
@@ -103,6 +109,8 @@ class MenuChoice:
     workflow: str | None = None
     guided: bool = False
     archive: str | None = None
+    jobs: tuple[str, ...] = ()
+    sessions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,7 +127,9 @@ class SessionChoice:
 
     ``client`` is the client that made it (a resume relaunches on it, not the current
     default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
-    marks the newest.
+    marks the newest; ``usage`` is its already-rendered turn/cost cell (the word for
+    "empty" when it never ran a turn), formatted by the wiring so the CLI listing and this
+    app cannot describe the same session two different ways.
     """
 
     session_id: str
@@ -128,6 +138,7 @@ class SessionChoice:
     resumable: bool
     date: str
     is_latest: bool
+    usage: str = ""
 
 
 @dataclass(frozen=True)
@@ -283,6 +294,12 @@ _JOB_MENU = (
     ("⏵", "tui.job.resume", "job:resume", "gmlw start <job> --resume-latest"),
     ("📋", "tui.job.list", "job:list", "gmlw jobs"),
     ("📊", "tui.job.export", "job:export", "gmlw export <job>"),
+    ("🗑", "tui.job.delete", "job:delete", "gmlw jobs delete <job>"),
+)
+# Delete has two grains, exactly as the CLI does -- a whole job, or single sessions of one.
+_DELETE_MENU = (
+    ("🗑", "tui.del.jobs", "del:jobs", "gmlw jobs delete <job>"),
+    ("🗑", "tui.del.sessions", "del:sessions", "gmlw sessions <job> delete <session>"),
 )
 _WORKFLOW_MENU = (
     ("⏵", "tui.wf.run", "wf:run", "gmlw run <workflow>"),
@@ -374,6 +391,9 @@ class _MenuScreen(Screen[None]):
     show_banner: ClassVar[bool] = False
     # The i18n key shown when there are no rows; subclasses override for a tailored hint.
     empty_key: ClassVar[str] = "tui.empty"
+    # The i18n key for the docked key-hints bar. A screen whose keys differ from the usual
+    # move/select/back overrides it, so the bar describes the screen you are actually on.
+    keys_key: ClassVar[str] = "tui.keys"
     # A one-shot detail message the next detail-sync shows instead of the cursor's row,
     # then clears -- so a confirmation survives a programmatic cursor move.
     _flash: str | None = None
@@ -408,7 +428,7 @@ class _MenuScreen(Screen[None]):
             yield Static(i18n.active().t(self.empty_key), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
-            yield Static(i18n.active().t("tui.keys"), id="keys")
+            yield Static(i18n.active().t(self.keys_key), id="keys")
 
     def on_mount(self) -> None:
         """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
@@ -462,6 +482,70 @@ class _MenuScreen(Screen[None]):
         self.menu_app.exit(None)
 
 
+class _MultiSelectScreen(_MenuScreen):
+    """A menu screen where ``space`` ticks rows and ``⏎`` acts on everything ticked.
+
+    The reason the delete screens exist at all: the issue behind them says that cleaning
+    up one item at a time is not worth doing, which is how the list got long. So the
+    selection is the unit here, not the row.
+
+    ``⏎`` on an empty selection deliberately does nothing but say which key ticks a row.
+    Treating the highlighted row as an implicit selection would turn the most reflexive
+    keypress in the app into a delete nobody asked for.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        *_MenuScreen.BINDINGS,
+        _key("space", "toggle_row", "tui.key.toggle"),
+    ]
+    keys_key = "tui.keys.multi"
+    ticked: ClassVar[str] = "☑"
+    unticked: ClassVar[str] = "☐"
+
+    def __init__(self) -> None:
+        """Start with nothing ticked."""
+        super().__init__()
+        self._selected: set[str] = set()
+
+    def confirm(self, selected: tuple[str, ...]) -> None:
+        """Act on the ticked payloads, in the order they appear on screen."""
+        raise NotImplementedError
+
+    def action_toggle_row(self) -> None:
+        """Tick or untick the highlighted row, repainting its box in place."""
+        row = self.query_one("#menu", ListView).highlighted_child
+        if not isinstance(row, _Row):
+            return
+        payload = row.item.payload
+        if payload in self._selected:
+            self._selected.discard(payload)
+            row.set_icon(self.unticked)
+        else:
+            self._selected.add(payload)
+            row.set_icon(self.ticked)
+        self._sync_detail()
+
+    def handle(self, item: _Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
+        """``⏎``: act on the ticked rows, or explain how to tick one when none are."""
+        if not self._selected:
+            self.query_one("#detail", Static).update(i18n.active().t("tui.del.none_selected"))
+            self.menu_app.bell()
+            return
+        self.confirm(tuple(i.payload for i in self.menu_items() if i.payload in self._selected))
+
+    def _sync_detail(self) -> None:
+        """Show the highlighted row's description with the running tick count under it."""
+        item = self._highlighted()
+        loc = i18n.active()
+        lines = [] if item is None else [item.subtitle]
+        lines.append(
+            loc.t("tui.del.selected", count=len(self._selected))
+            if self._selected
+            else loc.t("tui.del.none_selected")
+        )
+        self.query_one("#detail", Static).update("\n".join(lines))
+
+
 class TopMenuScreen(_MenuScreen):
     """The front door: Job · Workflow · Config · Rules · Quit, under the banner."""
 
@@ -510,6 +594,8 @@ class JobMenuScreen(_MenuScreen):
             self.menu_app.push_screen(JobListScreen())
         elif item.action == "job:export":
             self.menu_app.push_screen(JobExportScreen())
+        elif item.action == "job:delete":
+            self.menu_app.push_screen(DeleteMenuScreen())
         else:
             self._stub(item)
 
@@ -1369,6 +1455,125 @@ class SessionListScreen(Screen[None]):
     def action_back(self) -> None:
         """Pop back to the job picker."""
         self.menu_app.pop_screen()
+
+
+class DeleteMenuScreen(_MenuScreen):
+    """Job > Delete: pick the grain — whole jobs, or single sessions of one job."""
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')}"
+
+    def menu_items(self) -> list[_Item]:
+        """The two delete grains."""
+        return _menu(_DELETE_MENU)
+
+    def handle(self, item: _Item) -> None:
+        """Jobs ticks jobs directly; Sessions picks a job first, then ticks its sessions."""
+        if item.action == "del:jobs":
+            self.menu_app.push_screen(JobDeleteScreen())
+        elif item.action == "del:sessions":
+            self.menu_app.push_screen(DeleteJobPickerScreen())
+
+
+class JobDeleteScreen(_MultiSelectScreen):
+    """Tick whole jobs to remove; ``⏎`` hands the selection back to the wiring.
+
+    Nothing is removed here. The app exits with the selection and the wiring runs the
+    preview and the confirmation on the restored terminal -- the same hand-off
+    ``workflow import`` uses for its replace prompt, and the right place for a question
+    whose wrong answer cannot be taken back.
+    """
+
+    empty_key = "tui.del.empty"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete > Jobs."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.jobs')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One tickable row per job, carrying the job id as payload."""
+        t = i18n.active().t
+        return [
+            _Item(
+                self.ticked if j.job in self._selected else self.unticked,
+                j.job,
+                t("tui.sessions", count=j.session_count),
+                "del:job",
+                payload=j.job,
+            )
+            for j in self.menu_app.jobs
+        ]
+
+    def confirm(self, selected: tuple[str, ...]) -> None:
+        """Exit with the ticked jobs; the wiring previews, asks, and deletes."""
+        self.menu_app.exit(MenuChoice(action="jobs_delete", jobs=selected))
+
+
+class DeleteJobPickerScreen(_MenuScreen):
+    """Pick which job to delete sessions from, before ticking the sessions themselves."""
+
+    empty_key = "tui.del.empty"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete > Sessions."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job, carrying the job id as payload."""
+        t = i18n.active().t
+        return [
+            _Item("🗂", j.job, t("tui.sessions", count=j.session_count), "del:pick", payload=j.job)
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Selecting a job opens its session-delete list."""
+        if item.action == "del:pick":
+            self.menu_app.push_screen(SessionDeleteScreen(item.payload))
+
+
+class SessionDeleteScreen(_MultiSelectScreen):
+    """Tick sessions of one job to remove; ``⏎`` hands the selection back to the wiring.
+
+    Every session is tickable, resumable or not: this is not the resume picker, and a
+    session nobody can reopen is if anything the likelier one to be cleaning up.
+    """
+
+    empty_key = "tui.del.empty.sessions"
+
+    def __init__(self, job: str) -> None:
+        """Bind the screen to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete > Sessions > <job>."""
+        t = i18n.active().t
+        return (
+            f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')} > {self._job}"
+        )
+
+    def menu_items(self) -> list[_Item]:
+        """One tickable row per session: date, client, and what it actually used."""
+        t = i18n.active().t
+        return [
+            _Item(
+                self.ticked if s.session_id in self._selected else self.unticked,
+                s.session_id,
+                t("tui.del.session.row", date=s.date, client=s.client, usage=s.usage),
+                "del:session",
+                payload=s.session_id,
+            )
+            for s in self.menu_app.sessions_for(self._job)
+        ]
+
+    def confirm(self, selected: tuple[str, ...]) -> None:
+        """Exit with the ticked sessions; the wiring previews, asks, and deletes."""
+        self.menu_app.exit(MenuChoice(action="sessions_delete", job=self._job, sessions=selected))
 
 
 class JobExportScreen(_MenuScreen):

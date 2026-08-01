@@ -5,6 +5,7 @@
 import io
 import json
 import platform
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,13 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
     CreateAxis,
     CreateAxisCommand,
     CreateAxisResult,
+)
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs, JobFootprint
+from generic_ml_wrapper.application.port.inbound.delete_sessions import (
+    DeleteSessions,
+    NoSuchJobError,
+    NoSuchSessionError,
+    SessionFootprint,
 )
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflow,
@@ -634,6 +642,8 @@ def test_sessions_command_json_output(
             "cwd": None,
             "resumable": True,
             "created_at": None,
+            "turn_count": 0,
+            "cost_usd": 0.0,
         }
     ]
 
@@ -1690,3 +1700,292 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
     monkeypatch.setattr(app, "_tui_launch_job", _record_launch)
     assert app._tui() == 0
     assert launched == ["codex"]  # the switch just made, not the default the menu opened on
+
+
+# --------------------------------------------------------------------------- #
+# Deleting jobs and sessions                                                   #
+# --------------------------------------------------------------------------- #
+
+
+class _FakeDeleteJobs(DeleteJobs):
+    """Records what it was asked to preview and delete; deletes nothing."""
+
+    def __init__(self, footprints: list[JobFootprint], error: Exception | None = None) -> None:
+        self._footprints = footprints
+        self._error = error
+        self.previewed: list[list[str]] = []
+        self.executed: list[list[str]] = []
+
+    def preview(self, jobs: Sequence[str]) -> list[JobFootprint]:
+        if self._error is not None:
+            raise self._error
+        self.previewed.append(list(jobs))
+        return self._footprints
+
+    def execute(self, jobs: Sequence[str]) -> list[JobFootprint]:
+        self.executed.append(list(jobs))
+        return self._footprints
+
+
+class _FakeDeleteSessions(DeleteSessions):
+    """Records what it was asked to preview and delete; deletes nothing."""
+
+    def __init__(self, footprints: list[SessionFootprint], error: Exception | None = None) -> None:
+        self._footprints = footprints
+        self._error = error
+        self.executed: list[tuple[str, list[str]]] = []
+
+    def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
+        if self._error is not None:
+            raise self._error
+        return self._footprints
+
+    def execute(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
+        self.executed.append((job, list(sessions)))
+        return self._footprints
+
+
+def _job_footprint(job: str = "alpha") -> JobFootprint:
+    return JobFootprint(
+        job=job, sessions=3, turns=41, cost_usd=1.25, contexts=3, transcript_calls=6
+    )
+
+
+def _session_footprint(session: str = "alpha_002") -> SessionFootprint:
+    return SessionFootprint(
+        job="alpha", session=session, turns=0, cost_usd=0.0, contexts=1, transcript_calls=0
+    )
+
+
+class _TtyStderr:
+    """Whatever stderr currently is, claiming to be a terminal.
+
+    Not a plain :class:`_Tty`: the confirmation prompt only appears when *stderr* is a
+    terminal, and swapping capsys's stream out for a private buffer would take the very
+    output the test is checking with it. This delegates the writes and lies only about
+    ``isatty``.
+    """
+
+    def __init__(self, stream: object) -> None:
+        self._stream = stream
+
+    def write(self, text: str) -> int:
+        return int(self._stream.write(text))  # type: ignore[attr-defined]  # any text stream
+
+    def flush(self) -> None:
+        self._stream.flush()  # type: ignore[attr-defined]  # any text stream
+
+    def isatty(self) -> bool:
+        return True
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, reply: str) -> None:
+    """Make the confirmation prompt reachable, and answer it with ``reply``."""
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stderr", _TtyStderr(app.sys.stderr))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": reply)
+
+
+def test_bare_jobs_and_sessions_still_list() -> None:
+    """The delete sub-action is optional — the list commands are unchanged."""
+    parser = app.build_parser()
+    assert parser.parse_args(["jobs"]).jobs_command is None
+    assert parser.parse_args(["jobs", "--json"]).json is True
+    assert parser.parse_args(["sessions", "alpha"]).sessions_command is None
+    assert parser.parse_args(["sessions", "alpha", "--json"]).json is True
+
+
+def test_parser_parses_both_delete_forms() -> None:
+    parser = app.build_parser()
+    jobs = parser.parse_args(["jobs", "delete", "alpha", "beta", "--yes"])
+    assert (jobs.jobs_command, jobs.job, jobs.yes) == ("delete", ["alpha", "beta"], True)
+    sessions = parser.parse_args(["sessions", "alpha", "delete", "alpha_001"])
+    assert (sessions.sessions_command, sessions.job, sessions.session, sessions.yes) == (
+        "delete",
+        "alpha",
+        ["alpha_001"],
+        False,
+    )
+
+
+def test_jobs_delete_previews_then_deletes_when_confirmed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    assert app.main(["jobs", "delete", "alpha"]) == 0
+    assert fake.executed == [["alpha"]]
+    err = capsys.readouterr().err
+    assert "3 session(s)" in err  # the footprint was shown before the question
+    assert "41 turn(s)" in err
+
+
+def test_jobs_delete_declined_removes_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "n")
+
+    assert app.main(["jobs", "delete", "alpha"]) == 2
+    assert fake.executed == []
+    assert "nothing was deleted" in capsys.readouterr().err
+
+
+def test_yes_skips_the_question_entirely(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    def _never(_prompt: str = "") -> str:
+        raise AssertionError("--yes must not prompt")
+
+    monkeypatch.setattr("builtins.input", _never)
+    assert app.main(["jobs", "delete", "alpha", "--yes"]) == 0
+    assert fake.executed == [["alpha"]]
+
+
+def test_off_a_tty_a_delete_is_refused_rather_than_assumed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    monkeypatch.setattr(app.sys, "stdin", io.StringIO())  # isatty() is False
+
+    assert app.main(["jobs", "delete", "alpha"]) == 2
+    assert fake.executed == []
+    assert "--yes" in capsys.readouterr().err  # and says how to mean it
+
+
+def test_jobs_delete_reports_an_unknown_job_and_stops(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    error = NoSuchJobError("error.job.not_found", job="nope")
+    fake = _FakeDeleteJobs([], error=error)
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "nope", "--yes"]) == 2
+    assert fake.executed == []
+    assert "nope" in capsys.readouterr().err
+
+
+def test_repeated_ids_are_asked_for_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "alpha", "beta", "alpha", "--yes"]) == 0
+    assert fake.executed == [["alpha", "beta"]]
+
+
+def test_an_invalid_job_id_never_reaches_the_use_case(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _unreachable() -> DeleteJobs:
+        raise AssertionError("a bad id must be refused at the boundary")
+
+    monkeypatch.setattr(app, "build_delete_jobs", _unreachable)
+    assert app.main(["jobs", "delete", "../etc", "--yes"]) == 2
+    assert "invalid job id" in capsys.readouterr().err
+
+
+def test_sessions_delete_previews_then_deletes_when_confirmed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteSessions([_session_footprint()])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    assert app.main(["sessions", "alpha", "delete", "alpha_002"]) == 0
+    assert fake.executed == [("alpha", ["alpha_002"])]
+    assert "alpha_002" in capsys.readouterr().err
+
+
+def test_sessions_delete_reports_an_unknown_session(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    error = NoSuchSessionError("error.session.not_found", session="alpha_009", job="alpha")
+    fake = _FakeDeleteSessions([], error=error)
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+
+    assert app.main(["sessions", "alpha", "delete", "alpha_009", "--yes"]) == 2
+    assert fake.executed == []
+    assert "alpha_009" in capsys.readouterr().err
+
+
+def test_format_job_footprints_names_every_kind_of_thing_that_goes() -> None:
+    text = app.format_job_footprints([_job_footprint(), _job_footprint("throwaway")])
+    assert "2 job(s)" in text
+    assert "alpha" in text
+    assert "throwaway" in text
+    assert "context file(s)" in text
+    assert "transcript file(s)" in text
+
+
+def test_format_session_footprints_names_the_job_it_empties() -> None:
+    text = app.format_session_footprints("alpha", [_session_footprint()])
+    assert "alpha" in text
+    assert "alpha_002" in text
+
+
+def test_format_session_usage_names_an_empty_session() -> None:
+    """0 turns reads as a word, not a row of zeroes — it is what a user is scanning for."""
+    assert app.format_session_usage(SessionSummary("alpha_001", "claude")) == "empty"
+
+
+def test_format_session_usage_shows_turns_and_cost() -> None:
+    summary = SessionSummary("alpha_002", "claude", turn_count=12, cost_usd=1.5)
+    assert app.format_session_usage(summary) == "12 turn(s) $1.50"
+
+
+def test_format_sessions_marks_the_empty_one() -> None:
+    text = app.format_sessions(
+        "alpha",
+        [
+            SessionSummary("alpha_001", "claude"),
+            SessionSummary("alpha_002", "claude", turn_count=12, cost_usd=1.5),
+        ],
+    )
+    assert "empty" in text
+    assert "12 turn(s)" in text
+
+
+def test_build_delete_use_cases_are_wired() -> None:
+    assert isinstance(composition.build_delete_jobs(), DeleteJobs)
+    assert isinstance(composition.build_delete_sessions(), DeleteSessions)
+
+
+def test_the_tui_hands_over_a_job_selection_without_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The app returns an intention; the delete happens here, on the restored terminal."""
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    choice = tui.MenuChoice(action="jobs_delete", jobs=("alpha", "throwaway"))
+    assert app._act_on_tui_choice(choice) == 0
+    assert fake.executed == [["alpha", "throwaway"]]
+
+
+def test_the_tui_hands_over_a_session_selection_without_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteSessions([_session_footprint()])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    choice = tui.MenuChoice(action="sessions_delete", job="alpha", sessions=("alpha_002",))
+    assert app._act_on_tui_choice(choice) == 0
+    assert fake.executed == [("alpha", ["alpha_002"])]
+
+
+def test_a_tui_delete_declined_on_the_restored_terminal_removes_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "n")
+
+    assert app._act_on_tui_choice(tui.MenuChoice(action="jobs_delete", jobs=("alpha",))) == 2
+    assert fake.executed == []

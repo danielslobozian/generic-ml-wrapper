@@ -13,7 +13,7 @@ import os
 import platform
 import signal
 import sys
-from collections.abc import Callable, Generator, Iterable
+from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,6 +60,12 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisLabelError,
     CreateAxisCommand,
 )
+from generic_ml_wrapper.application.port.inbound.delete_jobs import JobFootprint
+from generic_ml_wrapper.application.port.inbound.delete_sessions import (
+    NoSuchJobError,
+    NoSuchSessionError,
+    SessionFootprint,
+)
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflowCommand,
     NoEditToResumeError,
@@ -96,6 +102,8 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_check_for_update,
     build_config_commands,
     build_create_axis,
+    build_delete_jobs,
+    build_delete_sessions,
     build_diagnostics,
     build_edit_workflow,
     build_export_usage,
@@ -132,6 +140,10 @@ if TYPE_CHECKING:
     # argparse does not publicly export the type ``add_subparsers`` returns; alias it once
     # (the private reference is confined here) so the parser-builder helpers can type it.
     _SubParsers = argparse._SubParsersAction[argparse.ArgumentParser]  # pyright: ignore[reportPrivateUsage]
+
+    # Type-only: the tui adapter is imported lazily inside `_tui` (see the note there), so
+    # the post-menu handler can be typed without pulling Textual in at CLI startup.
+    from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice
 
 
 class LocalizedHelpFormatter(argparse.RawDescriptionHelpFormatter):
@@ -172,6 +184,11 @@ class LocalizedHelpFormatter(argparse.RawDescriptionHelpFormatter):
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--json`` flag to a read command's parser."""
     parser.add_argument("--json", action="store_true", help=i18n.t("cli.flag.json"))
+
+
+def _add_yes_flag(parser: argparse.ArgumentParser) -> None:
+    """Add the shared ``--yes`` flag to a delete command's parser."""
+    parser.add_argument("--yes", action="store_true", help=i18n.t("cli.flag.yes"))
 
 
 def _add_guided_flags(parser: argparse.ArgumentParser) -> None:
@@ -356,12 +373,25 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         help=i18n.t("cli.flag.client_args"),
     )
 
+    # `jobs` and `sessions` stay list-first: their `delete` sub-action is optional, so a
+    # bare `gmlw jobs` still lists. Deliberately *not* in `_SUBACTIONS` — that map makes a
+    # command with no action print its help, which is right for `workflow` and wrong here.
     jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
     _add_json_flag(jobs)
+    jobs_sub = jobs.add_subparsers(dest="jobs_command", metavar=i18n.t("cli.metavar.action"))
+    jobs_delete = jobs_sub.add_parser("delete", help=i18n.t("cli.cmd.jobs_delete"))
+    jobs_delete.add_argument("job", nargs="+", help=i18n.t("cli.arg.delete_jobs"))
+    _add_yes_flag(jobs_delete)
 
     sessions = sub.add_parser("sessions", help=i18n.t("cli.cmd.sessions"))
     sessions.add_argument("job", help=i18n.t("cli.arg.job"))
     _add_json_flag(sessions)
+    sessions_sub = sessions.add_subparsers(
+        dest="sessions_command", metavar=i18n.t("cli.metavar.action")
+    )
+    sessions_delete = sessions_sub.add_parser("delete", help=i18n.t("cli.cmd.sessions_delete"))
+    sessions_delete.add_argument("session", nargs="+", help=i18n.t("cli.arg.delete_sessions"))
+    _add_yes_flag(sessions_delete)
 
     export = sub.add_parser("export", help=i18n.t("cli.cmd.export"))
     export.add_argument("job", help=i18n.t("cli.arg.job"))
@@ -546,7 +576,9 @@ def format_sessions(
     lines = [loc.t("sessions.count", job=job, count=len(sessions)), ""]
     session_width = max(len(session.session_id) for session in sessions)
     client_width = max(len(session.client) for session in sessions)
-    for session in sessions:
+    usages = [format_session_usage(session, loc) for session in sessions]
+    usage_width = max(len(usage) for usage in usages)
+    for session, usage in zip(sessions, usages, strict=True):
         resumable = loc.t("clients.yes") if session.resumable else loc.t("clients.no")
         lines.append(
             loc.t(
@@ -555,9 +587,91 @@ def format_sessions(
                 date=f"{(session.created_at or '')[:16]:<16}",  # YYYY-MM-DD HH:MM (blank if unset)
                 client=f"{session.client:<{client_width}}",
                 resumable=f"{resumable:<3}",
+                usage=f"{usage:<{usage_width}}",
                 folder=session.cwd or loc.t("sessions.no_folder"),
             )
         )
+    return "\n".join(lines)
+
+
+def format_session_usage(session: SessionSummary, loc: i18n.Localizer | None = None) -> str:
+    """Render one session's usage — or the word for "nothing happened here".
+
+    A session with no turns is named rather than shown as ``0 turn(s) $0.00``: it is the
+    one a user is scanning the list to find, and a word catches the eye where a row of
+    zeroes reads as just more numbers.
+
+    Args:
+        session: The session to describe.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The usage cell for this session.
+    """
+    loc = loc or i18n.active()
+    if session.turn_count == 0:
+        return loc.t("sessions.usage_none")
+    return loc.t("sessions.usage", turns=session.turn_count, cost=f"{session.cost_usd:.2f}")
+
+
+def format_job_footprints(footprints: list[JobFootprint], loc: i18n.Localizer | None = None) -> str:
+    """Render what deleting these jobs would remove.
+
+    Shown before the confirmation, so "delete them?" is answered against the actual
+    contents rather than a count of names.
+
+    Args:
+        footprints: One footprint per job, in the order they were asked for.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [loc.t("delete.jobs.preview", count=len(footprints)), ""]
+    width = max(len(footprint.job) for footprint in footprints)
+    lines += [
+        loc.t(
+            "delete.job.row",
+            job=f"{footprint.job:<{width}}",
+            sessions=footprint.sessions,
+            turns=footprint.turns,
+            cost=f"{footprint.cost_usd:.2f}",
+            contexts=footprint.contexts,
+            transcripts=footprint.transcript_calls,
+        )
+        for footprint in footprints
+    ]
+    return "\n".join(lines)
+
+
+def format_session_footprints(
+    job: str, footprints: list[SessionFootprint], loc: i18n.Localizer | None = None
+) -> str:
+    """Render what deleting these sessions would remove.
+
+    Args:
+        job: The job the sessions belong to.
+        footprints: One footprint per session, in the order they were asked for.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    lines = [loc.t("delete.sessions.preview", count=len(footprints), job=job), ""]
+    width = max(len(footprint.session) for footprint in footprints)
+    lines += [
+        loc.t(
+            "delete.session.row",
+            session=f"{footprint.session:<{width}}",
+            turns=footprint.turns,
+            cost=f"{footprint.cost_usd:.2f}",
+            contexts=footprint.contexts,
+            transcripts=footprint.transcript_calls,
+        )
+        for footprint in footprints
+    ]
     return "\n".join(lines)
 
 
@@ -897,6 +1011,12 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _axis(AxisKind.ENVIRONMENT, args.environment_command, args)
         if args.command == "role":
             return _axis(AxisKind.ROLE, args.role_command, args)
+        # The delete sub-actions of the two list commands. Ahead of `_view`, which is for
+        # reads: these write, and answer with an exit code rather than a rendered view.
+        if args.command == "jobs" and args.jobs_command == "delete":
+            return _jobs_delete(args)
+        if args.command == "sessions" and args.sessions_command == "delete":
+            return _sessions_delete(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
     except (
         IdentifierError,
@@ -1060,6 +1180,102 @@ def _view(args: argparse.Namespace) -> str | None:
         statuses = build_list_clients().execute()
         return _as_json([asdict(s) for s in statuses]) if as_json else format_clients(statuses)
     return None
+
+
+def _unique(values: Sequence[str]) -> list[str]:
+    """Drop repeats while keeping the order asked for.
+
+    ``gmlw jobs delete a b a`` is one request for two jobs, not a request to delete ``a``
+    twice — and the second pass would find nothing and look like a failure.
+    """
+    return list(dict.fromkeys(values))
+
+
+def _confirm_delete(preview: str, *, assume_yes: bool) -> bool:
+    """Show what a delete would remove and ask whether to go ahead.
+
+    Follows ``_confirm_replace``: the question is only asked where somebody can answer
+    it, and off a tty the answer is no. ``--yes`` is what a script uses instead — the
+    preview is skipped with it, since nothing would be reading it.
+
+    Args:
+        preview: The rendered footprint of what would be removed.
+        assume_yes: Whether ``--yes`` already answered the question.
+
+    Returns:
+        ``True`` to go ahead.
+    """
+    if assume_yes:
+        return True
+    print(preview, file=sys.stderr)
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        print(i18n.t("delete.no_tty"), file=sys.stderr)
+        return False
+    return input(i18n.t("delete.confirm")).strip().lower() in _AFFIRMATIVE
+
+
+def _jobs_delete(args: argparse.Namespace) -> int:
+    """Delete whole jobs — ``gmlw jobs delete``."""
+    return _delete_jobs(_unique([JobId(job) for job in args.job]), assume_yes=bool(args.yes))
+
+
+def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
+    """Preview, confirm, then delete jobs — shared by the CLI command and the TUI.
+
+    Args:
+        jobs: The validated job ids to delete.
+        assume_yes: Skip the confirmation (``--yes``).
+
+    Returns:
+        The process exit code: ``2`` when a job is unknown or the delete was declined,
+        matching ``workflow import``'s "nothing happened, and you asked for something".
+    """
+    if not jobs:
+        return 0
+    delete = build_delete_jobs()
+    try:
+        footprints = delete.preview(jobs)
+    except NoSuchJobError as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    if not _confirm_delete(format_job_footprints(footprints), assume_yes=assume_yes):
+        print(i18n.t("delete.cancelled"), file=sys.stderr)
+        return 2
+    removed = delete.execute(jobs)
+    print(i18n.t("delete.jobs.done", count=len(removed)), file=sys.stderr)
+    return 0
+
+
+def _sessions_delete(args: argparse.Namespace) -> int:
+    """Delete sessions from one job — ``gmlw sessions <job> delete``."""
+    return _delete_sessions(JobId(args.job), _unique(list(args.session)), assume_yes=bool(args.yes))
+
+
+def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> int:
+    """Preview, confirm, then delete sessions — shared by the CLI command and the TUI.
+
+    Args:
+        job: The job the sessions belong to.
+        sessions: The session ids to delete.
+        assume_yes: Skip the confirmation (``--yes``).
+
+    Returns:
+        The process exit code (``2`` when an id is unknown or the delete was declined).
+    """
+    if not sessions:
+        return 0
+    delete = build_delete_sessions()
+    try:
+        footprints = delete.preview(job, sessions)
+    except (NoSuchJobError, NoSuchSessionError) as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    if not _confirm_delete(format_session_footprints(job, footprints), assume_yes=assume_yes):
+        print(i18n.t("delete.cancelled"), file=sys.stderr)
+        return 2
+    removed = delete.execute(job, sessions)
+    print(i18n.t("delete.sessions.done", count=len(removed), job=job), file=sys.stderr)
+    return 0
 
 
 def _client(raw: str | None) -> str:
@@ -1268,7 +1484,7 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
-def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each with its own exit)
+def _tui() -> int:  # noqa: PLR0915  (menu + preflights, each with its own browser's data)
     """Run the interactive menu, then hand off to the client outside the event loop.
 
     The hand-off lives in the *ordering* here: the Textual app owns the terminal only while
@@ -1308,6 +1524,7 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
                 resumable=s.resumable,
                 date=(s.created_at or "")[:16],  # "YYYY-MM-DD HH:MM"
                 is_latest=(i == len(summaries) - 1),
+                usage=format_session_usage(s),  # rendered here: the app holds no formatter
             )
             for i, s in enumerate(summaries)
         ]
@@ -1493,6 +1710,22 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
     ).run()  # blocks; terminal restored on return
     if choice is None:
         return 0
+    return _act_on_tui_choice(choice)
+
+
+def _act_on_tui_choice(choice: MenuChoice) -> int:  # noqa: PLR0911  (one exit per verb)
+    """Carry out what the menu was asked for, on the restored terminal.
+
+    Everything here runs *after* ``run()`` returned, which is the point: the app hands
+    back an intention and this does it, so the risky parts -- launching a client, asking a
+    question that needs a tty -- happen outside the event loop rather than inside it.
+
+    Args:
+        choice: What the user asked the menu to do.
+
+    Returns:
+        The process exit code.
+    """
     # Read *after* the menu: a default-client switch made in Config (or in the Clients view)
     # must apply to this launch, not only to the next run of gmlw. Ignored on resume -- a
     # resumed session carries its own client.
@@ -1510,14 +1743,20 @@ def _tui() -> int:  # noqa: PLR0911, PLR0915  (menu + preflights + launch, each 
         return _new_workflow(choice.workflow, client, choice.guided)
     if choice.action == "workflow_edit" and choice.workflow is not None:
         return _edit_workflow(choice.workflow, client, choice.guided)
+    # The deletions, on the restored terminal for the same reason the import prompt is:
+    # the preview and its y/N need a tty the full-screen app was holding. The TUI only
+    # ever hands over a selection -- nothing has been removed by the time we get here.
+    if choice.action == "jobs_delete":
+        return _delete_jobs(choice.jobs, assume_yes=False)
+    if choice.action == "sessions_delete" and choice.job is not None:
+        return _delete_sessions(choice.job, choice.sessions, assume_yes=False)
     if choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"
     picked_cwd: str | None = None
     if resume and choice.session is not None:  # a specific session relaunches in its own folder
-        picked = next(
-            (s for s in _sessions_for(choice.job) if s.session_id == choice.session), None
-        )
+        recorded = build_list_sessions().execute(choice.job)
+        picked = next((s for s in recorded if s.session_id == choice.session), None)
         picked_cwd = picked.cwd if picked is not None else None
     return _tui_launch_job(choice.job, resume, choice.session, picked_cwd, client)
 

@@ -61,6 +61,9 @@ from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import 
 )
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
+from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
+    FilesystemArtifactPurge,
+)
 from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
     FilesystemReportExporter,
 )
@@ -68,6 +71,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
     FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
@@ -87,6 +91,8 @@ from generic_ml_wrapper.application.port.inbound.check_client_ready import Check
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs
+from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessions
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
@@ -109,6 +115,7 @@ from generic_ml_wrapper.application.port.inbound.render_statusline import Render
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
+from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
@@ -119,6 +126,8 @@ from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
+from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
+from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
@@ -160,13 +169,32 @@ def _ledger() -> Ledger:
     return Ledger(paths.LEDGER)
 
 
+def _transcript_root() -> Path:
+    """Where transcripts are written: the configured root, else the default.
+
+    Shared by the writer and the purge. Resolving it in one place is what keeps a delete
+    honest for a user who moved their transcripts: sweeping the default root while they
+    record into their own would leave behind precisely the files they asked to be rid of.
+    """
+    settings = config.transcript()
+    return Path(settings.root) if settings.root else paths.TRANSCRIPTS
+
+
 def _transcript() -> TranscriptPort | None:
     """The transcript store when ``[transcript]`` is enabled, else ``None`` (off)."""
-    settings = config.transcript()
-    if not settings.enabled:
+    if not config.transcript().enabled:
         return None
-    root = Path(settings.root) if settings.root else paths.TRANSCRIPTS
-    return FilesystemTranscriptStore(root)
+    return FilesystemTranscriptStore(_transcript_root())
+
+
+def _artifact_purge() -> ArtifactPurgePort:
+    """The purge for the two artifact roots: compiled contexts and transcripts.
+
+    Built from the transcript root regardless of whether transcripts are *currently*
+    enabled -- they may have been on when the sessions being deleted ran, and their files
+    outlive the setting.
+    """
+    return FilesystemArtifactPurge(paths.CONTEXTS, _transcript_root())
 
 
 def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource:
@@ -369,12 +397,49 @@ def build_list_jobs() -> ListJobs:
 
 
 def build_list_sessions() -> ListSessions:
-    """Build the ListSessions use case wired to the filesystem store.
+    """Build the ListSessions use case wired to the session and usage stores.
 
     Returns:
         A ready-to-run ListSessions.
     """
-    return ListSessionsUseCase(store=SqliteSessionStore(_ledger()))
+    return ListSessionsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+        usage=SqliteUsageStore(_ledger()),
+    )
+
+
+def build_delete_sessions() -> DeleteSessions:
+    """Build the DeleteSessions use case wired to the stores and both purges.
+
+    Returns:
+        A ready-to-run DeleteSessions.
+    """
+    return DeleteSessionsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+        usage=SqliteUsageStore(_ledger()),
+        ledger=SqliteLedgerPurge(_ledger()),
+        artifacts=_artifact_purge(),
+    )
+
+
+def build_delete_jobs() -> DeleteJobs:
+    """Build the DeleteJobs use case wired to the stores and both purges.
+
+    The session store is the default ``work``-scoped one, so ``authoring`` jobs are
+    unreachable here exactly as they are unreachable from ``gmlw jobs``.
+
+    Returns:
+        A ready-to-run DeleteJobs.
+    """
+    return DeleteJobsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+        usage=SqliteUsageStore(_ledger()),
+        ledger=SqliteLedgerPurge(_ledger()),
+        artifacts=_artifact_purge(),
+    )
 
 
 def build_export_workflow() -> ExportWorkflow:

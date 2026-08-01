@@ -6,6 +6,42 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Jobs and sessions can be deleted** ([#82](https://github.com/danielslobozian/generic-ml-wrapper/issues/82)).
+  Until now nothing in the wrapper removed anything: every job that had ever had a session
+  stayed in `gmlw jobs` and in the menu for good, alongside the throwaway ones made while
+  trying things out. Two grains, mirroring each other:
+  - `gmlw jobs delete <job>...` removes whole jobs — every session, its per-turn usage and
+    cost, its compiled contexts, and its transcripts. The job's folders go whole, so residue
+    no recorded session still claims goes with them.
+  - `gmlw sessions <job> delete <session>...` removes single sessions and leaves the job
+    standing. This is the one for the session you opened, remembered something, and quit out
+    of: `StartJob` records a session *before* the client runs (by design — a rejected start
+    must not burn an id), so an abandoned session is recorded like any other and was, until
+    now, permanent.
+
+  Both take several ids at once, because cleaning up one item at a time is not worth doing —
+  which is how the list got long. Both print exactly what will be removed (sessions, turns,
+  cost, context and transcript files) and then ask; `--yes` answers in advance, and off a
+  terminal without it the delete is **refused** rather than assumed. One unknown id aborts the
+  whole batch untouched rather than deleting half of it. Bare `gmlw jobs` and
+  `gmlw sessions <job>` are unchanged.
+
+  In the menu, **Job > Delete** offers the same two grains: `space` ticks rows, `⏎` acts on
+  everything ticked. The app never deletes — it hands back a selection and the confirmation is
+  asked once the terminal is restored, the same hand-off `workflow import` uses for its replace
+  prompt.
+
+  Deleting a session in the middle of a job is safe by construction: `next_session_id` already
+  minted one past the highest suffix "so gaps never cause a collision", so nothing renumbers
+  and no id is reused.
+
+### Changed
+- **`gmlw sessions` shows what each session used** — turn count and cost per row, and the word
+  `empty` for a session that never took a turn. Without it, deciding what to delete is a guess:
+  the listing had no way to tell a day's work from a session abandoned at the prompt. `--json`
+  rows gain `turn_count` and `cost_usd`; the existing fields are untouched.
+
 ## [0.10.0] - 2026-08-01
 
 The documentation release. The docs had grown as residue rather than deliverable — seven

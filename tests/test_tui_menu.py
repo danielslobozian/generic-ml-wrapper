@@ -1371,3 +1371,209 @@ def test_config_clients_shows_the_resume_caveat_for_the_cursored_row() -> None:
     assert seen["claude_note"] == ""
     assert seen["codex_cell"] == "yes"  # the column stays a clean yes...
     assert "once its id is bound" in str(seen["codex_note"])  # ...the caveat is below it
+
+
+# --------------------------------------------------------------------------- #
+# Job > Delete                                                                 #
+# --------------------------------------------------------------------------- #
+
+_DELETE_SESSIONS = [
+    SessionChoice("alpha_001", "claude", "/work/a", True, "2026-07-24 09:00", False, "empty"),
+    SessionChoice(
+        "alpha_002", "codex", "/work/b", False, "2026-07-24 10:00", False, "12 turn(s) $1.50"
+    ),
+    SessionChoice("alpha_003", "cursor", "/work/c", True, "2026-07-24 11:00", True, "empty"),
+]
+
+
+def _delete_app() -> MenuApp:
+    return MenuApp(_JOBS, sessions_for=lambda _job: _DELETE_SESSIONS, current_client="claude")
+
+
+async def _open_delete_menu(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → Delete."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("down", "down", "down", "down", "enter")  # Delete (5th verb)
+    await pilot.pause()
+
+
+def _icons(app: MenuApp) -> list[str]:
+    """The leading icon of every row, read back off the rendered labels."""
+    rows = app.screen.query(ListView).first().query(ListItem)
+    return [str(cast(_Row, row)._label.render()).strip()[0] for row in rows]
+
+
+def test_delete_menu_offers_both_grains() -> None:
+    """Jobs and Sessions, mirroring the two CLI commands."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            seen["rows"] = [
+                str(cast(_Row, row)._label.render())
+                for row in app.screen.query(ListView).first().query(ListItem)
+            ]
+
+    asyncio.run(scenario())
+    rendered = " ".join(cast("list[str]", seen["rows"]))
+    assert "Jobs" in rendered
+    assert "Sessions" in rendered
+
+
+def test_space_ticks_a_job_and_enter_returns_the_selection() -> None:
+    app = _delete_app()
+
+    async def script(pilot: Pilot[MenuChoice | None]) -> None:
+        await _open_delete_menu(pilot)
+        await pilot.press("enter")  # Jobs → the multi-select list
+        await pilot.pause()
+        await pilot.press("space")  # tick alpha
+        await pilot.press("down", "space")  # tick beta
+        await pilot.press("enter")
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await script(pilot)
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "jobs_delete"
+    assert choice.jobs == ("alpha", "beta")
+
+
+def test_ticking_repaints_the_row_and_untick_restores_it() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            seen["before"] = _icons(app)
+            await pilot.press("space")
+            await pilot.pause()
+            seen["ticked"] = _icons(app)
+            await pilot.press("space")
+            await pilot.pause()
+            seen["unticked"] = _icons(app)
+
+    asyncio.run(scenario())
+    assert seen["before"] == ["☐", "☐"]
+    assert seen["ticked"] == ["☑", "☐"]
+    assert seen["unticked"] == ["☐", "☐"]
+
+
+def test_enter_on_an_empty_selection_does_nothing() -> None:
+    """The most reflexive key in the app must never delete something nobody ticked."""
+    app = _delete_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            await pilot.press("enter")  # nothing ticked
+            await pilot.pause()
+            assert app.is_running  # still on the screen, nothing handed back
+            detail = str(app.screen.query_one("#detail", Static).render())
+            assert "space" in detail.lower()  # and it says which key ticks a row
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None
+
+
+def test_session_delete_picks_a_job_first_then_ticks_its_sessions() -> None:
+    app = _delete_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("down", "enter")  # Sessions → job picker
+            await pilot.pause()
+            await pilot.press("enter")  # alpha → its sessions
+            await pilot.pause()
+            await pilot.press("space")  # tick alpha_001
+            await pilot.press("enter")
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "sessions_delete"
+    assert choice.job == "alpha"
+    assert choice.sessions == ("alpha_001",)
+
+
+def test_a_non_resumable_session_is_still_deletable() -> None:
+    """This is not the resume picker: a session nobody can reopen is likelier to go."""
+    app = _delete_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("down", "enter")  # Sessions → job picker
+            await pilot.pause()
+            await pilot.press("enter")  # alpha → its sessions
+            await pilot.pause()
+            await pilot.press("down", "space")  # alpha_002 is the non-resumable one
+            await pilot.press("enter")
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.sessions == ("alpha_002",)
+
+
+def test_the_session_delete_list_shows_what_each_session_used() -> None:
+    """The empty session has to be findable, or the delete is a guess."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["rows"] = " ".join(
+                str(cast(_Row, row)._label.render())
+                for row in app.screen.query(ListView).first().query(ListItem)
+            )
+
+    asyncio.run(scenario())
+    assert "empty" in str(seen["rows"])
+    assert "12 turn(s) $1.50" in str(seen["rows"])
+
+
+def test_the_delete_screens_advertise_the_toggle_key() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["keys"] = str(app.screen.query_one("#keys", Static).render())
+
+    asyncio.run(scenario())
+    assert "space" in str(seen["keys"])
+
+
+def test_a_delete_screen_with_no_jobs_says_so() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp([])  # nothing has ever been recorded
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            seen["empty"] = str(app.screen.query_one("#empty", Static).render())
+
+    asyncio.run(scenario())
+    assert "Nothing to delete" in str(seen["empty"])

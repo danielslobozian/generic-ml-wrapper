@@ -153,7 +153,30 @@ Warning: `[callers]` and `[[interceptors]]` specs are **loaded and run as you** 
 code, no sandbox. A configured-but-unloadable spec fails loudly. Details in
 [../SECURITY.md](../SECURITY.md) and [CONFIGURATION.md](CONFIGURATION.md).
 
-## 10. Export JSON for automation
+## 10. Clear out jobs and sessions you are done with
+
+Jobs and sessions are kept until you say otherwise, and a session is recorded *before* its
+client starts — so one you opened, remembered something, and quit out of is on the list like
+any other. `sessions` marks those: a session that never took a turn reads as **empty**.
+
+```
+gmlw sessions PROJ-482
+gmlw sessions PROJ-482 delete PROJ-482_002        # one session, and its data
+gmlw jobs delete spike-1 throwaway --yes          # whole jobs, several at a time
+```
+
+Deleting removes the ledger rows *and* the files: the compiled context under
+`~/.gmlw/contexts/`, and the transcript folder under your transcript root when transcripts
+were on. Both commands print what will go before asking, and `--yes` answers in advance —
+off a terminal, without `--yes`, the delete is refused rather than assumed.
+
+Deleting a session in the middle of a job is safe. The next id is minted one past the highest
+that exists, so a gap is never filled and no session id is ever reused.
+
+In the menu the same two grains live under **Job > Delete**: `space` ticks rows, `⏎` acts on
+everything ticked, and the confirmation is asked once the menu has closed.
+
+## 11. Export JSON for automation
 
 Add `--json` to emit machine-readable output instead of the rendered tables. It's supported on
 `jobs`, `sessions`, `export`, `clients`, `workflow list`, `workflow drafts`, `persona list`,
