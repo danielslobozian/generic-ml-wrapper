@@ -360,21 +360,19 @@ The 0.8.0 drift guard never caught this, since it only checked `print`/`log.*`/a
   flags a future `raise` site with a missing catalogue key the same way it already
   flagged a bad `t()` call.
 
-## Planned
-
 ### 0.10.0 — the documentation release
-The docs grew alongside the features: seven files under `docs/` plus a README that has absorbed
-every new capability since 0.1.0. This release treats documentation as the deliverable rather
-than the residue — one pass over what exists, plus the thing missing entirely, a first-contact
-install path.
+The docs had grown alongside the features: seven files under `docs/` plus a README that had
+absorbed every new capability since 0.1.0. This release treated documentation as the deliverable
+rather than the residue — one pass over what existed, plus the thing missing entirely, a
+first-contact install path.
 
-- **A one-line install, on both platforms** — a `sh` script for Linux/macOS and a PowerShell
-  script for Windows, served from the repo and pasted into the README. Each does one job: ensure
-  `uv` is present (Astral's own installer when it is not), then `uv tool install
-  generic-ml-wrapper`. **No Python prerequisite** — `uv` fetches its own interpreter, so the
-  usual "which Python, is it recent enough, is it the distro's broken split package" logic never
-  arises. Two separate scripts rather than one with branches: the PATH story differs too much
-  between them to share code honestly.
+- **A one-line install, on both platforms** — `install.sh` for Linux/macOS and `install.ps1` for
+  Windows, served from the repo and pasted into the README. Each does one job: ensure `uv` is
+  present (Astral's own installer when it is not), then `uv tool install generic-ml-wrapper`.
+  **No Python prerequisite** — `uv` fetches its own interpreter, so the usual "which Python, is it
+  recent enough, is it the distro's broken split package" logic never arises. Two separate scripts
+  rather than one with branches: the PATH story differs too much between them to share code
+  honestly.
 - **PATH, said out loud** — the common failure for a tool installed this way is a shim directory
   that is not on `PATH`, and the second most common is a shell that has not been restarted. The
   scripts detect both and say so loudly rather than exiting silently successful; the README
@@ -384,7 +382,18 @@ install path.
   a dedicated install page is not worth standing up a web property for.
 - **A pass over the existing docs** — README, `USER_GUIDE`, `CLI`, `CONFIGURATION`, `CLIENTS`,
   `WORKFLOWS`, `TROUBLESHOOTING` audited against the surface that actually ships, so what they
-  describe and what gmlw does are the same thing.
+  describe and what gmlw does are the same thing. The pass also collapsed the duplication it
+  found: `CONCEPTS.md` was added as the one place the job/session/workflow model, the four context
+  axes, the Rules mechanism, and client capabilities are explained, and `docs/README.md` as a
+  reading-order index.
+- **Not in the original milestone, shipped alongside:** the other half of the install story — a
+  cached, rate-limited **update notice on the exit receipt**, telling you when a newer gmlw is on
+  PyPI and leaving the upgrade to you. Once a day at most, degrades to silence on any failure,
+  `gmlw config set update.check false` to turn it off.
+
+## Planned
+
+_Next milestone not yet chosen._
 
 ## Parked
 

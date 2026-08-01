@@ -6,6 +6,47 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-08-01
+
+The documentation release. The docs had grown as residue rather than deliverable — seven
+files under `docs/` plus a README that had absorbed every capability since 0.1.0, the same
+concepts written out three and four times with the nuance drifting between copies, and
+three files still opening with a "v0.2.0" header seven releases stale. This release makes
+one pass over all of it, and adds the two things that were missing entirely: a
+first-contact install path, and an answer to "how do I update?"
+
+### Added
+- **A one-line install, on both platforms.** `install.sh` (`curl -LsSf … | sh`) and
+  `install.ps1` (`irm … | iex`) ensure `uv` is present — Astral's own installer when it is
+  not — then `uv tool install generic-ml-wrapper`. **No Python prerequisite**: `uv` fetches
+  its own interpreter, so the usual "which Python, is it recent enough, is it the distro's
+  broken split package" question never arises. Both check whether the install actually
+  landed on `PATH` and, when it did not, say so loudly with the exact line to add and which
+  rc file — rather than exiting silently successful. Two scripts rather than one with OS
+  branches: the PATH and shell-reload story differs too much between POSIX and PowerShell
+  to share code honestly.
+- **`docs/CONCEPTS.md`** — one canonical explanation of the job/session/workflow model, the
+  four context axes (me / role / environment / persona), the Rules mechanism, and why
+  client capabilities differ. Every doc that used to re-explain one of these now links here
+  instead.
+- **`docs/README.md`** — a reading-order index (start here → do things → reference → deep
+  dives), replacing the flat list of guides.
+- **An update notice on the exit receipt.** A `VersionCheckPort` and `PypiVersionChecker`
+  (stdlib `urllib.request`, ~2s timeout, no new dependency) plus a `CheckForUpdate` use
+  case report when a newer gmlw is on PyPI. The answer is cached at
+  `~/.gmlw/state/update-check.json` with a fixed 24h TTL, so most launches never touch the
+  network at all, and every failure mode — network, timeout, bad JSON, unexpected shape —
+  degrades to silence rather than raising. The notice appears only on a launched session's
+  exit (`start` / `run` / `tui`), never on `jobs` / `export` or other read commands. Opt out
+  with `gmlw config set update.check false`.
+- **How to update, said out loud.** The README now answers the question that notice raises:
+  gmlw never updates itself. It checks PyPI at most once a day and reports; installing the
+  new version stays yours to do, with `uv tool upgrade generic-ml-wrapper`.
+- **Cassettes for `gmlw tui` and `gmlw help`** — `docs/images/gmlw-tui.gif`, embedded in
+  `CLI.md`'s `tui` section, and `gmlw-help.gif`. The TUI tour is browse-only by
+  construction: it walks the cursor across the front door and into exactly three read-only
+  list screens, and never enters a verb that would launch a client or write config.
+
 ### Changed
 - **The docs describe the surface that actually ships.** An audit of every page against
   the CLI's argparse definitions, the settings registry, the TUI menu, and the client
@@ -19,12 +60,29 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   or that an interrupted authoring session can be reopened. `USER_GUIDE.md`'s `--json`
   list was a strict subset of the commands that accept it. `README.md`, `CLIENTS.md`,
   `TROUBLESHOOTING.md`, and `CONCEPTS.md` were checked and needed no correction.
+- **Each concept explained once.** The Rules mechanism had been written out in full in
+  `USER_GUIDE.md`, `WORKFLOWS.md`, and `DESIGN.md`, the three copies drifting apart;
+  client-capability reasoning was duplicated across `README.md`, `CLIENTS.md`, and
+  `DESIGN.md`. Both now live in `CONCEPTS.md` and are linked from everywhere they used to
+  be restated. The stale "v0.2.0" headers in `USER_GUIDE.md`, `CLI.md`, and
+  `TROUBLESHOOTING.md` are gone, and every See-also footer cross-links `CONCEPTS.md`.
+- **`CONFIGURATION.md` documents `[hints]`.** It never had — a gap predating this release,
+  fixed alongside the new `[update]` section since the two sit next to each other.
 
-### Added
-- **How to update, said out loud.** The README now answers the question the exit
-  receipt's "a newer gmlw is out" notice raises: gmlw never updates itself. It checks
-  PyPI at most once a day and reports; installing the new version stays yours to do,
-  with `uv tool upgrade generic-ml-wrapper`.
+### Fixed
+- **The TUI's Export and Import subtitles rendered as raw key strings.** When the workflow
+  Export/Import verbs were wired in 0.8.2, the title keys `tui.wf.export` / `tui.wf.import`
+  were added to both catalogues but the `.d` subtitle keys were not, so the Workflow menu
+  showed the key itself in EN and FR alike. Both catalogues now carry them. The drift guard
+  cannot catch this class of bug: the menu builds its subtitle key as `t(f"{key}.d")`, a
+  computed lookup the AST-based check cannot verify statically. Recorded as a known blind
+  spot rather than papered over.
+- **The rendered cassettes had been showing the wrong thing.** `docs/tapes/seed.py` never
+  accounted for the forced first-run init gate added in 0.4.0, so the demo `$HOME` carried
+  no `[init]` marker and `gmlw jobs` / `sessions` / `export` were silently hitting the
+  interactive language prompt instead of rendering real output — which is why
+  `gmlw-usage.gif` had been stale on `main`. The seed now writes a minimal `config.toml`
+  with the marker, and every GIF was re-rendered and inspected frame by frame.
 
 ## [0.9.1] - 2026-07-30
 
@@ -544,7 +602,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.1...v0.8.2
