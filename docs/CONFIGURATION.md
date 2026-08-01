@@ -26,13 +26,43 @@ Selects the client to wrap when `--client` is not passed on the command line.
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `default` | Built-in client to wrap: `claude` \| `cursor` \| `codex` \| `vibe` | `claude` |
+| `args` | Per-client launch arguments, keyed by client name | `{}` (none) |
 
 On first run gmlw bakes in whichever client(s) it found on your `PATH`; edit freely
 afterward. See [CLIENTS.md](CLIENTS.md) for what each client can and cannot do.
 
+`args` is a table because an argument only means something to the client it was
+written for — a `claude` flag handed to `codex` is an error, and the config outlives
+the choice of default client. Either TOML shape lands the same way:
+
 ```toml
 [client]
 default = "claude"
+args = { claude = "--foo" }
+
+# equivalently:
+[client.args]
+claude = "--foo"
+```
+
+Override it for a single launch with `--client-args` on `start` or `run` (see
+[CLI.md](CLI.md)) without touching the file.
+
+## `[language]`
+
+Fixes the language gmlw speaks **to you** — onboarding today, and receipts/help as
+localisation extends. It does not force the companion's own language: only Claude
+Code exposes a real language setting, so pushing this to every client would be a
+leaky per-client hack. gmlw speaks your language; the companion stays as its own
+config leaves it.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `code` | Language gmlw speaks to you: `en` \| `fr` | unset (falls back to `$LANG`) |
+
+```toml
+[language]
+code = "fr"
 ```
 
 ## `[callers]`
@@ -337,6 +367,19 @@ only once ever (which have been shown is tracked in a small state file under
 ```toml
 [hints]
 show = false
+```
+
+## `[ambient]`
+
+Optional in-session context injections — surfaced ambient help, off by default.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `capability_card` | inject a "how do I …" gmlw capability card into a new session's context | `false` |
+
+```toml
+[ambient]
+capability_card = true
 ```
 
 ## `[update]`

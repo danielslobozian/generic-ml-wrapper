@@ -11,15 +11,20 @@ cross-links to [CONFIGURATION.md](CONFIGURATION.md), [WORKFLOWS.md](WORKFLOWS.md
 ```
 gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
-gmlw start [job] [--client X] [--resume-latest] [--workflow|-w NAME]
-gmlw run [workflow] [--client X]         # run a workflow directly (job named after it)
+gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME]
+gmlw run [workflow] [--client X] [--client-args ARGS]   # run a workflow directly (job named after it)
 gmlw jobs [--json]
 gmlw sessions <job> [--json]
 gmlw export <job> [--json]
 gmlw clients [--json]                    # supported clients + installed versions
 gmlw statusline                          # called by the client, not by hand
 gmlw workflow new [name] [--client X] [--guided|--quick]   # name optional; asks depth if unset
+gmlw workflow edit <name> [--client X] [--guided|--quick] [--resume-latest]
 gmlw workflow list [--json]
+gmlw workflow drafts [--json]
+gmlw workflow resume [draft]
+gmlw workflow export <name>
+gmlw workflow import <archive> [--replace]
 gmlw persona list [--json]
 gmlw plugins list [--json]
 gmlw creds set <workflow> <ENV_VAR_NAME>
@@ -31,8 +36,9 @@ gmlw role new <label> [--description D] [--default]
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
-`clients`, `workflow list`, `persona list`, and `plugins list`. It prints pretty-printed
-JSON instead of the human-readable text.
+`clients`, `workflow list`, `workflow drafts`, `persona list`, `plugins list`,
+`config list`, and `config get`. It prints pretty-printed JSON instead of the
+human-readable text.
 
 ### Implicit `start`
 
@@ -87,7 +93,7 @@ existing file is left untouched; migrating the older layout comes in a later rel
 Start or resume a session on a job.
 
 ```
-gmlw start [job] [--client CLIENT] [--resume-latest] [--workflow|-w NAME]
+gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME]
 ```
 
 - `job` (optional positional) — the job identifier. A job groups related sessions.
@@ -102,6 +108,9 @@ gmlw start [job] [--client CLIENT] [--resume-latest] [--workflow|-w NAME]
 
 - `--client CLIENT` — which client to wrap (`claude`, `cursor`, `codex`, `vibe`).
   Defaults to the configured default client, or `claude`. See [CLIENTS.md](CLIENTS.md).
+- `--client-args ARGS` — extra arguments passed straight to the client for this one
+  launch, overriding the configured `[client.args]` for this run only. See
+  [CONFIGURATION.md](CONFIGURATION.md).
 - `--resume-latest` — resume the job's most recent session instead of starting a new one.
   Not every client supports resume; unsupported clients report an error.
 - `--workflow NAME`, `-w NAME` — run a workflow on the job (list them with
@@ -126,7 +135,7 @@ enters a job you return to, `run` launches a repeatable workflow. It is equivale
 `gmlw start <workflow> -w <workflow>`.
 
 ```
-gmlw run [workflow] [--client CLIENT]
+gmlw run [workflow] [--client CLIENT] [--client-args ARGS]
 ```
 
 - `workflow` (optional positional) — the workflow to run. With no workflow given, `run`
@@ -137,6 +146,8 @@ gmlw run [workflow] [--client CLIENT]
   authored yet, it points you at `gmlw workflow new <name>`.
 - `--client CLIENT` — which client to wrap (`claude`, `cursor`, `codex`, `vibe`).
   Defaults to the configured default client, or `claude`. See [CLIENTS.md](CLIENTS.md).
+- `--client-args ARGS` — extra arguments passed straight to the client for this one
+  launch, overriding the configured `[client.args]` for this run only.
 
 Like `start`, `run` preflights the working directory and the client before launching, and
 reports an unknown workflow cleanly. See [WORKFLOWS.md](WORKFLOWS.md).
@@ -234,9 +245,9 @@ status line is installed and parsed.
 ## tui
 
 Open the interactive, full-screen menu — an alternative to the flag CLI. It is
-object-first (**Job · Workflow · Config**), you navigate with the arrow keys, and each row
-shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too** (once
-initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
+object-first (**Job · Workflow · Config · Rules**), you navigate with the arrow keys, and
+each row shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too**
+(once initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
 capability index.
 
 ```
@@ -244,15 +255,14 @@ gmlw tui
 ```
 
 <div align="center">
-<img src="images/gmlw-tui.gif" alt="gmlw tui — the object-first Job / Workflow / Config menu" width="760">
+<img src="images/gmlw-tui.gif" alt="gmlw tui — the object-first Job / Workflow / Config / Rules menu" width="760">
 </div>
 
-Wired actions today: **Job → New** (type a name; gmlw launches a fresh session — the
-`gmlw start <job>` path) and **Job → Resume** (pick a job; it relaunches the latest session
-— the `gmlw start <job> --resume-latest` path), and the **Config** switchers **Persona /
-Environment / Role**, including creating a new environment or role from a name (the
-`gmlw environment new` / `gmlw role new` path). Other verbs are placeholders until they are
-built out.
+Every top-level verb is wired, not a placeholder: **Job** covers New, Resume (a specific
+job's latest session), List, and Export; **Workflow** covers Run, Edit, Create, List,
+Export, and Import; **Config** covers listing/getting/setting a value, the **Clients**
+switcher (selecting a row also sets it as the default — the `gmlw config set client.default`
+path), and re-running **Setup**; **Rules** browses the environment and role rule axes.
 
 Off a TTY (piped/redirected) it never blocks: it falls back to the capability index,
 exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the flag CLI
@@ -264,8 +274,12 @@ Author and list workflows. Invoked with no action, prints its own help.
 
 ```
 gmlw workflow new [name] [--client CLIENT] [--guided | --quick]
-gmlw workflow edit <name> [--client CLIENT] [--guided | --quick]
+gmlw workflow edit <name> [--client CLIENT] [--guided | --quick] [--resume-latest]
 gmlw workflow list [--json]
+gmlw workflow drafts [--json]
+gmlw workflow resume [draft]
+gmlw workflow export <name>
+gmlw workflow import <archive> [--replace]
 ```
 
 ### workflow new
@@ -283,6 +297,7 @@ workflow never appears in `workflow list` or `run`.
 - `name` (positional, **optional**) — a suggested name. Omit it and the authoring session
   proposes one at convergence. When given, it is only a seed (the session may rename it),
   but it lets a known name **fail fast** on a collision before any work is done.
+- `--description` — a one-line description of what the workflow does, carried into it.
 - `--client CLIENT` — which client to wrap; defaults to the configured default, or
   `claude`.
 - `--guided` / `--quick` — the authoring depth. **Guided** adds a facilitative
@@ -319,6 +334,9 @@ its `workflow.md`. An unknown workflow exits non-zero with guidance.
   `claude`.
 - `--guided` / `--quick` — the authoring depth, exactly as for `workflow new` (an
   interactive run asks when neither is given).
+- `--resume-latest` — reopen this workflow's most recent editing session instead of
+  starting a new one, on the client and authoring depth that session already carries
+  (the depth prompt is skipped).
 
 Example:
 
@@ -337,6 +355,64 @@ Example:
 
 ```
 gmlw workflow list
+```
+
+### workflow drafts
+
+List unfinished authoring drafts — a `workflow new`/`workflow edit` session that was
+interrupted (crash, Ctrl+C, a closed laptop) before it reached a finished marker.
+
+- `--json` — output as JSON instead of text.
+
+Example:
+
+```
+gmlw workflow drafts
+```
+
+### workflow resume
+
+Reopen an unfinished authoring draft on the client and authoring depth its own session
+carries. The name is only ever proposed at the end, so a resumed `new` still names and
+deploys itself at convergence exactly as an uninterrupted run would.
+
+- `draft` (positional, optional) — the draft to reopen. Omit it to reopen the most
+  recently unfinished one. An unknown draft exits non-zero with guidance.
+
+Example:
+
+```
+gmlw workflow resume              # reopen the most recent unfinished draft
+gmlw workflow resume tidy-review  # reopen a specific one
+```
+
+### workflow export
+
+Pack a workflow into a shareable archive under `~/.gmlw/exports/`, so it can travel to
+another machine or another person.
+
+- `name` (positional, required) — the workflow's slug to export.
+
+Example:
+
+```
+gmlw workflow export tidy-review
+```
+
+### workflow import
+
+Install a workflow from an archive produced by `workflow export`.
+
+- `archive` (positional, required) — the archive to import.
+- `--replace` — displace an existing workflow of the same name without asking. Without
+  it, a name clash prompts interactively (a backup of the replaced workflow is kept); off
+  a TTY the import is refused rather than silently overwriting.
+
+Example:
+
+```
+gmlw workflow import ~/Downloads/tidy-review.zip
+gmlw workflow import ~/Downloads/tidy-review.zip --replace
 ```
 
 See [WORKFLOWS.md](WORKFLOWS.md) for the authoring flow and workflow layout.

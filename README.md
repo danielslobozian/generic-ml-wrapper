@@ -117,6 +117,14 @@ gmlw start MY-FIRST-JOB                # first run self-seeds ~/.gmlw (owner-onl
 
 On first run the wrapper creates `~/.gmlw/` (mode `0700`) with a commented `config.toml`, a SQLite ledger, and the workflow, profile, environment and template folders. Pick the client per run with `--client claude|cursor|codex|vibe`, or set a default in `config.toml`.
 
+### Update
+
+gmlw does not update itself. It checks PyPI at most once a day (cached, and only if `[update] check` is on — the default) and notes a newer version on the exit receipt when one exists; nothing is downloaded or installed on your behalf. To update:
+
+```sh
+uv tool upgrade generic-ml-wrapper     # or: uv tool install --reinstall generic-ml-wrapper
+```
+
 ## Workflows
 
 A **workflow** is a small operating context you author once and launch a job with. Rather than re-explaining the same standing instructions to the client every time, you compile them once — a base, your profile, the rules of your environment and role, and the workflow's own steps — into the context the session opens with.

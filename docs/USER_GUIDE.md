@@ -156,15 +156,18 @@ code, no sandbox. A configured-but-unloadable spec fails loudly. Details in
 ## 10. Export JSON for automation
 
 Add `--json` to emit machine-readable output instead of the rendered tables. It's supported on
-`jobs`, `sessions`, `export`, `workflow list`, `persona list`, and `plugins list`.
+`jobs`, `sessions`, `export`, `clients`, `workflow list`, `workflow drafts`, `persona list`,
+`plugins list`, `config list`, and `config get`.
 
 ```
 gmlw jobs --json
 gmlw sessions PROJ-482 --json
 gmlw export PROJ-482 --json
+gmlw clients --json
 gmlw workflow list --json
 gmlw persona list --json
 gmlw plugins list --json
+gmlw config list --json
 ```
 
 For the complete command surface, see [CLI.md](CLI.md) and the project [../README.md](../README.md).
