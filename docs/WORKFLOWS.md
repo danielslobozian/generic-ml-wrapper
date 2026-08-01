@@ -55,6 +55,17 @@ on top of them. It:
 You can pass `--client X` to author under a specific client. See [CLI.md](CLI.md) for
 the full command surface.
 
+**If authoring is interrupted** (a crash, Ctrl+C, a closed laptop) before it reaches a
+finished marker, the draft is not lost — it stays in `~/.gmlw/drafts/`:
+
+    gmlw workflow drafts            # list what's unfinished
+    gmlw workflow resume            # reopen the most recent one
+    gmlw workflow resume <name>     # reopen a specific one
+
+A resumed `new` still proposes its name and deploys at convergence exactly as an
+uninterrupted run would; a resumed `edit` reopens on the same client and authoring
+depth the original session used.
+
 ## File layout
 
 A workflow lives under `~/.gmlw/workflows/<name>/`:
@@ -131,6 +142,19 @@ When a step is mechanical, the authoring flow offers to turn it into a script un
 becomes "run `scripts/<name>`" — the wrapper runs the script instead of having the
 model re-reason a deterministic task every run. Keep judgment steps as prose for the
 model; script only what genuinely simplifies.
+
+## Sharing a workflow
+
+A workflow travels: `export` packs it into an archive, `import` installs one back —
+to another machine, or to someone else.
+
+    gmlw workflow export <name>              # -> ~/.gmlw/exports/<name>...
+    gmlw workflow import <archive>            # install it
+    gmlw workflow import <archive> --replace  # displace an existing one of the same name
+
+Without `--replace`, a name clash prompts interactively (keeping a backup of what it
+replaces); off a TTY the import is refused rather than silently overwriting. Both are
+also in `gmlw tui` under Workflow → Export / Import.
 
 ## Credentials
 

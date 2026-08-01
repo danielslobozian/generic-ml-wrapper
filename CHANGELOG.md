@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The docs describe the surface that actually ships.** An audit of every page against
+  the CLI's argparse definitions, the settings registry, the TUI menu, and the client
+  catalogue found the drift had collected in three places. `CLI.md` documented neither
+  `workflow export` / `import` / `drafts` / `resume` nor the `--resume-latest`,
+  `--client-args`, and `--description` flags, and its `tui` section still described the
+  0.7.0-era menu — three top-level items, most verbs "placeholders until they are built
+  out" — when the menu has had a fourth (Rules) since 0.8.1 and no placeholder verbs
+  since 0.8.2. `CONFIGURATION.md` was missing `[language]`, `[ambient]`, and
+  `client.args` entirely. `WORKFLOWS.md` never mentioned that a workflow can be shared
+  or that an interrupted authoring session can be reopened. `USER_GUIDE.md`'s `--json`
+  list was a strict subset of the commands that accept it. `README.md`, `CLIENTS.md`,
+  `TROUBLESHOOTING.md`, and `CONCEPTS.md` were checked and needed no correction.
+
+### Added
+- **How to update, said out loud.** The README now answers the question the exit
+  receipt's "a newer gmlw is out" notice raises: gmlw never updates itself. It checks
+  PyPI at most once a day and reports; installing the new version stays yours to do,
+  with `uv tool upgrade generic-ml-wrapper`.
+
 ## [0.9.1] - 2026-07-30
 
 Every user-facing exception carried a raw English message, interpolated verbatim into
