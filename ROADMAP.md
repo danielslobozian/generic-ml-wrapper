@@ -391,6 +391,33 @@ first-contact install path.
   PyPI and leaving the upgrade to you. Once a day at most, degrades to silence on any failure,
   `gmlw config set update.check false` to turn it off.
 
+### 0.11.0 — removal, and a menu you can stay in
+gmlw had only ever accumulated. Nothing in the wrapper removed anything, so every job that had
+ever had a session stayed in the listing and in the menu permanently, alongside the throwaway
+ones made while trying something out. This release adds deletion at two grains and fixes the
+places where the menu let go of the terminal mid-task.
+
+- **Deletion, at two grains** — `gmlw jobs delete <job>...` takes whole jobs (sessions, per-turn
+  usage and cost, compiled contexts, transcripts, folders and all); `gmlw sessions <job> delete
+  <session>...` takes single sessions and leaves the job standing. Both accept several ids,
+  print the exact footprint before asking, and refuse rather than assume off a terminal without
+  `--yes`. One unknown id aborts the whole batch untouched. In the menu, **Job > Delete** offers
+  the same two grains on a confirmation screen that opens on **No**.
+- **`gmlw sessions` shows what each session used** — turn count and cost per row, `empty` for one
+  that never took a turn. Without it, deciding what to delete is guesswork. `--json` rows gain
+  `turn_count` and `cost_usd`.
+- **A launch can be pointed at a client** — **Job → New**, **Workflow → Run**, **Create** and
+  **Edit** end with a client step, the menu's equivalent of `--client`. Per-launch, never
+  rewrites `client.default`, and offers only clients that can actually be launched on: built-ins
+  found on `PATH`, plus every name under `[callers]` whatever `PATH` says.
+- **`Job > New` offers the jobs you already have** — a picker instead of a free-text field, with
+  **Type a new name…** fixed as the first row. Picking an existing job starts a new session on
+  it, which is what `gmlw start <existing-job>` always did.
+- **The menu stays the menu** — delete, workflow export/import, and re-running `Config > Setup`
+  each used to end the process and drop the user at the shell. All three now happen in the app
+  and return to the list they were asked from. A *launch* still ends gmlw, because a client
+  owned the terminal and the session is over when it is.
+
 ## Planned
 
 _Next milestone not yet chosen._

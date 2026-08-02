@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-08-02
+
+Things can be removed now. Until this release gmlw only ever accumulated: every job that had
+ever had a session stayed in the listing and in the menu for good, next to the throwaway ones
+made while trying something out. Deletion arrives at two grains, in the CLI and in the menu,
+and `gmlw sessions` gains the turn count and cost you need to decide what is worth keeping.
+Alongside it, a pass over the menu itself — a launch can now be pointed at a client without
+changing the global default, `Job > New` offers the jobs you already have, and the three
+places that used to drop you back at the shell mid-task stay in the app.
+
 ### Added
 - **Jobs and sessions can be deleted** ([#82](https://github.com/danielslobozian/generic-ml-wrapper/issues/82)).
   Until now nothing in the wrapper removed anything: every job that had ever had a session
@@ -698,7 +708,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.8.2...v0.9.0
