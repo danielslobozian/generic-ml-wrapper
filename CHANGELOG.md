@@ -46,14 +46,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   equivalent of `--client`, which the CLI has always had.
 
   It opens on the configured default with the cursor already there, so `⏎` is "whatever I
-  normally use" and choosing otherwise is deliberate. Clients that are not on `PATH` are
-  listed but disabled: an absence you can see beats one you cannot. The choice is
-  **per-launch** and never rewrites `client.default`. **Resume is not asked about**, by
-  design — a resumed session relaunches on the client it was made with.
+  normally use" and choosing otherwise is deliberate. The choice is **per-launch** and never
+  rewrites `client.default`. **Resume is not asked about**, by design — a resumed session
+  relaunches on the client it was made with.
 
-  Behind it, a `ListLaunchClients` port: the catalog, a `PATH` lookup, and the default —
-  and deliberately no version reads. `ListClients` (the Config → Clients view) runs
-  `<binary> --version` per installed client, which is several subprocesses and not
+  **Only clients that can actually be launched on are offered**, from two sources with two
+  different rules. A built-in appears when its binary is on `PATH`. Every name under
+  `[callers]` appears too, marked 🔌 — including custom callers gmlw does not ship, since
+  `DefaultCliCallerProvider` resolves an override *by name before* any built-in, making
+  `cursor-mitm = "…:CursorMitmCaller"` as real a client as `claude`. A configured caller is
+  offered whatever `PATH` says: gmlw has no idea what someone else's caller needs, and
+  configuring one is already the statement that it works. A chooser built from the catalog
+  alone would have been the one place in gmlw where those clients did not exist.
+
+  Behind it, a `ListLaunchClients` port: a `PATH` lookup, the `[callers]` map, and the
+  default — and deliberately no version reads. `ListClients` (the Config → Clients view)
+  runs `<binary> --version` per installed client, which is several subprocesses and not
   something that belongs between "start this job" and the job starting.
 
 ### Fixed

@@ -1948,9 +1948,9 @@ def test_an_unwired_delete_screen_is_inert() -> None:
 # --------------------------------------------------------------------------- #
 
 _LAUNCH_CLIENTS = [
-    ClientChoice("claude", "Claude Code", installed=True, is_default=True),
-    ClientChoice("cursor", "Cursor", installed=True, is_default=False),
-    ClientChoice("codex", "Codex", installed=False, is_default=False),
+    ClientChoice("claude", "Claude Code", is_default=True),
+    ClientChoice("cursor", "Cursor", is_default=False),
+    ClientChoice("cursor-mitm", "cursor-mitm", is_default=False, custom=True),
 ]
 
 
@@ -1992,7 +1992,7 @@ def test_starting_a_job_asks_which_client_first() -> None:
     assert "Job" in str(seen["crumb"])
     assert "PROJ-1" in str(seen["crumb"])
     assert str(seen["crumb"]).endswith("Client")
-    assert seen["titles"] == ["Claude Code", "Cursor", "Codex"]
+    assert seen["titles"] == ["Claude Code", "Cursor", "cursor-mitm"]
     assert seen["running"] is True  # the name step did not launch on its own
     assert choice == MenuChoice(action="start", job="PROJ-1", client="claude")
 
@@ -2000,8 +2000,8 @@ def test_starting_a_job_asks_which_client_first() -> None:
 def test_the_picker_opens_on_the_configured_default() -> None:
     """ "Falling back to the configured client when I do not choose anything" — one keypress."""
     clients = [
-        ClientChoice("claude", "Claude Code", installed=True, is_default=False),
-        ClientChoice("cursor", "Cursor", installed=True, is_default=True),
+        ClientChoice("claude", "Claude Code", is_default=False),
+        ClientChoice("cursor", "Cursor", is_default=True),
     ]
     app = _launch_app(clients)
 
@@ -2028,8 +2028,8 @@ def test_a_different_client_can_be_picked_for_one_launch() -> None:
     assert choice.client == "cursor"
 
 
-def test_a_client_that_is_not_installed_is_shown_but_cannot_be_picked() -> None:
-    """Shown so its absence is visible; disabled so it cannot be launched on."""
+def test_every_offered_client_is_launchable() -> None:
+    """The wiring only offers what can actually run, so no row is a dead end."""
     app = _launch_app()
     seen: dict[str, object] = {}
 
@@ -2041,8 +2041,40 @@ def test_a_client_that_is_not_installed_is_shown_but_cannot_be_picked() -> None:
             seen["icons"] = [r.item.icon for r in app.screen.query(_Row)]
 
     asyncio.run(scenario())
-    assert seen["disabled"] == [False, False, True]  # only codex
-    assert seen["icons"] == ["●", "○", "🚫"]  # default, alternative, absent
+    assert seen["disabled"] == [False, False, False]
+    assert seen["icons"] == ["●", "○", "🔌"]  # default, built-in, your own caller
+
+
+def test_a_custom_caller_can_be_launched_on_like_any_other() -> None:
+    """A [callers] entry gmlw does not ship is a first-class choice, not a footnote."""
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "down", "enter")  # onto cursor-mitm
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.client == "cursor-mitm"
+
+
+def test_a_custom_caller_says_where_it_came_from() -> None:
+    """No square brackets in strings bound for the detail panel — Rich eats them as markup."""
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "down")  # onto cursor-mitm
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert "your own caller" in str(seen["detail"])
+    assert "config.toml" in str(seen["detail"])  # survives Rich's markup parser intact
 
 
 def test_running_a_workflow_asks_which_client() -> None:

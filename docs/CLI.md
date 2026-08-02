@@ -337,10 +337,19 @@ environment and role rule axes.
 **Every launch ends with a client step** — Job → New, Workflow → Run, Create, and Edit all
 ask which client to run on before starting, the menu's equivalent of `--client`. It opens
 on your configured default with the cursor already there, so `⏎` is "the one I normally
-use"; a client that is not on your `PATH` is listed but cannot be picked, so its absence is
-visible rather than mysterious. **The choice applies to that launch only** and never
-rewrites `client.default` — to change the default, use Config → Clients. Resume is
-deliberately not asked: a resumed session relaunches on the client it was made with.
+use". **The choice applies to that launch only** and never rewrites `client.default` — to
+change the default, use Config → Clients. Resume is deliberately not asked: a resumed
+session relaunches on the client it was made with.
+
+Only clients you can actually launch on are listed:
+
+- a **built-in** appears when its binary is on your `PATH`;
+- **any name under `[callers]`** appears too, marked 🔌 — including one gmlw does not ship.
+  A caller is resolved by name before any built-in, so
+  `cursor-mitm = "/path/cursor_mitm.py:CursorMitmCaller"` makes `cursor-mitm` as real a
+  client as `claude`, usable here and with `--client cursor-mitm`. gmlw cannot `PATH`-check
+  a caller it did not write, so a configured one is always offered — configuring it is the
+  statement that it works. See [CONFIGURATION.md](CONFIGURATION.md) for `[callers]`.
 
 **Only Setup leaves the menu.** Deleting, exporting a workflow, and importing one all ask
 and act in place, and leave you on the screen you were working on. `Config > Setup` is an

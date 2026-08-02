@@ -2335,7 +2335,7 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
 
     class _Launch(ListLaunchClients):
         def execute(self) -> list[LaunchClient]:
-            return [LaunchClient("claude", "Claude Code", installed=True, is_default=True)]
+            return [LaunchClient("claude", "Claude Code", is_default=True)]
 
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
@@ -2345,11 +2345,11 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
 
     listing = cast("Callable[[], list[tui.ClientChoice]]", captured["clients"])
     (only,) = listing()
-    assert (only.name, only.display, only.installed, only.is_default) == (
+    assert (only.name, only.display, only.is_default, only.custom) == (
         "claude",
         "Claude Code",
         True,
-        True,
+        False,
     )
 
 

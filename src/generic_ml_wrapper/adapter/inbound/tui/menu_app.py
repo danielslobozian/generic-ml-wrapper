@@ -170,15 +170,15 @@ class Deleter:
 class ClientChoice:
     """One client a launch can be pointed at, as the picker shows it.
 
-    ``installed`` gates selection the way ``resumable`` does in the resume picker: a
-    client that is not on ``PATH`` is shown, so its absence is visible rather than
-    mysterious, but cannot be chosen.
+    Every row here is launchable -- the wiring only offers what is actually available, so
+    unlike the resume picker there is nothing to disable. ``custom`` marks a client that
+    came from the user's own ``[callers]`` config rather than the built-in catalog.
     """
 
     name: str
     display: str
-    installed: bool
     is_default: bool
+    custom: bool = False
 
 
 @dataclass(frozen=True)
@@ -610,37 +610,35 @@ class ClientPickerScreen(_MenuScreen):
         return self.menu_app.launch_clients()
 
     def menu_items(self) -> list[_Item]:
-        """One row per supported client; the default marked, the absent ones disabled."""
+        """One row per launchable client, the default marked and your own callers flagged."""
         t = i18n.active().t
         items: list[_Item] = []
         for choice in self._choices():
-            if not choice.installed:
-                icon, note = "🚫", t("tui.client.not_installed", client=choice.name)
-            elif choice.is_default:
-                icon, note = "●", ""
+            if choice.is_default:
+                icon = "●"
+            elif choice.custom:
+                icon = "🔌"
             else:
-                icon, note = "○", ""
-            subtitle = t("tui.client.default") if choice.is_default else t("tui.client.once")
+                icon = "○"
             items.append(
                 _Item(
                     icon,
                     choice.display,
-                    subtitle,
+                    t("tui.client.default") if choice.is_default else t("tui.client.once"),
                     "client:pick",
                     payload=choice.name,
-                    note=note,
-                    disabled=not choice.installed,
+                    note=t("tui.client.custom") if choice.custom else "",
                 )
             )
         return items
 
     def initial_index(self) -> int:
-        """Open on the configured default, so ``⏎`` is the answer most people want."""
-        choices = self._choices()
-        for index, choice in enumerate(choices):
-            if choice.is_default and choice.installed:
-                return index
-        return next((i for i, c in enumerate(choices) if c.installed), 0)
+        """Open on the configured default, so ``⏎`` is the answer most people want.
+
+        A default that is not among the offered clients (uninstalled, or removed from
+        ``[callers]``) simply has no row, and the cursor starts at the top instead.
+        """
+        return next((i for i, c in enumerate(self._choices()) if c.is_default), 0)
 
     def handle(self, item: _Item) -> None:
         """Exit with the pending launch, now carrying the chosen client."""

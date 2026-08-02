@@ -1627,11 +1627,10 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _launch_clients() -> list[ClientChoice]:
         # Re-read per open, not snapshotted with the rest: a default just changed in Config
-        # has to be the one marked here, and this read is a PATH lookup, not a version probe.
+        # has to be the one marked here, and this read is a PATH lookup plus a config read,
+        # not a version probe.
         return [
-            ClientChoice(
-                name=c.name, display=c.display, installed=c.installed, is_default=c.is_default
-            )
+            ClientChoice(name=c.name, display=c.display, is_default=c.is_default, custom=c.custom)
             for c in build_list_launch_clients().execute()
         ]
 

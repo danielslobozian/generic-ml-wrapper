@@ -257,7 +257,7 @@ def build_list_clients() -> ListClients:
 
 
 def build_list_launch_clients() -> ListLaunchClients:
-    """Build the ListLaunchClients use case: the catalog, PATH detection, the default.
+    """Build the ListLaunchClients use case: PATH, ``[callers]``, and the default.
 
     No version reads, unlike :func:`build_list_clients` — this one sits between a user
     saying "launch" and the launch happening.
@@ -268,6 +268,7 @@ def build_list_launch_clients() -> ListLaunchClients:
     return ListLaunchClientsUseCase(
         detector=PathClientDetector(),
         default_client=config.default_client,
+        caller_overrides=config.caller_overrides,
     )
 
 
