@@ -101,6 +101,7 @@ from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
 from generic_ml_wrapper.application.port.inbound.list_drafts import ListDrafts
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
+from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClients
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
@@ -136,6 +137,7 @@ from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
@@ -250,6 +252,21 @@ def build_list_clients() -> ListClients:
     return ListClientsUseCase(
         detector=PathClientDetector(),
         version=HttpClientVersions(),
+        default_client=config.default_client,
+    )
+
+
+def build_list_launch_clients() -> ListLaunchClients:
+    """Build the ListLaunchClients use case: the catalog, PATH detection, the default.
+
+    No version reads, unlike :func:`build_list_clients` — this one sits between a user
+    saying "launch" and the launch happening.
+
+    Returns:
+        A ready-to-run ListLaunchClients.
+    """
+    return ListLaunchClientsUseCase(
+        detector=PathClientDetector(),
         default_client=config.default_client,
     )
 

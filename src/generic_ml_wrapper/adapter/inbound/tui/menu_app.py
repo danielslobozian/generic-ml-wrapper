@@ -22,7 +22,7 @@ it any earlier and they would freeze in English. :func:`_key` marks every such l
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar, cast
 
@@ -76,6 +76,11 @@ def _no_usage_view(job: str) -> UsageView:
     return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
 
 
+def _no_clients() -> list[ClientChoice]:
+    """Default when the app runs unwired: no client choice to offer, so none is asked for."""
+    return []
+
+
 def _no_rules() -> tuple[RuleGroup, ...]:
     """Default rule catalogue when the app runs unwired (tests): the user has none."""
     return ()
@@ -94,7 +99,10 @@ class MenuChoice:
     launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
     open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
     new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
-    ``archive`` to install from. A ``None`` return means "do nothing".
+    ``archive`` to install from. ``client`` is the one this launch was pointed at, or
+    ``None`` to use the configured default -- a per-launch choice, exactly like ``--client``
+    on the CLI, and never a change to the default itself. A ``None`` return means "do
+    nothing".
 
     Only things that need the terminal come back this way. Deleting does not -- it happens
     in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
@@ -107,6 +115,7 @@ class MenuChoice:
     workflow: str | None = None
     guided: bool = False
     archive: str | None = None
+    client: str | None = None
 
 
 @dataclass(frozen=True)
@@ -155,6 +164,21 @@ class Deleter:
     delete_jobs: Callable[[tuple[str, ...]], str]
     preview_sessions: Callable[[str, tuple[str, ...]], str]
     delete_sessions: Callable[[str, tuple[str, ...]], str]
+
+
+@dataclass(frozen=True)
+class ClientChoice:
+    """One client a launch can be pointed at, as the picker shows it.
+
+    ``installed`` gates selection the way ``resumable`` does in the resume picker: a
+    client that is not on ``PATH`` is shown, so its absence is visible rather than
+    mysterious, but cannot be chosen.
+    """
+
+    name: str
+    display: str
+    installed: bool
+    is_default: bool
 
 
 @dataclass(frozen=True)
@@ -540,6 +564,90 @@ class _MenuScreen(Screen[None]):
         self.menu_app.exit(None)
 
 
+class ClientPickerScreen(_MenuScreen):
+    """The last step before a launch: which client to run it on, this once.
+
+    Takes the launch that is about to happen and returns the same launch with a client
+    filled in. That is the whole screen -- it never inspects what kind of launch it is,
+    so the job, run, and authoring flows all reach it the same way and none of them grew
+    a branch for it.
+
+    It opens on the configured default with the cursor already there, so ``⏎`` is
+    "whatever I normally use" and choosing something else is a deliberate act. Nothing is
+    written to config: this is ``--client`` for one launch, not a new default.
+    """
+
+    empty_key = "tui.client.none"
+
+    def __init__(self, pending: MenuChoice) -> None:
+        """Bind the picker to the launch it is completing."""
+        super().__init__()
+        self._pending = pending
+
+    #: The launch action -> (object crumb key, verb crumb key). The picker is the last
+    #: screen before something starts, so the breadcrumb has to still say what that is.
+    _CRUMBS: ClassVar[dict[str, tuple[str, str]]] = {
+        "start": ("tui.job", "tui.job.new"),
+        "run": ("tui.workflow", "tui.wf.run"),
+        "workflow_new": ("tui.workflow", "tui.wf.create"),
+        "workflow_edit": ("tui.workflow", "tui.wf.edit"),
+    }
+
+    def header_text(self) -> str:
+        """Breadcrumb: the launch being set up, what it targets, then Client."""
+        t = i18n.active().t
+        obj, verb = self._CRUMBS.get(self._pending.action, ("tui.client.crumb", ""))
+        parts = ["gmlw", t(obj)]
+        if verb:
+            parts.append(t(verb))
+        target = self._pending.job or self._pending.workflow
+        if target:
+            parts.append(target)
+        parts.append(t("tui.client.crumb"))
+        return " > ".join(parts)
+
+    def _choices(self) -> list[ClientChoice]:
+        return self.menu_app.launch_clients()
+
+    def menu_items(self) -> list[_Item]:
+        """One row per supported client; the default marked, the absent ones disabled."""
+        t = i18n.active().t
+        items: list[_Item] = []
+        for choice in self._choices():
+            if not choice.installed:
+                icon, note = "🚫", t("tui.client.not_installed", client=choice.name)
+            elif choice.is_default:
+                icon, note = "●", ""
+            else:
+                icon, note = "○", ""
+            subtitle = t("tui.client.default") if choice.is_default else t("tui.client.once")
+            items.append(
+                _Item(
+                    icon,
+                    choice.display,
+                    subtitle,
+                    "client:pick",
+                    payload=choice.name,
+                    note=note,
+                    disabled=not choice.installed,
+                )
+            )
+        return items
+
+    def initial_index(self) -> int:
+        """Open on the configured default, so ``⏎`` is the answer most people want."""
+        choices = self._choices()
+        for index, choice in enumerate(choices):
+            if choice.is_default and choice.installed:
+                return index
+        return next((i for i, c in enumerate(choices) if c.installed), 0)
+
+    def handle(self, item: _Item) -> None:
+        """Exit with the pending launch, now carrying the chosen client."""
+        if item.action == "client:pick":
+            self.menu_app.exit(replace(self._pending, client=item.payload))
+
+
 class ConfirmScreen(Screen[bool]):
     """A yes/no question with the consequences spelled out above it.
 
@@ -849,7 +957,7 @@ class WorkflowPickerScreen(_MenuScreen):
         if item.action != "wf:pick":
             return
         if self._mode == "run":
-            self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
+            self.menu_app.launch(MenuChoice(action="run", workflow=item.payload))
         elif self._mode == "export":
             # Done here rather than on the way out: packing a zip asks nothing and changes
             # nothing you are looking at, so leaving the menu for it would cost the user
@@ -1020,9 +1128,9 @@ class GuidedChoiceScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Exit with the authoring choice at the picked depth."""
+        """Move on to the client step with the authoring choice at the picked depth."""
         if item.action in ("guided:yes", "guided:no"):
-            self.menu_app.exit(
+            self.menu_app.launch(
                 MenuChoice(
                     action=self._action,
                     workflow=self._workflow,
@@ -1488,7 +1596,7 @@ class NewJobScreen(Screen[None]):
         if error is not None:
             self.query_one("#detail", Static).update(f"✗ {error}")
             return
-        self.menu_app.exit(MenuChoice(action="start", job=name))
+        self.menu_app.launch(MenuChoice(action="start", job=name))
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Job menu."""
@@ -2347,6 +2455,7 @@ class MenuApp(App[MenuChoice | None]):
         deleter: Deleter | None = None,
         reload_jobs: Callable[[], list[JobChoice]] | None = None,
         archiver: Archiver | None = None,
+        launch_clients: Callable[[], list[ClientChoice]] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2387,6 +2496,10 @@ class MenuApp(App[MenuChoice | None]):
                 list as-is.
             archiver: Exports a workflow and installs one from an archive; ``None`` leaves
                 both verbs read-only, so the app runs unwired in tests.
+            launch_clients: The clients a launch can be pointed at, re-read each time the
+                picker opens (so a default changed in Config shows immediately). Defaults
+                to none, which skips the picker entirely and launches on the configured
+                default -- the behaviour before the picker existed.
         """
         super().__init__()
         self.jobs = jobs
@@ -2406,6 +2519,7 @@ class MenuApp(App[MenuChoice | None]):
         self.deleter = deleter
         self._reload_jobs = reload_jobs
         self.archiver = archiver
+        self.launch_clients = launch_clients or _no_clients
 
     def refresh_jobs(self) -> None:
         """Re-read the job list after something changed it (a delete)."""
@@ -2430,6 +2544,19 @@ class MenuApp(App[MenuChoice | None]):
         if self._rule_cache is None:
             self._rule_cache = self.rules()
         return self._rule_cache
+
+    def launch(self, pending: MenuChoice) -> None:
+        """Finish a launch: ask which client to run it on, then exit with the answer.
+
+        The one place the client step is inserted, so every launcher gets it by handing
+        its choice here instead of exiting itself. With nothing to choose between (the app
+        unwired, or no client detected) it exits straight away and the wiring falls back to
+        the configured default -- the behaviour before the picker existed.
+        """
+        if self.launch_clients():
+            self.push_screen(ClientPickerScreen(pending))
+        else:
+            self.exit(pending)
 
     def tell_current(self, message: str) -> None:
         """Show ``message`` on whichever menu screen is now on top, if any.

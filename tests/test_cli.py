@@ -61,6 +61,10 @@ from generic_ml_wrapper.application.port.inbound.import_workflow import (
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
+from generic_ml_wrapper.application.port.inbound.list_launch_clients import (
+    LaunchClient,
+    ListLaunchClients,
+)
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
@@ -2239,3 +2243,115 @@ def test_an_unreadable_archive_is_reported_rather_than_raised(
     attempt = _built_archiver(monkeypatch).install("/tmp/broken.zip", False)
     assert attempt.message.startswith("✗")
     assert attempt.needs_confirmation is False
+
+
+# --------------------------------------------------------------------------- #
+# The client a launch was pointed at (#79, #80)                                #
+# --------------------------------------------------------------------------- #
+
+
+def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) -> str:
+    """The client `_act_on_tui_choice` ends up launching ``choice`` on."""
+    seen: list[str] = []
+
+    def _launch(
+        _job: str, _resume: bool, _session: str | None, _cwd: str | None, client: str
+    ) -> int:
+        seen.append(client)
+        return 0
+
+    def _run(_workflow: str, client: str) -> int:
+        seen.append(client)
+        return 0
+
+    def _new(_workflow: str | None, client: str, _guided: bool) -> int:
+        seen.append(client)
+        return 0
+
+    def _edit(_workflow: str, client: str, _guided: bool) -> int:
+        seen.append(client)
+        return 0
+
+    monkeypatch.setattr(app, "_tui_launch_job", _launch)
+    monkeypatch.setattr(app, "_run_workflow", _run)
+    monkeypatch.setattr(app, "_new_workflow", _new)
+    monkeypatch.setattr(app, "_edit_workflow", _edit)
+    app._act_on_tui_choice(choice)
+    return seen[0]
+
+
+def test_a_job_launches_on_the_client_the_menu_picked(monkeypatch: pytest.MonkeyPatch) -> None:
+    choice = tui.MenuChoice(action="start", job="alpha", client="cursor")
+    assert _launched_client(monkeypatch, choice) == "cursor"
+
+
+def test_a_workflow_run_launches_on_the_client_the_menu_picked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    choice = tui.MenuChoice(action="run", workflow="nightly", client="codex")
+    assert _launched_client(monkeypatch, choice) == "codex"
+
+
+def test_authoring_launches_on_the_client_the_menu_picked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    new = tui.MenuChoice(action="workflow_new", client="cursor")
+    edit = tui.MenuChoice(action="workflow_edit", workflow="nightly", client="cursor")
+    assert _launched_client(monkeypatch, new) == "cursor"
+    assert _launched_client(monkeypatch, edit) == "cursor"
+
+
+def test_no_pick_falls_back_to_the_configured_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A launch that never went through the picker behaves exactly as it always did."""
+
+    def _default(_raw: str | None) -> str:
+        return "claude"
+
+    monkeypatch.setattr(app, "_client", _default)
+    choice = tui.MenuChoice(action="start", job="alpha")
+    assert _launched_client(monkeypatch, choice) == "claude"
+
+
+def test_a_pick_is_not_written_back_as_the_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Per-launch, like --client: choosing once must not change what tomorrow launches on."""
+    monkeypatch.setattr(app.config, "config_path", lambda: tmp_path / "config.toml")
+    (tmp_path / "config.toml").write_text('[client]\ndefault = "claude"\n', encoding="utf-8")
+
+    assert _launched_client(monkeypatch, tui.MenuChoice(action="start", job="a", client="codex"))
+    assert 'default = "claude"' in (tmp_path / "config.toml").read_text(encoding="utf-8")
+
+
+def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["clients"] = kwargs["launch_clients"]
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    class _Launch(ListLaunchClients):
+        def execute(self) -> list[LaunchClient]:
+            return [LaunchClient("claude", "Claude Code", installed=True, is_default=True)]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    monkeypatch.setattr(app, "build_list_launch_clients", lambda: _Launch())
+    app._run_menu()
+
+    listing = cast("Callable[[], list[tui.ClientChoice]]", captured["clients"])
+    (only,) = listing()
+    assert (only.name, only.display, only.installed, only.is_default) == (
+        "claude",
+        "Claude Code",
+        True,
+        True,
+    )
+
+
+def test_build_list_launch_clients_is_wired() -> None:
+    assert isinstance(composition.build_list_launch_clients(), ListLaunchClients)

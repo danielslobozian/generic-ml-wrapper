@@ -37,6 +37,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   minted one past the highest suffix "so gaps never cause a collision", so nothing renumbers
   and no id is reused.
 
+- **The menu can point a launch at a client**
+  ([#79](https://github.com/danielslobozian/generic-ml-wrapper/issues/79),
+  [#80](https://github.com/danielslobozian/generic-ml-wrapper/issues/80)). Every launch from
+  `gmlw tui` used the configured default, so running one job on a different client meant
+  changing the global default in Config and changing it back afterwards. **Job → New**,
+  **Workflow → Run**, **Create**, and **Edit** now end with a client step — the menu's
+  equivalent of `--client`, which the CLI has always had.
+
+  It opens on the configured default with the cursor already there, so `⏎` is "whatever I
+  normally use" and choosing otherwise is deliberate. Clients that are not on `PATH` are
+  listed but disabled: an absence you can see beats one you cannot. The choice is
+  **per-launch** and never rewrites `client.default`. **Resume is not asked about**, by
+  design — a resumed session relaunches on the client it was made with.
+
+  Behind it, a `ListLaunchClients` port: the catalog, a `PATH` lookup, and the default —
+  and deliberately no version reads. `ListClients` (the Config → Clients view) runs
+  `<binary> --version` per installed client, which is several subprocesses and not
+  something that belongs between "start this job" and the job starting.
+
 ### Fixed
 - **Deleting from the menu no longer leaves the menu.** The first cut handed the selection back
   to the wiring and asked on the restored terminal, which meant the app tore down, asked, and

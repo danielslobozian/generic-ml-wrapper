@@ -114,6 +114,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_clients,
     build_list_drafts,
     build_list_jobs,
+    build_list_launch_clients,
     build_list_personas,
     build_list_plugins,
     build_list_rules,
@@ -1536,6 +1537,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     """
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
         Archiver,
+        ClientChoice,
         ClientRow,
         ConfigCatalog,
         ConfigSetResult,
@@ -1622,6 +1624,16 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         install=_install_in_app,
         reload_workflows=lambda: build_list_workflow_catalog().execute(),
     )
+
+    def _launch_clients() -> list[ClientChoice]:
+        # Re-read per open, not snapshotted with the rest: a default just changed in Config
+        # has to be the one marked here, and this read is a PATH lookup, not a version probe.
+        return [
+            ClientChoice(
+                name=c.name, display=c.display, installed=c.installed, is_default=c.is_default
+            )
+            for c in build_list_launch_clients().execute()
+        ]
 
     def _sessions_for(job: str) -> list[SessionChoice]:
         summaries = build_list_sessions().execute(job)  # oldest-first; the last is the latest
@@ -1819,6 +1831,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         deleter=deleter,
         reload_jobs=_job_choices,
         archiver=archiver,
+        launch_clients=_launch_clients,
     ).run()  # blocks; terminal restored on return
 
 
@@ -1838,10 +1851,11 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:
         errand's own exit code is deliberately dropped: a declined delete or a refused
         import is not a reason to end the session, it is a reason to go back.
     """
-    # Read *after* the menu: a default-client switch made in Config (or in the Clients view)
-    # must apply to this launch, not only to the next run of gmlw. Ignored on resume -- a
-    # resumed session carries its own client.
-    client = _client(None)
+    # The client the launch was pointed at, else the configured default read *after* the
+    # menu: a default-client switch made in Config (or in the Clients view) must apply to
+    # this launch, not only to the next run of gmlw. Ignored on resume -- a resumed session
+    # carries its own client.
+    client = choice.client or _client(None)
     # -- the one errand: done on the terminal, then back to the menu -------------------- #
     if choice.action == "init":
         # Config → Setup genuinely needs the terminal: it is an interview, and it can

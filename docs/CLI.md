@@ -328,10 +328,23 @@ gmlw tui
 </div>
 
 Every top-level verb is wired, not a placeholder: **Job** covers New, Resume (a specific
-job's latest session), List, and Export; **Workflow** covers Run, Edit, Create, List,
-Export, and Import; **Config** covers listing/getting/setting a value, the **Clients**
-switcher (selecting a row also sets it as the default — the `gmlw config set client.default`
-path), and re-running **Setup**; **Rules** browses the environment and role rule axes.
+job's latest session), List, Export, and Delete; **Workflow** covers Run, Edit, Create,
+List, Export, and Import; **Config** covers listing/getting/setting a value, the
+**Clients** switcher (selecting a row also sets it as the default — the
+`gmlw config set client.default` path), and re-running **Setup**; **Rules** browses the
+environment and role rule axes.
+
+**Every launch ends with a client step** — Job → New, Workflow → Run, Create, and Edit all
+ask which client to run on before starting, the menu's equivalent of `--client`. It opens
+on your configured default with the cursor already there, so `⏎` is "the one I normally
+use"; a client that is not on your `PATH` is listed but cannot be picked, so its absence is
+visible rather than mysterious. **The choice applies to that launch only** and never
+rewrites `client.default` — to change the default, use Config → Clients. Resume is
+deliberately not asked: a resumed session relaunches on the client it was made with.
+
+**Only Setup leaves the menu.** Deleting, exporting a workflow, and importing one all ask
+and act in place, and leave you on the screen you were working on. `Config > Setup` is an
+interview that owns the terminal, so it steps out and returns when it is done.
 
 Off a TTY (piped/redirected) it never blocks: it falls back to the capability index,
 exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the flag CLI

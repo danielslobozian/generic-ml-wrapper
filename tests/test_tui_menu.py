@@ -18,6 +18,7 @@ from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     Archiver,
+    ClientChoice,
     ClientRow,
     ConfigCatalog,
     ConfigSetResult,
@@ -1940,3 +1941,240 @@ def test_an_unwired_delete_screen_is_inert() -> None:
         return app.return_value
 
     assert asyncio.run(scenario()) is None
+
+
+# --------------------------------------------------------------------------- #
+# Choosing the client for one launch (#79, #80)                                #
+# --------------------------------------------------------------------------- #
+
+_LAUNCH_CLIENTS = [
+    ClientChoice("claude", "Claude Code", installed=True, is_default=True),
+    ClientChoice("cursor", "Cursor", installed=True, is_default=False),
+    ClientChoice("codex", "Codex", installed=False, is_default=False),
+]
+
+
+def _launch_app(clients: list[ClientChoice] | None = None) -> MenuApp:
+    """An app wired for launching: jobs, workflows, and a client choice."""
+    return MenuApp(
+        _JOBS,
+        workflows=list(_ARCHIVE_WORKFLOWS),
+        launch_clients=lambda: list(_LAUNCH_CLIENTS if clients is None else clients),
+        current_client="claude",
+    )
+
+
+async def _new_job(pilot: Pilot[MenuChoice | None], name: str = "PROJ-1") -> None:
+    """Top → Job → New → type a name → submit."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("enter")  # New (first verb)
+    await pilot.pause()
+    cast("MenuApp", pilot.app).screen.query_one("#name", Input).value = name
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def test_starting_a_job_asks_which_client_first() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+            seen["running"] = app.is_running
+            await pilot.press("enter")  # take the default
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    # The picker is the last screen before something starts, so it still says what.
+    assert "Job" in str(seen["crumb"])
+    assert "PROJ-1" in str(seen["crumb"])
+    assert str(seen["crumb"]).endswith("Client")
+    assert seen["titles"] == ["Claude Code", "Cursor", "Codex"]
+    assert seen["running"] is True  # the name step did not launch on its own
+    assert choice == MenuChoice(action="start", job="PROJ-1", client="claude")
+
+
+def test_the_picker_opens_on_the_configured_default() -> None:
+    """ "Falling back to the configured client when I do not choose anything" — one keypress."""
+    clients = [
+        ClientChoice("claude", "Claude Code", installed=True, is_default=False),
+        ClientChoice("cursor", "Cursor", installed=True, is_default=True),
+    ]
+    app = _launch_app(clients)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("enter")
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client="cursor")
+
+
+def test_a_different_client_can_be_picked_for_one_launch() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "enter")  # onto Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.client == "cursor"
+
+
+def test_a_client_that_is_not_installed_is_shown_but_cannot_be_picked() -> None:
+    """Shown so its absence is visible; disabled so it cannot be launched on."""
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            rows = app.screen.query_one("#menu", ListView).query(ListItem)
+            seen["disabled"] = [r.disabled for r in rows]
+            seen["icons"] = [r.item.icon for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["disabled"] == [False, False, True]  # only codex
+    assert seen["icons"] == ["●", "○", "🚫"]  # default, alternative, absent
+
+
+def test_running_a_workflow_asks_which_client() -> None:
+    """Issue #80: a step between picking the workflow and it starting."""
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("enter")  # Run → workflow picker
+            await pilot.pause()
+            await pilot.press("enter")  # the first workflow
+            await pilot.pause()
+            await pilot.press("down", "enter")  # Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "run"
+    assert choice.workflow == "doc-review"
+    assert choice.client == "cursor"
+
+
+def test_the_client_step_names_the_workflow_it_is_about_to_run() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("enter")  # Run
+            await pilot.pause()
+            await pilot.press("enter")  # doc-review
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+
+    asyncio.run(scenario())
+    assert "Workflow" in str(seen["crumb"])
+    assert "doc-review" in str(seen["crumb"])
+
+
+def test_authoring_a_new_workflow_asks_after_the_depth() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "enter")  # Create
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = ""  # unnamed: named at the end
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("enter")  # guided
+            await pilot.pause()
+            await pilot.press("down", "enter")  # Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "workflow_new"
+    assert choice.guided is True
+    assert choice.client == "cursor"
+
+
+def test_editing_a_workflow_asks_after_the_depth() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "down", "enter")  # Edit → picker
+            await pilot.pause()
+            await pilot.press("enter")  # the first workflow
+            await pilot.pause()
+            await pilot.press("down", "enter")  # quick
+            await pilot.pause()
+            await pilot.press("down", "enter")  # Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "workflow_edit"
+    assert choice.guided is False
+    assert choice.client == "cursor"
+
+
+def test_resuming_is_not_asked_about() -> None:
+    """Issue #79 is explicit: a resumed session already relaunches on its own client."""
+    app = MenuApp(
+        _JOBS,
+        sessions_for=lambda _job: _SESSIONS,
+        current_client="claude",
+        launch_clients=lambda: list(_LAUNCH_CLIENTS),
+    )
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            await pilot.press("enter")
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice == MenuChoice(action="resume", job="alpha", session="alpha_003")
+    assert choice.client is None  # never asked, never set
+
+
+def test_escape_backs_out_of_the_client_step_without_launching() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["running"] = app.is_running
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None
+    assert seen["running"] is True
+    assert "New" in str(seen["crumb"])  # back on the name form
+
+
+def test_with_no_client_choice_the_launch_goes_straight_through() -> None:
+    """Unwired (or nothing detected): no step, and the wiring falls back to the default."""
+    app = MenuApp(_JOBS)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client=None)
