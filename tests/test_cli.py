@@ -51,6 +51,13 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     TurnRow,
     UsageReport,
 )
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.import_workflow import (
+    ArchiveUnreadableError,
+    ImportOutcome,
+    ImportWorkflow,
+    ImportWorkflowResult,
+)
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
@@ -1990,43 +1997,6 @@ def test_quitting_the_menu_exits(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _drive_tui(monkeypatch, _menu_returning(None)) == (0, 1)
 
 
-def test_workflow_export_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The same defect the delete work exposed — it was there before it."""
-    exported: list[str] = []
-
-    def _export(name: str) -> int:
-        exported.append(name)
-        return 0
-
-    monkeypatch.setattr(app, "_export_workflow", _export)
-
-    code, opened = _drive_tui(
-        monkeypatch,
-        _menu_returning(tui.MenuChoice(action="workflow_export", workflow="nightly"), None),
-    )
-
-    assert exported == ["nightly"]
-    assert (code, opened) == (0, 2)
-
-
-def test_workflow_import_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    imported: list[str] = []
-
-    def _import(archive: str) -> int:
-        imported.append(archive)
-        return 0
-
-    monkeypatch.setattr(app, "_import_workflow", _import)
-
-    code, opened = _drive_tui(
-        monkeypatch,
-        _menu_returning(tui.MenuChoice(action="workflow_import", archive="/tmp/w.zip"), None),
-    )
-
-    assert imported == ["/tmp/w.zip"]
-    assert (code, opened) == (0, 2)
-
-
 def test_config_setup_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
     ran: list[bool] = []
 
@@ -2169,6 +2139,103 @@ def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatc
     assert [j.job for j in reload_jobs()] == ["beta"]
 
 
-def test_deleting_no_longer_comes_back_through_the_choice_handler() -> None:
-    """Delete is done in-app; nothing about it should reach the terminal hand-off."""
-    assert app._act_on_tui_choice(tui.MenuChoice(action="jobs_delete")) == 0
+def test_the_in_app_verbs_no_longer_come_back_through_the_choice_handler() -> None:
+    """Delete, export and import are done in-app; none should reach the terminal hand-off."""
+    for action in ("jobs_delete", "sessions_delete", "workflow_export", "workflow_import"):
+        assert app._act_on_tui_choice(tui.MenuChoice(action=action)) == 0
+
+
+def _built_archiver(monkeypatch: pytest.MonkeyPatch) -> tui.Archiver:
+    """The Archiver `_run_menu` builds, captured without opening the menu."""
+    captured: dict[str, tui.Archiver] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["archiver"] = cast("tui.Archiver", kwargs["archiver"])
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    app._run_menu()
+    return captured["archiver"]
+
+
+def test_the_injected_archiver_exports_and_reports_where(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class _Export(ExportWorkflow):
+        def execute(self, name: str) -> str:
+            return str(tmp_path / f"{name}.zip")
+
+    monkeypatch.setattr(app, "build_export_workflow", lambda: _Export())
+
+    assert "nightly.zip" in _built_archiver(monkeypatch).export("nightly")
+
+
+def test_an_export_failure_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Export(ExportWorkflow):
+        def execute(self, name: str) -> str:
+            raise WorkflowNotFoundError("error.workflow.not_found", name=name)
+
+    monkeypatch.setattr(app, "build_export_workflow", lambda: _Export())
+
+    message = _built_archiver(monkeypatch).export("gone")
+    assert message.startswith("✗")
+    assert "gone" in message
+
+
+def _import_returning(result: ImportWorkflowResult) -> type[ImportWorkflow]:
+    class _Import(ImportWorkflow):
+        def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
+            return result
+
+    return _Import
+
+
+def test_the_injected_archiver_installs_and_reports_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = ImportWorkflowResult(ImportOutcome.IMPORTED, "nightly", "/w/nightly")
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", False)
+
+    assert attempt.needs_confirmation is False
+    assert "nightly" in attempt.message
+
+
+def test_a_name_clash_asks_rather_than_failing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The use case reports the clash; the menu turns that into a question, not an error."""
+    result = ImportWorkflowResult(ImportOutcome.REFUSED, "nightly", "/w/nightly")
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", False)
+
+    assert attempt.needs_confirmation is True
+    assert "already exists" in attempt.message
+
+
+def test_a_replacement_names_the_backup_it_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = ImportWorkflowResult(ImportOutcome.REPLACED, "nightly", "/w/nightly", "/backups/n")
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", True)
+
+    assert "/backups/n" in attempt.message
+
+
+def test_an_unreadable_archive_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Import(ImportWorkflow):
+        def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
+            raise ArchiveUnreadableError("error.archive.unreadable", archive=archive)
+
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _Import())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/broken.zip", False)
+    assert attempt.message.startswith("✗")
+    assert attempt.needs_confirmation is False

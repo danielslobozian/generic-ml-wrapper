@@ -1535,12 +1535,14 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         What the user asked for, or ``None`` if they quit.
     """
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
+        Archiver,
         ClientRow,
         ConfigCatalog,
         ConfigSetResult,
         ConfigSetting,
         CreateOutcome,
         Deleter,
+        ImportAttempt,
         JobChoice,
         MenuApp,
         SessionChoice,
@@ -1590,6 +1592,35 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         delete_jobs=_delete_jobs_in_app,
         preview_sessions=_preview_sessions,
         delete_sessions=_delete_sessions_in_app,
+    )
+
+    def _export_in_app(name: str) -> str:
+        try:
+            return i18n.t("workflow.export.written", path=build_export_workflow().execute(name))
+        except (WorkflowNameError, WorkflowNotFoundError) as error:
+            return f"✗ {_render_error(error)}"
+
+    def _install_in_app(archive: str, replace: bool) -> ImportAttempt:
+        try:
+            result = build_import_workflow().execute(archive, replace=replace)
+        except (ArchiveUnreadableError, WorkflowNameError) as error:
+            return ImportAttempt(f"✗ {_render_error(error)}")
+        if result.outcome is ImportOutcome.REFUSED:
+            # Not an error: the use case reports the clash instead of resolving it, so the
+            # question can be asked. The menu turns this into a confirmation screen.
+            return ImportAttempt(
+                i18n.t("workflow.import.exists", name=result.name), needs_confirmation=True
+            )
+        if result.outcome is ImportOutcome.REPLACED:
+            return ImportAttempt(
+                i18n.t("workflow.import.replaced", name=result.name, backup=result.backup)
+            )
+        return ImportAttempt(i18n.t("workflow.import.done", name=result.name))
+
+    archiver = Archiver(
+        export=_export_in_app,
+        install=_install_in_app,
+        reload_workflows=lambda: build_list_workflow_catalog().execute(),
     )
 
     def _sessions_for(job: str) -> list[SessionChoice]:
@@ -1787,10 +1818,11 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         current_client=_client(None),
         deleter=deleter,
         reload_jobs=_job_choices,
+        archiver=archiver,
     ).run()  # blocks; terminal restored on return
 
 
-def _act_on_tui_choice(choice: MenuChoice) -> int | None:  # noqa: PLR0911  (one exit per verb)
+def _act_on_tui_choice(choice: MenuChoice) -> int | None:
     """Carry out what the menu was asked for, on the restored terminal.
 
     Everything here runs *after* ``run()`` returned, which is the point: the app hands
@@ -1810,20 +1842,13 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:  # noqa: PLR0911  (one
     # must apply to this launch, not only to the next run of gmlw. Ignored on resume -- a
     # resumed session carries its own client.
     client = _client(None)
-    # -- errands: done on the terminal, then back to the menu -------------------------- #
-    if choice.action == "init":  # Config → Setup: re-run the interview on the restored terminal
+    # -- the one errand: done on the terminal, then back to the menu -------------------- #
+    if choice.action == "init":
+        # Config → Setup genuinely needs the terminal: it is an interview, and it can
+        # install a client. Everything else the menu does that writes -- deleting,
+        # exporting, importing -- stays in the app, so the user keeps their place.
         _run_init()
         return None
-    if choice.action == "workflow_export" and choice.workflow is not None:
-        _export_workflow(choice.workflow)
-        return None
-    if choice.action == "workflow_import" and choice.archive is not None:
-        # Asked on the restored terminal: the replace prompt needs a tty the TUI had.
-        _import_workflow(choice.archive)
-        return None
-    # Deleting is deliberately absent: it never comes back through here. It asks and acts
-    # inside the app (see the injected `Deleter`), because leaving the menu to answer a
-    # question strands the user at the front door afterwards, not where they were working.
     # -- launches: the terminal goes to a client, and gmlw ends with it ----------------- #
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return _run_workflow(choice.workflow, client)

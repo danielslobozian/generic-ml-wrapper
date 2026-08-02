@@ -17,12 +17,14 @@ from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
+    Archiver,
     ClientRow,
     ConfigCatalog,
     ConfigSetResult,
     ConfigSetting,
     CreateOutcome,
     Deleter,
+    ImportAttempt,
     JobChoice,
     MenuApp,
     MenuChoice,
@@ -1153,13 +1155,50 @@ def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
 
 
 # ── workflow export / import ──
-def _workflow_app() -> MenuApp:
+_ARCHIVE_WORKFLOWS = [
+    Workflow(slug="doc-review", label="Doc Review", description="review the docs"),
+    Workflow(slug="nightly-etl", label="Nightly ETL", description=""),
+]
+
+
+class _RecordingArchiver:
+    """An Archiver that records what it was asked to do and answers with fixed lines.
+
+    ``clash`` makes the next install report a name collision, so the confirmation branch
+    can be driven without a real archive on disk.
+    """
+
+    def __init__(self, *, clash: bool = False) -> None:
+        self.exported: list[str] = []
+        self.installed: list[tuple[str, bool]] = []
+        self._clash = clash
+        self.catalogue = list(_ARCHIVE_WORKFLOWS)
+
+    def as_archiver(self) -> Archiver:
+        return Archiver(
+            export=self._export, install=self._install, reload_workflows=lambda: self.catalogue
+        )
+
+    def _export(self, slug: str) -> str:
+        self.exported.append(slug)
+        return f"exported to /tmp/{slug}.zip"
+
+    def _install(self, archive: str, replace: bool) -> ImportAttempt:
+        self.installed.append((archive, replace))
+        if self._clash and not replace:
+            return ImportAttempt("a workflow named 'doc-review' already exists.", True)
+        self.catalogue = [
+            *_ARCHIVE_WORKFLOWS,
+            Workflow(slug="fresh", label="Fresh", description=""),
+        ]
+        return ImportAttempt("workflow 'fresh' imported.")
+
+
+def _workflow_app(archiver: _RecordingArchiver | None = None) -> MenuApp:
     return MenuApp(
         _JOBS,
-        workflows=[
-            Workflow(slug="doc-review", label="Doc Review", description="review the docs"),
-            Workflow(slug="nightly-etl", label="Nightly ETL", description=""),
-        ],
+        workflows=list(_ARCHIVE_WORKFLOWS),
+        archiver=(archiver or _RecordingArchiver()).as_archiver(),
     )
 
 
@@ -1169,10 +1208,10 @@ async def _open_workflow_menu(pilot: Pilot[MenuChoice | None]) -> None:
     await pilot.pause()
 
 
-def test_export_picks_a_workflow_and_hands_it_back() -> None:
-    # Export runs after the menu exits, through the same code path as the CLI verb.
-    app = _workflow_app()
-
+def test_export_packs_the_picked_workflow_without_leaving_the_list() -> None:
+    """Packing a zip asks nothing, so it should not cost the user their place."""
+    recorder = _RecordingArchiver()
+    app = _workflow_app(recorder)
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
@@ -1182,28 +1221,122 @@ def test_export_picks_a_workflow_and_hands_it_back() -> None:
             await pilot.pause()
             seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
             await pilot.press("enter")  # the first workflow
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["running"] = app.is_running
 
     asyncio.run(scenario())
-    # The picker reads by label, but hands back the slug the export verb takes.
+    # The picker reads by label, but exports the slug the CLI verb takes.
     assert seen["titles"] == ["Doc Review", "Nightly ETL"]
-    assert app.return_value == MenuChoice(action="workflow_export", workflow="doc-review")
+    assert recorder.exported == ["doc-review"]
+    assert "exported to" in str(seen["detail"])  # said in place...
+    assert seen["running"] is True  # ...and still on the picker
+    assert app.return_value is None
 
 
-def test_import_hands_back_the_archive_path(tmp_path: Path) -> None:
-    archive = tmp_path / "shared.zip"
-    archive.write_bytes(b"PK")
-    app = _workflow_app()
+def test_a_second_export_is_one_keypress_away() -> None:
+    recorder = _RecordingArchiver()
+    app = _workflow_app(recorder)
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_workflow_menu(pilot)
-            await pilot.press("down", "down", "down", "down", "down", "enter")  # Import
+            await pilot.press("down", "down", "down", "down", "enter")
             await pilot.pause()
-            app.screen.query_one("#archive", Input).value = str(archive)
             await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("down", "enter")
+            await pilot.pause()
 
     asyncio.run(scenario())
-    assert app.return_value == MenuChoice(action="workflow_import", archive=str(archive))
+    assert recorder.exported == ["doc-review", "nightly-etl"]
+
+
+async def _submit_archive(app: MenuApp, pilot: Pilot[MenuChoice | None], archive: Path) -> None:
+    """Top → Workflow → Import → paste the path → submit."""
+    await _open_workflow_menu(pilot)
+    await pilot.press("down", "down", "down", "down", "down", "enter")  # Import
+    await pilot.pause()
+    app.screen.query_one("#archive", Input).value = str(archive)
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def test_import_installs_the_archive_without_leaving_the_menu(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    recorder = _RecordingArchiver()
+    app = _workflow_app(recorder)
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert recorder.installed == [(str(archive), False)]
+    assert "imported" in str(seen["detail"])
+    assert "Workflow" in str(seen["crumb"])  # back on the Workflow menu, not the front door
+    assert seen["running"] is True
+    assert app.return_value is None
+
+
+def test_a_successful_import_shows_up_in_the_workflow_list(tmp_path: Path) -> None:
+    """A workflow you cannot see is one you cannot run — the catalogue has to re-read."""
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    app = _workflow_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            # The Workflow menu kept its cursor on Import, where we left it — up twice
+            # from there is List (Run, Create, Edit, List, Export, Import).
+            await pilot.press("up", "up", "enter")
+            await pilot.pause()
+            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert "Fresh" in str(seen["titles"])
+
+
+def test_a_name_clash_is_asked_about_in_place(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    recorder = _RecordingArchiver(clash=True)
+    app = _workflow_app(recorder)
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            seen["body"] = str(app.screen.query_one("#consequences", Static).render())
+            await pilot.press("down", "enter")  # Yes, replace
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert "already exists" in str(seen["body"])
+    assert recorder.installed == [(str(archive), False), (str(archive), True)]
+
+
+def test_declining_a_clash_leaves_the_existing_workflow_alone(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    recorder = _RecordingArchiver(clash=True)
+    app = _workflow_app(recorder)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            await pilot.press("escape")  # Esc is a no
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.installed == [(str(archive), False)]  # never re-run with replace
 
 
 def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:

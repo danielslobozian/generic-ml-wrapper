@@ -158,6 +158,39 @@ class Deleter:
 
 
 @dataclass(frozen=True)
+class ImportAttempt:
+    """What came back from trying to install an archive.
+
+    ``needs_confirmation`` is the use case reporting a name clash rather than resolving it
+    — the same answer the CLI turns into its replace prompt. Here it becomes a confirmation
+    screen, and a yes re-runs the install with ``replace``.
+
+    Attributes:
+        message: The line to show — the outcome, the clash, or the error.
+        needs_confirmation: Whether a workflow of that name already exists and the user
+            has to say whether to displace it.
+    """
+
+    message: str
+    needs_confirmation: bool = False
+
+
+@dataclass(frozen=True)
+class Archiver:
+    """Sharing a workflow out and installing one in, as injected closures.
+
+    Attributes:
+        export: Packs a workflow by slug; returns the line to show.
+        install: Installs an archive, optionally displacing a name clash.
+        reload_workflows: Re-reads the catalogue after an install changed it.
+    """
+
+    export: Callable[[str], str]
+    install: Callable[[str, bool], ImportAttempt]
+    reload_workflows: Callable[[], list[Workflow]]
+
+
+@dataclass(frozen=True)
 class SwitchChoice:
     """One option in a switcher: the config ``value`` written, plus what the user sees.
 
@@ -523,16 +556,38 @@ class ConfirmScreen(Screen[bool]):
         _key("q", "refuse", "tui.key.cancel"),
     ]
 
-    def __init__(self, crumb: str, consequences: str) -> None:
-        """Bind the question to its breadcrumb and the footprint it is asking about.
+    def __init__(  # noqa: PLR0913  (the question is its wording; each part is one argument)
+        self,
+        crumb: str,
+        consequences: str,
+        *,
+        yes_key: str = "tui.confirm.delete",
+        no_key: str = "tui.confirm.keep",
+        warning_key: str = "tui.confirm.warning.delete",
+        yes_icon: str = "🗑",
+    ) -> None:
+        """Bind the question to its breadcrumb, its consequences, and its own wording.
+
+        The wording is per-question rather than fixed. A screen that says "Yes, delete —
+        this cannot be undone" to someone importing a workflow is describing a different
+        action from the one about to happen, and an import keeps a backup precisely so it
+        *can* be undone.
 
         Args:
             crumb: The breadcrumb of the screen that asked, so the header does not move.
             consequences: The rendered preview of what confirming would do.
+            yes_key: Catalogue key for the confirming answer (``.d`` is its subtitle).
+            no_key: Catalogue key for the declining answer (``.d`` is its subtitle).
+            warning_key: Catalogue key for the caveat under the answers.
+            yes_icon: The icon on the confirming row.
         """
         super().__init__()
         self._crumb = crumb
         self._consequences = consequences
+        self._yes_key = yes_key
+        self._no_key = no_key
+        self._warning_key = warning_key
+        self._yes_icon = yes_icon
 
     def compose(self) -> ComposeResult:
         """Breadcrumb, the consequences, the two answers, then the docked hints."""
@@ -540,13 +595,13 @@ class ConfirmScreen(Screen[bool]):
         yield Static(self._crumb, id="crumb")
         yield Static(self._consequences, id="consequences")
         yield ListView(
-            _Row(_Item("↩", t("tui.confirm.no"), t("tui.confirm.no.d"), "no")),
-            _Row(_Item("🗑", t("tui.confirm.yes"), t("tui.confirm.yes.d"), "yes")),
+            _Row(_Item("↩", t(self._no_key), t(f"{self._no_key}.d"), "no")),
+            _Row(_Item(self._yes_icon, t(self._yes_key), t(f"{self._yes_key}.d"), "yes")),
             id="menu",
             initial_index=0,  # the safe answer is the one ⏎ lands on
         )
         with Container(id="status"):
-            yield Static(t("tui.confirm.warning"), id="detail")
+            yield Static(t(self._warning_key), id="detail")
             yield Static(t("tui.keys.confirm"), id="keys")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -790,13 +845,19 @@ class WorkflowPickerScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Run exits with the choice; Edit moves to the authoring-depth chooser."""
+        """Run exits with the choice; Export packs in place; Edit picks a depth first."""
         if item.action != "wf:pick":
             return
         if self._mode == "run":
             self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
         elif self._mode == "export":
-            self.menu_app.exit(MenuChoice(action="workflow_export", workflow=item.payload))
+            # Done here rather than on the way out: packing a zip asks nothing and changes
+            # nothing you are looking at, so leaving the menu for it would cost the user
+            # their place for no reason -- and exporting a second workflow is one keypress
+            # away when the list is still in front of them.
+            archiver = self.menu_app.archiver
+            if archiver is not None:
+                self.tell(archiver.export(item.payload))
         else:  # edit — choose the authoring depth, then launch the edit session
             self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
 
@@ -851,8 +912,9 @@ class ImportWorkflowScreen(Screen[None]):
     exports folder. The path is checked here so a typo is fixed in the form rather than
     tearing the menu down to fail at the prompt.
 
-    The import itself runs after the menu exits: replacing an existing workflow asks a
-    question, and that needs the restored terminal.
+    The install happens here. A name clash is the one question it can raise, and the use
+    case reports that back rather than resolving it -- so it becomes a confirmation screen
+    and a yes re-runs the install with ``replace``, without the menu going anywhere.
     """
 
     BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
@@ -876,7 +938,7 @@ class ImportWorkflowScreen(Screen[None]):
         self.query_one("#archive", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Check the archive is there, then hand the path back to the wiring."""
+        """Check the archive is there, then install it."""
         raw = event.value.strip()
         if not raw:
             return
@@ -886,7 +948,42 @@ class ImportWorkflowScreen(Screen[None]):
                 f"✗ {i18n.active().t('tui.wf.import.missing')}"
             )
             return
-        self.menu_app.exit(MenuChoice(action="workflow_import", archive=str(archive)))
+        self._install(str(archive), replace=False)
+
+    def _install(self, archive: str, *, replace: bool) -> None:
+        """Install the archive, asking about a name clash if the use case reports one."""
+        archiver = self.menu_app.archiver
+        if archiver is None:
+            return
+        attempt = archiver.install(archive, replace)
+        if attempt.needs_confirmation:
+            self.menu_app.push_screen(
+                ConfirmScreen(
+                    f"gmlw > {i18n.active().t('tui.workflow')} > "
+                    f"{i18n.active().t('tui.wf.import')}",
+                    attempt.message,
+                    yes_key="tui.confirm.replace",
+                    no_key="tui.confirm.keep_existing",
+                    warning_key="tui.confirm.warning.replace",
+                    yes_icon="📥",
+                ),
+                lambda confirmed: self._install(archive, replace=True) if confirmed else None,
+            )
+            return
+        self._finish(attempt.message)
+
+    def _finish(self, message: str) -> None:
+        """Report where the import landed, back on the Workflow menu.
+
+        The path has been consumed, so the form has nothing left to do -- but a failure
+        keeps it, and its message, so a mistyped path can be corrected in place.
+        """
+        if message.startswith("✗"):
+            self.query_one("#detail", Static).update(message)
+            return
+        self.menu_app.refresh_workflows()  # a new (or replaced) workflow is now runnable
+        self.menu_app.pop_screen()
+        self.menu_app.tell_current(message)
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Workflow menu."""
@@ -2249,6 +2346,7 @@ class MenuApp(App[MenuChoice | None]):
         current_client: str = "",
         deleter: Deleter | None = None,
         reload_jobs: Callable[[], list[JobChoice]] | None = None,
+        archiver: Archiver | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2287,6 +2385,8 @@ class MenuApp(App[MenuChoice | None]):
                 list needs this -- sessions are already read per job through
                 ``sessions_for``, so they refresh on their own. Defaults to keeping the
                 list as-is.
+            archiver: Exports a workflow and installs one from an archive; ``None`` leaves
+                both verbs read-only, so the app runs unwired in tests.
         """
         super().__init__()
         self.jobs = jobs
@@ -2305,11 +2405,17 @@ class MenuApp(App[MenuChoice | None]):
         self.current_client = current_client
         self.deleter = deleter
         self._reload_jobs = reload_jobs
+        self.archiver = archiver
 
     def refresh_jobs(self) -> None:
         """Re-read the job list after something changed it (a delete)."""
         if self._reload_jobs is not None:
             self.jobs = self._reload_jobs()
+
+    def refresh_workflows(self) -> None:
+        """Re-read the workflow catalogue after an import added or replaced one."""
+        if self.archiver is not None:
+            self.workflows = self.archiver.reload_workflows()
 
     def rule_groups(self) -> tuple[RuleGroup, ...]:
         """The populated rule groups, read once and cached for the app's lifetime.
