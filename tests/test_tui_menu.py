@@ -22,6 +22,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     ConfigSetResult,
     ConfigSetting,
     CreateOutcome,
+    Deleter,
     JobChoice,
     MenuApp,
     MenuChoice,
@@ -1386,8 +1387,56 @@ _DELETE_SESSIONS = [
 ]
 
 
-def _delete_app() -> MenuApp:
-    return MenuApp(_JOBS, sessions_for=lambda _job: _DELETE_SESSIONS, current_client="claude")
+class _RecordingDeleter:
+    """A Deleter whose removals are recorded, and reflected in the lists it feeds.
+
+    It really does drop what it is told to, because the point of most of these tests is
+    what the *next* screen shows — a delete the list does not notice is the bug the
+    in-app flow exists to avoid.
+    """
+
+    def __init__(self) -> None:
+        self.jobs = {"alpha": 3, "beta": 1}
+        self.sessions = {j.session_id: j for j in _DELETE_SESSIONS}
+        self.deleted_jobs: list[tuple[str, ...]] = []
+        self.deleted_sessions: list[tuple[str, tuple[str, ...]]] = []
+
+    def as_deleter(self) -> Deleter:
+        return Deleter(
+            preview_jobs=lambda picked: "would remove: " + ", ".join(picked),
+            delete_jobs=self._delete_jobs,
+            preview_sessions=lambda job, picked: f"would remove from {job}: " + ", ".join(picked),
+            delete_sessions=self._delete_sessions,
+        )
+
+    def _delete_jobs(self, picked: tuple[str, ...]) -> str:
+        self.deleted_jobs.append(picked)
+        for job in picked:
+            self.jobs.pop(job, None)
+        return f"removed {len(picked)} job(s)."
+
+    def _delete_sessions(self, job: str, picked: tuple[str, ...]) -> str:
+        self.deleted_sessions.append((job, picked))
+        for session in picked:
+            self.sessions.pop(session, None)
+        return f"removed {len(picked)} session(s)."
+
+    def job_choices(self) -> list[JobChoice]:
+        return [JobChoice(job=j, session_count=n) for j, n in self.jobs.items()]
+
+    def sessions_for(self, _job: str) -> list[SessionChoice]:
+        return [s for s in _DELETE_SESSIONS if s.session_id in self.sessions]
+
+
+def _delete_app(recorder: _RecordingDeleter | None = None) -> MenuApp:
+    rec = recorder or _RecordingDeleter()
+    return MenuApp(
+        rec.job_choices(),
+        sessions_for=rec.sessions_for,
+        current_client="claude",
+        deleter=rec.as_deleter(),
+        reload_jobs=rec.job_choices,
+    )
 
 
 async def _open_delete_menu(pilot: Pilot[MenuChoice | None]) -> None:
@@ -1403,45 +1452,227 @@ def _icons(app: MenuApp) -> list[str]:
     return [str(cast(_Row, row)._label.render()).strip()[0] for row in rows]
 
 
+def _confirm_body(app: MenuApp) -> str:
+    """The consequences block the confirmation screen is showing."""
+    return str(app.screen.query_one("#consequences", Static).render())
+
+
+def _detail(app: MenuApp) -> str:
+    return str(app.screen.query_one("#detail", Static).render())
+
+
+def _crumb(app: MenuApp) -> str:
+    return str(app.screen.query_one("#crumb", Static).render())
+
+
+async def _tick_first_job(pilot: Pilot[MenuChoice | None]) -> None:
+    """Delete menu → Jobs → tick the first row → ⏎ (opens the confirmation)."""
+    await _open_delete_menu(pilot)
+    await pilot.press("enter")  # Jobs
+    await pilot.pause()
+    await pilot.press("space")
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+async def _tick_first_session(pilot: Pilot[MenuChoice | None]) -> None:
+    """Delete menu → Sessions → pick alpha → tick the first session → ⏎."""
+    await _open_delete_menu(pilot)
+    await pilot.press("down", "enter")  # Sessions → job picker
+    await pilot.pause()
+    await pilot.press("enter")  # alpha
+    await pilot.pause()
+    await pilot.press("space")
+    await pilot.press("enter")
+    await pilot.pause()
+
+
 def test_delete_menu_offers_both_grains() -> None:
-    """Jobs and Sessions, mirroring the two CLI commands."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
         app = _delete_app()
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_delete_menu(pilot)
-            seen["rows"] = [
+            seen["rows"] = " ".join(
                 str(cast(_Row, row)._label.render())
+                for row in app.screen.query(ListView).first().query(ListItem)
+            )
+
+    asyncio.run(scenario())
+    assert "Jobs" in str(seen["rows"])
+    assert "Sessions" in str(seen["rows"])
+
+
+def test_enter_asks_before_removing_anything() -> None:
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            seen["body"] = _confirm_body(app)
+            seen["warning"] = _detail(app)
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert "would remove: alpha" in str(seen["body"])  # the footprint, on screen
+    assert "cannot be undone" in str(seen["warning"])
+    assert seen["running"] is True  # the app never left
+    assert recorder.deleted_jobs == []  # and nothing has gone yet
+
+
+def test_the_confirmation_opens_on_the_safe_answer() -> None:
+    """⏎ is the most reflexive key there is; it must not be the destructive one."""
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("enter")  # take whatever the cursor started on
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == []
+
+
+def test_confirming_removes_the_selection() -> None:
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("down", "enter")  # move onto Yes, answer
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == [("alpha",)]
+
+
+def test_escape_on_the_confirmation_is_a_no() -> None:
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == []
+
+
+def test_declining_lands_back_on_the_list_with_nothing_to_dismiss() -> None:
+    """No acknowledgement for a no: the user knows, and a keypress to clear it is friction."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["detail"] = _detail(app)
+
+    asyncio.run(scenario())
+    assert "Jobs" in str(seen["crumb"])  # still on the job-delete list
+    assert "removed" not in str(seen["detail"])
+    assert "Enter" not in str(seen["detail"])  # nothing to press to carry on
+
+
+def test_confirming_lands_back_on_the_same_list_not_the_front_door() -> None:
+    """The whole point: you stay where you were working, one level deep."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["detail"] = _detail(app)
+            seen["rows"] = [
+                cast(_Row, row).item.payload
                 for row in app.screen.query(ListView).first().query(ListItem)
             ]
 
     asyncio.run(scenario())
-    rendered = " ".join(cast("list[str]", seen["rows"]))
-    assert "Jobs" in rendered
-    assert "Sessions" in rendered
+    assert "Delete" in str(seen["crumb"])
+    assert "Jobs" in str(seen["crumb"])
+    assert "removed 1 job(s)." in str(seen["detail"])  # the outcome, in place
+    assert seen["rows"] == ["beta"]  # and the list re-read without the deleted job
 
 
-def test_space_ticks_a_job_and_enter_returns_the_selection() -> None:
-    app = _delete_app()
+def test_a_deleted_session_leaves_the_list_you_are_standing_on() -> None:
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
 
-    async def script(pilot: Pilot[MenuChoice | None]) -> None:
-        await _open_delete_menu(pilot)
-        await pilot.press("enter")  # Jobs → the multi-select list
-        await pilot.pause()
-        await pilot.press("space")  # tick alpha
-        await pilot.press("down", "space")  # tick beta
-        await pilot.press("enter")
-
-    async def scenario() -> MenuChoice | None:
+    async def scenario() -> None:
+        app = _delete_app(recorder)
         async with app.run_test(size=(100, 30)) as pilot:
-            await script(pilot)
-        return app.return_value
+            await _tick_first_session(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["rows"] = [
+                cast(_Row, row).item.payload
+                for row in app.screen.query(ListView).first().query(ListItem)
+            ]
 
-    choice = asyncio.run(scenario())
-    assert choice is not None
-    assert choice.action == "jobs_delete"
-    assert choice.jobs == ("alpha", "beta")
+    asyncio.run(scenario())
+    assert recorder.deleted_sessions == [("alpha", ("alpha_001",))]
+    assert "alpha" in str(seen["crumb"])
+    assert seen["rows"] == ["alpha_002", "alpha_003"]  # alpha_001 gone, siblings kept
+
+
+def test_the_tick_state_does_not_survive_a_delete() -> None:
+    """A stale tick on a rebuilt list would be a second delete nobody asked for."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_session(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["icons"] = _icons(app)
+
+    asyncio.run(scenario())
+    assert seen["icons"] == ["☐", "☐"]
+
+
+def test_clearing_the_last_row_steps_back_out_and_reports_there() -> None:
+    """Nothing left to clean means nothing left to stand on."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            await pilot.press("space", "down", "space")  # tick both jobs
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("down", "enter")  # confirm
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["detail"] = _detail(app)
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == [("alpha", "beta")]
+    assert "Delete" in str(seen["crumb"])  # back on the Delete menu, not the front door
+    assert "removed 2 job(s)." in str(seen["detail"])
 
 
 def test_ticking_repaints_the_row_and_untick_restores_it() -> None:
@@ -1469,62 +1700,46 @@ def test_ticking_repaints_the_row_and_untick_restores_it() -> None:
 
 def test_enter_on_an_empty_selection_does_nothing() -> None:
     """The most reflexive key in the app must never delete something nobody ticked."""
-    app = _delete_app()
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
 
-    async def scenario() -> MenuChoice | None:
+    async def scenario() -> None:
+        app = _delete_app(recorder)
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_delete_menu(pilot)
             await pilot.press("enter")  # Jobs
             await pilot.pause()
             await pilot.press("enter")  # nothing ticked
             await pilot.pause()
-            assert app.is_running  # still on the screen, nothing handed back
-            detail = str(app.screen.query_one("#detail", Static).render())
-            assert "space" in detail.lower()  # and it says which key ticks a row
-        return app.return_value
+            seen["detail"] = _detail(app)
+            seen["crumb"] = _crumb(app)
 
-    assert asyncio.run(scenario()) is None
-
-
-def test_session_delete_picks_a_job_first_then_ticks_its_sessions() -> None:
-    app = _delete_app()
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_delete_menu(pilot)
-            await pilot.press("down", "enter")  # Sessions → job picker
-            await pilot.pause()
-            await pilot.press("enter")  # alpha → its sessions
-            await pilot.pause()
-            await pilot.press("space")  # tick alpha_001
-            await pilot.press("enter")
-        return app.return_value
-
-    choice = asyncio.run(scenario())
-    assert choice is not None
-    assert choice.action == "sessions_delete"
-    assert choice.job == "alpha"
-    assert choice.sessions == ("alpha_001",)
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == []
+    assert "space" in str(seen["detail"]).lower()  # it says which key ticks a row
+    assert "Jobs" in str(seen["crumb"])  # and no confirmation was opened
 
 
 def test_a_non_resumable_session_is_still_deletable() -> None:
     """This is not the resume picker: a session nobody can reopen is likelier to go."""
-    app = _delete_app()
+    recorder = _RecordingDeleter()
 
-    async def scenario() -> MenuChoice | None:
+    async def scenario() -> None:
+        app = _delete_app(recorder)
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_delete_menu(pilot)
-            await pilot.press("down", "enter")  # Sessions → job picker
+            await pilot.press("down", "enter")
             await pilot.pause()
-            await pilot.press("enter")  # alpha → its sessions
+            await pilot.press("enter")  # alpha
             await pilot.pause()
-            await pilot.press("down", "space")  # alpha_002 is the non-resumable one
+            await pilot.press("down", "space")  # alpha_002, the non-resumable one
             await pilot.press("enter")
-        return app.return_value
+            await pilot.pause()
+            await pilot.press("down", "enter")  # confirm
+            await pilot.pause()
 
-    choice = asyncio.run(scenario())
-    assert choice is not None
-    assert choice.sessions == ("alpha_002",)
+    asyncio.run(scenario())
+    assert recorder.deleted_sessions == [("alpha", ("alpha_002",))]
 
 
 def test_the_session_delete_list_shows_what_each_session_used() -> None:
@@ -1577,3 +1792,18 @@ def test_a_delete_screen_with_no_jobs_says_so() -> None:
 
     asyncio.run(scenario())
     assert "Nothing to delete" in str(seen["empty"])
+
+
+def test_an_unwired_delete_screen_is_inert() -> None:
+    """No Deleter injected (tests, or a future caller): ticking and confirming do nothing."""
+
+    async def scenario() -> MenuChoice | None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            assert app.is_running
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None

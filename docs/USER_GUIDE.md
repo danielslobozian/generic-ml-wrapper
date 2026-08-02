@@ -173,9 +173,10 @@ off a terminal, without `--yes`, the delete is refused rather than assumed.
 Deleting a session in the middle of a job is safe. The next id is minted one past the highest
 that exists, so a gap is never filled and no session id is ever reused.
 
-In the menu the same two grains live under **Job > Delete**: `space` ticks rows, `⏎` acts on
-everything ticked. The confirmation is asked on the plain terminal — the menu steps aside for
-it — and then you land back in the menu with the list already updated, ready to carry on.
+In the menu the same two grains live under **Job > Delete**: `space` ticks rows, `⏎` asks. The
+question opens on **No** and shows the same footprint the CLI prints, so `⏎` again is always the
+safe answer; Esc is a no as well. Answer either way and you stay exactly where you were, on the
+list you were clearing, with what you removed already gone from it.
 
 ## 11. Export JSON for automation
 

@@ -1220,7 +1220,7 @@ def _jobs_delete(args: argparse.Namespace) -> int:
 
 
 def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
-    """Preview, confirm, then delete jobs — shared by the CLI command and the TUI.
+    """Preview, confirm, then delete jobs — the `gmlw jobs delete` path.
 
     Args:
         jobs: The validated job ids to delete.
@@ -1252,7 +1252,7 @@ def _sessions_delete(args: argparse.Namespace) -> int:
 
 
 def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> int:
-    """Preview, confirm, then delete sessions — shared by the CLI command and the TUI.
+    """Preview, confirm, then delete sessions — the `gmlw sessions <job> delete` path.
 
     Args:
         job: The job the sessions belong to.
@@ -1540,6 +1540,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         ConfigSetResult,
         ConfigSetting,
         CreateOutcome,
+        Deleter,
         JobChoice,
         MenuApp,
         SessionChoice,
@@ -1548,9 +1549,48 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         UsageView,
     )
 
-    jobs = [
-        JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
-    ]
+    def _job_choices() -> list[JobChoice]:
+        return [
+            JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
+        ]
+
+    def _preview_jobs(selected: tuple[str, ...]) -> str:
+        try:
+            return format_job_footprints(build_delete_jobs().preview(list(selected)))
+        except NoSuchJobError as error:  # the list went stale under us
+            return _render_error(error)
+
+    def _delete_jobs_in_app(selected: tuple[str, ...]) -> str:
+        try:
+            removed = build_delete_jobs().execute(list(selected))
+        except NoSuchJobError as error:
+            return _render_error(error)
+        return i18n.t("delete.jobs.done", count=len(removed))
+
+    def _preview_sessions(job: str, selected: tuple[str, ...]) -> str:
+        try:
+            return format_session_footprints(
+                job, build_delete_sessions().preview(job, list(selected))
+            )
+        except (NoSuchJobError, NoSuchSessionError) as error:
+            return _render_error(error)
+
+    def _delete_sessions_in_app(job: str, selected: tuple[str, ...]) -> str:
+        try:
+            removed = build_delete_sessions().execute(job, list(selected))
+        except (NoSuchJobError, NoSuchSessionError) as error:
+            return _render_error(error)
+        return i18n.t("delete.sessions.done", count=len(removed), job=job)
+
+    # Deleting is the one write the menu does without leaving: it asks in-app and calls
+    # these, so the user stays on the list they are clearing instead of being returned to
+    # the front door. The app still holds no port -- these closures do.
+    deleter = Deleter(
+        preview_jobs=_preview_jobs,
+        delete_jobs=_delete_jobs_in_app,
+        preview_sessions=_preview_sessions,
+        delete_sessions=_delete_sessions_in_app,
+    )
 
     def _sessions_for(job: str) -> list[SessionChoice]:
         summaries = build_list_sessions().execute(job)  # oldest-first; the last is the latest
@@ -1732,7 +1772,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     # The launch re-reads it, because the user may have changed it in Config while the menu
     # was up -- resolving it once, here, would launch the client they just left.
     return MenuApp(
-        jobs,
+        _job_choices(),
         switchers=switchers,
         validate_job=_validate_job,
         validate_workflow=_validate_workflow,
@@ -1745,6 +1785,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         set_default_client=_set_default_client,
         config=config_catalog,
         current_client=_client(None),
+        deleter=deleter,
+        reload_jobs=_job_choices,
     ).run()  # blocks; terminal restored on return
 
 
@@ -1779,15 +1821,9 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:  # noqa: PLR0911  (one
         # Asked on the restored terminal: the replace prompt needs a tty the TUI had.
         _import_workflow(choice.archive)
         return None
-    # The deletions, on the restored terminal for the same reason the import prompt is:
-    # the preview and its y/N need a tty the full-screen app was holding. The TUI only
-    # ever hands over a selection -- nothing has been removed by the time we get here.
-    if choice.action == "jobs_delete":
-        _delete_jobs(choice.jobs, assume_yes=False)
-        return None
-    if choice.action == "sessions_delete" and choice.job is not None:
-        _delete_sessions(choice.job, choice.sessions, assume_yes=False)
-        return None
+    # Deleting is deliberately absent: it never comes back through here. It asks and acts
+    # inside the app (see the injected `Deleter`), because leaving the menu to answer a
+    # question strands the user at the front door afterwards, not where they were working.
     # -- launches: the terminal goes to a client, and gmlw ends with it ----------------- #
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return _run_workflow(choice.workflow, client)

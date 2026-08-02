@@ -27,16 +27,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   whole batch untouched rather than deleting half of it. Bare `gmlw jobs` and
   `gmlw sessions <job>` are unchanged.
 
-  In the menu, **Job > Delete** offers the same two grains: `space` ticks rows, `⏎` acts on
-  everything ticked. The app never deletes — it hands back a selection and the confirmation is
-  asked once the terminal is restored, the same hand-off `workflow import` uses for its replace
-  prompt. Afterwards you are returned to the menu, with the list rebuilt.
+  In the menu, **Job > Delete** offers the same two grains: `space` ticks rows, `⏎` asks. The
+  question is asked *in* the app, on a screen that opens on **No** — `⏎` is the most reflexive
+  key there is and must not be the destructive one — and shows the same footprint the CLI
+  prints. Either answer leaves you on the list you were clearing, with the removed rows already
+  gone from it. The removal itself is an injected closure, so the TUI still holds no port.
 
   Deleting a session in the middle of a job is safe by construction: `next_session_id` already
   minted one past the highest suffix "so gaps never cause a collision", so nothing renumbers
   and no id is reused.
 
 ### Fixed
+- **Deleting from the menu no longer leaves the menu.** The first cut handed the selection back
+  to the wiring and asked on the restored terminal, which meant the app tore down, asked, and
+  came back at the *front door* — three levels away from the list being cleaned, whichever way
+  the question was answered. Declining also printed an acknowledgement that had to be dismissed,
+  for an action that did nothing. The question is now a screen inside the app: it opens on
+  **No**, Esc is a no, and either answer returns to the very list it was asked from, re-read so
+  the removed rows are gone and with the ticks cleared. Nothing is printed for a no.
 - **The menu no longer exits after an errand.** Exporting a workflow, importing one, or
   re-running setup from `gmlw tui` borrowed the restored terminal to ask a question or print a
   result — and then ended the process, dropping the user back at the shell mid-task. Deleting

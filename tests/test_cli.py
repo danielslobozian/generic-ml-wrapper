@@ -5,8 +5,9 @@
 import io
 import json
 import platform
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -1955,43 +1956,6 @@ def test_build_delete_use_cases_are_wired() -> None:
     assert isinstance(composition.build_delete_sessions(), DeleteSessions)
 
 
-def test_the_tui_hands_over_a_job_selection_without_deleting(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The app returns an intention; the delete happens here, on the restored terminal."""
-    fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
-    _answer(monkeypatch, "y")
-
-    choice = tui.MenuChoice(action="jobs_delete", jobs=("alpha", "throwaway"))
-    assert app._act_on_tui_choice(choice) is None  # an errand: back to the menu, not an exit
-    assert fake.executed == [["alpha", "throwaway"]]
-
-
-def test_the_tui_hands_over_a_session_selection_without_deleting(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    fake = _FakeDeleteSessions([_session_footprint()])
-    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
-    _answer(monkeypatch, "y")
-
-    choice = tui.MenuChoice(action="sessions_delete", job="alpha", sessions=("alpha_002",))
-    assert app._act_on_tui_choice(choice) is None
-    assert fake.executed == [("alpha", ["alpha_002"])]
-
-
-def test_a_tui_delete_declined_on_the_restored_terminal_removes_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Declining is not an error to exit on — it is a reason to go back to the menu."""
-    fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
-    _answer(monkeypatch, "n")
-
-    assert app._act_on_tui_choice(tui.MenuChoice(action="jobs_delete", jobs=("alpha",))) is None
-    assert fake.executed == []
-
-
 # --------------------------------------------------------------------------- #
 # The menu loop: an errand comes back, a launch does not                       #
 # --------------------------------------------------------------------------- #
@@ -2024,54 +1988,6 @@ def _drive_tui(
 
 def test_quitting_the_menu_exits(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _drive_tui(monkeypatch, _menu_returning(None)) == (0, 1)
-
-
-def test_a_delete_returns_to_the_menu_instead_of_exiting(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The reported bug: deleting from the menu dropped the user back to the shell."""
-    fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
-    _answer(monkeypatch, "y")
-
-    code, opened = _drive_tui(
-        monkeypatch,
-        _menu_returning(tui.MenuChoice(action="jobs_delete", jobs=("alpha",)), None),
-    )
-
-    assert fake.executed == [["alpha"]]
-    assert opened == 2  # the menu was rebuilt after the delete...
-    assert code == 0  # ...and only the later quit ended gmlw
-
-
-def test_a_declined_delete_also_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
-    _answer(monkeypatch, "n")
-
-    code, opened = _drive_tui(
-        monkeypatch,
-        _menu_returning(tui.MenuChoice(action="jobs_delete", jobs=("alpha",)), None),
-    )
-
-    assert fake.executed == []
-    assert (code, opened) == (0, 2)
-
-
-def test_a_session_delete_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake = _FakeDeleteSessions([_session_footprint()])
-    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
-    _answer(monkeypatch, "y")
-
-    code, opened = _drive_tui(
-        monkeypatch,
-        _menu_returning(
-            tui.MenuChoice(action="sessions_delete", job="alpha", sessions=("alpha_002",)), None
-        ),
-    )
-
-    assert fake.executed == [("alpha", ["alpha_002"])]
-    assert (code, opened) == (0, 2)
 
 
 def test_workflow_export_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2156,59 +2072,103 @@ def test_a_workflow_run_ends_gmlw(monkeypatch: pytest.MonkeyPatch) -> None:
     assert (code, opened) == (3, 1)
 
 
-def test_several_errands_in_a_row_all_come_back(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Cleaning up is iterative — delete, look, delete again — without relaunching gmlw."""
-    fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
-    _answer(monkeypatch, "y")
-
-    code, opened = _drive_tui(
-        monkeypatch,
-        _menu_returning(
-            tui.MenuChoice(action="jobs_delete", jobs=("alpha",)),
-            tui.MenuChoice(action="jobs_delete", jobs=("beta",)),
-            None,
-        ),
-    )
-
-    assert fake.executed == [["alpha"], ["beta"]]
-    assert (code, opened) == (0, 3)
+# --------------------------------------------------------------------------- #
+# The Deleter the wiring injects into the menu                                 #
+# --------------------------------------------------------------------------- #
 
 
-def test_the_menu_is_rebuilt_each_pass_so_a_deleted_job_leaves_the_list(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Snapshot data: re-entering is what drops the job the user just removed."""
-    remaining = [
-        JobSummary(job="alpha", session_count=1),
-        JobSummary(job="beta", session_count=1),
-    ]
+def _built_deleter(monkeypatch: pytest.MonkeyPatch) -> tui.Deleter:
+    """The Deleter `_run_menu` builds, captured without opening the menu."""
+    captured: dict[str, tui.Deleter] = {}
 
-    class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
-            return list(remaining)
-
-    seen: list[list[str]] = []
-
-    class _Menu:
-        def __init__(self, jobs: list[tui.JobChoice], **_kwargs: object) -> None:
-            seen.append([j.job for j in jobs])
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["deleter"] = cast(tui.Deleter, kwargs["deleter"])
 
         def run(self) -> tui.MenuChoice | None:
-            if len(seen) == 1:  # first pass: delete alpha, then come back
-                return tui.MenuChoice(action="jobs_delete", jobs=("alpha",))
             return None
 
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    app._run_menu()
+    return captured["deleter"]
+
+
+def test_the_menu_is_given_a_deleter_that_previews_without_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    text = _built_deleter(monkeypatch).preview_jobs(("alpha",))
+
+    assert "3 session(s)" in text  # the footprint the confirm screen shows
+    assert fake.executed == []  # a preview removes nothing
+
+
+def test_the_injected_deleter_removes_jobs_and_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    message = _built_deleter(monkeypatch).delete_jobs(("alpha",))
+
+    assert fake.executed == [["alpha"]]
+    assert "removed" in message
+
+
+def test_the_injected_deleter_removes_sessions_and_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteSessions([_session_footprint()])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+
+    deleter = _built_deleter(monkeypatch)
+    preview = deleter.preview_sessions("alpha", ("alpha_002",))
+    message = deleter.delete_sessions("alpha", ("alpha_002",))
+
+    assert "alpha_002" in preview
+    assert fake.executed == [("alpha", ["alpha_002"])]
+    assert "removed" in message
+
+
+def test_a_stale_selection_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The menu holds a snapshot; if it went stale the message goes on screen, not a crash."""
+    error = NoSuchJobError("error.job.not_found", job="gone")
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: _FakeDeleteJobs([], error=error))
+
+    assert "gone" in _built_deleter(monkeypatch).preview_jobs(("gone",))
+
+
+def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What makes a job the user just deleted leave the list they are standing on."""
+    captured: dict[str, object] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["reload"] = kwargs["reload_jobs"]
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return [JobSummary(job="beta", session_count=1)]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
-    monkeypatch.setattr(tui, "MenuApp", _Menu)
-    monkeypatch.setattr(app, "_pause_before_menu", lambda: None)
+    app._run_menu()
 
-    def _delete(jobs: object, *, assume_yes: bool) -> int:
-        remaining[:] = [j for j in remaining if j.job != "alpha"]
-        return 0
+    reload_jobs = cast("Callable[[], list[tui.JobChoice]]", captured["reload"])
+    assert [j.job for j in reload_jobs()] == ["beta"]
 
-    monkeypatch.setattr(app, "_delete_jobs", _delete)
-    assert app._tui() == 0
-    assert seen == [["alpha", "beta"], ["beta"]]  # the second menu no longer offers alpha
+
+def test_deleting_no_longer_comes_back_through_the_choice_handler() -> None:
+    """Delete is done in-app; nothing about it should reach the terminal hand-off."""
+    assert app._act_on_tui_choice(tui.MenuChoice(action="jobs_delete")) == 0

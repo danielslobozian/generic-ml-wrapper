@@ -94,13 +94,11 @@ class MenuChoice:
     launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
     open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
     new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
-    ``archive`` to install from. The deletions carry a *selection* rather than one id:
-    ``"jobs_delete"`` fills ``jobs``, ``"sessions_delete"`` fills ``sessions`` alongside the
-    ``job`` they belong to. A ``None`` return means "do nothing".
+    ``archive`` to install from. A ``None`` return means "do nothing".
 
-    Nothing here has happened yet -- this is what the user *asked for*. The wiring runs it
-    once the terminal is restored, which for a delete is also where the confirmation is
-    asked.
+    Only things that need the terminal come back this way. Deleting does not -- it happens
+    in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
+    question is a round trip that ends somewhere other than where it started.
     """
 
     action: str
@@ -109,8 +107,6 @@ class MenuChoice:
     workflow: str | None = None
     guided: bool = False
     archive: str | None = None
-    jobs: tuple[str, ...] = ()
-    sessions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -139,6 +135,26 @@ class SessionChoice:
     date: str
     is_latest: bool
     usage: str = ""
+
+
+@dataclass(frozen=True)
+class Deleter:
+    """The four calls the delete screens need, grouped as one injected collaborator.
+
+    Grouped rather than four kwargs on the app, the way :class:`ConfigCatalog` groups the
+    settings with their setter. The app stays free of ports: these are closures the wiring
+    owns, and both halves matter -- ``preview_*`` is what the user is shown before deciding,
+    and it must be measured by the same code that does the removing, or the question and the
+    answer drift apart.
+
+    Each ``preview_*`` returns the rendered footprint; each ``delete_*`` performs the removal
+    and returns the line to show afterwards.
+    """
+
+    preview_jobs: Callable[[tuple[str, ...]], str]
+    delete_jobs: Callable[[tuple[str, ...]], str]
+    preview_sessions: Callable[[str, tuple[str, ...]], str]
+    delete_sessions: Callable[[str, tuple[str, ...]], str]
 
 
 @dataclass(frozen=True)
@@ -395,8 +411,16 @@ class _MenuScreen(Screen[None]):
     # move/select/back overrides it, so the bar describes the screen you are actually on.
     keys_key: ClassVar[str] = "tui.keys"
     # A one-shot detail message the next detail-sync shows instead of the cursor's row,
-    # then clears -- so a confirmation survives a programmatic cursor move.
-    _flash: str | None = None
+    # then clears -- so a confirmation survives a programmatic cursor move. Set it on a
+    # screen you are about to push to have it greet the user on arrival.
+    pending_message: str | None = None
+
+    def tell(self, message: str) -> None:
+        """Show ``message`` in the detail panel, now if mounted or on arrival if not."""
+        if self.is_mounted:
+            self.query_one("#detail", Static).update(message)
+        else:
+            self.pending_message = message
 
     @property
     def menu_app(self) -> MenuApp:
@@ -433,8 +457,9 @@ class _MenuScreen(Screen[None]):
     def on_mount(self) -> None:
         """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
         self._sync_detail()
-        if self._flash is not None:  # written after the initial-highlight sync, so it survives
-            message, self._flash = self._flash, None
+        # Written after the initial-highlight sync, so the message survives it.
+        if self.pending_message is not None:
+            message, self.pending_message = self.pending_message, None
             self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
 
     def on_list_view_highlighted(self, _event: ListView.Highlighted) -> None:
@@ -482,6 +507,59 @@ class _MenuScreen(Screen[None]):
         self.menu_app.exit(None)
 
 
+class ConfirmScreen(Screen[bool]):
+    """A yes/no question with the consequences spelled out above it.
+
+    Opens on **No**. A destructive question whose default answer is the destructive one is
+    a trap: the reflex on a new screen is ``⏎``, and here that reflex has to be the safe
+    answer. Esc is the same as No.
+
+    Dismisses with the answer, so the caller decides what happens next -- this screen knows
+    nothing about what it is asking about.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        _key("escape", "refuse", "tui.key.cancel"),
+        _key("q", "refuse", "tui.key.cancel"),
+    ]
+
+    def __init__(self, crumb: str, consequences: str) -> None:
+        """Bind the question to its breadcrumb and the footprint it is asking about.
+
+        Args:
+            crumb: The breadcrumb of the screen that asked, so the header does not move.
+            consequences: The rendered preview of what confirming would do.
+        """
+        super().__init__()
+        self._crumb = crumb
+        self._consequences = consequences
+
+    def compose(self) -> ComposeResult:
+        """Breadcrumb, the consequences, the two answers, then the docked hints."""
+        t = i18n.active().t
+        yield Static(self._crumb, id="crumb")
+        yield Static(self._consequences, id="consequences")
+        yield ListView(
+            _Row(_Item("↩", t("tui.confirm.no"), t("tui.confirm.no.d"), "no")),
+            _Row(_Item("🗑", t("tui.confirm.yes"), t("tui.confirm.yes.d"), "yes")),
+            id="menu",
+            initial_index=0,  # the safe answer is the one ⏎ lands on
+        )
+        with Container(id="status"):
+            yield Static(t("tui.confirm.warning"), id="detail")
+            yield Static(t("tui.keys.confirm"), id="keys")
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Answer with the chosen row."""
+        event.stop()
+        if isinstance(event.item, _Row):
+            self.dismiss(event.item.item.action == "yes")
+
+    def action_refuse(self) -> None:
+        """Esc (or q) is No — backing out of a question is never a yes."""
+        self.dismiss(False)
+
+
 class _MultiSelectScreen(_MenuScreen):
     """A menu screen where ``space`` ticks rows and ``⏎`` acts on everything ticked.
 
@@ -507,8 +585,16 @@ class _MultiSelectScreen(_MenuScreen):
         super().__init__()
         self._selected: set[str] = set()
 
-    def confirm(self, selected: tuple[str, ...]) -> None:
-        """Act on the ticked payloads, in the order they appear on screen."""
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """Render what acting on ``selected`` would do, for the confirmation screen."""
+        raise NotImplementedError
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Act on ``selected`` and return the line to show afterwards."""
+        raise NotImplementedError
+
+    def reopened(self) -> _MultiSelectScreen:
+        """A fresh instance of this screen, for re-reading the list after a change."""
         raise NotImplementedError
 
     def action_toggle_row(self) -> None:
@@ -526,12 +612,38 @@ class _MultiSelectScreen(_MenuScreen):
         self._sync_detail()
 
     def handle(self, item: _Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
-        """``⏎``: act on the ticked rows, or explain how to tick one when none are."""
+        """``⏎``: ask about the ticked rows, or explain how to tick one when none are."""
         if not self._selected:
             self.query_one("#detail", Static).update(i18n.active().t("tui.del.none_selected"))
             self.menu_app.bell()
             return
-        self.confirm(tuple(i.payload for i in self.menu_items() if i.payload in self._selected))
+        selected = tuple(i.payload for i in self.menu_items() if i.payload in self._selected)
+        self.menu_app.push_screen(
+            ConfirmScreen(self.header_text(), self.preview(selected)),
+            lambda answered: self._answered(selected, answered),
+        )
+
+    def _answered(self, selected: tuple[str, ...], confirmed: bool | None) -> None:
+        """Carry out the action if it was confirmed, then land back on a current list.
+
+        Declining says nothing and shows nothing: the user already knows what they chose,
+        and an acknowledgement they have to dismiss is one keypress of pure friction.
+        """
+        if not confirmed:
+            return
+        message = self.perform(selected)
+        # The list this screen was built from is now out of date. Rather than patch rows,
+        # swap in a freshly-read copy of the *same* screen -- so the user stays exactly
+        # where they were, one level deep in the thing they are cleaning up, and sees the
+        # outcome in the panel. Nothing left to clean means nothing left to stand on, so
+        # that case steps back out instead.
+        fresh = self.reopened()
+        self.menu_app.pop_screen()
+        if fresh.menu_items():
+            fresh.pending_message = message
+            self.menu_app.push_screen(fresh)
+        else:
+            self.menu_app.tell_current(message)
 
     def _sync_detail(self) -> None:
         """Show the highlighted row's description with the running tick count under it."""
@@ -935,7 +1047,7 @@ class SwitcherScreen(_MenuScreen):
         switcher.current = choice.value
         self.menu_app.pop_screen()
         reopened = SwitcherScreen(self._key)
-        reopened._flash = i18n.active().t("tui.create.done", label=choice.label)
+        reopened.pending_message = i18n.active().t("tui.create.done", label=choice.label)
         self.menu_app.push_screen(reopened)
 
     def _mark_current(self) -> None:
@@ -1074,8 +1186,8 @@ class ConfigPickerScreen(_MenuScreen):
     async def on_screen_resume(self) -> None:
         """Returning from a value editor: rebuild (a set may have changed a value), then flash."""
         await self._rebuild()
-        if self._flash is not None:  # a confirmation queued by the editor before it popped
-            message, self._flash = self._flash, None
+        if self.pending_message is not None:  # a confirmation queued by the editor before it popped
+            message, self.pending_message = self.pending_message, None
             self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
 
     async def _rebuild(self) -> None:
@@ -1095,7 +1207,7 @@ class ConfigPickerScreen(_MenuScreen):
 
     def flash(self, message: str) -> None:
         """Queue a one-shot confirmation to show when this picker is next resumed."""
-        self._flash = message
+        self.pending_message = message
 
     def action_cursor(self, delta: int) -> None:
         """Move the highlight within the filtered list (the Input keeps focus)."""
@@ -1478,12 +1590,11 @@ class DeleteMenuScreen(_MenuScreen):
 
 
 class JobDeleteScreen(_MultiSelectScreen):
-    """Tick whole jobs to remove; ``⏎`` hands the selection back to the wiring.
+    """Tick whole jobs to remove; ``⏎`` asks, and confirming removes them here.
 
-    Nothing is removed here. The app exits with the selection and the wiring runs the
-    preview and the confirmation on the restored terminal -- the same hand-off
-    ``workflow import`` uses for its replace prompt, and the right place for a question
-    whose wrong answer cannot be taken back.
+    The whole flow stays in the app. The removal itself is the injected
+    :class:`Deleter`'s, so this screen still holds no port -- it asks a question, calls a
+    closure, and shows what came back.
     """
 
     empty_key = "tui.del.empty"
@@ -1507,9 +1618,23 @@ class JobDeleteScreen(_MultiSelectScreen):
             for j in self.menu_app.jobs
         ]
 
-    def confirm(self, selected: tuple[str, ...]) -> None:
-        """Exit with the ticked jobs; the wiring previews, asks, and deletes."""
-        self.menu_app.exit(MenuChoice(action="jobs_delete", jobs=selected))
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """What removing the ticked jobs would take with it."""
+        deleter = self.menu_app.deleter
+        return "" if deleter is None else deleter.preview_jobs(selected)
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Remove the ticked jobs, then re-read the list they came from."""
+        deleter = self.menu_app.deleter
+        if deleter is None:
+            return ""
+        message = deleter.delete_jobs(selected)
+        self.menu_app.refresh_jobs()
+        return message
+
+    def reopened(self) -> _MultiSelectScreen:
+        """A fresh job list, without the ones just removed."""
+        return JobDeleteScreen()
 
 
 class DeleteJobPickerScreen(_MenuScreen):
@@ -1571,9 +1696,23 @@ class SessionDeleteScreen(_MultiSelectScreen):
             for s in self.menu_app.sessions_for(self._job)
         ]
 
-    def confirm(self, selected: tuple[str, ...]) -> None:
-        """Exit with the ticked sessions; the wiring previews, asks, and deletes."""
-        self.menu_app.exit(MenuChoice(action="sessions_delete", job=self._job, sessions=selected))
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """What removing the ticked sessions would take with it."""
+        deleter = self.menu_app.deleter
+        return "" if deleter is None else deleter.preview_sessions(self._job, selected)
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Remove the ticked sessions. The job's own list re-reads through ``sessions_for``."""
+        deleter = self.menu_app.deleter
+        if deleter is None:
+            return ""
+        message = deleter.delete_sessions(self._job, selected)
+        self.menu_app.refresh_jobs()  # the job's session count changed in the lists above
+        return message
+
+    def reopened(self) -> _MultiSelectScreen:
+        """The same job's sessions, re-read without the ones just removed."""
+        return SessionDeleteScreen(self._job)
 
 
 class JobExportScreen(_MenuScreen):
@@ -2078,6 +2217,7 @@ class MenuApp(App[MenuChoice | None]):
     #models, #sessions, #clients,
     #settings, #session_table { height: auto; max-height: 20; margin: 0 0 1 0; }
     #status_line { padding: 1 1; }
+    #consequences { height: 1fr; padding: 1 2; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
@@ -2107,6 +2247,8 @@ class MenuApp(App[MenuChoice | None]):
         set_default_client: Callable[[str], ConfigSetResult] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
+        deleter: Deleter | None = None,
+        reload_jobs: Callable[[], list[JobChoice]] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2139,6 +2281,12 @@ class MenuApp(App[MenuChoice | None]):
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
                 differs (resuming will launch the session's client, not this one).
+            deleter: Previews and performs the removals the Delete screens offer; ``None``
+                leaves them read-only, so the app runs unwired in tests.
+            reload_jobs: Re-reads the job list after a delete has changed it. Only the job
+                list needs this -- sessions are already read per job through
+                ``sessions_for``, so they refresh on their own. Defaults to keeping the
+                list as-is.
         """
         super().__init__()
         self.jobs = jobs
@@ -2155,6 +2303,13 @@ class MenuApp(App[MenuChoice | None]):
         self.set_default_client = set_default_client
         self.config = config
         self.current_client = current_client
+        self.deleter = deleter
+        self._reload_jobs = reload_jobs
+
+    def refresh_jobs(self) -> None:
+        """Re-read the job list after something changed it (a delete)."""
+        if self._reload_jobs is not None:
+            self.jobs = self._reload_jobs()
 
     def rule_groups(self) -> tuple[RuleGroup, ...]:
         """The populated rule groups, read once and cached for the app's lifetime.
@@ -2169,6 +2324,17 @@ class MenuApp(App[MenuChoice | None]):
         if self._rule_cache is None:
             self._rule_cache = self.rules()
         return self._rule_cache
+
+    def tell_current(self, message: str) -> None:
+        """Show ``message`` on whichever menu screen is now on top, if any.
+
+        Used when a screen removed the last of what it was showing and stepped back out:
+        the outcome belongs to the screen the user lands on, not the one that is gone.
+        """
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, _MenuScreen):
+                screen.tell(message)
+                return
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""
