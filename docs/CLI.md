@@ -327,8 +327,9 @@ gmlw tui
 <img src="images/gmlw-tui.gif" alt="gmlw tui — the object-first Job / Workflow / Config / Rules menu" width="760">
 </div>
 
-Every top-level verb is wired, not a placeholder: **Job** covers New, Resume (a specific
-job's latest session), List, Export, and Delete; **Workflow** covers Run, Edit, Create,
+Every top-level verb is wired, not a placeholder: **Job** covers New (pick a job you
+already have, or type a new name — either way you get a *fresh session*, which is what
+`gmlw start <job>` does), Resume (a specific recorded session), List, Export, and Delete; **Workflow** covers Run, Edit, Create,
 List, Export, and Import; **Config** covers listing/getting/setting a value, the
 **Clients** switcher (selecting a row also sets it as the default — the
 `gmlw config set client.default` path), and re-running **Setup**; **Rules** browses the

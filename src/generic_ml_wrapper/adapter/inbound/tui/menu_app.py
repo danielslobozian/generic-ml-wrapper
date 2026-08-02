@@ -862,7 +862,7 @@ class JobMenuScreen(_MenuScreen):
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
         elif item.action == "job:new":
-            self.menu_app.push_screen(NewJobScreen())
+            self.menu_app.push_screen(NewSessionScreen())
         elif item.action == "job:list":
             self.menu_app.push_screen(JobListScreen())
         elif item.action == "job:export":
@@ -1554,6 +1554,60 @@ class ConfigInputScreen(Screen[None]):
     def action_cancel(self) -> None:
         """Abandon the form without changing anything."""
         self.menu_app.pop_screen()
+
+
+class NewSessionScreen(_MenuScreen):
+    """Which job the fresh session belongs to: one you already have, or a new name.
+
+    ``Job > New`` used to be the text field alone, which made starting more work on a job
+    you already had a memory test -- the app was showing that list in two other places
+    while asking you to retype a name out of it.
+
+    A new name stays one keypress away, and stays *first*: it is what the verb says, it is
+    the only row on an install with no jobs yet, and a fixed first row means the flow does
+    not shift under you as jobs come and go.
+
+    Picking an existing job goes straight on to the client step. That is a *new session*
+    on that job, numbered after its last -- the same thing ``gmlw start <existing-job>``
+    has always done, which is why nothing new had to be built underneath this.
+    """
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > New."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.new')}"
+
+    def menu_items(self) -> list[_Item]:
+        """The type-a-name row, then one row per job already recorded."""
+        t = i18n.active().t
+        rows = [
+            _Item(
+                "✏️",
+                t("tui.newsession.type"),
+                t("tui.newsession.type.d"),
+                "session:type",
+                "gmlw start <job>",
+            )
+        ]
+        rows += [
+            _Item(
+                "🗂",
+                job.job,
+                t("tui.sessions", count=job.session_count),
+                "session:job",
+                f"gmlw start {job.job}",
+                payload=job.job,
+            )
+            for job in self.menu_app.jobs
+        ]
+        return rows
+
+    def handle(self, item: _Item) -> None:
+        """Typing opens the name form; an existing job goes on to the client step."""
+        if item.action == "session:type":
+            self.menu_app.push_screen(NewJobScreen())
+        elif item.action == "session:job":
+            self.menu_app.launch(MenuChoice(action="start", job=item.payload))
 
 
 class NewJobScreen(Screen[None]):

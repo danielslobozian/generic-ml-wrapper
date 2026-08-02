@@ -350,7 +350,9 @@ def test_new_job_valid_name_returns_a_start_choice() -> None:
         app = MenuApp(_JOBS, validate_job=_reject_spaces)
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("enter")  # Job menu
-            await pilot.press("enter")  # New → form
+            await pilot.press("enter")  # New → pick a job, or type a name
+            await pilot.pause()
+            await pilot.press("enter")  # "Type a new name…" → form
             await pilot.pause()
             app.screen.query_one("#name", Input).value = "billing-api"
             await pilot.press("enter")
@@ -368,7 +370,7 @@ def test_new_job_invalid_name_keeps_the_form_open() -> None:
     async def scenario() -> None:
         app = MenuApp(_JOBS, validate_job=_reject_spaces)
         async with app.run_test(size=(90, 30)) as pilot:
-            await pilot.press("enter", "enter")  # Job → New form
+            await pilot.press("enter", "enter", "enter")  # Job → New → the name form
             await pilot.pause()
             app.screen.query_one("#name", Input).value = "My Job"
             await pilot.press("enter")
@@ -1965,9 +1967,11 @@ def _launch_app(clients: list[ClientChoice] | None = None) -> MenuApp:
 
 
 async def _new_job(pilot: Pilot[MenuChoice | None], name: str = "PROJ-1") -> None:
-    """Top → Job → New → type a name → submit."""
+    """Top → Job → New → "Type a new name…" → type it → submit."""
     await pilot.press("enter")  # Job menu
     await pilot.press("enter")  # New (first verb)
+    await pilot.pause()
+    await pilot.press("enter")  # the type-a-name row, which is always first
     await pilot.pause()
     cast("MenuApp", pilot.app).screen.query_one("#name", Input).value = name
     await pilot.press("enter")
@@ -2210,3 +2214,137 @@ def test_with_no_client_choice_the_launch_goes_straight_through() -> None:
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client=None)
+
+
+# --------------------------------------------------------------------------- #
+# Starting a new session on a job you already have (#81)                       #
+# --------------------------------------------------------------------------- #
+
+
+async def _open_new(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → New."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("enter")  # New
+    await pilot.pause()
+
+
+def test_new_offers_your_jobs_alongside_typing_a_name() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    # Typing stays first: it is what the verb says, and the only row on a fresh install.
+    assert seen["titles"] == ["Type a new name…", "alpha", "beta"]
+
+
+def test_picking_an_existing_job_starts_a_session_on_it_without_typing() -> None:
+    """The whole issue: the name is already on screen, so it should not be retyped."""
+    app = MenuApp(_JOBS)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("down", "enter")  # alpha
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="alpha")
+
+
+def test_an_existing_job_still_goes_through_the_client_step() -> None:
+    """Picking from the list must not skip the choice a typed name gets (#79)."""
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("down", "enter")  # alpha
+            await pilot.pause()
+            await pilot.press("down", "enter")  # a different client
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.job == "alpha"
+    assert choice.client == "cursor"
+
+
+def test_typing_a_brand_new_name_still_works() -> None:
+    """The other half of the flow — a job you do not have yet."""
+    app = MenuApp(_JOBS, validate_job=_reject_spaces)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("enter")  # Type a new name…
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "brand-new"
+            await pilot.press("enter")
+            await pilot.pause()
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="brand-new")
+
+
+def test_with_no_jobs_yet_typing_is_the_only_row() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp([])
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["titles"] == ["Type a new name…"]
+
+
+def test_each_row_shows_the_command_it_is_equivalent_to() -> None:
+    """The menu teaches the CLI; a picked job should name the command it stands for."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("down")  # onto alpha
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert "gmlw start alpha" in str(seen["detail"])
+
+
+def test_escape_from_the_job_choice_returns_to_the_job_menu() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["running"] = app.is_running
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None
+    assert seen["running"] is True
+    assert str(seen["crumb"]).endswith("Job")
+
+
+def test_resume_is_unchanged_and_still_reopens_a_session() -> None:
+    """New and Resume stay different verbs: one starts, one reopens (#81's note)."""
+    app = _resume_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            await pilot.press("enter")
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="resume", job="alpha", session="alpha_003")

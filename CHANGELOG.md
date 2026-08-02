@@ -64,6 +64,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   runs `<binary> --version` per installed client, which is several subprocesses and not
   something that belongs between "start this job" and the job starting.
 
+- **`Job > New` offers the jobs you already have**
+  ([#81](https://github.com/danielslobozian/generic-ml-wrapper/issues/81)). It was a free-text
+  field, so starting more work on an existing job meant remembering its exact name and typing
+  it back — while the menu was showing that same list under `Job > List` and `Job > Resume`.
+  It now opens on a picker: **Type a new name…** first (it is what the verb says, it is the
+  only row on an install with no jobs, and a fixed first row means the flow does not shift as
+  jobs come and go), then one row per recorded job. Picking one starts a *new session* on it,
+  numbered after its last — exactly what `gmlw start <existing-job>` has always done, which is
+  why nothing new was needed underneath. Typing a brand-new name is unchanged, and still
+  validated in-form. Resume is untouched and still reopens a recorded session.
+
 ### Fixed
 - **Deleting from the menu no longer leaves the menu.** The first cut handed the selection back
   to the wiring and asked on the restored terminal, which meant the app tore down, asked, and
