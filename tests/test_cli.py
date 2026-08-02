@@ -5,7 +5,9 @@
 import io
 import json
 import platform
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -30,6 +32,13 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
     CreateAxisCommand,
     CreateAxisResult,
 )
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs, JobFootprint
+from generic_ml_wrapper.application.port.inbound.delete_sessions import (
+    DeleteSessions,
+    NoSuchJobError,
+    NoSuchSessionError,
+    SessionFootprint,
+)
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflow,
     EditWorkflowCommand,
@@ -42,9 +51,20 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     TurnRow,
     UsageReport,
 )
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.import_workflow import (
+    ArchiveUnreadableError,
+    ImportOutcome,
+    ImportWorkflow,
+    ImportWorkflowResult,
+)
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
+from generic_ml_wrapper.application.port.inbound.list_launch_clients import (
+    LaunchClient,
+    ListLaunchClients,
+)
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
@@ -634,6 +654,8 @@ def test_sessions_command_json_output(
             "cwd": None,
             "resumable": True,
             "created_at": None,
+            "turn_count": 0,
+            "cost_usd": 0.0,
         }
     ]
 
@@ -1690,3 +1712,646 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
     monkeypatch.setattr(app, "_tui_launch_job", _record_launch)
     assert app._tui() == 0
     assert launched == ["codex"]  # the switch just made, not the default the menu opened on
+
+
+# --------------------------------------------------------------------------- #
+# Deleting jobs and sessions                                                   #
+# --------------------------------------------------------------------------- #
+
+
+class _FakeDeleteJobs(DeleteJobs):
+    """Records what it was asked to preview and delete; deletes nothing."""
+
+    def __init__(self, footprints: list[JobFootprint], error: Exception | None = None) -> None:
+        self._footprints = footprints
+        self._error = error
+        self.previewed: list[list[str]] = []
+        self.executed: list[list[str]] = []
+
+    def preview(self, jobs: Sequence[str]) -> list[JobFootprint]:
+        if self._error is not None:
+            raise self._error
+        self.previewed.append(list(jobs))
+        return self._footprints
+
+    def execute(self, jobs: Sequence[str]) -> list[JobFootprint]:
+        self.executed.append(list(jobs))
+        return self._footprints
+
+
+class _FakeDeleteSessions(DeleteSessions):
+    """Records what it was asked to preview and delete; deletes nothing."""
+
+    def __init__(self, footprints: list[SessionFootprint], error: Exception | None = None) -> None:
+        self._footprints = footprints
+        self._error = error
+        self.executed: list[tuple[str, list[str]]] = []
+
+    def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
+        if self._error is not None:
+            raise self._error
+        return self._footprints
+
+    def execute(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
+        self.executed.append((job, list(sessions)))
+        return self._footprints
+
+
+def _job_footprint(job: str = "alpha") -> JobFootprint:
+    return JobFootprint(
+        job=job, sessions=3, turns=41, cost_usd=1.25, contexts=3, transcript_calls=6
+    )
+
+
+def _session_footprint(session: str = "alpha_002") -> SessionFootprint:
+    return SessionFootprint(
+        job="alpha", session=session, turns=0, cost_usd=0.0, contexts=1, transcript_calls=0
+    )
+
+
+class _TtyStderr:
+    """Whatever stderr currently is, claiming to be a terminal.
+
+    Not a plain :class:`_Tty`: the confirmation prompt only appears when *stderr* is a
+    terminal, and swapping capsys's stream out for a private buffer would take the very
+    output the test is checking with it. This delegates the writes and lies only about
+    ``isatty``.
+    """
+
+    def __init__(self, stream: object) -> None:
+        self._stream = stream
+
+    def write(self, text: str) -> int:
+        return int(self._stream.write(text))  # type: ignore[attr-defined]  # any text stream
+
+    def flush(self) -> None:
+        self._stream.flush()  # type: ignore[attr-defined]  # any text stream
+
+    def isatty(self) -> bool:
+        return True
+
+
+def _answer(monkeypatch: pytest.MonkeyPatch, reply: str) -> None:
+    """Make the confirmation prompt reachable, and answer it with ``reply``."""
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stderr", _TtyStderr(app.sys.stderr))
+    monkeypatch.setattr("builtins.input", lambda _prompt="": reply)
+
+
+def test_bare_jobs_and_sessions_still_list() -> None:
+    """The delete sub-action is optional — the list commands are unchanged."""
+    parser = app.build_parser()
+    assert parser.parse_args(["jobs"]).jobs_command is None
+    assert parser.parse_args(["jobs", "--json"]).json is True
+    assert parser.parse_args(["sessions", "alpha"]).sessions_command is None
+    assert parser.parse_args(["sessions", "alpha", "--json"]).json is True
+
+
+def test_parser_parses_both_delete_forms() -> None:
+    parser = app.build_parser()
+    jobs = parser.parse_args(["jobs", "delete", "alpha", "beta", "--yes"])
+    assert (jobs.jobs_command, jobs.job, jobs.yes) == ("delete", ["alpha", "beta"], True)
+    sessions = parser.parse_args(["sessions", "alpha", "delete", "alpha_001"])
+    assert (sessions.sessions_command, sessions.job, sessions.session, sessions.yes) == (
+        "delete",
+        "alpha",
+        ["alpha_001"],
+        False,
+    )
+
+
+def test_jobs_delete_previews_then_deletes_when_confirmed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    assert app.main(["jobs", "delete", "alpha"]) == 0
+    assert fake.executed == [["alpha"]]
+    err = capsys.readouterr().err
+    assert "3 session(s)" in err  # the footprint was shown before the question
+    assert "41 turn(s)" in err
+
+
+def test_jobs_delete_declined_removes_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "n")
+
+    assert app.main(["jobs", "delete", "alpha"]) == 2
+    assert fake.executed == []
+    assert "nothing was deleted" in capsys.readouterr().err
+
+
+def test_yes_skips_the_question_entirely(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    def _never(_prompt: str = "") -> str:
+        raise AssertionError("--yes must not prompt")
+
+    monkeypatch.setattr("builtins.input", _never)
+    assert app.main(["jobs", "delete", "alpha", "--yes"]) == 0
+    assert fake.executed == [["alpha"]]
+
+
+def test_off_a_tty_a_delete_is_refused_rather_than_assumed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    monkeypatch.setattr(app.sys, "stdin", io.StringIO())  # isatty() is False
+
+    assert app.main(["jobs", "delete", "alpha"]) == 2
+    assert fake.executed == []
+    assert "--yes" in capsys.readouterr().err  # and says how to mean it
+
+
+def test_jobs_delete_reports_an_unknown_job_and_stops(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    error = NoSuchJobError("error.job.not_found", job="nope")
+    fake = _FakeDeleteJobs([], error=error)
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "nope", "--yes"]) == 2
+    assert fake.executed == []
+    assert "nope" in capsys.readouterr().err
+
+
+def test_repeated_ids_are_asked_for_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "alpha", "beta", "alpha", "--yes"]) == 0
+    assert fake.executed == [["alpha", "beta"]]
+
+
+def test_an_invalid_job_id_never_reaches_the_use_case(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _unreachable() -> DeleteJobs:
+        raise AssertionError("a bad id must be refused at the boundary")
+
+    monkeypatch.setattr(app, "build_delete_jobs", _unreachable)
+    assert app.main(["jobs", "delete", "../etc", "--yes"]) == 2
+    assert "invalid job id" in capsys.readouterr().err
+
+
+def test_sessions_delete_previews_then_deletes_when_confirmed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteSessions([_session_footprint()])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    assert app.main(["sessions", "alpha", "delete", "alpha_002"]) == 0
+    assert fake.executed == [("alpha", ["alpha_002"])]
+    assert "alpha_002" in capsys.readouterr().err
+
+
+def test_sessions_delete_reports_an_unknown_session(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    error = NoSuchSessionError("error.session.not_found", session="alpha_009", job="alpha")
+    fake = _FakeDeleteSessions([], error=error)
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+
+    assert app.main(["sessions", "alpha", "delete", "alpha_009", "--yes"]) == 2
+    assert fake.executed == []
+    assert "alpha_009" in capsys.readouterr().err
+
+
+def test_format_job_footprints_names_every_kind_of_thing_that_goes() -> None:
+    text = app.format_job_footprints([_job_footprint(), _job_footprint("throwaway")])
+    assert "2 job(s)" in text
+    assert "alpha" in text
+    assert "throwaway" in text
+    assert "context file(s)" in text
+    assert "transcript file(s)" in text
+
+
+def test_format_session_footprints_names_the_job_it_empties() -> None:
+    text = app.format_session_footprints("alpha", [_session_footprint()])
+    assert "alpha" in text
+    assert "alpha_002" in text
+
+
+def test_format_session_usage_names_an_empty_session() -> None:
+    """0 turns reads as a word, not a row of zeroes — it is what a user is scanning for."""
+    assert app.format_session_usage(SessionSummary("alpha_001", "claude")) == "empty"
+
+
+def test_format_session_usage_shows_turns_and_cost() -> None:
+    summary = SessionSummary("alpha_002", "claude", turn_count=12, cost_usd=1.5)
+    assert app.format_session_usage(summary) == "12 turn(s) $1.50"
+
+
+def test_format_sessions_marks_the_empty_one() -> None:
+    text = app.format_sessions(
+        "alpha",
+        [
+            SessionSummary("alpha_001", "claude"),
+            SessionSummary("alpha_002", "claude", turn_count=12, cost_usd=1.5),
+        ],
+    )
+    assert "empty" in text
+    assert "12 turn(s)" in text
+
+
+def test_build_delete_use_cases_are_wired() -> None:
+    assert isinstance(composition.build_delete_jobs(), DeleteJobs)
+    assert isinstance(composition.build_delete_sessions(), DeleteSessions)
+
+
+# --------------------------------------------------------------------------- #
+# The menu loop: an errand comes back, a launch does not                       #
+# --------------------------------------------------------------------------- #
+
+
+def _menu_returning(*choices: tui.MenuChoice | None) -> list[tui.MenuChoice | None]:
+    """A scripted sequence of menu results, one per pass through the loop."""
+    return list(choices)
+
+
+def _drive_tui(
+    monkeypatch: pytest.MonkeyPatch, script: list[tui.MenuChoice | None]
+) -> tuple[int, int]:
+    """Run ``_tui`` with ``_run_menu`` scripted; return (exit code, times the menu opened)."""
+    passes = {"n": 0}
+
+    def _fake_menu() -> tui.MenuChoice | None:
+        index = passes["n"]
+        passes["n"] += 1
+        if index >= len(script):
+            raise AssertionError("the loop opened the menu more times than the script allows")
+        return script[index]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(app, "_run_menu", _fake_menu)
+    monkeypatch.setattr(app, "_pause_before_menu", lambda: None)
+    return app._tui(), passes["n"]
+
+
+def test_quitting_the_menu_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _drive_tui(monkeypatch, _menu_returning(None)) == (0, 1)
+
+
+def test_config_setup_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    ran: list[bool] = []
+
+    def _init() -> int:
+        ran.append(True)
+        return 0
+
+    monkeypatch.setattr(app, "_run_init", _init)
+
+    code, opened = _drive_tui(monkeypatch, _menu_returning(tui.MenuChoice(action="init"), None))
+
+    assert ran == [True]
+    assert (code, opened) == (0, 2)
+
+
+def test_a_launch_ends_gmlw_rather_than_returning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A client owned the terminal; when it is done, so is gmlw."""
+
+    def _launch(
+        _job: str, _resume: bool, _session: str | None, _cwd: str | None, _client: str
+    ) -> int:
+        return 7
+
+    monkeypatch.setattr(app, "_tui_launch_job", _launch)
+
+    code, opened = _drive_tui(
+        monkeypatch, _menu_returning(tui.MenuChoice(action="start", job="alpha"))
+    )
+
+    assert (code, opened) == (7, 1)  # the exit code is the client's, and the menu never reopened
+
+
+def test_a_workflow_run_ends_gmlw(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _run(_workflow: str, _client: str) -> int:
+        return 3
+
+    monkeypatch.setattr(app, "_run_workflow", _run)
+
+    code, opened = _drive_tui(
+        monkeypatch, _menu_returning(tui.MenuChoice(action="run", workflow="nightly"))
+    )
+
+    assert (code, opened) == (3, 1)
+
+
+# --------------------------------------------------------------------------- #
+# The Deleter the wiring injects into the menu                                 #
+# --------------------------------------------------------------------------- #
+
+
+def _built_deleter(monkeypatch: pytest.MonkeyPatch) -> tui.Deleter:
+    """The Deleter `_run_menu` builds, captured without opening the menu."""
+    captured: dict[str, tui.Deleter] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["deleter"] = cast(tui.Deleter, kwargs["deleter"])
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    app._run_menu()
+    return captured["deleter"]
+
+
+def test_the_menu_is_given_a_deleter_that_previews_without_deleting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    text = _built_deleter(monkeypatch).preview_jobs(("alpha",))
+
+    assert "3 session(s)" in text  # the footprint the confirm screen shows
+    assert fake.executed == []  # a preview removes nothing
+
+
+def test_the_injected_deleter_removes_jobs_and_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    message = _built_deleter(monkeypatch).delete_jobs(("alpha",))
+
+    assert fake.executed == [["alpha"]]
+    assert "removed" in message
+
+
+def test_the_injected_deleter_removes_sessions_and_reports_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeDeleteSessions([_session_footprint()])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+
+    deleter = _built_deleter(monkeypatch)
+    preview = deleter.preview_sessions("alpha", ("alpha_002",))
+    message = deleter.delete_sessions("alpha", ("alpha_002",))
+
+    assert "alpha_002" in preview
+    assert fake.executed == [("alpha", ["alpha_002"])]
+    assert "removed" in message
+
+
+def test_a_stale_selection_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The menu holds a snapshot; if it went stale the message goes on screen, not a crash."""
+    error = NoSuchJobError("error.job.not_found", job="gone")
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: _FakeDeleteJobs([], error=error))
+
+    assert "gone" in _built_deleter(monkeypatch).preview_jobs(("gone",))
+
+
+def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What makes a job the user just deleted leave the list they are standing on."""
+    captured: dict[str, object] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["reload"] = kwargs["reload_jobs"]
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return [JobSummary(job="beta", session_count=1)]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    app._run_menu()
+
+    reload_jobs = cast("Callable[[], list[tui.JobChoice]]", captured["reload"])
+    assert [j.job for j in reload_jobs()] == ["beta"]
+
+
+def test_the_in_app_verbs_no_longer_come_back_through_the_choice_handler() -> None:
+    """Delete, export and import are done in-app; none should reach the terminal hand-off."""
+    for action in ("jobs_delete", "sessions_delete", "workflow_export", "workflow_import"):
+        assert app._act_on_tui_choice(tui.MenuChoice(action=action)) == 0
+
+
+def _built_archiver(monkeypatch: pytest.MonkeyPatch) -> tui.Archiver:
+    """The Archiver `_run_menu` builds, captured without opening the menu."""
+    captured: dict[str, tui.Archiver] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["archiver"] = cast("tui.Archiver", kwargs["archiver"])
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    app._run_menu()
+    return captured["archiver"]
+
+
+def test_the_injected_archiver_exports_and_reports_where(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class _Export(ExportWorkflow):
+        def execute(self, name: str) -> str:
+            return str(tmp_path / f"{name}.zip")
+
+    monkeypatch.setattr(app, "build_export_workflow", lambda: _Export())
+
+    assert "nightly.zip" in _built_archiver(monkeypatch).export("nightly")
+
+
+def test_an_export_failure_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Export(ExportWorkflow):
+        def execute(self, name: str) -> str:
+            raise WorkflowNotFoundError("error.workflow.not_found", name=name)
+
+    monkeypatch.setattr(app, "build_export_workflow", lambda: _Export())
+
+    message = _built_archiver(monkeypatch).export("gone")
+    assert message.startswith("✗")
+    assert "gone" in message
+
+
+def _import_returning(result: ImportWorkflowResult) -> type[ImportWorkflow]:
+    class _Import(ImportWorkflow):
+        def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
+            return result
+
+    return _Import
+
+
+def test_the_injected_archiver_installs_and_reports_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = ImportWorkflowResult(ImportOutcome.IMPORTED, "nightly", "/w/nightly")
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", False)
+
+    assert attempt.needs_confirmation is False
+    assert "nightly" in attempt.message
+
+
+def test_a_name_clash_asks_rather_than_failing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The use case reports the clash; the menu turns that into a question, not an error."""
+    result = ImportWorkflowResult(ImportOutcome.REFUSED, "nightly", "/w/nightly")
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", False)
+
+    assert attempt.needs_confirmation is True
+    assert "already exists" in attempt.message
+
+
+def test_a_replacement_names_the_backup_it_kept(monkeypatch: pytest.MonkeyPatch) -> None:
+    result = ImportWorkflowResult(ImportOutcome.REPLACED, "nightly", "/w/nightly", "/backups/n")
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", True)
+
+    assert "/backups/n" in attempt.message
+
+
+def test_an_unreadable_archive_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Import(ImportWorkflow):
+        def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
+            raise ArchiveUnreadableError("error.archive.unreadable", archive=archive)
+
+    monkeypatch.setattr(app, "build_import_workflow", lambda: _Import())
+
+    attempt = _built_archiver(monkeypatch).install("/tmp/broken.zip", False)
+    assert attempt.message.startswith("✗")
+    assert attempt.needs_confirmation is False
+
+
+# --------------------------------------------------------------------------- #
+# The client a launch was pointed at (#79, #80)                                #
+# --------------------------------------------------------------------------- #
+
+
+def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) -> str:
+    """The client `_act_on_tui_choice` ends up launching ``choice`` on."""
+    seen: list[str] = []
+
+    def _launch(
+        _job: str, _resume: bool, _session: str | None, _cwd: str | None, client: str
+    ) -> int:
+        seen.append(client)
+        return 0
+
+    def _run(_workflow: str, client: str) -> int:
+        seen.append(client)
+        return 0
+
+    def _new(_workflow: str | None, client: str, _guided: bool) -> int:
+        seen.append(client)
+        return 0
+
+    def _edit(_workflow: str, client: str, _guided: bool) -> int:
+        seen.append(client)
+        return 0
+
+    monkeypatch.setattr(app, "_tui_launch_job", _launch)
+    monkeypatch.setattr(app, "_run_workflow", _run)
+    monkeypatch.setattr(app, "_new_workflow", _new)
+    monkeypatch.setattr(app, "_edit_workflow", _edit)
+    app._act_on_tui_choice(choice)
+    return seen[0]
+
+
+def test_a_job_launches_on_the_client_the_menu_picked(monkeypatch: pytest.MonkeyPatch) -> None:
+    choice = tui.MenuChoice(action="start", job="alpha", client="cursor")
+    assert _launched_client(monkeypatch, choice) == "cursor"
+
+
+def test_a_workflow_run_launches_on_the_client_the_menu_picked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    choice = tui.MenuChoice(action="run", workflow="nightly", client="codex")
+    assert _launched_client(monkeypatch, choice) == "codex"
+
+
+def test_authoring_launches_on_the_client_the_menu_picked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    new = tui.MenuChoice(action="workflow_new", client="cursor")
+    edit = tui.MenuChoice(action="workflow_edit", workflow="nightly", client="cursor")
+    assert _launched_client(monkeypatch, new) == "cursor"
+    assert _launched_client(monkeypatch, edit) == "cursor"
+
+
+def test_no_pick_falls_back_to_the_configured_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A launch that never went through the picker behaves exactly as it always did."""
+
+    def _default(_raw: str | None) -> str:
+        return "claude"
+
+    monkeypatch.setattr(app, "_client", _default)
+    choice = tui.MenuChoice(action="start", job="alpha")
+    assert _launched_client(monkeypatch, choice) == "claude"
+
+
+def test_a_pick_is_not_written_back_as_the_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Per-launch, like --client: choosing once must not change what tomorrow launches on."""
+    monkeypatch.setattr(app.config, "config_path", lambda: tmp_path / "config.toml")
+    (tmp_path / "config.toml").write_text('[client]\ndefault = "claude"\n', encoding="utf-8")
+
+    assert _launched_client(monkeypatch, tui.MenuChoice(action="start", job="a", client="codex"))
+    assert 'default = "claude"' in (tmp_path / "config.toml").read_text(encoding="utf-8")
+
+
+def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured["clients"] = kwargs["launch_clients"]
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    class _Launch(ListLaunchClients):
+        def execute(self) -> list[LaunchClient]:
+            return [LaunchClient("claude", "Claude Code", is_default=True)]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    monkeypatch.setattr(app, "build_list_launch_clients", lambda: _Launch())
+    app._run_menu()
+
+    listing = cast("Callable[[], list[tui.ClientChoice]]", captured["clients"])
+    (only,) = listing()
+    assert (only.name, only.display, only.is_default, only.custom) == (
+        "claude",
+        "Claude Code",
+        True,
+        False,
+    )
+
+
+def test_build_list_launch_clients_is_wired() -> None:
+    assert isinstance(composition.build_list_launch_clients(), ListLaunchClients)

@@ -6,6 +6,102 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Jobs and sessions can be deleted** ([#82](https://github.com/danielslobozian/generic-ml-wrapper/issues/82)).
+  Until now nothing in the wrapper removed anything: every job that had ever had a session
+  stayed in `gmlw jobs` and in the menu for good, alongside the throwaway ones made while
+  trying things out. Two grains, mirroring each other:
+  - `gmlw jobs delete <job>...` removes whole jobs — every session, its per-turn usage and
+    cost, its compiled contexts, and its transcripts. The job's folders go whole, so residue
+    no recorded session still claims goes with them.
+  - `gmlw sessions <job> delete <session>...` removes single sessions and leaves the job
+    standing. This is the one for the session you opened, remembered something, and quit out
+    of: `StartJob` records a session *before* the client runs (by design — a rejected start
+    must not burn an id), so an abandoned session is recorded like any other and was, until
+    now, permanent.
+
+  Both take several ids at once, because cleaning up one item at a time is not worth doing —
+  which is how the list got long. Both print exactly what will be removed (sessions, turns,
+  cost, context and transcript files) and then ask; `--yes` answers in advance, and off a
+  terminal without it the delete is **refused** rather than assumed. One unknown id aborts the
+  whole batch untouched rather than deleting half of it. Bare `gmlw jobs` and
+  `gmlw sessions <job>` are unchanged.
+
+  In the menu, **Job > Delete** offers the same two grains: `space` ticks rows, `⏎` asks. The
+  question is asked *in* the app, on a screen that opens on **No** — `⏎` is the most reflexive
+  key there is and must not be the destructive one — and shows the same footprint the CLI
+  prints. Either answer leaves you on the list you were clearing, with the removed rows already
+  gone from it. The removal itself is an injected closure, so the TUI still holds no port.
+
+  Deleting a session in the middle of a job is safe by construction: `next_session_id` already
+  minted one past the highest suffix "so gaps never cause a collision", so nothing renumbers
+  and no id is reused.
+
+- **The menu can point a launch at a client**
+  ([#79](https://github.com/danielslobozian/generic-ml-wrapper/issues/79),
+  [#80](https://github.com/danielslobozian/generic-ml-wrapper/issues/80)). Every launch from
+  `gmlw tui` used the configured default, so running one job on a different client meant
+  changing the global default in Config and changing it back afterwards. **Job → New**,
+  **Workflow → Run**, **Create**, and **Edit** now end with a client step — the menu's
+  equivalent of `--client`, which the CLI has always had.
+
+  It opens on the configured default with the cursor already there, so `⏎` is "whatever I
+  normally use" and choosing otherwise is deliberate. The choice is **per-launch** and never
+  rewrites `client.default`. **Resume is not asked about**, by design — a resumed session
+  relaunches on the client it was made with.
+
+  **Only clients that can actually be launched on are offered**, from two sources with two
+  different rules. A built-in appears when its binary is on `PATH`. Every name under
+  `[callers]` appears too, marked 🔌 — including custom callers gmlw does not ship, since
+  `DefaultCliCallerProvider` resolves an override *by name before* any built-in, making
+  `cursor-mitm = "…:CursorMitmCaller"` as real a client as `claude`. A configured caller is
+  offered whatever `PATH` says: gmlw has no idea what someone else's caller needs, and
+  configuring one is already the statement that it works. A chooser built from the catalog
+  alone would have been the one place in gmlw where those clients did not exist.
+
+  Behind it, a `ListLaunchClients` port: a `PATH` lookup, the `[callers]` map, and the
+  default — and deliberately no version reads. `ListClients` (the Config → Clients view)
+  runs `<binary> --version` per installed client, which is several subprocesses and not
+  something that belongs between "start this job" and the job starting.
+
+- **`Job > New` offers the jobs you already have**
+  ([#81](https://github.com/danielslobozian/generic-ml-wrapper/issues/81)). It was a free-text
+  field, so starting more work on an existing job meant remembering its exact name and typing
+  it back — while the menu was showing that same list under `Job > List` and `Job > Resume`.
+  It now opens on a picker: **Type a new name…** first (it is what the verb says, it is the
+  only row on an install with no jobs, and a fixed first row means the flow does not shift as
+  jobs come and go), then one row per recorded job. Picking one starts a *new session* on it,
+  numbered after its last — exactly what `gmlw start <existing-job>` has always done, which is
+  why nothing new was needed underneath. Typing a brand-new name is unchanged, and still
+  validated in-form. Resume is untouched and still reopens a recorded session.
+
+### Fixed
+- **Deleting from the menu no longer leaves the menu.** The first cut handed the selection back
+  to the wiring and asked on the restored terminal, which meant the app tore down, asked, and
+  came back at the *front door* — three levels away from the list being cleaned, whichever way
+  the question was answered. Declining also printed an acknowledgement that had to be dismissed,
+  for an action that did nothing. The question is now a screen inside the app: it opens on
+  **No**, Esc is a no, and either answer returns to the very list it was asked from, re-read so
+  the removed rows are gone and with the ticks cleared. Nothing is printed for a no.
+- **Exporting and importing a workflow no longer exit the menu.** Both borrowed the restored
+  terminal to print a result or ask about a name clash, and then ended the process — dropping
+  the user back at the shell mid-task. Both now happen in the app. Export packs in place and
+  says where the file went, so exporting a second workflow is one keypress away with the list
+  still in front of you. Import installs, re-reads the catalogue so the new workflow is
+  immediately runnable, and asks about a name clash on the same confirmation screen deleting
+  uses — worded for *replacing*, since an import keeps a backup and is precisely not the
+  irreversible thing a delete is.
+- **The menu no longer exits after re-running setup.** `Config > Setup` is an interview that
+  genuinely needs the terminal, so it still steps out — but `_tui` now loops rather than
+  ending, and returns to the menu afterwards. A *launch* (start, resume, run, authoring) still
+  ends gmlw, because a client owned the terminal and the session is over when it is.
+
+### Changed
+- **`gmlw sessions` shows what each session used** — turn count and cost per row, and the word
+  `empty` for a session that never took a turn. Without it, deciding what to delete is a guess:
+  the listing had no way to tell a day's work from a session abandoned at the prompt. `--json`
+  rows gain `turn_count` and `cost_usd`; the existing fields are untouched.
+
 ## [0.10.0] - 2026-08-01
 
 The documentation release. The docs had grown as residue rather than deliverable — seven

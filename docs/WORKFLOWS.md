@@ -153,8 +153,12 @@ to another machine, or to someone else.
     gmlw workflow import <archive> --replace  # displace an existing one of the same name
 
 Without `--replace`, a name clash prompts interactively (keeping a backup of what it
-replaces); off a TTY the import is refused rather than silently overwriting. Both are
-also in `gmlw tui` under Workflow → Export / Import.
+replaces); off a TTY the import is refused rather than silently overwriting.
+
+Both are also in `gmlw tui` under Workflow → Export / Import, and both stay in the menu:
+Export packs the file and says where it went with the list still in front of you, and
+Import installs, asks about a name clash on the spot, and leaves the new workflow
+immediately runnable from Workflow → Run.
 
 ## Credentials
 

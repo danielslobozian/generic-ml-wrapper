@@ -14,7 +14,9 @@ gmlw <job>                              # shorthand for: gmlw start <job>
 gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME]
 gmlw run [workflow] [--client X] [--client-args ARGS]   # run a workflow directly (job named after it)
 gmlw jobs [--json]
+gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything under it
 gmlw sessions <job> [--json]
+gmlw sessions <job> delete <session> [...] [--yes]
 gmlw export <job> [--json]
 gmlw clients [--json]                    # supported clients + installed versions
 gmlw statusline                          # called by the client, not by hand
@@ -39,6 +41,9 @@ gmlw role new <label> [--description D] [--default]
 `clients`, `workflow list`, `workflow drafts`, `persona list`, `plugins list`,
 `config list`, and `config get`. It prints pretty-printed JSON instead of the
 human-readable text.
+
+`--yes` is accepted by the delete commands only — `jobs delete` and `sessions delete` —
+and skips their confirmation prompt.
 
 ### Implicit `start`
 
@@ -174,9 +179,48 @@ Example:
 gmlw jobs
 ```
 
+### jobs delete
+
+Remove whole jobs and everything recorded under them: every session, its per-turn usage
+and cost, its compiled contexts under `~/.gmlw/contexts/<job>/`, and its transcripts
+under the configured transcript root. The job's folders go whole, so nothing is left
+behind that no session still claims.
+
+```
+gmlw jobs delete <job> [<job>...] [--yes]
+```
+
+- `job` (positional, one or more) — the jobs to delete.
+- `--yes` — delete without asking for confirmation.
+
+What will be removed is printed first and the deletion is then confirmed. **This cannot
+be undone.** Without `--yes` and with nothing to answer the prompt (a pipe, a script, CI),
+the delete is refused rather than assumed — pass `--yes` when you mean it.
+
+One unknown job aborts the whole request: nothing is removed and the exit code is `2`.
+Authoring jobs are not reachable here, for the same reason they are absent from
+`gmlw jobs`.
+
+Example:
+
+```
+gmlw jobs delete spike-1 throwaway
+```
+
+```
+This will permanently remove 2 job(s):
+
+  spike-1    3 session(s) · 41 turn(s) · $1.25 · 3 context file(s) · 6 transcript file(s)
+  throwaway  1 session(s) · 0 turn(s) · $0.00 · 1 context file(s) · 0 transcript file(s)
+
+  Delete? This cannot be undone. [y/N]:
+```
+
 ## sessions
 
-List a job's sessions, oldest first.
+List a job's sessions, oldest first, with what each one actually used. A session is
+recorded before its client starts, so one you opened and left straight away is listed
+like any other — it shows as `empty`, which is how you find it.
 
 ```
 gmlw sessions <job> [--json]
@@ -189,6 +233,31 @@ Example:
 
 ```
 gmlw sessions billing-api
+```
+
+### sessions delete
+
+Remove single sessions from a job: the session row, its turns, its cost, its compiled
+context, and its transcript folder. The job itself stays, along with its other sessions.
+
+```
+gmlw sessions <job> delete <session> [<session>...] [--yes]
+```
+
+- `job` (positional, required) — the job the sessions belong to.
+- `session` (positional, one or more) — the `<job>_NNN` session ids to delete.
+- `--yes` — delete without asking for confirmation.
+
+Same preview, same confirmation, same refusal off a terminal as `jobs delete`. One
+unknown session id aborts the whole request.
+
+Deleting a session in the middle of a job is safe: the next session id is minted one past
+the highest that exists, so the gap is never reused and no id is ever recycled.
+
+Example:
+
+```
+gmlw sessions billing-api delete billing-api_002
 ```
 
 ## export
@@ -258,11 +327,34 @@ gmlw tui
 <img src="images/gmlw-tui.gif" alt="gmlw tui — the object-first Job / Workflow / Config / Rules menu" width="760">
 </div>
 
-Every top-level verb is wired, not a placeholder: **Job** covers New, Resume (a specific
-job's latest session), List, and Export; **Workflow** covers Run, Edit, Create, List,
-Export, and Import; **Config** covers listing/getting/setting a value, the **Clients**
-switcher (selecting a row also sets it as the default — the `gmlw config set client.default`
-path), and re-running **Setup**; **Rules** browses the environment and role rule axes.
+Every top-level verb is wired, not a placeholder: **Job** covers New (pick a job you
+already have, or type a new name — either way you get a *fresh session*, which is what
+`gmlw start <job>` does), Resume (a specific recorded session), List, Export, and Delete; **Workflow** covers Run, Edit, Create,
+List, Export, and Import; **Config** covers listing/getting/setting a value, the
+**Clients** switcher (selecting a row also sets it as the default — the
+`gmlw config set client.default` path), and re-running **Setup**; **Rules** browses the
+environment and role rule axes.
+
+**Every launch ends with a client step** — Job → New, Workflow → Run, Create, and Edit all
+ask which client to run on before starting, the menu's equivalent of `--client`. It opens
+on your configured default with the cursor already there, so `⏎` is "the one I normally
+use". **The choice applies to that launch only** and never rewrites `client.default` — to
+change the default, use Config → Clients. Resume is deliberately not asked: a resumed
+session relaunches on the client it was made with.
+
+Only clients you can actually launch on are listed:
+
+- a **built-in** appears when its binary is on your `PATH`;
+- **any name under `[callers]`** appears too, marked 🔌 — including one gmlw does not ship.
+  A caller is resolved by name before any built-in, so
+  `cursor-mitm = "/path/cursor_mitm.py:CursorMitmCaller"` makes `cursor-mitm` as real a
+  client as `claude`, usable here and with `--client cursor-mitm`. gmlw cannot `PATH`-check
+  a caller it did not write, so a configured one is always offered — configuring it is the
+  statement that it works. See [CONFIGURATION.md](CONFIGURATION.md) for `[callers]`.
+
+**Only Setup leaves the menu.** Deleting, exporting a workflow, and importing one all ask
+and act in place, and leave you on the screen you were working on. `Config > Setup` is an
+interview that owns the terminal, so it steps out and returns when it is done.
 
 Off a TTY (piped/redirected) it never blocks: it falls back to the capability index,
 exactly as bare `gmlw` does. Every action has a direct-command equivalent, so the flag CLI

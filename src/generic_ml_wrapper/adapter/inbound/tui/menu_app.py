@@ -22,7 +22,7 @@ it any earlier and they would freeze in English. :func:`_key` marks every such l
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar, cast
 
@@ -76,6 +76,11 @@ def _no_usage_view(job: str) -> UsageView:
     return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
 
 
+def _no_clients() -> list[ClientChoice]:
+    """Default when the app runs unwired: no client choice to offer, so none is asked for."""
+    return []
+
+
 def _no_rules() -> tuple[RuleGroup, ...]:
     """Default rule catalogue when the app runs unwired (tests): the user has none."""
     return ()
@@ -94,7 +99,14 @@ class MenuChoice:
     launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
     open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
     new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
-    ``archive`` to install from. A ``None`` return means "do nothing".
+    ``archive`` to install from. ``client`` is the one this launch was pointed at, or
+    ``None`` to use the configured default -- a per-launch choice, exactly like ``--client``
+    on the CLI, and never a change to the default itself. A ``None`` return means "do
+    nothing".
+
+    Only things that need the terminal come back this way. Deleting does not -- it happens
+    in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
+    question is a round trip that ends somewhere other than where it started.
     """
 
     action: str
@@ -103,6 +115,7 @@ class MenuChoice:
     workflow: str | None = None
     guided: bool = False
     archive: str | None = None
+    client: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,7 +132,9 @@ class SessionChoice:
 
     ``client`` is the client that made it (a resume relaunches on it, not the current
     default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
-    marks the newest.
+    marks the newest; ``usage`` is its already-rendered turn/cost cell (the word for
+    "empty" when it never ran a turn), formatted by the wiring so the CLI listing and this
+    app cannot describe the same session two different ways.
     """
 
     session_id: str
@@ -128,6 +143,75 @@ class SessionChoice:
     resumable: bool
     date: str
     is_latest: bool
+    usage: str = ""
+
+
+@dataclass(frozen=True)
+class Deleter:
+    """The four calls the delete screens need, grouped as one injected collaborator.
+
+    Grouped rather than four kwargs on the app, the way :class:`ConfigCatalog` groups the
+    settings with their setter. The app stays free of ports: these are closures the wiring
+    owns, and both halves matter -- ``preview_*`` is what the user is shown before deciding,
+    and it must be measured by the same code that does the removing, or the question and the
+    answer drift apart.
+
+    Each ``preview_*`` returns the rendered footprint; each ``delete_*`` performs the removal
+    and returns the line to show afterwards.
+    """
+
+    preview_jobs: Callable[[tuple[str, ...]], str]
+    delete_jobs: Callable[[tuple[str, ...]], str]
+    preview_sessions: Callable[[str, tuple[str, ...]], str]
+    delete_sessions: Callable[[str, tuple[str, ...]], str]
+
+
+@dataclass(frozen=True)
+class ClientChoice:
+    """One client a launch can be pointed at, as the picker shows it.
+
+    Every row here is launchable -- the wiring only offers what is actually available, so
+    unlike the resume picker there is nothing to disable. ``custom`` marks a client that
+    came from the user's own ``[callers]`` config rather than the built-in catalog.
+    """
+
+    name: str
+    display: str
+    is_default: bool
+    custom: bool = False
+
+
+@dataclass(frozen=True)
+class ImportAttempt:
+    """What came back from trying to install an archive.
+
+    ``needs_confirmation`` is the use case reporting a name clash rather than resolving it
+    — the same answer the CLI turns into its replace prompt. Here it becomes a confirmation
+    screen, and a yes re-runs the install with ``replace``.
+
+    Attributes:
+        message: The line to show — the outcome, the clash, or the error.
+        needs_confirmation: Whether a workflow of that name already exists and the user
+            has to say whether to displace it.
+    """
+
+    message: str
+    needs_confirmation: bool = False
+
+
+@dataclass(frozen=True)
+class Archiver:
+    """Sharing a workflow out and installing one in, as injected closures.
+
+    Attributes:
+        export: Packs a workflow by slug; returns the line to show.
+        install: Installs an archive, optionally displacing a name clash.
+        reload_workflows: Re-reads the catalogue after an install changed it.
+    """
+
+    export: Callable[[str], str]
+    install: Callable[[str, bool], ImportAttempt]
+    reload_workflows: Callable[[], list[Workflow]]
 
 
 @dataclass(frozen=True)
@@ -283,6 +367,12 @@ _JOB_MENU = (
     ("⏵", "tui.job.resume", "job:resume", "gmlw start <job> --resume-latest"),
     ("📋", "tui.job.list", "job:list", "gmlw jobs"),
     ("📊", "tui.job.export", "job:export", "gmlw export <job>"),
+    ("🗑", "tui.job.delete", "job:delete", "gmlw jobs delete <job>"),
+)
+# Delete has two grains, exactly as the CLI does -- a whole job, or single sessions of one.
+_DELETE_MENU = (
+    ("🗑", "tui.del.jobs", "del:jobs", "gmlw jobs delete <job>"),
+    ("🗑", "tui.del.sessions", "del:sessions", "gmlw sessions <job> delete <session>"),
 )
 _WORKFLOW_MENU = (
     ("⏵", "tui.wf.run", "wf:run", "gmlw run <workflow>"),
@@ -374,9 +464,20 @@ class _MenuScreen(Screen[None]):
     show_banner: ClassVar[bool] = False
     # The i18n key shown when there are no rows; subclasses override for a tailored hint.
     empty_key: ClassVar[str] = "tui.empty"
+    # The i18n key for the docked key-hints bar. A screen whose keys differ from the usual
+    # move/select/back overrides it, so the bar describes the screen you are actually on.
+    keys_key: ClassVar[str] = "tui.keys"
     # A one-shot detail message the next detail-sync shows instead of the cursor's row,
-    # then clears -- so a confirmation survives a programmatic cursor move.
-    _flash: str | None = None
+    # then clears -- so a confirmation survives a programmatic cursor move. Set it on a
+    # screen you are about to push to have it greet the user on arrival.
+    pending_message: str | None = None
+
+    def tell(self, message: str) -> None:
+        """Show ``message`` in the detail panel, now if mounted or on arrival if not."""
+        if self.is_mounted:
+            self.query_one("#detail", Static).update(message)
+        else:
+            self.pending_message = message
 
     @property
     def menu_app(self) -> MenuApp:
@@ -408,13 +509,14 @@ class _MenuScreen(Screen[None]):
             yield Static(i18n.active().t(self.empty_key), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
-            yield Static(i18n.active().t("tui.keys"), id="keys")
+            yield Static(i18n.active().t(self.keys_key), id="keys")
 
     def on_mount(self) -> None:
         """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
         self._sync_detail()
-        if self._flash is not None:  # written after the initial-highlight sync, so it survives
-            message, self._flash = self._flash, None
+        # Written after the initial-highlight sync, so the message survives it.
+        if self.pending_message is not None:
+            message, self.pending_message = self.pending_message, None
             self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
 
     def on_list_view_highlighted(self, _event: ListView.Highlighted) -> None:
@@ -462,6 +564,261 @@ class _MenuScreen(Screen[None]):
         self.menu_app.exit(None)
 
 
+class ClientPickerScreen(_MenuScreen):
+    """The last step before a launch: which client to run it on, this once.
+
+    Takes the launch that is about to happen and returns the same launch with a client
+    filled in. That is the whole screen -- it never inspects what kind of launch it is,
+    so the job, run, and authoring flows all reach it the same way and none of them grew
+    a branch for it.
+
+    It opens on the configured default with the cursor already there, so ``⏎`` is
+    "whatever I normally use" and choosing something else is a deliberate act. Nothing is
+    written to config: this is ``--client`` for one launch, not a new default.
+    """
+
+    empty_key = "tui.client.none"
+
+    def __init__(self, pending: MenuChoice) -> None:
+        """Bind the picker to the launch it is completing."""
+        super().__init__()
+        self._pending = pending
+
+    #: The launch action -> (object crumb key, verb crumb key). The picker is the last
+    #: screen before something starts, so the breadcrumb has to still say what that is.
+    _CRUMBS: ClassVar[dict[str, tuple[str, str]]] = {
+        "start": ("tui.job", "tui.job.new"),
+        "run": ("tui.workflow", "tui.wf.run"),
+        "workflow_new": ("tui.workflow", "tui.wf.create"),
+        "workflow_edit": ("tui.workflow", "tui.wf.edit"),
+    }
+
+    def header_text(self) -> str:
+        """Breadcrumb: the launch being set up, what it targets, then Client."""
+        t = i18n.active().t
+        obj, verb = self._CRUMBS.get(self._pending.action, ("tui.client.crumb", ""))
+        parts = ["gmlw", t(obj)]
+        if verb:
+            parts.append(t(verb))
+        target = self._pending.job or self._pending.workflow
+        if target:
+            parts.append(target)
+        parts.append(t("tui.client.crumb"))
+        return " > ".join(parts)
+
+    def _choices(self) -> list[ClientChoice]:
+        return self.menu_app.launch_clients()
+
+    def menu_items(self) -> list[_Item]:
+        """One row per launchable client, the default marked and your own callers flagged."""
+        t = i18n.active().t
+        items: list[_Item] = []
+        for choice in self._choices():
+            if choice.is_default:
+                icon = "●"
+            elif choice.custom:
+                icon = "🔌"
+            else:
+                icon = "○"
+            items.append(
+                _Item(
+                    icon,
+                    choice.display,
+                    t("tui.client.default") if choice.is_default else t("tui.client.once"),
+                    "client:pick",
+                    payload=choice.name,
+                    note=t("tui.client.custom") if choice.custom else "",
+                )
+            )
+        return items
+
+    def initial_index(self) -> int:
+        """Open on the configured default, so ``⏎`` is the answer most people want.
+
+        A default that is not among the offered clients (uninstalled, or removed from
+        ``[callers]``) simply has no row, and the cursor starts at the top instead.
+        """
+        return next((i for i, c in enumerate(self._choices()) if c.is_default), 0)
+
+    def handle(self, item: _Item) -> None:
+        """Exit with the pending launch, now carrying the chosen client."""
+        if item.action == "client:pick":
+            self.menu_app.exit(replace(self._pending, client=item.payload))
+
+
+class ConfirmScreen(Screen[bool]):
+    """A yes/no question with the consequences spelled out above it.
+
+    Opens on **No**. A destructive question whose default answer is the destructive one is
+    a trap: the reflex on a new screen is ``⏎``, and here that reflex has to be the safe
+    answer. Esc is the same as No.
+
+    Dismisses with the answer, so the caller decides what happens next -- this screen knows
+    nothing about what it is asking about.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        _key("escape", "refuse", "tui.key.cancel"),
+        _key("q", "refuse", "tui.key.cancel"),
+    ]
+
+    def __init__(  # noqa: PLR0913  (the question is its wording; each part is one argument)
+        self,
+        crumb: str,
+        consequences: str,
+        *,
+        yes_key: str = "tui.confirm.delete",
+        no_key: str = "tui.confirm.keep",
+        warning_key: str = "tui.confirm.warning.delete",
+        yes_icon: str = "🗑",
+    ) -> None:
+        """Bind the question to its breadcrumb, its consequences, and its own wording.
+
+        The wording is per-question rather than fixed. A screen that says "Yes, delete —
+        this cannot be undone" to someone importing a workflow is describing a different
+        action from the one about to happen, and an import keeps a backup precisely so it
+        *can* be undone.
+
+        Args:
+            crumb: The breadcrumb of the screen that asked, so the header does not move.
+            consequences: The rendered preview of what confirming would do.
+            yes_key: Catalogue key for the confirming answer (``.d`` is its subtitle).
+            no_key: Catalogue key for the declining answer (``.d`` is its subtitle).
+            warning_key: Catalogue key for the caveat under the answers.
+            yes_icon: The icon on the confirming row.
+        """
+        super().__init__()
+        self._crumb = crumb
+        self._consequences = consequences
+        self._yes_key = yes_key
+        self._no_key = no_key
+        self._warning_key = warning_key
+        self._yes_icon = yes_icon
+
+    def compose(self) -> ComposeResult:
+        """Breadcrumb, the consequences, the two answers, then the docked hints."""
+        t = i18n.active().t
+        yield Static(self._crumb, id="crumb")
+        yield Static(self._consequences, id="consequences")
+        yield ListView(
+            _Row(_Item("↩", t(self._no_key), t(f"{self._no_key}.d"), "no")),
+            _Row(_Item(self._yes_icon, t(self._yes_key), t(f"{self._yes_key}.d"), "yes")),
+            id="menu",
+            initial_index=0,  # the safe answer is the one ⏎ lands on
+        )
+        with Container(id="status"):
+            yield Static(t(self._warning_key), id="detail")
+            yield Static(t("tui.keys.confirm"), id="keys")
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """Answer with the chosen row."""
+        event.stop()
+        if isinstance(event.item, _Row):
+            self.dismiss(event.item.item.action == "yes")
+
+    def action_refuse(self) -> None:
+        """Esc (or q) is No — backing out of a question is never a yes."""
+        self.dismiss(False)
+
+
+class _MultiSelectScreen(_MenuScreen):
+    """A menu screen where ``space`` ticks rows and ``⏎`` acts on everything ticked.
+
+    The reason the delete screens exist at all: the issue behind them says that cleaning
+    up one item at a time is not worth doing, which is how the list got long. So the
+    selection is the unit here, not the row.
+
+    ``⏎`` on an empty selection deliberately does nothing but say which key ticks a row.
+    Treating the highlighted row as an implicit selection would turn the most reflexive
+    keypress in the app into a delete nobody asked for.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        *_MenuScreen.BINDINGS,
+        _key("space", "toggle_row", "tui.key.toggle"),
+    ]
+    keys_key = "tui.keys.multi"
+    ticked: ClassVar[str] = "☑"
+    unticked: ClassVar[str] = "☐"
+
+    def __init__(self) -> None:
+        """Start with nothing ticked."""
+        super().__init__()
+        self._selected: set[str] = set()
+
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """Render what acting on ``selected`` would do, for the confirmation screen."""
+        raise NotImplementedError
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Act on ``selected`` and return the line to show afterwards."""
+        raise NotImplementedError
+
+    def reopened(self) -> _MultiSelectScreen:
+        """A fresh instance of this screen, for re-reading the list after a change."""
+        raise NotImplementedError
+
+    def action_toggle_row(self) -> None:
+        """Tick or untick the highlighted row, repainting its box in place."""
+        row = self.query_one("#menu", ListView).highlighted_child
+        if not isinstance(row, _Row):
+            return
+        payload = row.item.payload
+        if payload in self._selected:
+            self._selected.discard(payload)
+            row.set_icon(self.unticked)
+        else:
+            self._selected.add(payload)
+            row.set_icon(self.ticked)
+        self._sync_detail()
+
+    def handle(self, item: _Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
+        """``⏎``: ask about the ticked rows, or explain how to tick one when none are."""
+        if not self._selected:
+            self.query_one("#detail", Static).update(i18n.active().t("tui.del.none_selected"))
+            self.menu_app.bell()
+            return
+        selected = tuple(i.payload for i in self.menu_items() if i.payload in self._selected)
+        self.menu_app.push_screen(
+            ConfirmScreen(self.header_text(), self.preview(selected)),
+            lambda answered: self._answered(selected, answered),
+        )
+
+    def _answered(self, selected: tuple[str, ...], confirmed: bool | None) -> None:
+        """Carry out the action if it was confirmed, then land back on a current list.
+
+        Declining says nothing and shows nothing: the user already knows what they chose,
+        and an acknowledgement they have to dismiss is one keypress of pure friction.
+        """
+        if not confirmed:
+            return
+        message = self.perform(selected)
+        # The list this screen was built from is now out of date. Rather than patch rows,
+        # swap in a freshly-read copy of the *same* screen -- so the user stays exactly
+        # where they were, one level deep in the thing they are cleaning up, and sees the
+        # outcome in the panel. Nothing left to clean means nothing left to stand on, so
+        # that case steps back out instead.
+        fresh = self.reopened()
+        self.menu_app.pop_screen()
+        if fresh.menu_items():
+            fresh.pending_message = message
+            self.menu_app.push_screen(fresh)
+        else:
+            self.menu_app.tell_current(message)
+
+    def _sync_detail(self) -> None:
+        """Show the highlighted row's description with the running tick count under it."""
+        item = self._highlighted()
+        loc = i18n.active()
+        lines = [] if item is None else [item.subtitle]
+        lines.append(
+            loc.t("tui.del.selected", count=len(self._selected))
+            if self._selected
+            else loc.t("tui.del.none_selected")
+        )
+        self.query_one("#detail", Static).update("\n".join(lines))
+
+
 class TopMenuScreen(_MenuScreen):
     """The front door: Job · Workflow · Config · Rules · Quit, under the banner."""
 
@@ -505,11 +862,13 @@ class JobMenuScreen(_MenuScreen):
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
         elif item.action == "job:new":
-            self.menu_app.push_screen(NewJobScreen())
+            self.menu_app.push_screen(NewSessionScreen())
         elif item.action == "job:list":
             self.menu_app.push_screen(JobListScreen())
         elif item.action == "job:export":
             self.menu_app.push_screen(JobExportScreen())
+        elif item.action == "job:delete":
+            self.menu_app.push_screen(DeleteMenuScreen())
         else:
             self._stub(item)
 
@@ -592,13 +951,19 @@ class WorkflowPickerScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Run exits with the choice; Edit moves to the authoring-depth chooser."""
+        """Run exits with the choice; Export packs in place; Edit picks a depth first."""
         if item.action != "wf:pick":
             return
         if self._mode == "run":
-            self.menu_app.exit(MenuChoice(action="run", workflow=item.payload))
+            self.menu_app.launch(MenuChoice(action="run", workflow=item.payload))
         elif self._mode == "export":
-            self.menu_app.exit(MenuChoice(action="workflow_export", workflow=item.payload))
+            # Done here rather than on the way out: packing a zip asks nothing and changes
+            # nothing you are looking at, so leaving the menu for it would cost the user
+            # their place for no reason -- and exporting a second workflow is one keypress
+            # away when the list is still in front of them.
+            archiver = self.menu_app.archiver
+            if archiver is not None:
+                self.tell(archiver.export(item.payload))
         else:  # edit — choose the authoring depth, then launch the edit session
             self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
 
@@ -653,8 +1018,9 @@ class ImportWorkflowScreen(Screen[None]):
     exports folder. The path is checked here so a typo is fixed in the form rather than
     tearing the menu down to fail at the prompt.
 
-    The import itself runs after the menu exits: replacing an existing workflow asks a
-    question, and that needs the restored terminal.
+    The install happens here. A name clash is the one question it can raise, and the use
+    case reports that back rather than resolving it -- so it becomes a confirmation screen
+    and a yes re-runs the install with ``replace``, without the menu going anywhere.
     """
 
     BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
@@ -678,7 +1044,7 @@ class ImportWorkflowScreen(Screen[None]):
         self.query_one("#archive", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Check the archive is there, then hand the path back to the wiring."""
+        """Check the archive is there, then install it."""
         raw = event.value.strip()
         if not raw:
             return
@@ -688,7 +1054,42 @@ class ImportWorkflowScreen(Screen[None]):
                 f"✗ {i18n.active().t('tui.wf.import.missing')}"
             )
             return
-        self.menu_app.exit(MenuChoice(action="workflow_import", archive=str(archive)))
+        self._install(str(archive), replace=False)
+
+    def _install(self, archive: str, *, replace: bool) -> None:
+        """Install the archive, asking about a name clash if the use case reports one."""
+        archiver = self.menu_app.archiver
+        if archiver is None:
+            return
+        attempt = archiver.install(archive, replace)
+        if attempt.needs_confirmation:
+            self.menu_app.push_screen(
+                ConfirmScreen(
+                    f"gmlw > {i18n.active().t('tui.workflow')} > "
+                    f"{i18n.active().t('tui.wf.import')}",
+                    attempt.message,
+                    yes_key="tui.confirm.replace",
+                    no_key="tui.confirm.keep_existing",
+                    warning_key="tui.confirm.warning.replace",
+                    yes_icon="📥",
+                ),
+                lambda confirmed: self._install(archive, replace=True) if confirmed else None,
+            )
+            return
+        self._finish(attempt.message)
+
+    def _finish(self, message: str) -> None:
+        """Report where the import landed, back on the Workflow menu.
+
+        The path has been consumed, so the form has nothing left to do -- but a failure
+        keeps it, and its message, so a mistyped path can be corrected in place.
+        """
+        if message.startswith("✗"):
+            self.query_one("#detail", Static).update(message)
+            return
+        self.menu_app.refresh_workflows()  # a new (or replaced) workflow is now runnable
+        self.menu_app.pop_screen()
+        self.menu_app.tell_current(message)
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Workflow menu."""
@@ -725,9 +1126,9 @@ class GuidedChoiceScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Exit with the authoring choice at the picked depth."""
+        """Move on to the client step with the authoring choice at the picked depth."""
         if item.action in ("guided:yes", "guided:no"):
-            self.menu_app.exit(
+            self.menu_app.launch(
                 MenuChoice(
                     action=self._action,
                     workflow=self._workflow,
@@ -849,7 +1250,7 @@ class SwitcherScreen(_MenuScreen):
         switcher.current = choice.value
         self.menu_app.pop_screen()
         reopened = SwitcherScreen(self._key)
-        reopened._flash = i18n.active().t("tui.create.done", label=choice.label)
+        reopened.pending_message = i18n.active().t("tui.create.done", label=choice.label)
         self.menu_app.push_screen(reopened)
 
     def _mark_current(self) -> None:
@@ -988,8 +1389,8 @@ class ConfigPickerScreen(_MenuScreen):
     async def on_screen_resume(self) -> None:
         """Returning from a value editor: rebuild (a set may have changed a value), then flash."""
         await self._rebuild()
-        if self._flash is not None:  # a confirmation queued by the editor before it popped
-            message, self._flash = self._flash, None
+        if self.pending_message is not None:  # a confirmation queued by the editor before it popped
+            message, self.pending_message = self.pending_message, None
             self.call_after_refresh(lambda: self.query_one("#detail", Static).update(message))
 
     async def _rebuild(self) -> None:
@@ -1009,7 +1410,7 @@ class ConfigPickerScreen(_MenuScreen):
 
     def flash(self, message: str) -> None:
         """Queue a one-shot confirmation to show when this picker is next resumed."""
-        self._flash = message
+        self.pending_message = message
 
     def action_cursor(self, delta: int) -> None:
         """Move the highlight within the filtered list (the Input keeps focus)."""
@@ -1155,6 +1556,60 @@ class ConfigInputScreen(Screen[None]):
         self.menu_app.pop_screen()
 
 
+class NewSessionScreen(_MenuScreen):
+    """Which job the fresh session belongs to: one you already have, or a new name.
+
+    ``Job > New`` used to be the text field alone, which made starting more work on a job
+    you already had a memory test -- the app was showing that list in two other places
+    while asking you to retype a name out of it.
+
+    A new name stays one keypress away, and stays *first*: it is what the verb says, it is
+    the only row on an install with no jobs yet, and a fixed first row means the flow does
+    not shift under you as jobs come and go.
+
+    Picking an existing job goes straight on to the client step. That is a *new session*
+    on that job, numbered after its last -- the same thing ``gmlw start <existing-job>``
+    has always done, which is why nothing new had to be built underneath this.
+    """
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > New."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.new')}"
+
+    def menu_items(self) -> list[_Item]:
+        """The type-a-name row, then one row per job already recorded."""
+        t = i18n.active().t
+        rows = [
+            _Item(
+                "✏️",
+                t("tui.newsession.type"),
+                t("tui.newsession.type.d"),
+                "session:type",
+                "gmlw start <job>",
+            )
+        ]
+        rows += [
+            _Item(
+                "🗂",
+                job.job,
+                t("tui.sessions", count=job.session_count),
+                "session:job",
+                f"gmlw start {job.job}",
+                payload=job.job,
+            )
+            for job in self.menu_app.jobs
+        ]
+        return rows
+
+    def handle(self, item: _Item) -> None:
+        """Typing opens the name form; an existing job goes on to the client step."""
+        if item.action == "session:type":
+            self.menu_app.push_screen(NewJobScreen())
+        elif item.action == "session:job":
+            self.menu_app.launch(MenuChoice(action="start", job=item.payload))
+
+
 class NewJobScreen(Screen[None]):
     """Name a new job, then launch a fresh session on it — a text-entry *launcher*.
 
@@ -1193,7 +1648,7 @@ class NewJobScreen(Screen[None]):
         if error is not None:
             self.query_one("#detail", Static).update(f"✗ {error}")
             return
-        self.menu_app.exit(MenuChoice(action="start", job=name))
+        self.menu_app.launch(MenuChoice(action="start", job=name))
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Job menu."""
@@ -1369,6 +1824,152 @@ class SessionListScreen(Screen[None]):
     def action_back(self) -> None:
         """Pop back to the job picker."""
         self.menu_app.pop_screen()
+
+
+class DeleteMenuScreen(_MenuScreen):
+    """Job > Delete: pick the grain — whole jobs, or single sessions of one job."""
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')}"
+
+    def menu_items(self) -> list[_Item]:
+        """The two delete grains."""
+        return _menu(_DELETE_MENU)
+
+    def handle(self, item: _Item) -> None:
+        """Jobs ticks jobs directly; Sessions picks a job first, then ticks its sessions."""
+        if item.action == "del:jobs":
+            self.menu_app.push_screen(JobDeleteScreen())
+        elif item.action == "del:sessions":
+            self.menu_app.push_screen(DeleteJobPickerScreen())
+
+
+class JobDeleteScreen(_MultiSelectScreen):
+    """Tick whole jobs to remove; ``⏎`` asks, and confirming removes them here.
+
+    The whole flow stays in the app. The removal itself is the injected
+    :class:`Deleter`'s, so this screen still holds no port -- it asks a question, calls a
+    closure, and shows what came back.
+    """
+
+    empty_key = "tui.del.empty"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete > Jobs."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.jobs')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One tickable row per job, carrying the job id as payload."""
+        t = i18n.active().t
+        return [
+            _Item(
+                self.ticked if j.job in self._selected else self.unticked,
+                j.job,
+                t("tui.sessions", count=j.session_count),
+                "del:job",
+                payload=j.job,
+            )
+            for j in self.menu_app.jobs
+        ]
+
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """What removing the ticked jobs would take with it."""
+        deleter = self.menu_app.deleter
+        return "" if deleter is None else deleter.preview_jobs(selected)
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Remove the ticked jobs, then re-read the list they came from."""
+        deleter = self.menu_app.deleter
+        if deleter is None:
+            return ""
+        message = deleter.delete_jobs(selected)
+        self.menu_app.refresh_jobs()
+        return message
+
+    def reopened(self) -> _MultiSelectScreen:
+        """A fresh job list, without the ones just removed."""
+        return JobDeleteScreen()
+
+
+class DeleteJobPickerScreen(_MenuScreen):
+    """Pick which job to delete sessions from, before ticking the sessions themselves."""
+
+    empty_key = "tui.del.empty"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete > Sessions."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job, carrying the job id as payload."""
+        t = i18n.active().t
+        return [
+            _Item("🗂", j.job, t("tui.sessions", count=j.session_count), "del:pick", payload=j.job)
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Selecting a job opens its session-delete list."""
+        if item.action == "del:pick":
+            self.menu_app.push_screen(SessionDeleteScreen(item.payload))
+
+
+class SessionDeleteScreen(_MultiSelectScreen):
+    """Tick sessions of one job to remove; ``⏎`` hands the selection back to the wiring.
+
+    Every session is tickable, resumable or not: this is not the resume picker, and a
+    session nobody can reopen is if anything the likelier one to be cleaning up.
+    """
+
+    empty_key = "tui.del.empty.sessions"
+
+    def __init__(self, job: str) -> None:
+        """Bind the screen to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > Delete > Sessions > <job>."""
+        t = i18n.active().t
+        return (
+            f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')} > {self._job}"
+        )
+
+    def menu_items(self) -> list[_Item]:
+        """One tickable row per session: date, client, and what it actually used."""
+        t = i18n.active().t
+        return [
+            _Item(
+                self.ticked if s.session_id in self._selected else self.unticked,
+                s.session_id,
+                t("tui.del.session.row", date=s.date, client=s.client, usage=s.usage),
+                "del:session",
+                payload=s.session_id,
+            )
+            for s in self.menu_app.sessions_for(self._job)
+        ]
+
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """What removing the ticked sessions would take with it."""
+        deleter = self.menu_app.deleter
+        return "" if deleter is None else deleter.preview_sessions(self._job, selected)
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Remove the ticked sessions. The job's own list re-reads through ``sessions_for``."""
+        deleter = self.menu_app.deleter
+        if deleter is None:
+            return ""
+        message = deleter.delete_sessions(self._job, selected)
+        self.menu_app.refresh_jobs()  # the job's session count changed in the lists above
+        return message
+
+    def reopened(self) -> _MultiSelectScreen:
+        """The same job's sessions, re-read without the ones just removed."""
+        return SessionDeleteScreen(self._job)
 
 
 class JobExportScreen(_MenuScreen):
@@ -1873,6 +2474,7 @@ class MenuApp(App[MenuChoice | None]):
     #models, #sessions, #clients,
     #settings, #session_table { height: auto; max-height: 20; margin: 0 0 1 0; }
     #status_line { padding: 1 1; }
+    #consequences { height: 1fr; padding: 1 2; }
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
@@ -1902,6 +2504,10 @@ class MenuApp(App[MenuChoice | None]):
         set_default_client: Callable[[str], ConfigSetResult] | None = None,
         config: ConfigCatalog | None = None,
         current_client: str = "",
+        deleter: Deleter | None = None,
+        reload_jobs: Callable[[], list[JobChoice]] | None = None,
+        archiver: Archiver | None = None,
+        launch_clients: Callable[[], list[ClientChoice]] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -1934,6 +2540,18 @@ class MenuApp(App[MenuChoice | None]):
                 leaves those two Config verbs stubbed, so the app runs unwired in tests.
             current_client: The user's default client, to flag when a session's client
                 differs (resuming will launch the session's client, not this one).
+            deleter: Previews and performs the removals the Delete screens offer; ``None``
+                leaves them read-only, so the app runs unwired in tests.
+            reload_jobs: Re-reads the job list after a delete has changed it. Only the job
+                list needs this -- sessions are already read per job through
+                ``sessions_for``, so they refresh on their own. Defaults to keeping the
+                list as-is.
+            archiver: Exports a workflow and installs one from an archive; ``None`` leaves
+                both verbs read-only, so the app runs unwired in tests.
+            launch_clients: The clients a launch can be pointed at, re-read each time the
+                picker opens (so a default changed in Config shows immediately). Defaults
+                to none, which skips the picker entirely and launches on the configured
+                default -- the behaviour before the picker existed.
         """
         super().__init__()
         self.jobs = jobs
@@ -1950,6 +2568,20 @@ class MenuApp(App[MenuChoice | None]):
         self.set_default_client = set_default_client
         self.config = config
         self.current_client = current_client
+        self.deleter = deleter
+        self._reload_jobs = reload_jobs
+        self.archiver = archiver
+        self.launch_clients = launch_clients or _no_clients
+
+    def refresh_jobs(self) -> None:
+        """Re-read the job list after something changed it (a delete)."""
+        if self._reload_jobs is not None:
+            self.jobs = self._reload_jobs()
+
+    def refresh_workflows(self) -> None:
+        """Re-read the workflow catalogue after an import added or replaced one."""
+        if self.archiver is not None:
+            self.workflows = self.archiver.reload_workflows()
 
     def rule_groups(self) -> tuple[RuleGroup, ...]:
         """The populated rule groups, read once and cached for the app's lifetime.
@@ -1964,6 +2596,30 @@ class MenuApp(App[MenuChoice | None]):
         if self._rule_cache is None:
             self._rule_cache = self.rules()
         return self._rule_cache
+
+    def launch(self, pending: MenuChoice) -> None:
+        """Finish a launch: ask which client to run it on, then exit with the answer.
+
+        The one place the client step is inserted, so every launcher gets it by handing
+        its choice here instead of exiting itself. With nothing to choose between (the app
+        unwired, or no client detected) it exits straight away and the wiring falls back to
+        the configured default -- the behaviour before the picker existed.
+        """
+        if self.launch_clients():
+            self.push_screen(ClientPickerScreen(pending))
+        else:
+            self.exit(pending)
+
+    def tell_current(self, message: str) -> None:
+        """Show ``message`` on whichever menu screen is now on top, if any.
+
+        Used when a screen removed the last of what it was showing and stepped back out:
+        the outcome belongs to the screen the user lands on, not the one that is gone.
+        """
+        for screen in reversed(self.screen_stack):
+            if isinstance(screen, _MenuScreen):
+                screen.tell(message)
+                return
 
     def on_mount(self) -> None:
         """Open on the top (object) menu."""

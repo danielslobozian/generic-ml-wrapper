@@ -17,11 +17,15 @@ from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
+    Archiver,
+    ClientChoice,
     ClientRow,
     ConfigCatalog,
     ConfigSetResult,
     ConfigSetting,
     CreateOutcome,
+    Deleter,
+    ImportAttempt,
     JobChoice,
     MenuApp,
     MenuChoice,
@@ -346,7 +350,9 @@ def test_new_job_valid_name_returns_a_start_choice() -> None:
         app = MenuApp(_JOBS, validate_job=_reject_spaces)
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("enter")  # Job menu
-            await pilot.press("enter")  # New → form
+            await pilot.press("enter")  # New → pick a job, or type a name
+            await pilot.pause()
+            await pilot.press("enter")  # "Type a new name…" → form
             await pilot.pause()
             app.screen.query_one("#name", Input).value = "billing-api"
             await pilot.press("enter")
@@ -364,7 +370,7 @@ def test_new_job_invalid_name_keeps_the_form_open() -> None:
     async def scenario() -> None:
         app = MenuApp(_JOBS, validate_job=_reject_spaces)
         async with app.run_test(size=(90, 30)) as pilot:
-            await pilot.press("enter", "enter")  # Job → New form
+            await pilot.press("enter", "enter", "enter")  # Job → New → the name form
             await pilot.pause()
             app.screen.query_one("#name", Input).value = "My Job"
             await pilot.press("enter")
@@ -1152,13 +1158,50 @@ def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
 
 
 # ── workflow export / import ──
-def _workflow_app() -> MenuApp:
+_ARCHIVE_WORKFLOWS = [
+    Workflow(slug="doc-review", label="Doc Review", description="review the docs"),
+    Workflow(slug="nightly-etl", label="Nightly ETL", description=""),
+]
+
+
+class _RecordingArchiver:
+    """An Archiver that records what it was asked to do and answers with fixed lines.
+
+    ``clash`` makes the next install report a name collision, so the confirmation branch
+    can be driven without a real archive on disk.
+    """
+
+    def __init__(self, *, clash: bool = False) -> None:
+        self.exported: list[str] = []
+        self.installed: list[tuple[str, bool]] = []
+        self._clash = clash
+        self.catalogue = list(_ARCHIVE_WORKFLOWS)
+
+    def as_archiver(self) -> Archiver:
+        return Archiver(
+            export=self._export, install=self._install, reload_workflows=lambda: self.catalogue
+        )
+
+    def _export(self, slug: str) -> str:
+        self.exported.append(slug)
+        return f"exported to /tmp/{slug}.zip"
+
+    def _install(self, archive: str, replace: bool) -> ImportAttempt:
+        self.installed.append((archive, replace))
+        if self._clash and not replace:
+            return ImportAttempt("a workflow named 'doc-review' already exists.", True)
+        self.catalogue = [
+            *_ARCHIVE_WORKFLOWS,
+            Workflow(slug="fresh", label="Fresh", description=""),
+        ]
+        return ImportAttempt("workflow 'fresh' imported.")
+
+
+def _workflow_app(archiver: _RecordingArchiver | None = None) -> MenuApp:
     return MenuApp(
         _JOBS,
-        workflows=[
-            Workflow(slug="doc-review", label="Doc Review", description="review the docs"),
-            Workflow(slug="nightly-etl", label="Nightly ETL", description=""),
-        ],
+        workflows=list(_ARCHIVE_WORKFLOWS),
+        archiver=(archiver or _RecordingArchiver()).as_archiver(),
     )
 
 
@@ -1168,10 +1211,10 @@ async def _open_workflow_menu(pilot: Pilot[MenuChoice | None]) -> None:
     await pilot.pause()
 
 
-def test_export_picks_a_workflow_and_hands_it_back() -> None:
-    # Export runs after the menu exits, through the same code path as the CLI verb.
-    app = _workflow_app()
-
+def test_export_packs_the_picked_workflow_without_leaving_the_list() -> None:
+    """Packing a zip asks nothing, so it should not cost the user their place."""
+    recorder = _RecordingArchiver()
+    app = _workflow_app(recorder)
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
@@ -1181,28 +1224,122 @@ def test_export_picks_a_workflow_and_hands_it_back() -> None:
             await pilot.pause()
             seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
             await pilot.press("enter")  # the first workflow
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["running"] = app.is_running
 
     asyncio.run(scenario())
-    # The picker reads by label, but hands back the slug the export verb takes.
+    # The picker reads by label, but exports the slug the CLI verb takes.
     assert seen["titles"] == ["Doc Review", "Nightly ETL"]
-    assert app.return_value == MenuChoice(action="workflow_export", workflow="doc-review")
+    assert recorder.exported == ["doc-review"]
+    assert "exported to" in str(seen["detail"])  # said in place...
+    assert seen["running"] is True  # ...and still on the picker
+    assert app.return_value is None
 
 
-def test_import_hands_back_the_archive_path(tmp_path: Path) -> None:
-    archive = tmp_path / "shared.zip"
-    archive.write_bytes(b"PK")
-    app = _workflow_app()
+def test_a_second_export_is_one_keypress_away() -> None:
+    recorder = _RecordingArchiver()
+    app = _workflow_app(recorder)
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_workflow_menu(pilot)
-            await pilot.press("down", "down", "down", "down", "down", "enter")  # Import
+            await pilot.press("down", "down", "down", "down", "enter")
             await pilot.pause()
-            app.screen.query_one("#archive", Input).value = str(archive)
             await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("down", "enter")
+            await pilot.pause()
 
     asyncio.run(scenario())
-    assert app.return_value == MenuChoice(action="workflow_import", archive=str(archive))
+    assert recorder.exported == ["doc-review", "nightly-etl"]
+
+
+async def _submit_archive(app: MenuApp, pilot: Pilot[MenuChoice | None], archive: Path) -> None:
+    """Top → Workflow → Import → paste the path → submit."""
+    await _open_workflow_menu(pilot)
+    await pilot.press("down", "down", "down", "down", "down", "enter")  # Import
+    await pilot.pause()
+    app.screen.query_one("#archive", Input).value = str(archive)
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def test_import_installs_the_archive_without_leaving_the_menu(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    recorder = _RecordingArchiver()
+    app = _workflow_app(recorder)
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert recorder.installed == [(str(archive), False)]
+    assert "imported" in str(seen["detail"])
+    assert "Workflow" in str(seen["crumb"])  # back on the Workflow menu, not the front door
+    assert seen["running"] is True
+    assert app.return_value is None
+
+
+def test_a_successful_import_shows_up_in_the_workflow_list(tmp_path: Path) -> None:
+    """A workflow you cannot see is one you cannot run — the catalogue has to re-read."""
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    app = _workflow_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            # The Workflow menu kept its cursor on Import, where we left it — up twice
+            # from there is List (Run, Create, Edit, List, Export, Import).
+            await pilot.press("up", "up", "enter")
+            await pilot.pause()
+            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert "Fresh" in str(seen["titles"])
+
+
+def test_a_name_clash_is_asked_about_in_place(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    recorder = _RecordingArchiver(clash=True)
+    app = _workflow_app(recorder)
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            seen["body"] = str(app.screen.query_one("#consequences", Static).render())
+            await pilot.press("down", "enter")  # Yes, replace
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert "already exists" in str(seen["body"])
+    assert recorder.installed == [(str(archive), False), (str(archive), True)]
+
+
+def test_declining_a_clash_leaves_the_existing_workflow_alone(tmp_path: Path) -> None:
+    archive = tmp_path / "shared.zip"
+    archive.write_bytes(b"PK")
+    recorder = _RecordingArchiver(clash=True)
+    app = _workflow_app(recorder)
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _submit_archive(app, pilot, archive)
+            await pilot.press("escape")  # Esc is a no
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.installed == [(str(archive), False)]  # never re-run with replace
 
 
 def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:
@@ -1371,3 +1508,843 @@ def test_config_clients_shows_the_resume_caveat_for_the_cursored_row() -> None:
     assert seen["claude_note"] == ""
     assert seen["codex_cell"] == "yes"  # the column stays a clean yes...
     assert "once its id is bound" in str(seen["codex_note"])  # ...the caveat is below it
+
+
+# --------------------------------------------------------------------------- #
+# Job > Delete                                                                 #
+# --------------------------------------------------------------------------- #
+
+_DELETE_SESSIONS = [
+    SessionChoice("alpha_001", "claude", "/work/a", True, "2026-07-24 09:00", False, "empty"),
+    SessionChoice(
+        "alpha_002", "codex", "/work/b", False, "2026-07-24 10:00", False, "12 turn(s) $1.50"
+    ),
+    SessionChoice("alpha_003", "cursor", "/work/c", True, "2026-07-24 11:00", True, "empty"),
+]
+
+
+class _RecordingDeleter:
+    """A Deleter whose removals are recorded, and reflected in the lists it feeds.
+
+    It really does drop what it is told to, because the point of most of these tests is
+    what the *next* screen shows — a delete the list does not notice is the bug the
+    in-app flow exists to avoid.
+    """
+
+    def __init__(self) -> None:
+        self.jobs = {"alpha": 3, "beta": 1}
+        self.sessions = {j.session_id: j for j in _DELETE_SESSIONS}
+        self.deleted_jobs: list[tuple[str, ...]] = []
+        self.deleted_sessions: list[tuple[str, tuple[str, ...]]] = []
+
+    def as_deleter(self) -> Deleter:
+        return Deleter(
+            preview_jobs=lambda picked: "would remove: " + ", ".join(picked),
+            delete_jobs=self._delete_jobs,
+            preview_sessions=lambda job, picked: f"would remove from {job}: " + ", ".join(picked),
+            delete_sessions=self._delete_sessions,
+        )
+
+    def _delete_jobs(self, picked: tuple[str, ...]) -> str:
+        self.deleted_jobs.append(picked)
+        for job in picked:
+            self.jobs.pop(job, None)
+        return f"removed {len(picked)} job(s)."
+
+    def _delete_sessions(self, job: str, picked: tuple[str, ...]) -> str:
+        self.deleted_sessions.append((job, picked))
+        for session in picked:
+            self.sessions.pop(session, None)
+        return f"removed {len(picked)} session(s)."
+
+    def job_choices(self) -> list[JobChoice]:
+        return [JobChoice(job=j, session_count=n) for j, n in self.jobs.items()]
+
+    def sessions_for(self, _job: str) -> list[SessionChoice]:
+        return [s for s in _DELETE_SESSIONS if s.session_id in self.sessions]
+
+
+def _delete_app(recorder: _RecordingDeleter | None = None) -> MenuApp:
+    rec = recorder or _RecordingDeleter()
+    return MenuApp(
+        rec.job_choices(),
+        sessions_for=rec.sessions_for,
+        current_client="claude",
+        deleter=rec.as_deleter(),
+        reload_jobs=rec.job_choices,
+    )
+
+
+async def _open_delete_menu(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → Delete."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("down", "down", "down", "down", "enter")  # Delete (5th verb)
+    await pilot.pause()
+
+
+def _icons(app: MenuApp) -> list[str]:
+    """The leading icon of every row, read back off the rendered labels."""
+    rows = app.screen.query(ListView).first().query(ListItem)
+    return [str(cast(_Row, row)._label.render()).strip()[0] for row in rows]
+
+
+def _confirm_body(app: MenuApp) -> str:
+    """The consequences block the confirmation screen is showing."""
+    return str(app.screen.query_one("#consequences", Static).render())
+
+
+def _detail(app: MenuApp) -> str:
+    return str(app.screen.query_one("#detail", Static).render())
+
+
+def _crumb(app: MenuApp) -> str:
+    return str(app.screen.query_one("#crumb", Static).render())
+
+
+async def _tick_first_job(pilot: Pilot[MenuChoice | None]) -> None:
+    """Delete menu → Jobs → tick the first row → ⏎ (opens the confirmation)."""
+    await _open_delete_menu(pilot)
+    await pilot.press("enter")  # Jobs
+    await pilot.pause()
+    await pilot.press("space")
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+async def _tick_first_session(pilot: Pilot[MenuChoice | None]) -> None:
+    """Delete menu → Sessions → pick alpha → tick the first session → ⏎."""
+    await _open_delete_menu(pilot)
+    await pilot.press("down", "enter")  # Sessions → job picker
+    await pilot.pause()
+    await pilot.press("enter")  # alpha
+    await pilot.pause()
+    await pilot.press("space")
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def test_delete_menu_offers_both_grains() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            seen["rows"] = " ".join(
+                str(cast(_Row, row)._label.render())
+                for row in app.screen.query(ListView).first().query(ListItem)
+            )
+
+    asyncio.run(scenario())
+    assert "Jobs" in str(seen["rows"])
+    assert "Sessions" in str(seen["rows"])
+
+
+def test_enter_asks_before_removing_anything() -> None:
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            seen["body"] = _confirm_body(app)
+            seen["warning"] = _detail(app)
+            seen["running"] = app.is_running
+
+    asyncio.run(scenario())
+    assert "would remove: alpha" in str(seen["body"])  # the footprint, on screen
+    assert "cannot be undone" in str(seen["warning"])
+    assert seen["running"] is True  # the app never left
+    assert recorder.deleted_jobs == []  # and nothing has gone yet
+
+
+def test_the_confirmation_opens_on_the_safe_answer() -> None:
+    """⏎ is the most reflexive key there is; it must not be the destructive one."""
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("enter")  # take whatever the cursor started on
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == []
+
+
+def test_confirming_removes_the_selection() -> None:
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("down", "enter")  # move onto Yes, answer
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == [("alpha",)]
+
+
+def test_escape_on_the_confirmation_is_a_no() -> None:
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == []
+
+
+def test_declining_lands_back_on_the_list_with_nothing_to_dismiss() -> None:
+    """No acknowledgement for a no: the user knows, and a keypress to clear it is friction."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["detail"] = _detail(app)
+
+    asyncio.run(scenario())
+    assert "Jobs" in str(seen["crumb"])  # still on the job-delete list
+    assert "removed" not in str(seen["detail"])
+    assert "Enter" not in str(seen["detail"])  # nothing to press to carry on
+
+
+def test_confirming_lands_back_on_the_same_list_not_the_front_door() -> None:
+    """The whole point: you stay where you were working, one level deep."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["detail"] = _detail(app)
+            seen["rows"] = [
+                cast(_Row, row).item.payload
+                for row in app.screen.query(ListView).first().query(ListItem)
+            ]
+
+    asyncio.run(scenario())
+    assert "Delete" in str(seen["crumb"])
+    assert "Jobs" in str(seen["crumb"])
+    assert "removed 1 job(s)." in str(seen["detail"])  # the outcome, in place
+    assert seen["rows"] == ["beta"]  # and the list re-read without the deleted job
+
+
+def test_a_deleted_session_leaves_the_list_you_are_standing_on() -> None:
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_session(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["rows"] = [
+                cast(_Row, row).item.payload
+                for row in app.screen.query(ListView).first().query(ListItem)
+            ]
+
+    asyncio.run(scenario())
+    assert recorder.deleted_sessions == [("alpha", ("alpha_001",))]
+    assert "alpha" in str(seen["crumb"])
+    assert seen["rows"] == ["alpha_002", "alpha_003"]  # alpha_001 gone, siblings kept
+
+
+def test_the_tick_state_does_not_survive_a_delete() -> None:
+    """A stale tick on a rebuilt list would be a second delete nobody asked for."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_session(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen["icons"] = _icons(app)
+
+    asyncio.run(scenario())
+    assert seen["icons"] == ["☐", "☐"]
+
+
+def test_clearing_the_last_row_steps_back_out_and_reports_there() -> None:
+    """Nothing left to clean means nothing left to stand on."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            await pilot.press("space", "down", "space")  # tick both jobs
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("down", "enter")  # confirm
+            await pilot.pause()
+            seen["crumb"] = _crumb(app)
+            seen["detail"] = _detail(app)
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == [("alpha", "beta")]
+    assert "Delete" in str(seen["crumb"])  # back on the Delete menu, not the front door
+    assert "removed 2 job(s)." in str(seen["detail"])
+
+
+def test_ticking_repaints_the_row_and_untick_restores_it() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            seen["before"] = _icons(app)
+            await pilot.press("space")
+            await pilot.pause()
+            seen["ticked"] = _icons(app)
+            await pilot.press("space")
+            await pilot.pause()
+            seen["unticked"] = _icons(app)
+
+    asyncio.run(scenario())
+    assert seen["before"] == ["☐", "☐"]
+    assert seen["ticked"] == ["☑", "☐"]
+    assert seen["unticked"] == ["☐", "☐"]
+
+
+def test_enter_on_an_empty_selection_does_nothing() -> None:
+    """The most reflexive key in the app must never delete something nobody ticked."""
+    recorder = _RecordingDeleter()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            await pilot.press("enter")  # nothing ticked
+            await pilot.pause()
+            seen["detail"] = _detail(app)
+            seen["crumb"] = _crumb(app)
+
+    asyncio.run(scenario())
+    assert recorder.deleted_jobs == []
+    assert "space" in str(seen["detail"]).lower()  # it says which key ticks a row
+    assert "Jobs" in str(seen["crumb"])  # and no confirmation was opened
+
+
+def test_a_non_resumable_session_is_still_deletable() -> None:
+    """This is not the resume picker: a session nobody can reopen is likelier to go."""
+    recorder = _RecordingDeleter()
+
+    async def scenario() -> None:
+        app = _delete_app(recorder)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            await pilot.press("enter")  # alpha
+            await pilot.pause()
+            await pilot.press("down", "space")  # alpha_002, the non-resumable one
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("down", "enter")  # confirm
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert recorder.deleted_sessions == [("alpha", ("alpha_002",))]
+
+
+def test_the_session_delete_list_shows_what_each_session_used() -> None:
+    """The empty session has to be findable, or the delete is a guess."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["rows"] = " ".join(
+                str(cast(_Row, row)._label.render())
+                for row in app.screen.query(ListView).first().query(ListItem)
+            )
+
+    asyncio.run(scenario())
+    assert "empty" in str(seen["rows"])
+    assert "12 turn(s) $1.50" in str(seen["rows"])
+
+
+def test_the_delete_screens_advertise_the_toggle_key() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _delete_app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["keys"] = str(app.screen.query_one("#keys", Static).render())
+
+    asyncio.run(scenario())
+    assert "space" in str(seen["keys"])
+
+
+def test_a_delete_screen_with_no_jobs_says_so() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp([])  # nothing has ever been recorded
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_delete_menu(pilot)
+            await pilot.press("enter")  # Jobs
+            await pilot.pause()
+            seen["empty"] = str(app.screen.query_one("#empty", Static).render())
+
+    asyncio.run(scenario())
+    assert "Nothing to delete" in str(seen["empty"])
+
+
+def test_an_unwired_delete_screen_is_inert() -> None:
+    """No Deleter injected (tests, or a future caller): ticking and confirming do nothing."""
+
+    async def scenario() -> MenuChoice | None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _tick_first_job(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            assert app.is_running
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None
+
+
+# --------------------------------------------------------------------------- #
+# Choosing the client for one launch (#79, #80)                                #
+# --------------------------------------------------------------------------- #
+
+_LAUNCH_CLIENTS = [
+    ClientChoice("claude", "Claude Code", is_default=True),
+    ClientChoice("cursor", "Cursor", is_default=False),
+    ClientChoice("cursor-mitm", "cursor-mitm", is_default=False, custom=True),
+]
+
+
+def _launch_app(clients: list[ClientChoice] | None = None) -> MenuApp:
+    """An app wired for launching: jobs, workflows, and a client choice."""
+    return MenuApp(
+        _JOBS,
+        workflows=list(_ARCHIVE_WORKFLOWS),
+        launch_clients=lambda: list(_LAUNCH_CLIENTS if clients is None else clients),
+        current_client="claude",
+    )
+
+
+async def _new_job(pilot: Pilot[MenuChoice | None], name: str = "PROJ-1") -> None:
+    """Top → Job → New → "Type a new name…" → type it → submit."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("enter")  # New (first verb)
+    await pilot.pause()
+    await pilot.press("enter")  # the type-a-name row, which is always first
+    await pilot.pause()
+    cast("MenuApp", pilot.app).screen.query_one("#name", Input).value = name
+    await pilot.press("enter")
+    await pilot.pause()
+
+
+def test_starting_a_job_asks_which_client_first() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+            seen["running"] = app.is_running
+            await pilot.press("enter")  # take the default
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    # The picker is the last screen before something starts, so it still says what.
+    assert "Job" in str(seen["crumb"])
+    assert "PROJ-1" in str(seen["crumb"])
+    assert str(seen["crumb"]).endswith("Client")
+    assert seen["titles"] == ["Claude Code", "Cursor", "cursor-mitm"]
+    assert seen["running"] is True  # the name step did not launch on its own
+    assert choice == MenuChoice(action="start", job="PROJ-1", client="claude")
+
+
+def test_the_picker_opens_on_the_configured_default() -> None:
+    """ "Falling back to the configured client when I do not choose anything" — one keypress."""
+    clients = [
+        ClientChoice("claude", "Claude Code", is_default=False),
+        ClientChoice("cursor", "Cursor", is_default=True),
+    ]
+    app = _launch_app(clients)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("enter")
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client="cursor")
+
+
+def test_a_different_client_can_be_picked_for_one_launch() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "enter")  # onto Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.client == "cursor"
+
+
+def test_every_offered_client_is_launchable() -> None:
+    """The wiring only offers what can actually run, so no row is a dead end."""
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            rows = app.screen.query_one("#menu", ListView).query(ListItem)
+            seen["disabled"] = [r.disabled for r in rows]
+            seen["icons"] = [r.item.icon for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["disabled"] == [False, False, False]
+    assert seen["icons"] == ["●", "○", "🔌"]  # default, built-in, your own caller
+
+
+def test_a_custom_caller_can_be_launched_on_like_any_other() -> None:
+    """A [callers] entry gmlw does not ship is a first-class choice, not a footnote."""
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "down", "enter")  # onto cursor-mitm
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.client == "cursor-mitm"
+
+
+def test_a_custom_caller_says_where_it_came_from() -> None:
+    """No square brackets in strings bound for the detail panel — Rich eats them as markup."""
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "down")  # onto cursor-mitm
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert "your own caller" in str(seen["detail"])
+    assert "config.toml" in str(seen["detail"])  # survives Rich's markup parser intact
+
+
+def test_running_a_workflow_asks_which_client() -> None:
+    """Issue #80: a step between picking the workflow and it starting."""
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("enter")  # Run → workflow picker
+            await pilot.pause()
+            await pilot.press("enter")  # the first workflow
+            await pilot.pause()
+            await pilot.press("down", "enter")  # Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "run"
+    assert choice.workflow == "doc-review"
+    assert choice.client == "cursor"
+
+
+def test_the_client_step_names_the_workflow_it_is_about_to_run() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("enter")  # Run
+            await pilot.pause()
+            await pilot.press("enter")  # doc-review
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+
+    asyncio.run(scenario())
+    assert "Workflow" in str(seen["crumb"])
+    assert "doc-review" in str(seen["crumb"])
+
+
+def test_authoring_a_new_workflow_asks_after_the_depth() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "enter")  # Create
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = ""  # unnamed: named at the end
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("enter")  # guided
+            await pilot.pause()
+            await pilot.press("down", "enter")  # Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "workflow_new"
+    assert choice.guided is True
+    assert choice.client == "cursor"
+
+
+def test_editing_a_workflow_asks_after_the_depth() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_workflow_menu(pilot)
+            await pilot.press("down", "down", "enter")  # Edit → picker
+            await pilot.pause()
+            await pilot.press("enter")  # the first workflow
+            await pilot.pause()
+            await pilot.press("down", "enter")  # quick
+            await pilot.pause()
+            await pilot.press("down", "enter")  # Cursor
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.action == "workflow_edit"
+    assert choice.guided is False
+    assert choice.client == "cursor"
+
+
+def test_resuming_is_not_asked_about() -> None:
+    """Issue #79 is explicit: a resumed session already relaunches on its own client."""
+    app = MenuApp(
+        _JOBS,
+        sessions_for=lambda _job: _SESSIONS,
+        current_client="claude",
+        launch_clients=lambda: list(_LAUNCH_CLIENTS),
+    )
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            await pilot.press("enter")
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice == MenuChoice(action="resume", job="alpha", session="alpha_003")
+    assert choice.client is None  # never asked, never set
+
+
+def test_escape_backs_out_of_the_client_step_without_launching() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["running"] = app.is_running
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None
+    assert seen["running"] is True
+    assert "New" in str(seen["crumb"])  # back on the name form
+
+
+def test_with_no_client_choice_the_launch_goes_straight_through() -> None:
+    """Unwired (or nothing detected): no step, and the wiring falls back to the default."""
+    app = MenuApp(_JOBS)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client=None)
+
+
+# --------------------------------------------------------------------------- #
+# Starting a new session on a job you already have (#81)                       #
+# --------------------------------------------------------------------------- #
+
+
+async def _open_new(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Job → New."""
+    await pilot.press("enter")  # Job menu
+    await pilot.press("enter")  # New
+    await pilot.pause()
+
+
+def test_new_offers_your_jobs_alongside_typing_a_name() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    # Typing stays first: it is what the verb says, and the only row on a fresh install.
+    assert seen["titles"] == ["Type a new name…", "alpha", "beta"]
+
+
+def test_picking_an_existing_job_starts_a_session_on_it_without_typing() -> None:
+    """The whole issue: the name is already on screen, so it should not be retyped."""
+    app = MenuApp(_JOBS)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("down", "enter")  # alpha
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="alpha")
+
+
+def test_an_existing_job_still_goes_through_the_client_step() -> None:
+    """Picking from the list must not skip the choice a typed name gets (#79)."""
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("down", "enter")  # alpha
+            await pilot.pause()
+            await pilot.press("down", "enter")  # a different client
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert choice is not None
+    assert choice.job == "alpha"
+    assert choice.client == "cursor"
+
+
+def test_typing_a_brand_new_name_still_works() -> None:
+    """The other half of the flow — a job you do not have yet."""
+    app = MenuApp(_JOBS, validate_job=_reject_spaces)
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("enter")  # Type a new name…
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "brand-new"
+            await pilot.press("enter")
+            await pilot.pause()
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="brand-new")
+
+
+def test_with_no_jobs_yet_typing_is_the_only_row() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp([])
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["titles"] == ["Type a new name…"]
+
+
+def test_each_row_shows_the_command_it_is_equivalent_to() -> None:
+    """The menu teaches the CLI; a picked job should name the command it stands for."""
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("down")  # onto alpha
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert "gmlw start alpha" in str(seen["detail"])
+
+
+def test_escape_from_the_job_choice_returns_to_the_job_menu() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_new(pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["running"] = app.is_running
+        return app.return_value
+
+    assert asyncio.run(scenario()) is None
+    assert seen["running"] is True
+    assert str(seen["crumb"]).endswith("Job")
+
+
+def test_resume_is_unchanged_and_still_reopens_a_session() -> None:
+    """New and Resume stay different verbs: one starts, one reopens (#81's note)."""
+    app = _resume_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            await pilot.press("enter")
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="resume", job="alpha", session="alpha_003")
