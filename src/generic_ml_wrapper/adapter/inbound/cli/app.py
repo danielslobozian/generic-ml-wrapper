@@ -1484,18 +1484,56 @@ def _farewell() -> str | None:
     return i18n.t("farewell", name=settings.name or getpass.getuser())
 
 
-def _tui() -> int:  # noqa: PLR0915  (menu + preflights, each with its own browser's data)
-    """Run the interactive menu, then hand off to the client outside the event loop.
+def _tui() -> int:
+    """Run the interactive menu until something ends the session.
 
-    The hand-off lives in the *ordering* here: the Textual app owns the terminal only while
-    ``run()`` blocks. When the user picks a job, the app calls ``exit(choice)``; Textual
-    restores the terminal as ``run()`` returns; and only *then* do we launch the client
-    through the same ``build_start_job`` path every other command uses. Off a TTY we never
-    build the app -- we fall back to the plain capability index, honouring the "non-TTY never
-    blocks on a menu" contract.
+    Two kinds of thing come back out of the menu, and the difference is this loop. A
+    *launch* (start, resume, run, authoring) gives the terminal to a client and gmlw is
+    done when that client is. Everything else -- exporting, importing, deleting, re-running
+    setup -- is an errand: it needs the restored terminal to ask a question or print a
+    result, and then the user is still in the middle of using the menu. Those return here
+    and the menu is rebuilt, which is also what refreshes the job list a delete just changed.
+
+    Off a TTY we never build the app -- we fall back to the plain capability index,
+    honouring the "non-TTY never blocks on a menu" contract.
+
+    Returns:
+        The process exit code.
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return _capability_index()  # never the menu off a TTY; never recurse back into _index
+    while True:
+        choice = _run_menu()
+        if choice is None:  # quit from the menu itself
+            return 0
+        exit_code = _act_on_tui_choice(choice)
+        if exit_code is not None:  # a launch: the session is over, so gmlw is too
+            return exit_code
+        _pause_before_menu()
+
+
+def _pause_before_menu() -> None:
+    """Hold the errand's result on screen until the user is ready to go back.
+
+    Without this the menu repaints over the answer immediately: an errand prints to the
+    restored terminal, and the next full-screen repaint takes that line with it. The
+    outcome of a *delete* is the last thing that should flash past unread.
+    """
+    print(i18n.t("tui.return"), file=sys.stderr)
+    with contextlib.suppress(EOFError, KeyboardInterrupt):
+        input()
+
+
+def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one per browser's data)
+    """Build the menu on the current state and run it once.
+
+    Rebuilt per pass rather than kept alive: every browser's data is a snapshot taken here,
+    so re-entering after an errand is what makes a deleted job leave the list, a new
+    workflow appear, and a changed setting show its new value.
+
+    Returns:
+        What the user asked for, or ``None`` if they quit.
+    """
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
         ClientRow,
         ConfigCatalog,
@@ -1691,9 +1729,9 @@ def _tui() -> int:  # noqa: PLR0915  (menu + preflights, each with its own brows
         return None
 
     # The menu opens on a *snapshot* of the default client, for the rows that mention it.
-    # The launch below re-reads it, because the user may have changed it in Config while
-    # the menu was up -- resolving it once, here, would launch the client they just left.
-    choice = MenuApp(
+    # The launch re-reads it, because the user may have changed it in Config while the menu
+    # was up -- resolving it once, here, would launch the client they just left.
+    return MenuApp(
         jobs,
         switchers=switchers,
         validate_job=_validate_job,
@@ -1708,12 +1746,9 @@ def _tui() -> int:  # noqa: PLR0915  (menu + preflights, each with its own brows
         config=config_catalog,
         current_client=_client(None),
     ).run()  # blocks; terminal restored on return
-    if choice is None:
-        return 0
-    return _act_on_tui_choice(choice)
 
 
-def _act_on_tui_choice(choice: MenuChoice) -> int:  # noqa: PLR0911  (one exit per verb)
+def _act_on_tui_choice(choice: MenuChoice) -> int | None:  # noqa: PLR0911  (one exit per verb)
     """Carry out what the menu was asked for, on the restored terminal.
 
     Everything here runs *after* ``run()`` returned, which is the point: the app hands
@@ -1724,32 +1759,42 @@ def _act_on_tui_choice(choice: MenuChoice) -> int:  # noqa: PLR0911  (one exit p
         choice: What the user asked the menu to do.
 
     Returns:
-        The process exit code.
+        The process exit code, or ``None`` for an errand -- one that borrowed the terminal
+        to ask or report something and leaves the user still working in the menu. An
+        errand's own exit code is deliberately dropped: a declined delete or a refused
+        import is not a reason to end the session, it is a reason to go back.
     """
     # Read *after* the menu: a default-client switch made in Config (or in the Clients view)
     # must apply to this launch, not only to the next run of gmlw. Ignored on resume -- a
     # resumed session carries its own client.
     client = _client(None)
+    # -- errands: done on the terminal, then back to the menu -------------------------- #
     if choice.action == "init":  # Config → Setup: re-run the interview on the restored terminal
-        return _run_init()
-    if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
-        return _run_workflow(choice.workflow, client)
+        _run_init()
+        return None
     if choice.action == "workflow_export" and choice.workflow is not None:
-        return _export_workflow(choice.workflow)
+        _export_workflow(choice.workflow)
+        return None
     if choice.action == "workflow_import" and choice.archive is not None:
         # Asked on the restored terminal: the replace prompt needs a tty the TUI had.
-        return _import_workflow(choice.archive)
-    if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
-        return _new_workflow(choice.workflow, client, choice.guided)
-    if choice.action == "workflow_edit" and choice.workflow is not None:
-        return _edit_workflow(choice.workflow, client, choice.guided)
+        _import_workflow(choice.archive)
+        return None
     # The deletions, on the restored terminal for the same reason the import prompt is:
     # the preview and its y/N need a tty the full-screen app was holding. The TUI only
     # ever hands over a selection -- nothing has been removed by the time we get here.
     if choice.action == "jobs_delete":
-        return _delete_jobs(choice.jobs, assume_yes=False)
+        _delete_jobs(choice.jobs, assume_yes=False)
+        return None
     if choice.action == "sessions_delete" and choice.job is not None:
-        return _delete_sessions(choice.job, choice.sessions, assume_yes=False)
+        _delete_sessions(choice.job, choice.sessions, assume_yes=False)
+        return None
+    # -- launches: the terminal goes to a client, and gmlw ends with it ----------------- #
+    if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
+        return _run_workflow(choice.workflow, client)
+    if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
+        return _new_workflow(choice.workflow, client, choice.guided)
+    if choice.action == "workflow_edit" and choice.workflow is not None:
+        return _edit_workflow(choice.workflow, client, choice.guided)
     if choice.job is None or choice.action not in ("start", "resume"):
         return 0
     resume = choice.action == "resume"

@@ -314,6 +314,7 @@
   "tui.cfg.value.hint": "current: {value} · default: {default} — type a new value, then Enter. Esc to cancel.",
   "tui.cfg.value.hint.optional": "current: {value} · default: {default} — type a new value, or leave empty / 'none' to clear. Enter to set, Esc to cancel.",
   "tui.cfg.value.keys": "⏎ set · Esc cancel",
+  "tui.return": "  Press Enter to go back to the menu.",
   "tui.keys": "↑↓ move · ⏎ select · Esc back · q quit",
   "tui.keys.multi": "↑↓ move · space toggle · ⏎ delete · Esc back · q quit",
   "tui.empty": "Nothing here yet.",

@@ -174,7 +174,8 @@ Deleting a session in the middle of a job is safe. The next id is minted one pas
 that exists, so a gap is never filled and no session id is ever reused.
 
 In the menu the same two grains live under **Job > Delete**: `space` ticks rows, `⏎` acts on
-everything ticked, and the confirmation is asked once the menu has closed.
+everything ticked. The confirmation is asked on the plain terminal — the menu steps aside for
+it — and then you land back in the menu with the list already updated, ready to carry on.
 
 ## 11. Export JSON for automation
 

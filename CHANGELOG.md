@@ -30,11 +30,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   In the menu, **Job > Delete** offers the same two grains: `space` ticks rows, `⏎` acts on
   everything ticked. The app never deletes — it hands back a selection and the confirmation is
   asked once the terminal is restored, the same hand-off `workflow import` uses for its replace
-  prompt.
+  prompt. Afterwards you are returned to the menu, with the list rebuilt.
 
   Deleting a session in the middle of a job is safe by construction: `next_session_id` already
   minted one past the highest suffix "so gaps never cause a collision", so nothing renumbers
   and no id is reused.
+
+### Fixed
+- **The menu no longer exits after an errand.** Exporting a workflow, importing one, or
+  re-running setup from `gmlw tui` borrowed the restored terminal to ask a question or print a
+  result — and then ended the process, dropping the user back at the shell mid-task. Deleting
+  inherited the same defect the moment it was added, and it is worst there: cleaning up is
+  iterative, and relaunching `gmlw tui` between every removal is exactly the friction that made
+  the list long in the first place. `_tui` now loops. A *launch* (start, resume, run, authoring)
+  still ends gmlw, because a client owned the terminal and the session is over when it is; an
+  *errand* returns to the menu, which is rebuilt from scratch — so a job you just deleted is
+  gone from the list you come back to. An errand's exit code is deliberately dropped: a declined
+  delete or a refused import is not a reason to end the session.
 
 ### Changed
 - **`gmlw sessions` shows what each session used** — turn count and cost per row, and the word

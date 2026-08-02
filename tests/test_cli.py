@@ -1964,7 +1964,7 @@ def test_the_tui_hands_over_a_job_selection_without_deleting(
     _answer(monkeypatch, "y")
 
     choice = tui.MenuChoice(action="jobs_delete", jobs=("alpha", "throwaway"))
-    assert app._act_on_tui_choice(choice) == 0
+    assert app._act_on_tui_choice(choice) is None  # an errand: back to the menu, not an exit
     assert fake.executed == [["alpha", "throwaway"]]
 
 
@@ -1976,16 +1976,239 @@ def test_the_tui_hands_over_a_session_selection_without_deleting(
     _answer(monkeypatch, "y")
 
     choice = tui.MenuChoice(action="sessions_delete", job="alpha", sessions=("alpha_002",))
-    assert app._act_on_tui_choice(choice) == 0
+    assert app._act_on_tui_choice(choice) is None
     assert fake.executed == [("alpha", ["alpha_002"])]
 
 
 def test_a_tui_delete_declined_on_the_restored_terminal_removes_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Declining is not an error to exit on — it is a reason to go back to the menu."""
     fake = _FakeDeleteJobs([_job_footprint()])
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
     _answer(monkeypatch, "n")
 
-    assert app._act_on_tui_choice(tui.MenuChoice(action="jobs_delete", jobs=("alpha",))) == 2
+    assert app._act_on_tui_choice(tui.MenuChoice(action="jobs_delete", jobs=("alpha",))) is None
     assert fake.executed == []
+
+
+# --------------------------------------------------------------------------- #
+# The menu loop: an errand comes back, a launch does not                       #
+# --------------------------------------------------------------------------- #
+
+
+def _menu_returning(*choices: tui.MenuChoice | None) -> list[tui.MenuChoice | None]:
+    """A scripted sequence of menu results, one per pass through the loop."""
+    return list(choices)
+
+
+def _drive_tui(
+    monkeypatch: pytest.MonkeyPatch, script: list[tui.MenuChoice | None]
+) -> tuple[int, int]:
+    """Run ``_tui`` with ``_run_menu`` scripted; return (exit code, times the menu opened)."""
+    passes = {"n": 0}
+
+    def _fake_menu() -> tui.MenuChoice | None:
+        index = passes["n"]
+        passes["n"] += 1
+        if index >= len(script):
+            raise AssertionError("the loop opened the menu more times than the script allows")
+        return script[index]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(app, "_run_menu", _fake_menu)
+    monkeypatch.setattr(app, "_pause_before_menu", lambda: None)
+    return app._tui(), passes["n"]
+
+
+def test_quitting_the_menu_exits(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _drive_tui(monkeypatch, _menu_returning(None)) == (0, 1)
+
+
+def test_a_delete_returns_to_the_menu_instead_of_exiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reported bug: deleting from the menu dropped the user back to the shell."""
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    code, opened = _drive_tui(
+        monkeypatch,
+        _menu_returning(tui.MenuChoice(action="jobs_delete", jobs=("alpha",)), None),
+    )
+
+    assert fake.executed == [["alpha"]]
+    assert opened == 2  # the menu was rebuilt after the delete...
+    assert code == 0  # ...and only the later quit ended gmlw
+
+
+def test_a_declined_delete_also_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "n")
+
+    code, opened = _drive_tui(
+        monkeypatch,
+        _menu_returning(tui.MenuChoice(action="jobs_delete", jobs=("alpha",)), None),
+    )
+
+    assert fake.executed == []
+    assert (code, opened) == (0, 2)
+
+
+def test_a_session_delete_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = _FakeDeleteSessions([_session_footprint()])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    code, opened = _drive_tui(
+        monkeypatch,
+        _menu_returning(
+            tui.MenuChoice(action="sessions_delete", job="alpha", sessions=("alpha_002",)), None
+        ),
+    )
+
+    assert fake.executed == [("alpha", ["alpha_002"])]
+    assert (code, opened) == (0, 2)
+
+
+def test_workflow_export_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The same defect the delete work exposed — it was there before it."""
+    exported: list[str] = []
+
+    def _export(name: str) -> int:
+        exported.append(name)
+        return 0
+
+    monkeypatch.setattr(app, "_export_workflow", _export)
+
+    code, opened = _drive_tui(
+        monkeypatch,
+        _menu_returning(tui.MenuChoice(action="workflow_export", workflow="nightly"), None),
+    )
+
+    assert exported == ["nightly"]
+    assert (code, opened) == (0, 2)
+
+
+def test_workflow_import_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    imported: list[str] = []
+
+    def _import(archive: str) -> int:
+        imported.append(archive)
+        return 0
+
+    monkeypatch.setattr(app, "_import_workflow", _import)
+
+    code, opened = _drive_tui(
+        monkeypatch,
+        _menu_returning(tui.MenuChoice(action="workflow_import", archive="/tmp/w.zip"), None),
+    )
+
+    assert imported == ["/tmp/w.zip"]
+    assert (code, opened) == (0, 2)
+
+
+def test_config_setup_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    ran: list[bool] = []
+
+    def _init() -> int:
+        ran.append(True)
+        return 0
+
+    monkeypatch.setattr(app, "_run_init", _init)
+
+    code, opened = _drive_tui(monkeypatch, _menu_returning(tui.MenuChoice(action="init"), None))
+
+    assert ran == [True]
+    assert (code, opened) == (0, 2)
+
+
+def test_a_launch_ends_gmlw_rather_than_returning(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A client owned the terminal; when it is done, so is gmlw."""
+
+    def _launch(
+        _job: str, _resume: bool, _session: str | None, _cwd: str | None, _client: str
+    ) -> int:
+        return 7
+
+    monkeypatch.setattr(app, "_tui_launch_job", _launch)
+
+    code, opened = _drive_tui(
+        monkeypatch, _menu_returning(tui.MenuChoice(action="start", job="alpha"))
+    )
+
+    assert (code, opened) == (7, 1)  # the exit code is the client's, and the menu never reopened
+
+
+def test_a_workflow_run_ends_gmlw(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _run(_workflow: str, _client: str) -> int:
+        return 3
+
+    monkeypatch.setattr(app, "_run_workflow", _run)
+
+    code, opened = _drive_tui(
+        monkeypatch, _menu_returning(tui.MenuChoice(action="run", workflow="nightly"))
+    )
+
+    assert (code, opened) == (3, 1)
+
+
+def test_several_errands_in_a_row_all_come_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cleaning up is iterative — delete, look, delete again — without relaunching gmlw."""
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    _answer(monkeypatch, "y")
+
+    code, opened = _drive_tui(
+        monkeypatch,
+        _menu_returning(
+            tui.MenuChoice(action="jobs_delete", jobs=("alpha",)),
+            tui.MenuChoice(action="jobs_delete", jobs=("beta",)),
+            None,
+        ),
+    )
+
+    assert fake.executed == [["alpha"], ["beta"]]
+    assert (code, opened) == (0, 3)
+
+
+def test_the_menu_is_rebuilt_each_pass_so_a_deleted_job_leaves_the_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Snapshot data: re-entering is what drops the job the user just removed."""
+    remaining = [
+        JobSummary(job="alpha", session_count=1),
+        JobSummary(job="beta", session_count=1),
+    ]
+
+    class _Jobs(ListJobs):
+        def execute(self) -> list[JobSummary]:
+            return list(remaining)
+
+    seen: list[list[str]] = []
+
+    class _Menu:
+        def __init__(self, jobs: list[tui.JobChoice], **_kwargs: object) -> None:
+            seen.append([j.job for j in jobs])
+
+        def run(self) -> tui.MenuChoice | None:
+            if len(seen) == 1:  # first pass: delete alpha, then come back
+                return tui.MenuChoice(action="jobs_delete", jobs=("alpha",))
+            return None
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    monkeypatch.setattr(tui, "MenuApp", _Menu)
+    monkeypatch.setattr(app, "_pause_before_menu", lambda: None)
+
+    def _delete(jobs: object, *, assume_yes: bool) -> int:
+        remaining[:] = [j for j in remaining if j.job != "alpha"]
+        return 0
+
+    monkeypatch.setattr(app, "_delete_jobs", _delete)
+    assert app._tui() == 0
+    assert seen == [["alpha", "beta"], ["beta"]]  # the second menu no longer offers alpha
