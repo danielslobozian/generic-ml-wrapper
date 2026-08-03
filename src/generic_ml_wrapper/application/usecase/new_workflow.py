@@ -14,7 +14,6 @@ from generic_ml_wrapper.application.domain.model.identifiers import IdentifierEr
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.slug import Slug
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
@@ -28,7 +27,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.launch import run_with_hooks
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 
 _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
@@ -51,7 +50,7 @@ class NewWorkflowUseCase(NewWorkflow):
         store: SessionStorePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
-        hooks: HookRunner,
+        launch: LaunchSequence,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         """Wire the use case to its outbound ports.
@@ -69,7 +68,7 @@ class NewWorkflowUseCase(NewWorkflow):
         self._store = store
         self._callers = callers
         self._uuid_factory = uuid_factory
-        self._hooks = hooks
+        self._launch = launch
         self._clock = clock
 
     def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
@@ -121,7 +120,7 @@ class NewWorkflowUseCase(NewWorkflow):
         # left unset, which is what made an interrupted interview unrecoverable: the
         # session claimed a folder it had not stored, on a client nobody had asked.
         self._store.record(replace(session, cwd=draft, resumable=caller.can_resume()))
-        exit_code = run_with_hooks(caller, run, self._hooks)
+        exit_code = self._launch.run(caller, run)
         return self._finalize(exit_code, draft)
 
     def _reopen(self, command: NewWorkflowCommand) -> NewWorkflowResult:
@@ -166,7 +165,7 @@ class NewWorkflowUseCase(NewWorkflow):
                 client=session.client,
                 session_id=session.session_id,
             )
-        exit_code = run_with_hooks(caller, run, self._hooks)
+        exit_code = self._launch.run(caller, run)
         return self._finalize(exit_code, draft.path)
 
     def _target_draft(self, command: NewWorkflowCommand) -> Draft:

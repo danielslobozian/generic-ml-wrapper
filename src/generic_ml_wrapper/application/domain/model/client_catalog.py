@@ -19,10 +19,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 @dataclass(frozen=True)

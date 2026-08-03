@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 class TtyTextPrompt(TextPromptPort):

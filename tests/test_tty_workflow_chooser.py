@@ -8,7 +8,7 @@ import pytest
 
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
-from generic_ml_wrapper.common.i18n import load_localizer
+from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")
 _WORKFLOWS = ["nightly-etl", "review-prep"]

@@ -33,7 +33,7 @@ from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:

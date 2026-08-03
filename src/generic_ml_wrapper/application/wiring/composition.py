@@ -84,7 +84,6 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
     LocalGitWorkspaceInspector,
 )
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
@@ -132,8 +131,10 @@ from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSession
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -155,16 +156,16 @@ from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageRe
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
-from generic_ml_wrapper.application.wiring.paths import paths
-from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
-from generic_ml_wrapper.common import config
-from generic_ml_wrapper.common.i18n import (
+from generic_ml_wrapper.application.wiring.localization import (
     SUPPORTED_LANGUAGES,
     Localizer,
     active,
     load_localizer,
     resolve_language,
 )
+from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
+from generic_ml_wrapper.common import config, log
 
 
 def _ledger() -> Ledger:
@@ -319,6 +320,8 @@ def build_check_for_update() -> CheckForUpdate:
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
         cache_path=paths.state / "update-check.json",
+        diagnostics=log.active(),
+        localizer=build_localizer(),
     )
 
 
@@ -363,7 +366,16 @@ def _hook_runner() -> HookRunner:
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]
-    return HookRunner(loaded)
+    return HookRunner(loaded, log.active(), build_localizer())
+
+
+def _launch_sequence() -> LaunchSequence:
+    """Build the bracketed launch sequence shared by every use case that runs a client.
+
+    Returns:
+        The sequence, carrying the configured hooks and where a bad teardown is reported.
+    """
+    return LaunchSequence(_hook_runner(), log.active(), build_localizer())
 
 
 def build_start_job() -> StartJob:
@@ -388,7 +400,9 @@ def build_start_job() -> StartJob:
         uuid_factory=lambda: str(uuid.uuid4()),
         cwd_factory=os.getcwd,
         credentials=FilesystemCredentialsStore(paths.credentials),
-        hooks=_hook_runner(),
+        launch=_launch_sequence(),
+        diagnostics=log.active(),
+        localizer=build_localizer(),
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
         client_args=config.client_args_for,
@@ -753,7 +767,7 @@ def build_new_workflow() -> NewWorkflow:
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
-        hooks=_hook_runner(),
+        launch=_launch_sequence(),
     )
 
 
@@ -777,7 +791,7 @@ def build_edit_workflow() -> EditWorkflow:
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
-        hooks=_hook_runner(),
+        launch=_launch_sequence(),
     )
 
 

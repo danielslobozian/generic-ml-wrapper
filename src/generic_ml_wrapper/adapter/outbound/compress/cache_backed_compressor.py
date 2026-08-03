@@ -19,8 +19,9 @@ from generic_ml_cache_core.application.usecase.select_adapter_for_execution_serv
 )
 
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.paths import paths
-from generic_ml_wrapper.common import config, i18n
+from generic_ml_wrapper.common import config
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:

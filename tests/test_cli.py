@@ -94,8 +94,8 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
+from generic_ml_wrapper.application.wiring.localization import load_localizer
 from generic_ml_wrapper.application.wiring.paths import paths
-from generic_ml_wrapper.common.i18n import load_localizer
 
 
 class _RecordingBootstrap(Bootstrap):

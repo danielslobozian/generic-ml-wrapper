@@ -8,6 +8,10 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLocalizerFactory,
+)
 from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
 
@@ -39,6 +43,8 @@ def _use_case(
         enabled=lambda: enabled,
         clock=lambda: now,
         cache_path=tmp_path / "update-check.json",
+        diagnostics=NullDiagnostics(),
+        localizer=JsonCatalogLocalizerFactory().load("en"),
     )
 
 

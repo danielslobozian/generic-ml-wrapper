@@ -14,7 +14,7 @@ from generic_ml_wrapper.adapter.outbound.caller.status_line_config import Status
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:

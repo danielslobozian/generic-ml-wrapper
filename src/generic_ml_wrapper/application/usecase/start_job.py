@@ -11,8 +11,9 @@ from generic_ml_wrapper.application.domain.model.client_arguments import ClientA
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.domain.service.greeting import greeting_context
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
+from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
@@ -25,9 +26,7 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPro
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.launch import run_with_hooks
-from generic_ml_wrapper.common import i18n
-from generic_ml_wrapper.common.log import log
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 
 
 class StartJobUseCase(StartJob):
@@ -41,7 +40,9 @@ class StartJobUseCase(StartJob):
         uuid_factory: Callable[[], str],
         cwd_factory: Callable[[], str],
         credentials: CredentialsStorePort,
-        hooks: HookRunner,
+        launch: LaunchSequence,
+        diagnostics: Diagnostics,
+        localizer: Localizer,
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],
         client_args: Callable[[str], str] = lambda _client: "",
@@ -56,7 +57,9 @@ class StartJobUseCase(StartJob):
             cwd_factory: Returns the folder a new session is launched in (persisted so a
                 resume can relaunch there -- Claude resume is scoped to it).
             credentials: Resolves a workflow's credentials to export at launch.
-            hooks: The lifecycle hooks bracketing the client run.
+            launch: The bracketed launch sequence (hooks, metering, the client).
+            diagnostics: Where a dropped argument string is reported.
+            localizer: Renders that report in the language the wrapper is speaking.
             greeting: Renders the host greeting, or ``None`` when the companion is off —
                 injected into a new session's context so the client greets in-band.
             capability_card: Renders the ambient "how do I …" card, or ``None`` when the
@@ -73,7 +76,9 @@ class StartJobUseCase(StartJob):
         self._uuid_factory = uuid_factory
         self._cwd_factory = cwd_factory
         self._credentials = credentials
-        self._hooks = hooks
+        self._launch = launch
+        self._diagnostics = diagnostics
+        self._localizer = localizer
         self._greeting = greeting
         self._capability_card = capability_card
         self._client_args = client_args
@@ -122,7 +127,7 @@ class StartJobUseCase(StartJob):
             # from the built-in catalog, and deciding from that list alone recorded every
             # such session as unresumable however capable its adapter was.
             self._store.record(replace(session, resumable=caller.can_resume()))
-        exit_code = run_with_hooks(caller, run, self._hooks)
+        exit_code = self._launch.run(caller, run)
         return StartJobResult(exit_code=exit_code, job=run.job, session_id=run.session_id)
 
     def _with_client_args(self, run: RunContext, override: str | None) -> RunContext:
@@ -138,8 +143,10 @@ class StartJobUseCase(StartJob):
         text = override if override is not None else self._client_args(run.client)
         arguments = ClientArguments.parse(text)
         if arguments.unparseable:
-            log.warning(
-                i18n.t("log.client_args_unparseable", args=text, error=arguments.unparseable),
+            self._diagnostics.warning(
+                self._localizer.t(
+                    "log.client_args_unparseable", args=text, error=arguments.unparseable
+                ),
                 key="log.client_args_unparseable",
             )
         return run if not arguments.tokens else replace(run, client_args=arguments.tokens)

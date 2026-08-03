@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 # Each group is (label_key, rows); each row is (literal command, description key). The
 # commands are literal invocations (not localised); their descriptions render from the

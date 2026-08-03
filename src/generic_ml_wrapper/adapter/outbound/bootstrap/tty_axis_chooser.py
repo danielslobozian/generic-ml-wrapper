@@ -22,7 +22,7 @@ from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChoose
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.axis import AxisPrompt
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 # Sentinel option value: "type a role/environment other than the offered examples".
 _TYPE_YOUR_OWN = "\x00type-your-own"

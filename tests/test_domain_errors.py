@@ -34,7 +34,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     UnknownWorkflowError,
 )
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.common.settings_registry import InvalidSettingValueError
 
 _EN = i18n.load_localizer("en")

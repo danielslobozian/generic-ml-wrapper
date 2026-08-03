@@ -9,7 +9,7 @@ from rich.console import Console
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 
 
 def _render() -> list[str]:

@@ -18,7 +18,7 @@ from rich.text import Text
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 
 # The wordmark, coloured letter-by-letter (cyan → indigo). One colour per character.
 _WORDMARK = "gmlw"

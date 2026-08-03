@@ -6,6 +6,10 @@ import os
 
 import pytest
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLocalizerFactory,
+)
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
@@ -13,7 +17,7 @@ from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
+from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJobCommand,
@@ -23,8 +27,9 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, C
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
-from generic_ml_wrapper.common.log import set_active
 
 # A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
 # the quotes stay inside the token there. See ``ClientArguments`` for why.
@@ -173,6 +178,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
     greeting: str | None = None,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
+    diagnostics: Diagnostics | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -181,7 +187,13 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         uuid_factory=lambda: "fixed-uuid",
         cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
-        hooks=hooks or HookRunner(()),
+        launch=LaunchSequence(
+            hooks or HookRunner((), NullDiagnostics(), _localizer()),
+            NullDiagnostics(),
+            _localizer(),
+        ),
+        diagnostics=diagnostics or NullDiagnostics(),
+        localizer=_localizer(),
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
         # configured per client; a client with no entry has no arguments
@@ -270,7 +282,9 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
         [
             (HookPhase.PRE_LAUNCH, None, RecordingHook(shared)),
             (HookPhase.POST_SESSION, None, RecordingHook(shared)),
-        ]
+        ],
+        NullDiagnostics(),
+        _localizer(),
     )
     provider = FakeProvider(log=shared)
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, hooks=hooks).execute(
@@ -562,16 +576,17 @@ def test_unparseable_configured_args_are_dropped_but_reported(
     store = FakeStore(ids=[])
     provider = FakeProvider()
     sink = _Recording()
-    previous = set_active(sink)
-    try:
-        _use_case(store, provider, client_args={"claude": '--foo "unclosed'}).execute(
-            StartJobCommand(job="JOB-1", client="claude")
-        )
-    finally:
-        set_active(previous)
+    _use_case(store, provider, client_args={"claude": '--foo "unclosed'}, diagnostics=sink).execute(
+        StartJobCommand(job="JOB-1", client="claude")
+    )
     assert provider.run is not None
     assert provider.run.client_args == ()
     assert "log.client_args_unparseable" in sink.keys("warning"), (
         "the dropped arguments must be reported"
     )
     assert capsys.readouterr().err == "", "and not by dumping a traceback on the client's screen"
+
+
+def _localizer() -> Localizer:
+    """The real English catalogue: these tests assert behaviour, not translations."""
+    return JsonCatalogLocalizerFactory().load("en")

@@ -3,7 +3,7 @@
 """The DomainError: a user-facing exception carrying a catalogue key, never a raw message.
 
 An exception whose text reaches a person must be localisable the same way any other
-user-facing string is — through :mod:`generic_ml_wrapper.common.i18n`. A raw f-string
+user-facing string is — through the active localiser. A raw f-string
 message stored on the exception and later interpolated with ``str(error)`` bakes in
 English no matter what language the wrapper is speaking. :class:`DomainError` closes
 that gap: a subclass raises with a catalogue key and the params to fill it, and
@@ -22,7 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 class DomainError(Exception):

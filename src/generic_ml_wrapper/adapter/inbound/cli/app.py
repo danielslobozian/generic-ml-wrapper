@@ -96,6 +96,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
     UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_axis_catalog,
     build_bootstrap,
@@ -134,7 +135,7 @@ from generic_ml_wrapper.application.wiring.composition import (
 )
 from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
-from generic_ml_wrapper.common import config, i18n, settings_registry
+from generic_ml_wrapper.common import config, settings_registry
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
 

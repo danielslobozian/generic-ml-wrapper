@@ -6,13 +6,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.common import i18n
-from generic_ml_wrapper.common.log import log
-
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
     from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 class HookRunner:
@@ -23,16 +22,29 @@ class HookRunner:
     client. Hooks are **best-effort**: a hook that raises is logged and skipped, never
     propagating — a misconfigured or failing hook must not break a launch or its teardown.
     An empty runner is a no-op.
+
+    It sits in the application ring rather than the domain: running a hook is side-effect
+    orchestration, and reporting one that failed needs a sink and a language, neither of
+    which the domain may know about.
     """
 
-    def __init__(self, hooks: Sequence[tuple[HookPhase, str | None, Hook]]) -> None:
-        """Bind the runner to its ordered hooks.
+    def __init__(
+        self,
+        hooks: Sequence[tuple[HookPhase, str | None, Hook]],
+        diagnostics: Diagnostics,
+        localizer: Localizer,
+    ) -> None:
+        """Bind the runner to its ordered hooks and the collaborators that report failures.
 
         Args:
             hooks: The ``(phase, client, hook)`` entries, in invocation order. A
                 ``client`` of ``None`` means the hook runs for every client.
+            diagnostics: Where a failing hook is reported.
+            localizer: Renders that report in the language the wrapper is speaking.
         """
         self._hooks = tuple(hooks)
+        self._diagnostics = diagnostics
+        self._localizer = localizer
 
     def run(self, phase: HookPhase, context: HookContext) -> None:
         """Run every hook bound to ``phase`` whose client scope matches, in order.
@@ -47,4 +59,7 @@ class HookRunner:
             try:
                 hook.run(context)
             except Exception as error:  # noqa: BLE001  a hook must never break the run
-                log.warning(i18n.t("log.hook_failed", phase=phase, error=error))
+                self._diagnostics.warning(
+                    self._localizer.t("log.hook_failed", phase=phase, error=error),
+                    key="log.hook_failed",
+                )

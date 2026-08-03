@@ -34,10 +34,10 @@ from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetu
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.client_catalog import ClientInfo, Prerequisite
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
     from generic_ml_wrapper.application.port.outbound.clipboard import ClipboardPort
     from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
-    from generic_ml_wrapper.common.i18n import Localizer
 
 # Sentinel option value: "install a client other than the ones already here".
 _INSTALL = "\x00install"

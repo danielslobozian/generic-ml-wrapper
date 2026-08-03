@@ -14,7 +14,7 @@ from generic_ml_wrapper.application.domain.model.client_catalog import ClientInf
 from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
 from generic_ml_wrapper.application.port.outbound.clipboard import ClipboardPort
 from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
-from generic_ml_wrapper.common.i18n import load_localizer
+from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")
 

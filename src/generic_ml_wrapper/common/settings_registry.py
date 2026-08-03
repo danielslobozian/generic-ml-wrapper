@@ -34,8 +34,8 @@ from pydantic_settings import (
 )
 
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.paths import paths
-from generic_ml_wrapper.common import i18n
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -11,7 +11,6 @@ from generic_ml_wrapper.application.domain.model.context_source import CompileMo
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflow,
@@ -23,7 +22,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNam
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.launch import run_with_hooks
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 
 # The create-workflow meta drives the authoring session (for editing as for creating); its
 # name and the shared partial are reserved and cannot themselves be edited.
@@ -40,7 +39,7 @@ class EditWorkflowUseCase(EditWorkflow):
         store: SessionStorePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
-        hooks: HookRunner,
+        launch: LaunchSequence,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -55,7 +54,7 @@ class EditWorkflowUseCase(EditWorkflow):
         self._store = store
         self._callers = callers
         self._uuid_factory = uuid_factory
-        self._hooks = hooks
+        self._launch = launch
 
     def execute(self, command: EditWorkflowCommand) -> int:
         """Run the authoring session against an existing workflow.
@@ -119,7 +118,7 @@ class EditWorkflowUseCase(EditWorkflow):
         # unset, which left an interrupted edit with no folder to return to and no
         # capability recorded, however able its client was.
         self._store.record(replace(session, cwd=folder, resumable=caller.can_resume()))
-        return run_with_hooks(caller, run, self._hooks)
+        return self._launch.run(caller, run)
 
     def _reopen(self, job: str, folder: str) -> int:
         """Reopen this workflow's most recent editing session, in its own folder.
@@ -166,7 +165,7 @@ class EditWorkflowUseCase(EditWorkflow):
                 client=session.client,
                 session_id=session.session_id,
             )
-        return run_with_hooks(caller, run, self._hooks)
+        return self._launch.run(caller, run)
 
     def _authoring_context(self, *, guided: bool, job: str) -> str:
         """The authoring context, with the guided-facilitation layer added when chosen."""
