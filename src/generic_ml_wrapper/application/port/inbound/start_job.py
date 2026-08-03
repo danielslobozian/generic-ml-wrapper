@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from generic_ml_wrapper.common.errors import DomainError
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 
 
 @dataclass(frozen=True)

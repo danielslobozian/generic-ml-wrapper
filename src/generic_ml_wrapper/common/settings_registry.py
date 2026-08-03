@@ -33,8 +33,8 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.common import i18n, paths
-from generic_ml_wrapper.common.errors import DomainError
 
 if TYPE_CHECKING:
     from pathlib import Path

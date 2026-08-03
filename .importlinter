@@ -38,3 +38,45 @@ source_modules =
     generic_ml_wrapper.application.port
 forbidden_modules =
     generic_ml_wrapper.application.usecase
+
+# Rule 4 — the declared top-level shape, exhaustively. Rules 1-3 forbid named edges,
+# which constrains only what someone thought to name: a package outside the list (a
+# shared kernel, a utils bag) is unpoliced by construction, and that is how `common`
+# became an escape hatch. This contract inverts the default — a top-level package that
+# is not declared here fails the build, so the next one cannot appear by accident.
+#
+# `adapter` and `application` are siblings rather than ordered because the composition
+# root lives inside `application.wiring` and builds adapters, while the CLI entry point
+# reaches back into it to obtain what it runs. That single reverse edge is the CLI/
+# composition-root coupling recorded separately; ordering the two here would prejudge
+# its fix. Rule 2 already forbids the edges that matter (the application ring reaching
+# outward), so nothing enforced today is lost.
+#
+# `resources` is data (JSON catalogues, packaged templates) with no importable code;
+# `_build_info` is the generated version stamp. Neither is a layer.
+[importlinter:contract:top-level-shape]
+name = Every top-level package is declared; there is no shared kernel
+type = layers
+containers =
+    generic_ml_wrapper
+layers =
+    adapter : application
+exhaustive = true
+exhaustive_ignores =
+    resources
+    _build_info
+
+# Rule 5 — the ring order inside `application`, exhaustively. Rules 1-3 name specific
+# forbidden edges; this one fixes the direction once and refuses undeclared siblings,
+# so a new sub-package under `application` has to say which ring it belongs to.
+[importlinter:contract:application-rings]
+name = Application rings are ordered wiring -> usecase -> port -> domain
+type = layers
+containers =
+    generic_ml_wrapper.application
+layers =
+    wiring
+    usecase
+    port
+    domain
+exhaustive = true

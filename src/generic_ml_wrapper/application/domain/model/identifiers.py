@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 
-from generic_ml_wrapper.common.errors import DomainError
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 
 # A job id is a single safe path segment: letters, digits, '-' and '_', starting
 # with a letter or digit, at most 64 chars. No '.', '/', '\\', or NUL -- so no

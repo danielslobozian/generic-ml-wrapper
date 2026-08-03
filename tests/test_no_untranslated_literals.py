@@ -12,7 +12,7 @@ This closes that half:
    and Textual key bindings must resolve their text through ``i18n.t``.
 2. **Every key used exists.** A ``t("...")`` call naming a key no catalogue defines
    renders as the raw key to the user — silent, and invisible to parity. The same check
-   covers a :class:`~generic_ml_wrapper.common.errors.DomainError` subclass raised with a
+   covers a :class:`DomainError` subclass raised with a
    literal catalogue key (0.9.1): the key is exactly as checkable as a ``t()`` call, since
    :meth:`DomainError.localized` is just ``loc.t(self.catalogue_key, **self.params)``.
 3. **Every setting is described.** A new registry field must arrive with its
@@ -33,8 +33,8 @@ from pathlib import Path
 
 import generic_ml_wrapper
 import generic_ml_wrapper.adapter.inbound.cli.app  # pyright: ignore[reportUnusedImport]
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.common import settings_registry
-from generic_ml_wrapper.common.errors import DomainError
 from generic_ml_wrapper.common.i18n import SUPPORTED_LANGUAGES
 
 SRC = Path(generic_ml_wrapper.__file__).parent

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
-from generic_ml_wrapper.common.spec_loader import SpecLoadError, load_class
+from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader, SpecLoadError
 
 
 class CallerLoadError(ValueError):
@@ -29,6 +29,6 @@ def load_caller_class(spec: str) -> type[CliCaller]:
             name a ``CliCaller`` subclass.
     """
     try:
-        return load_class(spec, CliCaller)
+        return SpecLoader().load_class(spec, CliCaller)
     except SpecLoadError as error:
         raise CallerLoadError(str(error)) from error

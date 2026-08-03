@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from generic_ml_wrapper.application.domain.model.client_arguments import ClientArguments
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -25,7 +26,8 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
-from generic_ml_wrapper.common.client_args import split as split_client_args
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.log import log
 
 
 class StartJobUseCase(StartJob):
@@ -134,8 +136,13 @@ class StartJobUseCase(StartJob):
         so resuming a codex session never picks up arguments configured for claude.
         """
         text = override if override is not None else self._client_args(run.client)
-        tokens = split_client_args(text)
-        return run if not tokens else replace(run, client_args=tokens)
+        arguments = ClientArguments.parse(text)
+        if arguments.unparseable:
+            log.warning(
+                i18n.t("log.client_args_unparseable", args=text, error=arguments.unparseable),
+                key="log.client_args_unparseable",
+            )
+        return run if not arguments.tokens else replace(run, client_args=arguments.tokens)
 
     def _with_greeting(self, run: RunContext) -> RunContext:
         """Prepend the host greeting to a new session's context, when the companion is on.

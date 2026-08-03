@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The shared base for user-facing exceptions: a catalogue key, never a raw message.
+"""The DomainError: a user-facing exception carrying a catalogue key, never a raw message.
 
 An exception whose text reaches a person must be localisable the same way any other
 user-facing string is — through :mod:`generic_ml_wrapper.common.i18n`. A raw f-string
@@ -11,6 +11,10 @@ that gap: a subclass raises with a catalogue key and the params to fill it, and
 
 ``str(error)`` still works (it renders the key, for logs and tracebacks) — but display
 code must call :meth:`localized` instead.
+
+It lives in the domain because raising it is the domain's own vocabulary for "the user
+asked for something the rules do not allow"; only the rendering, which needs a language,
+belongs outside.
 """
 
 from __future__ import annotations

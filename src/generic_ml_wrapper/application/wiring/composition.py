@@ -155,6 +155,7 @@ from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageRe
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
@@ -163,7 +164,6 @@ from generic_ml_wrapper.common.i18n import (
     load_localizer,
     resolve_language,
 )
-from generic_ml_wrapper.common.spec_loader import load_class
 
 
 def _ledger() -> Ledger:
@@ -336,7 +336,7 @@ def _interceptor_chain() -> InterceptorChain:
         # A configured-but-unloadable spec is a config error the user should see -- not a
         # silent no-op that disables an interceptor they asked for. load_class raises
         # SpecLoadError, which the CLI surfaces (nothing configured -> nothing loaded).
-        interceptor_class = load_class(spec, InterceptorPort)
+        interceptor_class = SpecLoader().load_class(spec, InterceptorPort)
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((target, interceptor_class()))  # pyright: ignore[reportAbstractUsage]
@@ -358,7 +358,7 @@ def _hook_runner() -> HookRunner:
     plugins = build_plugin_source()
     loaded: list[tuple[HookPhase, str | None, HookPort]] = []
     for phase, spec, client in config.hooks():
-        hook_class = load_class(plugins.resolve_hook(spec), HookPort)
+        hook_class = SpecLoader().load_class(plugins.resolve_hook(spec), HookPort)
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]

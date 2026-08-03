@@ -35,6 +35,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
 )
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
@@ -131,11 +132,10 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_start_job,
     build_workflow_chooser,
 )
+from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
 from generic_ml_wrapper.common import config, i18n, paths, settings_registry
-from generic_ml_wrapper.common.errors import DomainError
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
-from generic_ml_wrapper.common.spec_loader import SpecLoadError
 
 if TYPE_CHECKING:
     # argparse does not publicly export the type ``add_subparsers`` returns; alias it once

@@ -16,11 +16,11 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
+from generic_ml_wrapper.adapter.outbound.bootstrap.file_creation_time import FileCreationTime
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.application.domain.model.migration import SlugMigrationReport
+from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.port.outbound.slug_migrator import SlugMigratorPort
-from generic_ml_wrapper.common.fs_time import created_ms
-from generic_ml_wrapper.common.slug import slugify, unique_slug
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -58,14 +58,13 @@ class FilesystemSlugMigrator(SlugMigratorPort):
                 continue
             for folder in sorted(p for p in root.iterdir() if p.is_dir()):
                 old = folder.name
-                slug = slugify(old)
-                if not slug or slug == old:
+                slug = Slug.of(old)
+                if not slug.value or slug.value == old:
                     continue  # already a clean slug, or nothing slug-worthy to rename
                 created = self._created_iso(folder)
-                final = unique_slug(
-                    slug,
+                final = slug.unique_among(
                     lambda cand, r=root, f=folder: (r / cand).exists() and (r / cand) != f,
-                )
+                ).value
                 folder.rename(root / final)
                 write_about(root / final, old, old, created)
                 renamed.append((old, final))
@@ -96,6 +95,6 @@ class FilesystemSlugMigrator(SlugMigratorPort):
     @staticmethod
     def _created_iso(folder: Path) -> str:
         """The folder's best-effort creation time as ISO-8601 (falls back to now)."""
-        ms = created_ms(folder)
+        ms = FileCreationTime().of(folder)
         when = datetime.fromtimestamp(ms / 1000, tz=UTC) if ms else datetime.now(UTC)
         return when.astimezone().isoformat()

@@ -13,6 +13,7 @@ from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
@@ -28,7 +29,6 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPro
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
-from generic_ml_wrapper.common.slug import slugify
 
 _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
@@ -89,7 +89,7 @@ class NewWorkflowUseCase(NewWorkflow):
         if command.resume_draft is not None or command.resume_latest:
             return self._reopen(command)
         if command.label is not None:  # a seed label lets a known collision fail fast
-            seed = slugify(command.label)
+            seed = Slug.of(command.label).value
             self._validate(seed)
             if self._workflows.exists(seed):
                 message = f"workflow already exists: {seed!r}"
@@ -204,7 +204,7 @@ class NewWorkflowUseCase(NewWorkflow):
         label = marker.label or marker.name
         if not marker.finished or label is None:
             return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
-        slug = slugify(label) if marker.label else label
+        slug = Slug.of(label).value if marker.label else label
         try:
             self._validate(slug)
         except WorkflowNameError:  # the label yielded nothing usable — keep the draft
