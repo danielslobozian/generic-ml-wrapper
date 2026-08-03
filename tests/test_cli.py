@@ -94,7 +94,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
-from generic_ml_wrapper.common import paths
+from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.common.i18n import load_localizer
 
 
@@ -774,9 +774,8 @@ def test_build_render_statusline_wires_a_real_use_case() -> None:
 def test_cursor_plan_cache_is_merged_into_the_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    cache = tmp_path / "cursor-plan.json"
-    cache.write_text('{"auto_pct": 6.2, "api_pct": 3.4}', encoding="utf-8")
-    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    app.paths.cursor_plan.write_text('{"auto_pct": 6.2, "api_pct": 3.4}', encoding="utf-8")
     merged = app._with_cursor_plan('{"model": {"display_name": "Composer"}}', "cursor")
     assert json.loads(merged)["plan"] == {"auto_pct": 6.2, "api_pct": 3.4}
 
@@ -784,9 +783,8 @@ def test_cursor_plan_cache_is_merged_into_the_payload(
 def test_cursor_plan_untouched_for_other_clients_or_when_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    cache = tmp_path / "cursor-plan.json"
-    cache.write_text('{"auto_pct": 1}', encoding="utf-8")
-    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    app.paths.cursor_plan.write_text('{"auto_pct": 1}', encoding="utf-8")
     assert app._with_cursor_plan("{}", "claude") == "{}"  # not cursor
     kept = '{"plan": {"auto_pct": 9}}'
     assert app._with_cursor_plan(kept, "cursor") == kept  # payload already carries a plan
@@ -795,9 +793,8 @@ def test_cursor_plan_untouched_for_other_clients_or_when_present(
 def test_statusline_renders_the_cursor_plan_block_end_to_end(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    cache = tmp_path / "cursor-plan.json"
-    cache.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
-    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    app.paths.cursor_plan.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
     monkeypatch.setenv("GMLW_CLIENT", "cursor")
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"model": {"display_name": "Composer"}}'))
     assert app.main(["statusline"]) == 0  # real cursor parser + renderer
@@ -1501,7 +1498,7 @@ def test_config_set_persists_and_echoes_the_change(
     assert app.main(["config", "set", "profile.default_role", "reviewer"]) == 0
     out = capsys.readouterr().out
     assert "profile.default_role = reviewer" in out
-    assert 'default_role = "reviewer"' in (paths.HOME / "config.toml").read_text(encoding="utf-8")
+    assert 'default_role = "reviewer"' in (paths.home / "config.toml").read_text(encoding="utf-8")
 
 
 def test_config_set_invalid_value_errors(
@@ -1560,8 +1557,8 @@ def test_exit_receipt_tip_is_shown_once_then_suppressed(
 def test_exit_receipt_tip_suppressed_when_hints_disabled(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (paths.HOME).mkdir(parents=True, exist_ok=True)
-    (paths.HOME / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
+    (paths.home).mkdir(parents=True, exist_ok=True)
+    (paths.home / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
 
     class FakeUseCase(StartJob):
         def execute(self, command: StartJobCommand) -> StartJobResult:

@@ -34,7 +34,8 @@ from pydantic_settings import (
 )
 
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
-from generic_ml_wrapper.common import i18n, paths
+from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.common import i18n
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -442,7 +443,7 @@ def load(path: Path | None = None) -> GmlwSettings:
         The parsed settings, or all-defaults when the file is absent, unreadable, or
         carries values that fail validation — mirroring :mod:`config`'s never-raise rule.
     """
-    toml_path = path or (paths.HOME / "config.toml")
+    toml_path = path or (paths.home / "config.toml")
     try:
         data = TomlConfigSettingsSource(GmlwSettings, toml_file=toml_path)()
     except (OSError, tomllib.TOMLDecodeError):

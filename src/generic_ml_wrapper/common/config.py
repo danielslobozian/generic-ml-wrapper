@@ -13,7 +13,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model import context_source
-from generic_ml_wrapper.common import paths, settings_registry
+from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.common import settings_registry
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,7 +42,7 @@ _HOOK_PHASES = frozenset({"pre-launch", "post-session"})
 
 def config_path() -> Path:
     """Return the config file path (``~/.gmlw/config.toml``)."""
-    return paths.HOME / "config.toml"
+    return paths.home / "config.toml"
 
 
 _config_path = config_path  # internal alias, kept for the accessors below

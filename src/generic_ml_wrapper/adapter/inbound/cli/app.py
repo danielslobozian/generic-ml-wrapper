@@ -132,8 +132,9 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_start_job,
     build_workflow_chooser,
 )
+from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
-from generic_ml_wrapper.common import config, i18n, paths, settings_registry
+from generic_ml_wrapper.common import config, i18n, settings_registry
 from generic_ml_wrapper.common.log import log
 from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
 
@@ -1413,7 +1414,7 @@ def _with_cursor_plan(payload_json: str, client: str | None) -> str:  # noqa: PL
     if payload.get("plan"):  # cursor already carried a plan
         return payload_json
     try:
-        plan = json.loads(paths.CURSOR_PLAN.read_text(encoding="utf-8"))
+        plan = json.loads(paths.cursor_plan.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return payload_json
     if not isinstance(plan, dict):

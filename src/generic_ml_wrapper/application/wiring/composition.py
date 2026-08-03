@@ -155,8 +155,9 @@ from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageRe
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
-from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common import config
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
     Localizer,
@@ -168,7 +169,7 @@ from generic_ml_wrapper.common.i18n import (
 
 def _ledger() -> Ledger:
     """The shared SQLite ledger backing the session/turn/usage stores."""
-    return Ledger(paths.LEDGER)
+    return Ledger(paths.ledger)
 
 
 def _transcript_root() -> Path:
@@ -179,7 +180,7 @@ def _transcript_root() -> Path:
     record into their own would leave behind precisely the files they asked to be rid of.
     """
     settings = config.transcript()
-    return Path(settings.root) if settings.root else paths.TRANSCRIPTS
+    return Path(settings.root) if settings.root else paths.transcripts
 
 
 def _transcript() -> TranscriptPort | None:
@@ -196,7 +197,7 @@ def _artifact_purge() -> ArtifactPurgePort:
     enabled -- they may have been on when the sessions being deleted ran, and their files
     outlive the setting.
     """
-    return FilesystemArtifactPurge(paths.CONTEXTS, _transcript_root())
+    return FilesystemArtifactPurge(paths.contexts, _transcript_root())
 
 
 def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource:
@@ -209,15 +210,15 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
         A workflow source that compiles context from workflows, profile, and rules.
     """
     return FilesystemWorkflowSource(
-        paths.WORKFLOWS,
-        paths.PROFILE,
-        paths.TEMPLATES,
+        paths.workflows,
+        paths.profile,
+        paths.templates,
         interceptors,
         personas=build_persona_source(),
         compressor=CacheBackedContextCompressor(),
         startup=config.startup,
         companion=lambda: config.companion().persona,
-        environments_root=paths.ENVIRONMENTS,
+        environments_root=paths.environments,
         default_environment=config.default_environment,
         default_role=config.default_role,
         user_name=lambda: config.companion().name,
@@ -231,7 +232,7 @@ def build_persona_source() -> FilesystemPersonaSource:
     Returns:
         A persona source that seeds and reads the packaged personas.
     """
-    return FilesystemPersonaSource(paths.PERSONAS)
+    return FilesystemPersonaSource(paths.personas)
 
 
 def build_list_personas() -> ListPersonas:
@@ -278,7 +279,7 @@ def build_plugin_source() -> FilesystemPluginSource:
     Returns:
         A plugin source that lists plugins and resolves id references.
     """
-    return FilesystemPluginSource(paths.PLUGINS)
+    return FilesystemPluginSource(paths.plugins)
 
 
 def build_list_plugins() -> ListPlugins:
@@ -317,7 +318,7 @@ def build_check_for_update() -> CheckForUpdate:
         package="generic-ml-wrapper",
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
-        cache_path=paths.STATE / "update-check.json",
+        cache_path=paths.state / "update-check.json",
     )
 
 
@@ -386,7 +387,7 @@ def build_start_job() -> StartJob:
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         cwd_factory=os.getcwd,
-        credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
+        credentials=FilesystemCredentialsStore(paths.credentials),
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
@@ -468,7 +469,7 @@ def build_export_workflow() -> ExportWorkflow:
     """
     return ExportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
+        archive=ZipWorkflowArchive(paths.exports, lambda: datetime.now(UTC)),
     )
 
 
@@ -480,8 +481,8 @@ def build_import_workflow() -> ImportWorkflow:
     """
     return ImportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
-        backups_root=paths.WORKFLOW_BACKUPS,
+        archive=ZipWorkflowArchive(paths.exports, lambda: datetime.now(UTC)),
+        backups_root=paths.workflow_backups,
         clock=lambda: datetime.now(UTC),
     )
 
@@ -537,7 +538,7 @@ def build_set_credential() -> SetCredential:
     Returns:
         A ready-to-run SetCredential.
     """
-    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.CREDENTIALS))
+    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.credentials))
 
 
 def build_bootstrap() -> Bootstrap:
@@ -546,7 +547,7 @@ def build_bootstrap() -> Bootstrap:
     Returns:
         A ready-to-run Bootstrap.
     """
-    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.home))
 
 
 def build_config_commands() -> ConfigCommands:
@@ -566,7 +567,7 @@ def build_create_axis() -> CreateAxis:
         pointing ``profile.default_<kind>`` at the new slug in ``config.toml``.
     """
     return CreateAxisUseCase(
-        catalog=FilesystemAxisCatalog(paths.HOME),
+        catalog=FilesystemAxisCatalog(paths.home),
         writer=TomlkitConfigWriter(),
         config_file=config.config_path,
         clock=lambda: datetime.now(UTC).astimezone(),
@@ -579,7 +580,7 @@ def build_axis_catalog() -> AxisCatalogPort:
     Returns:
         A ready-to-use :class:`AxisCatalogPort` for listing the axis slug-folders.
     """
-    return FilesystemAxisCatalog(paths.HOME)
+    return FilesystemAxisCatalog(paths.home)
 
 
 def build_list_rules() -> ListRules:
@@ -589,7 +590,7 @@ def build_list_rules() -> ListRules:
         A ready-to-run ListRules over the environment and role rule folders.
     """
     return ListRulesUseCase(
-        catalog=FilesystemRuleCatalog(paths.HOME, FilesystemAxisCatalog(paths.HOME))
+        catalog=FilesystemRuleCatalog(paths.home, FilesystemAxisCatalog(paths.home))
     )
 
 
@@ -603,7 +604,7 @@ def build_migrate_layout() -> MigrateLayout:
         A ready-to-run MigrateLayout.
     """
     return MigrateLayoutUseCase(
-        FilesystemLayoutMigrator(paths.HOME),
+        FilesystemLayoutMigrator(paths.home),
         environment=config.default_environment,
     )
 
@@ -616,7 +617,7 @@ def build_migrate_slugs() -> MigrateSlugs:
     Returns:
         A ready-to-run MigrateSlugs.
     """
-    return MigrateSlugsUseCase(FilesystemSlugMigrator(paths.HOME))
+    return MigrateSlugsUseCase(FilesystemSlugMigrator(paths.home))
 
 
 def build_init() -> Init:
@@ -633,7 +634,7 @@ def build_init() -> Init:
     seed_i18n = load_localizer(seed_language)
     return InitUseCase(
         detector=PathClientDetector(),
-        seeder=FilesystemLayoutSeeder(paths.HOME),
+        seeder=FilesystemLayoutSeeder(paths.home),
         language_chooser=TtyLanguageChooser(seed_i18n),
         text_prompt=TtyTextPrompt(seed_i18n),
         axis_chooser=TtyAxisChooser(seed_i18n),
@@ -698,7 +699,7 @@ def build_save_usage_report() -> SaveUsageReport:
     return SaveUsageReportUseCase(
         export=build_export_usage(),
         exporter=FilesystemReportExporter(
-            paths.EXPORTS, clock=lambda: datetime.now(UTC).astimezone()
+            paths.exports, clock=lambda: datetime.now(UTC).astimezone()
         ),
     )
 
@@ -813,7 +814,7 @@ def build_diagnostics(
     if config.log_to_file(path):
         sinks.append(
             RollingFileDiagnostics(
-                paths.LOG_FILE,
+                paths.log_file,
                 level=level,
                 max_bytes=config.log_max_bytes(path),
                 backup_count=config.log_backup_count(path),
