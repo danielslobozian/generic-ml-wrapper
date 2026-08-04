@@ -4,10 +4,14 @@
 
 from __future__ import annotations
 
-from typing import cast
+import json
+from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def _dig(payload: object, *keys: str) -> object:
@@ -27,10 +31,27 @@ class CursorStatusParser(ClientStatusParserPort):
     subscription-metered, so there is no per-session cost on the wire (``None``).
 
     Its allowance block -- the plan pools (auto/api %) -- is NOT in the status
-    payload; cursor exposes that only via its dashboard API. ``extras`` therefore
-    carries the plan block only if a payload happens to include a ``plan`` table;
-    otherwise it is omitted (the dashboard-API fetch is a separate concern).
+    payload; cursor exposes that only via its dashboard API. An external fetcher caches
+    it, and this parser folds that cache in when the payload arrives without one. That
+    belongs here rather than in whoever invoked the status line: it is cursor's own
+    peculiarity, and nobody else should have to know cursor has one.
     """
+
+    def __init__(self, plan_cache: Path) -> None:
+        """Bind the parser to the cached allowance it folds in.
+
+        Args:
+            plan_cache: The file the external fetcher writes cursor's plan pools to.
+        """
+        self._plan_cache = plan_cache
+
+    def _cached_plan(self) -> dict[str, object] | None:
+        """The cached allowance, or ``None`` when there is none worth reading."""
+        try:
+            loaded: object = json.loads(self._plan_cache.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return cast("dict[str, object]", loaded) if isinstance(loaded, dict) else None
 
     def parse(self, payload: dict[str, object]) -> ClientStatus:
         """Parse cursor-agent's status payload.
@@ -43,11 +64,14 @@ class CursorStatusParser(ClientStatusParserPort):
         Returns:
             The parsed status.
         """
+        # A payload that already carries a plan wins: it came from cursor itself this
+        # turn, while the cache is whatever a fetcher last wrote.
+        plan = _dig(payload, "plan") or self._cached_plan()
         return ClientStatus(
             model=_as_str(_dig(payload, "model", "display_name")),
             context_pct=_as_pct(_dig(payload, "context_window", "used_percentage")),
             session_cost_usd=None,
-            extras=_plan_extras(_dig(payload, "plan")),
+            extras=_plan_extras(plan),
             context_window_size=_as_int(_dig(payload, "context_window", "context_window_size")),
             context_tokens=_as_int(_dig(payload, "context_window", "total_input_tokens")),
         )

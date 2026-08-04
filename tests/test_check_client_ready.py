@@ -5,6 +5,7 @@
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
+from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 
 
@@ -16,6 +17,16 @@ class _FakeDetector(ClientDetectorPort):
         return self._installed
 
 
+class _FakeSystem(SystemInfoPort):
+    """A fixed platform, so the install commands a test reads do not depend on the host."""
+
+    def username(self) -> str:
+        return "tester"
+
+    def platform_name(self) -> str:
+        return "Linux"
+
+
 def _check(
     client: str, *, installed: list[str], overrides: dict[str, str] | None = None
 ) -> ClientReadiness:
@@ -23,6 +34,7 @@ def _check(
         overrides=overrides or {},
         detector=_FakeDetector(installed),
         catalog=TomlClientCatalog(),
+        system=_FakeSystem(),
     ).execute(client)
 
 

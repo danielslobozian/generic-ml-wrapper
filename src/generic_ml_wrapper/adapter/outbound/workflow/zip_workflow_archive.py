@@ -50,16 +50,21 @@ class ZipWorkflowArchive(WorkflowArchivePort):
     def inspect(self, archive: Path) -> ArchiveStatus:
         """Read the archive's index and report whether it carries a workflow.
 
+        The path is resolved the way a shell would resolve it -- a leading ``~`` means the
+        user's home -- because a person typing a path into a prompt has every reason to
+        expect that, and nobody above this line should have to know it.
+
         Only the central directory is read -- ``namelist`` does not extract anything --
         so this is cheap enough to run before every import and writes nowhere. A file
         that is not a zip at all reads as ``MISSING`` rather than ``INCOMPLETE``: the
         distinction the caller draws is "is there something to import here", and an
         unreadable file answers that the same way an absent one does.
         """
-        if not archive.is_file():
+        resolved = archive.expanduser()
+        if not resolved.is_file():
             return ArchiveStatus.MISSING
         try:
-            with zipfile.ZipFile(archive) as zipped:
+            with zipfile.ZipFile(resolved) as zipped:
                 names = zipped.namelist()
         except (zipfile.BadZipFile, OSError):
             return ArchiveStatus.MISSING
@@ -92,6 +97,7 @@ class ZipWorkflowArchive(WorkflowArchivePort):
         so the portable set is applied again on the way in: it is extracted to a scratch
         folder, and only the allowed paths are moved across.
         """
+        archive = archive.expanduser()  # as inspect resolved it
         scratch = destination.parent / f".{destination.name}.unpacking"
         shutil.rmtree(scratch, ignore_errors=True)
         try:

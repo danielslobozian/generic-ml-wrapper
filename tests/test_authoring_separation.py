@@ -7,6 +7,8 @@ ledger, under the one name the system chooses for itself, and the listing use ca
 the only thing that treats that name differently.
 """
 
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 from _delete_doubles import FakeSessionLock
@@ -26,10 +28,21 @@ from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.interrupt_scope import (
+    InterruptScopePort,
+)
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+
+
+class _NoInterrupts(InterruptScopePort):
+    """The wrapper keeps the interrupt in tests: nothing here launches a real client."""
+
+    @contextmanager
+    def client_owns_interrupts(self) -> Generator[None]:
+        yield
 
 
 class _NoLaunchProvider(CliCallerProvider):
@@ -54,6 +67,7 @@ def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -
             NullDiagnostics(),
             _localizer(),
             FakeSessionLock(),
+            _NoInterrupts(),
         ),
     )
     new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))

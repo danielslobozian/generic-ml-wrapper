@@ -6,17 +6,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
-import getpass
-import importlib
 import json
-import os
-import platform
-import signal
 import sys
-from collections.abc import Callable, Generator, Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from generic_ml_wrapper import __version__
@@ -44,13 +38,14 @@ from generic_ml_wrapper.application.domain.model.invalid_setting_value_error imp
     InvalidSettingValueError,
 )
 from generic_ml_wrapper.application.domain.model.job_id import JobId
+from generic_ml_wrapper.application.domain.model.launch_location import (
+    LaunchLocation,
+    LaunchLocationProblem,
+)
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
-from generic_ml_wrapper.application.domain.model.store_contract_outdated_error import (
-    StoreContractOutdatedError,
-)
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
@@ -100,9 +95,6 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
     UnknownWorkflowError,
 )
-from generic_ml_wrapper.application.port.outbound.store_migration import (
-    CURRENT_SCHEMA_VERSION,
-)
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_application_settings,
@@ -110,6 +102,8 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
     build_check_for_update,
+    build_check_launch_location,
+    build_check_store_contract,
     build_config_commands,
     build_create_axis,
     build_delete_jobs,
@@ -136,18 +130,18 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_layout,
     build_migrate_slugs,
     build_new_workflow,
+    build_render_farewell,
     build_render_statusline,
+    build_render_version,
     build_save_usage_report,
     build_set_credential,
     build_start_job,
-    build_store_migration,
     build_workflow_chooser,
 )
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.diagnostics_log import (
     set_active as set_active_diagnostics,
 )
-from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
 
 if TYPE_CHECKING:
@@ -302,20 +296,8 @@ def _as_json(payload: object) -> str:
 
 
 def _version_string() -> str:
-    """Return ``gmlw <version> (build <id>)``; a plain fallback if unbuilt.
-
-    ``_build_info`` is stamped into the wheel at build time; a source checkout that was
-    never built lacks it and reports ``(source, unbuilt)`` instead.
-
-    Returns:
-        The version line for ``gmlw --version``.
-    """
-    try:
-        build_info = importlib.import_module("generic_ml_wrapper._build_info")
-    except ModuleNotFoundError:
-        return f"gmlw {__version__} (source, unbuilt)"
-    build_id = getattr(build_info, "BUILD_ID", "unknown")
-    return f"gmlw {__version__} (build {build_id})"
+    """Return the line ``--version`` prints."""
+    return build_render_version().execute()
 
 
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative parser wiring)
@@ -935,17 +917,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _check_store_contract() -> None:
-    """Refuse to run if the shipped migrations cannot reach the schema this build needs.
-
-    A build whose code and migration files disagree can only damage a store: it would
-    read and write through a mapping the tables do not match. The realistic way to get
-    there is packaging — the ``.sql`` files failing to reach the installed wheel — which
-    is exactly the case where failing at the first command beats creating an empty
-    database and calling it success.
-    """
-    implemented = build_store_migration().implemented_version()
-    if implemented < CURRENT_SCHEMA_VERSION:
-        raise StoreContractOutdatedError(implemented, CURRENT_SCHEMA_VERSION)
+    """Refuse to run if the shipped migrations cannot reach the schema this build needs."""
+    build_check_store_contract().execute()
 
 
 def _render_error(error: Exception) -> str:
@@ -1361,12 +1334,11 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         The guidance text to print (no trailing newline).
     """
     loc = loc or i18n.active()
-    system = platform.system()
     if readiness.missing is not None:
         info = readiness.missing
         lines = [
             loc.t("client.guidance.missing", client=repr(readiness.client), display=info.display),
-            loc.t("client.guidance.install", command=info.install_for(system)),
+            loc.t("client.guidance.install", command=readiness.install_command),
             loc.t("client.guidance.login", login=info.login_for(loc)),
         ]
         others = [name for name in readiness.installed if name != readiness.client]
@@ -1383,10 +1355,9 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         ]
     if not readiness.installed:
         lines += ["", loc.t("client.guidance.none_installed")]
-        catalogue = build_list_supported_clients().execute()
-        width = max(len(info.name) for info in catalogue)
-        for info in catalogue:
-            lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
+        commands = readiness.catalogue_install_commands
+        width = max((len(name) for name, _ in commands), default=0)
+        lines += [f"  {name:<{width}}  {command}" for name, command in commands]
         lines.append(loc.t("client.guidance.then_login"))
     return "\n".join(lines)
 
@@ -1401,33 +1372,27 @@ def _preflight_client(client: str) -> bool:
 
 
 def _preflight_cwd() -> bool:
-    """Return ``False`` (with guidance) when the working directory no longer exists.
-
-    A client launched from a deleted directory dies with a cryptic ``getcwd``/``uv_cwd``
-    error; catch it here and say so plainly instead.
-    """
-    try:
-        os.getcwd()  # noqa: PTH109  (a probe for a live cwd; Path.cwd() would be equivalent)
-    except OSError:
-        print(i18n.t("preflight.cwd_gone"), file=sys.stderr)
-        return False
-    return True
+    """Report whether a run can happen here, printing the guidance when it cannot."""
+    return _render_launch_location(build_check_launch_location().execute())
 
 
 def _preflight_resume_cwd(cwd: str | None) -> bool:
-    """Return ``False`` (with guidance) when a resumed session's folder no longer exists.
+    """Report whether a resumed session's folder is still there, with guidance if not."""
+    return _render_launch_location(build_check_launch_location().execute(cwd))
 
-    A specific session resumes in the folder it was launched in (Claude's resume is scoped
-    to it); if that folder was since deleted, the client would die on ``subprocess.run(
-    cwd=...)`` with a cryptic error. Name the missing folder plainly instead. ``None`` (a
-    pre-folder session) resumes in the current directory, which ``_preflight_cwd`` covers.
+
+def _render_launch_location(location: LaunchLocation) -> bool:
+    """Print what is wrong with where the run would happen, and say whether to go on.
+
+    The verdict is the application's; naming the folder to the user is this side's.
     """
-    if cwd is None:
+    if location.usable:
         return True
-    if not Path(cwd).is_dir():
-        print(i18n.t("preflight.resume_cwd_gone", cwd=cwd), file=sys.stderr)
-        return False
-    return True
+    if location.problem is LaunchLocationProblem.CURRENT_GONE:
+        print(i18n.t("preflight.cwd_gone"), file=sys.stderr)
+    else:
+        print(i18n.t("preflight.resume_cwd_gone", cwd=location.folder), file=sys.stderr)
+    return False
 
 
 _MAX_STATUSLINE_BYTES = 1_000_000  # a client's status payload is small JSON; cap the read
@@ -1438,15 +1403,7 @@ def _statusline() -> int:
     # renders this output in place of its own status, so a traceback would land on screen.
     try:
         payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
-        # The launching caller exports GMLW_CLIENT so the status line parses with the
-        # right client's parser (claude's quota vs cursor's plan block).
-        client = os.environ.get("GMLW_CLIENT")
-        payload = _with_cursor_plan(payload, client)
-        line = build_render_statusline(client).execute(
-            payload,
-            os.environ.get("GMLW_JOB"),
-            os.environ.get("GMLW_SESSION"),
-        )
+        line = build_render_statusline().execute(payload)
     except Exception as error:  # noqa: BLE001  degrade to an empty line, never error at the client
         log.warning(i18n.t("log.status_render_failed", error=error))
         print()
@@ -1455,79 +1412,9 @@ def _statusline() -> int:
     return 0
 
 
-def _with_cursor_plan(payload_json: str, client: str | None) -> str:  # noqa: PLR0911  (guards)
-    """Merge the cached cursor allowance (``~/.gmlw/cursor-plan.json``) into the payload.
-
-    Cursor does not pipe its plan pools to the status line, so an external fetcher caches
-    them; when the payload lacks a ``plan`` and a cache exists, fold it in for the parser.
-
-    Args:
-        payload_json: The raw status payload from the client.
-        client: The launching client (``GMLW_CLIENT``); only ``cursor`` has a plan block.
-
-    Returns:
-        The payload JSON, with a ``plan`` merged in when applicable, else unchanged.
-    """
-    if client != "cursor":
-        return payload_json
-    try:
-        loaded: object = json.loads(payload_json) if payload_json.strip() else {}
-    except json.JSONDecodeError:
-        return payload_json
-    if not isinstance(loaded, dict):
-        return payload_json
-    payload = cast("dict[str, object]", loaded)
-    if payload.get("plan"):  # cursor already carried a plan
-        return payload_json
-    try:
-        plan = json.loads(paths.cursor_plan.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return payload_json
-    if not isinstance(plan, dict):
-        return payload_json
-    payload["plan"] = cast("dict[str, object]", plan)
-    return json.dumps(payload)
-
-
-def _ignore_sigint(_signum: int, _frame: object) -> None:
-    """Swallow Ctrl+C while the client owns the terminal.
-
-    The interactive client handles its own interrupt; gmlw only supervises, so it must
-    not die on SIGINT or let a second Ctrl+C abort teardown. Custom handlers reset to the
-    default in the child on exec, so the client still receives Ctrl+C normally.
-    """
-
-
-# SIGTERM everywhere; SIGHUP (terminal hangup) only where the platform has it (not Windows).
-@contextlib.contextmanager
-def _client_owns_interrupts() -> Generator[None, None, None]:
-    """Make the client own interrupts for the duration of a session.
-
-    gmlw ignores Ctrl+C -- the client handles its own interrupt and gmlw only supervises.
-    A kill or hang-up is not handled here at all: the caller adapter forwards it to the
-    client it launched, so the run ends by returning rather than by unwinding.
-    """
-    previous = [(signal.SIGINT, signal.signal(signal.SIGINT, _ignore_sigint))]
-    try:
-        yield
-    finally:
-        for sig, handler in previous:
-            signal.signal(sig, handler)
-
-
 def _farewell() -> str | None:
-    """Return a parting line when a companion persona is set, else ``None``.
-
-    Mirrors the host greeting's gating and name, printed on the return once the client
-    has exited -- the first, visible seed of the session's exit summary.
-
-    Returns:
-        ``"Bye, <name>."``, or ``None`` when the companion is off.
-    """
-    settings = build_application_settings().companion()
-    if settings.persona is None:
-        return None
-    return i18n.t("farewell", name=settings.name or getpass.getuser())
+    """Return the parting line, or ``None`` when the companion is off."""
+    return build_render_farewell().execute()
 
 
 def _tui() -> int:
@@ -1973,12 +1860,11 @@ def _tui_launch_job(
         return 2
     if not resume and not _preflight_client(client):  # a new session needs the client installed
         return 2
-    with _client_owns_interrupts():
-        try:
-            result = build_start_job().execute(command)
-        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(_render_error(error), file=sys.stderr)
-            return 2
+    try:
+        result = build_start_job().execute(command)
+    except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
     _print_exit_receipt(result)
     return result.exit_code
 
@@ -2007,12 +1893,11 @@ def _start(args: argparse.Namespace) -> int:
     # A kill/hangup is forwarded to the client by the caller adapter, so the run ends by
     # returning: teardown (relay stop + status-line restore) happens on the way out, and
     # gmlw never leaves its hook behind in the user's settings.
-    with _client_owns_interrupts():
-        try:
-            result = build_start_job().execute(command)
-        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(_render_error(error))
-            return 2
+    try:
+        result = build_start_job().execute(command)
+    except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+        print(_render_error(error))
+        return 2
     farewell = _farewell()
     if farewell:
         print(farewell, file=sys.stderr)
@@ -2057,12 +1942,11 @@ def _run_workflow(workflow: str, client: str, client_args: str | None = None) ->
         return 2
     if not _preflight_client(client):  # client not installed — guide, don't launch
         return 2
-    with _client_owns_interrupts():
-        try:
-            result = build_start_job().execute(command)
-        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
-            print(_render_error(error))
-            return 2
+    try:
+        result = build_start_job().execute(command)
+    except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+        print(_render_error(error))
+        return 2
     farewell = _farewell()
     if farewell:
         print(farewell, file=sys.stderr)
@@ -2131,13 +2015,6 @@ def _print_exit_receipt(result: StartJobResult) -> None:
         print(tip, file=sys.stderr)
 
 
-def _read_secret() -> str:
-    """Read a secret value: a secure prompt at a TTY, else one line from stdin."""
-    if sys.stdin.isatty():
-        return getpass.getpass("value: ")
-    return sys.stdin.readline().rstrip("\n")
-
-
 def _axis(kind: AxisKind, subcommand: str | None, args: argparse.Namespace) -> int:
     """Create a role/environment from a typed label (``environment new`` / ``role new``).
 
@@ -2174,9 +2051,7 @@ def _creds(args: argparse.Namespace) -> int:
     if args.creds_command == "set":
         workflow = WorkflowName(args.workflow)
         name = EnvVarName(args.name)
-        build_set_credential().execute(
-            SetCredentialCommand(workflow=workflow, name=name, value=_read_secret())
-        )
+        build_set_credential().execute(SetCredentialCommand(workflow=workflow, name=name))
         print(i18n.t("creds.stored", workflow=workflow, name=name))
         return 0
     return 0

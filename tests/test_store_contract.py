@@ -28,6 +28,9 @@ from generic_ml_wrapper.application.port.outbound.store_migration import (
     CURRENT_SCHEMA_VERSION,
     StoreMigrationPort,
 )
+from generic_ml_wrapper.application.usecase.check_store_contract import (
+    CheckStoreContractUseCase,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,7 +52,11 @@ class _Lineage(StoreMigrationPort):
 def test_a_lineage_that_cannot_reach_the_required_version_stops_the_command(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app, "build_store_migration", lambda: _Lineage(CURRENT_SCHEMA_VERSION - 1))
+    monkeypatch.setattr(
+        app,
+        "build_check_store_contract",
+        lambda: CheckStoreContractUseCase(_Lineage(CURRENT_SCHEMA_VERSION - 1)),
+    )
 
     exit_code = app.main(["jobs"])
 

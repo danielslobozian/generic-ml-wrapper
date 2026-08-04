@@ -15,7 +15,15 @@ from generic_ml_wrapper.application.domain.model.credentials_unusable_error impo
     CredentialsUnusableError,
 )
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialCommand
+from generic_ml_wrapper.application.port.outbound.secret_prompt import SecretPromptPort
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
+
+
+class _UnusedPrompt(SecretPromptPort):
+    """The command already carries its secret, so nothing here should ever be asked."""
+
+    def ask_secret(self, label: str) -> str:
+        raise AssertionError(label)
 
 
 def test_set_then_resolve_roundtrips(tmp_path: Path) -> None:
@@ -62,7 +70,7 @@ def test_file_is_owner_only_on_posix(tmp_path: Path) -> None:
 
 def test_use_case_delegates_to_the_store(tmp_path: Path) -> None:
     store = FilesystemCredentialsStore(tmp_path / "credentials.toml")
-    SetCredentialUseCase(store).execute(SetCredentialCommand("wf", "TOKEN", "v"))
+    SetCredentialUseCase(store, _UnusedPrompt()).execute(SetCredentialCommand("wf", "TOKEN", "v"))
     assert store.resolve("wf") == {"TOKEN": "v"}
 
 

@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the EditWorkflow use case, driven by fakes."""
 
+from collections.abc import Generator
+from contextlib import contextmanager
+
 import pytest
 from _delete_doubles import FakeSessionLock
 
@@ -22,11 +25,20 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import (
 )
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
+
+
+class _NoInterrupts(InterruptScopePort):
+    """The wrapper keeps the interrupt in tests: nothing here launches a real client."""
+
+    @contextmanager
+    def client_owns_interrupts(self) -> Generator[None]:
+        yield
 
 
 class FakeWorkflows(WorkflowSourcePort):
@@ -137,6 +149,7 @@ def _use_case(
             NullDiagnostics(),
             _localizer(),
             FakeSessionLock(),
+            _NoInterrupts(),
         ),
     )
 

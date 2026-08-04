@@ -3,6 +3,8 @@
 """Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
 import os
+from collections.abc import Generator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -30,6 +32,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 )
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
+from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
@@ -39,6 +42,14 @@ from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 # A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
 # the quotes stay inside the token there. See ``ClientArguments`` for why.
 QUOTED_PATH = "/two words" if os.name != "nt" else '"/two words"'
+
+
+class _NoInterrupts(InterruptScopePort):
+    """The wrapper keeps the interrupt in tests: nothing here launches a real client."""
+
+    @contextmanager
+    def client_owns_interrupts(self) -> Generator[None]:
+        yield
 
 
 class FakeStore(SessionStorePort):
@@ -197,6 +208,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
             NullDiagnostics(),
             _localizer(),
             FakeSessionLock(),
+            _NoInterrupts(),
         ),
         diagnostics=diagnostics or NullDiagnostics(),
         posix=os.name != "nt",

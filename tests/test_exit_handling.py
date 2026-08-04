@@ -4,7 +4,6 @@
 
 import argparse
 import io
-import signal
 
 import pytest
 
@@ -38,10 +37,6 @@ def test_unexpected_error_exits_1_with_a_friendly_message(
     assert "kaboom" in err
 
 
-def test_ignore_sigint_is_a_noop() -> None:
-    assert app._ignore_sigint(2, None) is None
-
-
 def test_farewell_is_none_without_a_companion(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         toml_config_reader, "companion", lambda: CompanionSettings(persona=None, name=None)
@@ -73,18 +68,6 @@ class _TerminatedStartJob:
 
     def execute(self, _command: object) -> object:
         return StartJobResult(exit_code=143, job="test", session_id="test_001")
-
-
-def test_client_owns_interrupts_only_takes_the_interrupt() -> None:
-    # A kill is not handled here: the caller adapter forwards it to the client it
-    # launched, so this must leave the termination disposition exactly as it found it.
-    before_int = signal.getsignal(signal.SIGINT)
-    before_term = signal.getsignal(signal.SIGTERM)
-    with app._client_owns_interrupts():
-        assert signal.getsignal(signal.SIGINT) is app._ignore_sigint
-        assert signal.getsignal(signal.SIGTERM) is before_term
-    assert signal.getsignal(signal.SIGINT) is before_int
-    assert signal.getsignal(signal.SIGTERM) is before_term
 
 
 def test_a_terminated_client_reports_128_plus_the_signal(monkeypatch: pytest.MonkeyPatch) -> None:
