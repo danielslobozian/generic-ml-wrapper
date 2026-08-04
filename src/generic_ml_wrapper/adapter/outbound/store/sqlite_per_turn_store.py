@@ -20,15 +20,25 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
         """Bind the store to the shared SQLite ledger."""
         self._ledger = ledger
 
-    def record(self, job: str, turn: TurnUsage) -> None:
-        """Append one metered turn for a job."""
+    def record(self, job: str, turn: TurnUsage) -> None:  # noqa: ARG002  (see the docstring)
+        """Append one metered turn for a job.
+
+        The job is not stored: a turn belongs to a session, and a session id already
+        determines its job. The parameter stays because it is what the caller has -- the
+        metering relay knows the run it was started for -- and dropping it from the port
+        would make every caller look the job up to pass nothing.
+
+        Raises:
+            sqlite3.IntegrityError: If the session is not recorded -- the schema will not
+                hold a turn with no session to belong to. The relay treats a failed record
+                as bookkeeping it can lose, never as a failed turn.
+        """
         with self._ledger.connect() as connection:
             connection.execute(
-                "INSERT INTO turns (job, session_id, turn_id, input_tokens, output_tokens, "
+                "INSERT INTO turns (session_id, turn_id, input_tokens, output_tokens, "
                 "cache_creation_tokens, cache_read_tokens, cost_usd, model, timestamp, duration_s) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    job,
                     turn.session_id,
                     turn.turn_id,
                     turn.input_tokens,
@@ -43,12 +53,18 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
             )
 
     def turns_for_job(self, job: str) -> list[TurnUsage]:
-        """Return every recorded turn for a job, in the order recorded."""
+        """Return every recorded turn for a job, in the order recorded.
+
+        Reached through the session, which is where the job is recorded: the turn holds
+        only the session it belongs to.
+        """
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT session_id, turn_id, input_tokens, output_tokens, cache_creation_tokens, "
-                "cache_read_tokens, cost_usd, model, timestamp, duration_s "
-                "FROM turns WHERE job = ? ORDER BY id",
+                "SELECT t.session_id, t.turn_id, t.input_tokens, t.output_tokens, "
+                "t.cache_creation_tokens, t.cache_read_tokens, t.cost_usd, t.model, "
+                "t.timestamp, t.duration_s "
+                "FROM turns t JOIN sessions s ON t.session_id = s.session_id "
+                "WHERE s.job = ? ORDER BY t.id",
                 (job,),
             ).fetchall()
         return [

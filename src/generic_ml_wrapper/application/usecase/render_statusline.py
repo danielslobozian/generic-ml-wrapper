@@ -11,6 +11,10 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
@@ -23,12 +27,14 @@ from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInsp
 class RenderStatuslineUseCase(RenderStatusline):
     """Parse the client's status payload, record its session cost, and render a line."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917  (its outbound ports, plus the pair that reports a refused write)
         self,
         parser: ClientStatusParserPort,
         usage: UsageStorePort,
         workspace: WorkspaceInspectorPort,
         turns: PerTurnMeteringPort,
+        diagnostics: Diagnostics,
+        localizer: Localizer,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """Wire the use case to its outbound ports.
@@ -38,6 +44,8 @@ class RenderStatuslineUseCase(RenderStatusline):
             usage: Where recorded session cost is persisted and read.
             workspace: The inspector for the client-agnostic environment facts.
             turns: The per-turn store, read for the job's cumulative usage footer.
+            diagnostics: Where a cost the store refused is reported.
+            localizer: Renders that report in the language the wrapper is speaking.
             clock: Returns the current epoch seconds, for the session/job ages;
                 injectable so tests are deterministic.
         """
@@ -45,6 +53,8 @@ class RenderStatuslineUseCase(RenderStatusline):
         self._usage = usage
         self._workspace = workspace
         self._turns = turns
+        self._diagnostics = diagnostics
+        self._localizer = localizer
         self._clock = clock
 
     def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
@@ -63,12 +73,31 @@ class RenderStatuslineUseCase(RenderStatusline):
         """
         status = self._parser.parse(_decode(payload_json))
         if job and session and status.session_cost_usd is not None:
-            self._usage.record_session_cost(job, session, status.session_cost_usd)
+            self._record_cost(job, SessionCost(session, status.session_cost_usd))
         line = StatuslineRenderer().render_statusline(status, self._workspace.inspect())
         footer = self._usage_footer(job, session) if job else ""
         if not footer:
             return line
         return f"{line}\n{footer}" if line else footer
+
+    def _record_cost(self, job: str, cost: SessionCost) -> None:
+        """Record the cost, and let the line render even if the store refuses it.
+
+        The store can refuse: a cost belongs to a recorded session, and a client whose
+        wrapper process died can outlive the session row it was launched under -- long
+        enough to pipe one more status payload at a session that is no longer there.
+        Without this the refusal would escape to the caller, whose own guard degrades the
+        whole command to an empty line, and the user would watch their status bar go
+        blank because a bookkeeping write failed. The same trade the metering relay
+        already makes: recording is never worth the thing being recorded.
+        """
+        try:
+            self._usage.record_session_cost(job, cost)
+        except Exception as error:  # noqa: BLE001  a refused write must not blank the line
+            self._diagnostics.warning(
+                self._localizer.t("log.session_cost_not_recorded", error=error),
+                key="log.session_cost_not_recorded",
+            )
 
     def _usage_footer(self, job: str, session: str | None) -> str:
         """The usage rows below the live line: session, then job total across sessions.

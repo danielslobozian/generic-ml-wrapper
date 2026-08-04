@@ -21,7 +21,7 @@ from abc import ABC, abstractmethod
 #: The schema version this build requires the ledger to be at. Bumped by every
 #: migration that changes the persisted model; the migration files are the lineage that
 #: reaches it, and each one is numbered for the version it brings a store *to*.
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 6
 
 
 class StoreMigrationPort(ABC):

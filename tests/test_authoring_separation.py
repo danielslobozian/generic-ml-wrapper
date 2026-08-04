@@ -9,6 +9,8 @@ the only thing that treats that name differently.
 
 from pathlib import Path
 
+from _delete_doubles import FakeSessionLock
+
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -48,7 +50,10 @@ def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -
         callers=_NoLaunchProvider(),
         uuid_factory=lambda: "u",
         launch=LaunchSequence(
-            HookRunner((), NullDiagnostics(), _localizer()), NullDiagnostics(), _localizer()
+            HookRunner((), NullDiagnostics(), _localizer()),
+            NullDiagnostics(),
+            _localizer(),
+            FakeSessionLock(),
         ),
     )
     new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))

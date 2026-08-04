@@ -8,6 +8,10 @@ This centralises that sequence and brackets it with the two lifecycle hook seams
 ``pre-launch`` before the client starts and ``post-session`` after it exits — so the
 ordering, the exit-code capture, and the never-break-the-run guarantees live in one place.
 
+It is also where a session is *marked as running*. This is the only place that knows a
+client is live and for how long, so the locks that stop a running session -- or its job --
+being deleted from another terminal are taken here and released when the client exits.
+
 It sits in the application ring, not the domain: it drives the ``CliCaller`` outbound port,
 which the domain may not import.
 """
@@ -23,23 +27,32 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+    from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
     from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 
 
 class LaunchSequence:
     """The bracketed run: pre-launch hooks, metering, the client, teardown, post-session."""
 
-    def __init__(self, hooks: HookRunner, diagnostics: Diagnostics, localizer: Localizer) -> None:
+    def __init__(
+        self,
+        hooks: HookRunner,
+        diagnostics: Diagnostics,
+        localizer: Localizer,
+        locks: SessionLockPort,
+    ) -> None:
         """Bind the sequence to its hooks and the collaborators that report a bad teardown.
 
         Args:
             hooks: The lifecycle hook runner (a no-op when nothing is configured).
             diagnostics: Where a failed metering teardown is reported.
             localizer: Renders that report in the language the wrapper is speaking.
+            locks: Marks the session and its job as running for as long as the client is.
         """
         self._hooks = hooks
         self._diagnostics = diagnostics
         self._localizer = localizer
+        self._locks = locks
 
     def run(self, caller: CliCaller, run: RunContext) -> int:
         """Run the client through its lifecycle: pre-launch hooks, metering, post-session hooks.
@@ -57,6 +70,16 @@ class LaunchSequence:
         Returns:
             The client's exit code.
         """
+        # Both locks span the client's whole life, which is what makes them mean "this is
+        # running": the session's own, so it cannot be deleted under its client, and the
+        # job's, held alongside its other live sessions, so the job cannot be deleted
+        # while any of them is. The operating system drops both if this process dies, so
+        # a crash never leaves either undeletable.
+        with self._locks.hold_job(run.job), self._locks.hold_session(run.job, run.session_id):
+            return self._bracketed(caller, run)
+
+    def _bracketed(self, caller: CliCaller, run: RunContext) -> int:
+        """The lifecycle itself: pre-launch hooks, metering, the client, teardown, post-session."""
         self._hooks.run(
             HookPhase.PRE_LAUNCH, self._context(run, HookPhase.PRE_LAUNCH, exit_code=None)
         )

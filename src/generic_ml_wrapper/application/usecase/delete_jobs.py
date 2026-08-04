@@ -27,6 +27,7 @@ from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJo
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
@@ -34,13 +35,14 @@ from generic_ml_wrapper.application.port.outbound.usage_store import UsageStoreP
 class DeleteJobsUseCase(DeleteJobs):
     """Measure and remove whole jobs."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917  (the read ports it measures with, plus both purges and the lock)
         self,
         store: SessionStorePort,
         turns: PerTurnMeteringPort,
         usage: UsageStorePort,
         ledger: LedgerPurgePort,
         artifacts: ArtifactPurgePort,
+        locks: SessionLockPort,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -50,12 +52,14 @@ class DeleteJobsUseCase(DeleteJobs):
             usage: Where recorded session costs are read from.
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
+            locks: Claims each job, so none is removed while a session of it runs.
         """
         self._store = store
         self._turns = turns
         self._usage = usage
         self._ledger = ledger
         self._artifacts = artifacts
+        self._locks = locks
 
     def preview(self, jobs: Sequence[str]) -> list[JobFootprint]:
         """Report what deleting these jobs would remove, without removing it."""
@@ -63,14 +67,22 @@ class DeleteJobsUseCase(DeleteJobs):
         return [self._footprint(job) for job in jobs]
 
     def execute(self, jobs: Sequence[str]) -> list[JobFootprint]:
-        """Delete the jobs, their sessions, their recorded usage, and their files."""
+        """Delete the jobs, their sessions, their recorded usage, and their files.
+
+        Raises:
+            JobRunningError: If any of a job's sessions has a live client.
+        """
         self._validate(jobs)
         # Measured before the first removal, and returned afterwards: once the rows and
         # folders are gone there is nothing left to count.
         footprints = [self._footprint(job) for job in jobs]
         for job in jobs:
-            self._ledger.purge_job(job)
-            self._artifacts.purge_job(job)
+            # One claim answers "is anything of this job running", because every running
+            # session holds the job's lock shared. Held across both removals, so a
+            # session cannot start into a job whose files are already going.
+            with self._locks.claim_job(job):
+                self._ledger.purge_job(job)
+                self._artifacts.purge_job(job)
         return footprints
 
     def _validate(self, jobs: Sequence[str]) -> None:

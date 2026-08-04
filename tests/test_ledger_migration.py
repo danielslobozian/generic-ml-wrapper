@@ -25,6 +25,7 @@ from generic_ml_wrapper.application.domain.model.store_corrupt_error import Stor
 from generic_ml_wrapper.application.domain.model.store_schema_too_new_error import (
     StoreSchemaTooNewError,
 )
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.store_migration import (
     CURRENT_SCHEMA_VERSION,
     StoreMigrationPort,
@@ -263,3 +264,119 @@ def test_the_shipped_lineage_reaches_the_version_this_build_requires(tmp_path: P
     # The handshake that fails a build whose code and files disagree.
     migration = SqliteStoreMigration(_connect_to(tmp_path / "ledger.db"), tmp_path)
     assert migration.implemented_version() == CURRENT_SCHEMA_VERSION
+
+
+def _foreign_keys(path: Path, table: str) -> set[tuple[str, str, str]]:
+    """Each reference the table declares: (its column, the parent table, the on-delete rule)."""
+    connection = sqlite3.connect(path)
+    try:
+        rows = connection.execute(f"PRAGMA foreign_key_list({table})")
+        return {(row[3], row[2], row[6]) for row in rows}
+    finally:
+        connection.close()
+
+
+class _RecordingDiagnostics(DiagnosticsPort):
+    """Keeps what the migration reported, so "and it said how many" can be asserted."""
+
+    def __init__(self) -> None:
+        self.infos: list[tuple[str, dict[str, object]]] = []
+
+    def debug(self, message: str, **context: object) -> None: ...
+
+    def info(self, message: str, **context: object) -> None:
+        self.infos.append((message, context))
+
+    def warning(self, message: str, **context: object) -> None: ...
+
+    def error(self, message: str, exc: BaseException | None = None, **context: object) -> None: ...
+
+
+def test_the_relationships_are_real_after_the_migration(tmp_path: Path) -> None:
+    """What the whole slot is for: every child names its parent, and cascades with it."""
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect():
+        pass
+
+    assert _foreign_keys(db, "sessions") == {("job", "jobs", "CASCADE")}
+    assert _foreign_keys(db, "turns") == {("session_id", "sessions", "CASCADE")}
+    assert _foreign_keys(db, "session_costs") == {("session_id", "sessions", "CASCADE")}
+
+
+def test_the_redundant_job_column_is_gone_from_both_children(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect():
+        pass
+
+    assert "job" not in _columns(db, "turns")
+    assert "job" not in _columns(db, "session_costs")
+    assert "job" in _columns(db, "sessions")  # the one place it belongs
+
+
+def test_orphaned_rows_are_discarded_and_the_count_reported(tmp_path: Path) -> None:
+    """Rows predating the constraint would never be caught by it, so they go first."""
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+    connection = sqlite3.connect(db)
+    connection.execute(
+        "INSERT INTO turns (job, session_id, input_tokens, output_tokens) "
+        "VALUES ('T-1', 'T-1_404', 1, 1)"  # a session that was never recorded
+    )
+    connection.execute(
+        "INSERT INTO session_costs (session_id, job, cost_usd) VALUES ('T-1_405', 'T-1', 0.5)"
+    )
+    connection.execute(
+        "INSERT INTO sessions (session_id, job, client) VALUES ('ghost_001', 'GONE', 'claude')"
+    )
+    connection.commit()
+    connection.close()
+    diagnostics = _RecordingDiagnostics()
+
+    SqliteStoreMigration(_connect_to(db), tmp_path, diagnostics).migrate_to_current()
+
+    surviving = sqlite3.connect(db)
+    try:
+        assert surviving.execute("SELECT count(*) FROM turns").fetchone()[0] == 0
+        assert surviving.execute("SELECT count(*) FROM session_costs").fetchone()[0] == 0
+        assert surviving.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
+    finally:
+        surviving.close()
+    discards = [
+        context
+        for _, context in diagnostics.infos
+        if context.get("migration") == "0005.discard-orphaned-rows.sql"
+    ]
+    assert discards == [{"migration": "0005.discard-orphaned-rows.sql", "rows": 3}]
+
+
+def test_a_clean_database_reports_no_discards(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+    diagnostics = _RecordingDiagnostics()
+
+    SqliteStoreMigration(_connect_to(db), tmp_path, diagnostics).migrate_to_current()
+
+    assert not [
+        context
+        for _, context in diagnostics.infos
+        if context.get("migration") == "0005.discard-orphaned-rows.sql"
+    ]
+
+
+def test_the_migrated_database_passes_sqlites_own_check(tmp_path: Path) -> None:
+    """The check the ecosystem recommends after any migration: no violation survives."""
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect():
+        pass
+
+    connection = sqlite3.connect(db)
+    try:
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    finally:
+        connection.close()

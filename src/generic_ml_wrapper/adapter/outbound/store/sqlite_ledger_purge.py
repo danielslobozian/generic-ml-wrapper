@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """SQLite ``LedgerPurgePort``: remove a job's or a session's rows from ``ledger.db``.
 
-Every statement of a purge runs inside one :meth:`Ledger.connect` block, which commits
-only on success -- so a job never half-vanishes, leaving turns keyed to a session that
-is gone. Removing a session deliberately leaves the job row: a job outlives the sessions
-deleted from it, and ``next_session_id`` mints one past the highest suffix, so the gap a
-delete leaves can never be reused.
+A purge is one statement against the parent row. The schema declares sessions dependent
+on their job and turns and costs dependent on their session, so removing the parent
+removes them -- the order this module used to spell out by hand is now a property of the
+tables, stated once, where nothing can reach around it.
+
+Removing a session deliberately leaves the job row: a job outlives the sessions deleted
+from it, and ``next_session_id`` mints one past the highest suffix, so the gap a delete
+leaves can never be reused.
 """
 
 from __future__ import annotations
@@ -31,25 +34,19 @@ class SqliteLedgerPurge(LedgerPurgePort):
         self._ledger = ledger
 
     def purge_session(self, job: str, session: str) -> None:
-        """Remove one session's row, its metered turns, and its recorded cost.
+        """Remove one session's row, and with it its metered turns and recorded cost.
 
-        Scoped by ``job`` as well as ``session_id`` throughout: the ``<job>_NNN`` id is
-        only unique within its job, which is the same reason ``bind_uuid`` is scoped that
-        way -- and here the cost of getting it wrong would be deleting a stranger's rows.
+        Still scoped by ``job`` as well as ``session_id``: the id is unique across the
+        table, so the job adds nothing to the lookup, but it makes the statement refuse a
+        pairing that does not exist rather than delete a stranger's session on a caller's
+        mistake. The children go by themselves -- the schema declares them dependent.
         """
         with self._ledger.connect() as connection:
-            connection.execute("DELETE FROM turns WHERE job = ? AND session_id = ?", (job, session))
-            connection.execute(
-                "DELETE FROM session_costs WHERE job = ? AND session_id = ?", (job, session)
-            )
             connection.execute(
                 "DELETE FROM sessions WHERE job = ? AND session_id = ?", (job, session)
             )
 
     def purge_job(self, job: str) -> None:
-        """Remove a job and every row recorded under it."""
+        """Remove a job, and with it every session, turn and cost recorded under it."""
         with self._ledger.connect() as connection:
-            connection.execute("DELETE FROM turns WHERE job = ?", (job,))
-            connection.execute("DELETE FROM session_costs WHERE job = ?", (job,))
-            connection.execute("DELETE FROM sessions WHERE job = ?", (job,))
             connection.execute("DELETE FROM jobs WHERE job = ?", (job,))

@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the ExportUsage use case, driven by fake usage stores."""
 
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.inbound.export_usage import ModelTotal, SessionCost
+from generic_ml_wrapper.application.port.inbound.export_usage import ModelTotal
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
@@ -13,7 +14,7 @@ class FakeUsageStore(UsageStorePort):
     def __init__(self, costs: dict[str, float]) -> None:
         self._costs = costs
 
-    def record_session_cost(self, job: str, session: str, cost_usd: float) -> None:
+    def record_session_cost(self, job: str, cost: SessionCost) -> None:
         raise NotImplementedError
 
     def session_costs(self, job: str) -> dict[str, float]:

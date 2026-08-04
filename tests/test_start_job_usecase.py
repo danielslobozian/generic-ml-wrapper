@@ -5,6 +5,7 @@
 import os
 
 import pytest
+from _delete_doubles import FakeSessionLock
 
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
@@ -191,6 +192,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
             hooks or HookRunner((), NullDiagnostics(), _localizer()),
             NullDiagnostics(),
             _localizer(),
+            FakeSessionLock(),
         ),
         diagnostics=diagnostics or NullDiagnostics(),
         posix=os.name != "nt",

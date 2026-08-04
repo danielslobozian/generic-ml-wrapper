@@ -72,6 +72,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import 
 from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
     FilesystemReportExporter,
 )
+from generic_ml_wrapper.adapter.outbound.store.filesystem_session_lock import FilesystemSessionLock
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
     FilesystemTranscriptStore,
 )
@@ -132,6 +133,7 @@ from generic_ml_wrapper.application.port.outbound.diagnostics import Diagnostics
 from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
 from generic_ml_wrapper.application.port.outbound.store_migration import (
     StoreMigrationPort,
 )
@@ -191,6 +193,11 @@ from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
 def _ledger() -> Ledger:
     """The shared SQLite ledger backing the session/turn/usage stores."""
     return Ledger(paths.ledger)
+
+
+def _session_locks() -> SessionLockPort:
+    """The locks that mark a session as running and refuse to delete one that is."""
+    return FilesystemSessionLock(paths.home)
 
 
 def build_store_migration() -> StoreMigrationPort:
@@ -409,7 +416,7 @@ def _launch_sequence() -> LaunchSequence:
     Returns:
         The sequence, carrying the configured hooks and where a bad teardown is reported.
     """
-    return LaunchSequence(_hook_runner(), log.active(), build_localizer())
+    return LaunchSequence(_hook_runner(), log.active(), build_localizer(), _session_locks())
 
 
 def build_start_job() -> StartJob:
@@ -489,6 +496,7 @@ def build_delete_sessions() -> DeleteSessions:
         usage=SqliteUsageStore(_ledger()),
         ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
+        locks=_session_locks(),
     )
 
 
@@ -507,6 +515,7 @@ def build_delete_jobs() -> DeleteJobs:
         usage=SqliteUsageStore(_ledger()),
         ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
+        locks=_session_locks(),
     )
 
 
@@ -795,6 +804,8 @@ def build_render_statusline(client: str | None = None) -> RenderStatusline:
         usage=SqliteUsageStore(_ledger()),
         workspace=LocalGitWorkspaceInspector(),
         turns=SqlitePerTurnStore(_ledger()),
+        diagnostics=log.active(),
+        localizer=build_localizer(),
     )
 
 

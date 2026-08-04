@@ -31,6 +31,7 @@ from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
@@ -53,12 +54,27 @@ class TestInMemorySessionStore(SessionStoreConformance):
         return InMemorySessionStore()
 
 
+def _record_sessions(tmp_path: Path, job: str, *sessions: str) -> None:
+    """Persist the sessions a turn or a cost will be recorded against.
+
+    The ledger's tables reference each other, so a turn or a cost cannot be written for a
+    session that was never recorded. In a real run the session is persisted before the
+    client that produces either is launched; here it has to be said out loud.
+    """
+    store = SqliteSessionStore(Ledger(tmp_path / "ledger.db"))
+    for session in sessions:
+        store.record(Session(session, job, "claude", None))
+
+
 # -- PerTurnMeteringPort ---------------------------------------------------- #
 
 
 class TestSqlitePerTurnStore(PerTurnMeteringConformance):
     def make_store(self, tmp_path: Path) -> PerTurnMeteringPort:
         return SqlitePerTurnStore(Ledger(tmp_path / "ledger.db"))
+
+    def seed_sessions(self, tmp_path: Path, job: str, *sessions: str) -> None:
+        _record_sessions(tmp_path, job, *sessions)
 
 
 class TestInMemoryPerTurnStore(PerTurnMeteringConformance):
@@ -72,6 +88,9 @@ class TestInMemoryPerTurnStore(PerTurnMeteringConformance):
 class TestSqliteUsageStore(UsageStoreConformance):
     def make_store(self, tmp_path: Path) -> UsageStorePort:
         return SqliteUsageStore(Ledger(tmp_path / "ledger.db"))
+
+    def seed_sessions(self, tmp_path: Path, job: str, *sessions: str) -> None:
+        _record_sessions(tmp_path, job, *sessions)
 
 
 class TestInMemoryUsageStore(UsageStoreConformance):

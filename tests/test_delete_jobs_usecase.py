@@ -4,9 +4,11 @@
 
 import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
-from _delete_doubles import RecordingArtifactPurge, RecordingLedgerPurge
+from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
+from generic_ml_wrapper.application.domain.model.job_running_error import JobRunningError
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.delete_jobs import JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
@@ -25,17 +27,20 @@ class _Fixture:
         self.usage = InMemoryUsageStore()
         self.ledger = RecordingLedgerPurge()
         self.artifacts = RecordingArtifactPurge()
+        self.locks = FakeSessionLock()
 
     def use_case(self) -> DeleteJobsUseCase:
-        return DeleteJobsUseCase(self.store, self.turns, self.usage, self.ledger, self.artifacts)
+        return DeleteJobsUseCase(
+            self.store, self.turns, self.usage, self.ledger, self.artifacts, self.locks
+        )
 
 
 def test_preview_measures_without_removing_anything() -> None:
     fixture = _Fixture()
     fixture.turns.record("alpha", TurnUsage("alpha_001", 10, 5, 0.02, "sonnet"))
     fixture.turns.record("alpha", TurnUsage("alpha_002", 10, 5, 0.02, "sonnet"))
-    fixture.usage.record_session_cost("alpha", "alpha_001", 1.00)
-    fixture.usage.record_session_cost("alpha", "alpha_002", 0.50)
+    fixture.usage.record_session_cost("alpha", SessionCost("alpha_001", 1.00))
+    fixture.usage.record_session_cost("alpha", SessionCost("alpha_002", 0.50))
     fixture.artifacts.set_job_counts("alpha", contexts=2, transcript_calls=9)
 
     assert fixture.use_case().preview(["alpha"]) == [
@@ -94,3 +99,25 @@ def test_an_empty_request_removes_nothing() -> None:
 
     assert fixture.use_case().execute([]) == []
     assert fixture.ledger.purged_jobs == []
+
+
+def test_a_job_with_a_running_session_is_refused() -> None:
+    """One claim answers it: every running session holds its job's lock."""
+    fixture = _Fixture()
+    fixture.locks.running_jobs = {"alpha"}
+
+    with pytest.raises(JobRunningError) as caught:
+        fixture.use_case().execute(["alpha"])
+
+    assert caught.value.job == "alpha"
+    assert fixture.ledger.purged_jobs == []
+    assert fixture.artifacts.purged_jobs == []
+
+
+def test_another_job_is_removable_while_one_is_running() -> None:
+    fixture = _Fixture()
+    fixture.locks.running_jobs = {"alpha"}
+
+    fixture.use_case().execute(["beta"])
+
+    assert fixture.ledger.purged_jobs == ["beta"]

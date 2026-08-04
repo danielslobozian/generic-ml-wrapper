@@ -48,6 +48,10 @@ if TYPE_CHECKING:
 #: The lineage that ships with the wrapper, beside this module.
 _SHIPPED = Path(__file__).parent / "migrations"
 
+#: Every migration transaction also bumps the version row, so one changed row is the
+#: floor and is not part of what the migration itself did.
+_VERSION_BUMP_ROWS = 1
+
 _CREATE_VERSION_TABLE = (
     "CREATE TABLE IF NOT EXISTS schema_version "
     "(id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL)"
@@ -150,13 +154,28 @@ class SqliteStoreMigration(StoreMigrationPort):
         if self._diagnostics:
             self._diagnostics.debug("applying migration", migration=path.name)
         script = path.read_text(encoding="utf-8")
+        before = connection.total_changes
         try:
             # ``target`` is an integer from the shipped range, never user input.
             connection.executescript(
                 f"BEGIN;\n{script}\nUPDATE schema_version SET version = {target};\nCOMMIT;"
             )
+            self._report_rows_changed(path, connection.total_changes - before)
         except sqlite3.Error as error:
             connection.rollback()
             if self._diagnostics:
                 self._diagnostics.error("migration failed, rolled back", version=target)
             raise MigrationFailedError(target, str(error)) from error
+
+    def _report_rows_changed(self, path: Path, changed: int) -> None:
+        """Report how many rows a migration touched, when it touched any.
+
+        A migration that only removes rows -- discarding orphans before their parents
+        become enforceable -- makes this number the answer to "how much was thrown away",
+        which is the difference between discarding data and discarding it silently. A
+        migration that rebuilds a table copies every row through this counter too, so the
+        number means "rows this file wrote or removed", not "rows lost".
+        """
+        rows = changed - _VERSION_BUMP_ROWS
+        if self._diagnostics and rows > 0:
+            self._diagnostics.info("migration changed rows", migration=path.name, rows=rows)
