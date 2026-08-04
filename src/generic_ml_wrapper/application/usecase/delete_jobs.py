@@ -21,6 +21,8 @@ other's, and the workflows that history produced are not stored under it.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs, JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
@@ -30,6 +32,10 @@ from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTu
 from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
+
+if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 class DeleteJobsUseCase(DeleteJobs):
@@ -43,6 +49,8 @@ class DeleteJobsUseCase(DeleteJobs):
         ledger: LedgerPurgePort,
         artifacts: ArtifactPurgePort,
         locks: SessionLockPort,
+        diagnostics: Diagnostics,
+        localizer: Localizer,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -52,6 +60,8 @@ class DeleteJobsUseCase(DeleteJobs):
             usage: Where recorded session costs are read from.
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
+            diagnostics: Where a job whose files would not go is reported.
+            localizer: Renders that report in the language the wrapper is speaking.
             locks: Claims each job, so none is removed while a session of it runs.
         """
         self._store = store
@@ -60,6 +70,8 @@ class DeleteJobsUseCase(DeleteJobs):
         self._ledger = ledger
         self._artifacts = artifacts
         self._locks = locks
+        self._diagnostics = diagnostics
+        self._localizer = localizer
 
     def preview(self, jobs: Sequence[str]) -> list[JobFootprint]:
         """Report what deleting these jobs would remove, without removing it."""
@@ -69,6 +81,11 @@ class DeleteJobsUseCase(DeleteJobs):
     def execute(self, jobs: Sequence[str]) -> list[JobFootprint]:
         """Delete the jobs, their sessions, their recorded usage, and their files.
 
+        Returns:
+            One footprint per job asked for, each carrying whether it actually went. A job
+            whose files could not be removed keeps its rows and comes back marked, rather
+            than taking the rest of the batch down with it.
+
         Raises:
             JobRunningError: If any of a job's sessions has a live client.
         """
@@ -76,14 +93,29 @@ class DeleteJobsUseCase(DeleteJobs):
         # Measured before the first removal, and returned afterwards: once the rows and
         # folders are gone there is nothing left to count.
         footprints = [self._footprint(job) for job in jobs]
-        for job in jobs:
-            # One claim answers "is anything of this job running", because every running
-            # session holds the job's lock shared. Held across both removals, so a
-            # session cannot start into a job whose files are already going.
-            with self._locks.claim_job(job):
-                self._ledger.purge_job(job)
+        return [self._purge(footprint) for footprint in footprints]
+
+    def _purge(self, footprint: JobFootprint) -> JobFootprint:
+        """Remove one job's files and then its rows, or report that it stayed.
+
+        Files first, for the reason the session-level delete gives: a row can be asked for
+        again, a file whose row is gone cannot be found by anything.
+        """
+        job = footprint.job
+        # One claim answers "is anything of this job running", because every running
+        # session holds the job's lock shared. Held across both removals, so a session
+        # cannot start into a job whose files are already going.
+        with self._locks.claim_job(job):
+            try:
                 self._artifacts.purge_job(job)
-        return footprints
+            except OSError as error:
+                self._diagnostics.warning(
+                    self._localizer.t("log.job_not_deleted", job=job, error=error),
+                    key="log.job_not_deleted",
+                )
+                return replace(footprint, removed=False)
+            self._ledger.purge_job(job)
+        return footprint
 
     def _validate(self, jobs: Sequence[str]) -> None:
         """Reject the whole batch unless every job in it has recorded activity.

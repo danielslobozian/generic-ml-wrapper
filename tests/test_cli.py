@@ -6,6 +6,7 @@ import io
 import json
 import platform
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -1725,9 +1726,17 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
 class _FakeDeleteJobs(DeleteJobs):
     """Records what it was asked to preview and delete; deletes nothing."""
 
-    def __init__(self, footprints: list[JobFootprint], error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        footprints: list[JobFootprint],
+        error: Exception | None = None,
+        outcome: list[JobFootprint] | None = None,
+    ) -> None:
         self._footprints = footprints
         self._error = error
+        #: What the delete reports afterwards, when that differs from what it previewed --
+        #: a job whose files would not go comes back marked.
+        self._outcome = outcome
         self.previewed: list[list[str]] = []
         self.executed: list[list[str]] = []
 
@@ -1739,15 +1748,21 @@ class _FakeDeleteJobs(DeleteJobs):
 
     def execute(self, jobs: Sequence[str]) -> list[JobFootprint]:
         self.executed.append(list(jobs))
-        return self._footprints
+        return self._outcome if self._outcome is not None else self._footprints
 
 
 class _FakeDeleteSessions(DeleteSessions):
     """Records what it was asked to preview and delete; deletes nothing."""
 
-    def __init__(self, footprints: list[SessionFootprint], error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        footprints: list[SessionFootprint],
+        error: Exception | None = None,
+        outcome: list[SessionFootprint] | None = None,
+    ) -> None:
         self._footprints = footprints
         self._error = error
+        self._outcome = outcome
         self.executed: list[tuple[str, list[str]]] = []
 
     def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
@@ -1757,7 +1772,7 @@ class _FakeDeleteSessions(DeleteSessions):
 
     def execute(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
         self.executed.append((job, list(sessions)))
-        return self._footprints
+        return self._outcome if self._outcome is not None else self._footprints
 
 
 def _job_footprint(job: str = "alpha") -> JobFootprint:
@@ -2365,3 +2380,42 @@ def _client(name: str) -> ClientInfo:
     info = TomlClientCatalog().by_name(name)
     assert info is not None
     return info
+
+
+def test_a_job_that_could_not_be_removed_is_reported_and_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The receipt: the row the user already read, back again, marked."""
+    kept = replace(_job_footprint(), removed=False)
+    fake = _FakeDeleteJobs(
+        [_job_footprint("alpha"), _job_footprint("beta")], outcome=[kept, _job_footprint("beta")]
+    )
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "alpha", "beta", "--yes"]) == 1
+    err = capsys.readouterr().err
+    assert "not removed" in err
+    assert "removed 1 of 2 job(s)" in err
+
+
+def test_a_fully_successful_job_delete_says_nothing_about_leftovers(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = _FakeDeleteJobs([_job_footprint()])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "alpha", "--yes"]) == 0
+    assert "not removed" not in capsys.readouterr().err
+
+
+def test_a_session_that_could_not_be_removed_is_reported_and_exits_nonzero(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    kept = replace(_session_footprint(), removed=False)
+    fake = _FakeDeleteSessions([_session_footprint()], outcome=[kept])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+
+    assert app.main(["sessions", "alpha", "delete", "alpha_002", "--yes"]) == 1
+    err = capsys.readouterr().err
+    assert "not removed" in err
+    assert "removed 0 of 1 session(s)" in err

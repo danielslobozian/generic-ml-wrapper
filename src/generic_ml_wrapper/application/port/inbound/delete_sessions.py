@@ -26,6 +26,10 @@ class SessionFootprint:
         cost_usd: Its recorded cumulative cost.
         contexts: Compiled-context files it holds (0 or 1).
         transcript_calls: Transcript files it holds (``0`` unless transcripts were on).
+        removed: Whether it actually went. ``True`` on a preview, where it means "this is
+            what would go"; on a result it is the receipt, and ``False`` says the session
+            is still there -- its files could not be removed, so its rows were left alone
+            and the same delete can simply be asked for again.
     """
 
     job: str
@@ -34,6 +38,7 @@ class SessionFootprint:
     cost_usd: float
     contexts: int
     transcript_calls: int
+    removed: bool = True
 
 
 class NoSuchJobError(DomainError, ValueError):

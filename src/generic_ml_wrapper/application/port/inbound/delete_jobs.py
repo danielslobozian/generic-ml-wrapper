@@ -25,6 +25,10 @@ class JobFootprint:
         contexts: Compiled-context files the job holds.
         transcript_calls: Transcript files the job holds (``0`` unless transcripts
             were on).
+        removed: Whether it actually went. ``True`` on a preview, where it means "this is
+            what would go"; on a result it is the receipt, and ``False`` says the job is
+            still there -- its files could not be removed, so its rows were left alone and
+            the same delete can simply be asked for again.
     """
 
     job: str
@@ -33,6 +37,7 @@ class JobFootprint:
     cost_usd: float
     contexts: int
     transcript_calls: int
+    removed: bool = True
 
 
 class DeleteJobs(ABC):

@@ -500,6 +500,8 @@ def build_delete_sessions() -> DeleteSessions:
         ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
         locks=_session_locks(),
+        diagnostics=log.active(),
+        localizer=build_localizer(),
     )
 
 
@@ -519,6 +521,8 @@ def build_delete_jobs() -> DeleteJobs:
         ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
         locks=_session_locks(),
+        diagnostics=log.active(),
+        localizer=build_localizer(),
     )
 
 
