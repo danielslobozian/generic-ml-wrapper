@@ -9,7 +9,7 @@ user's own setting survives a run.
 
 Two safety properties matter because this file is the user's, not ours:
 - If the file exists but cannot be parsed as JSON, we NEVER overwrite it (that would
-  destroy the user's settings). We raise :class:`SettingsUnreadableError` and the run
+  destroy the user's settings). We raise :class:`ClientSettingsUnusableError` and the run
   aborts with guidance. "Absent" and "unparseable" are different: absent is fine.
 - Writes are atomic (temp file + ``replace``), and restore is ownership-aware: it puts
   the old value back only if this run's value is still installed, so two concurrent
@@ -26,6 +26,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
+from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
+    ClientSettingsUnusableError,
+)
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
@@ -42,28 +45,6 @@ def statusline_command() -> str:
         return "gmlw statusline"
     candidate = Path(sys.executable).with_name("gmlw")
     return f"{candidate} statusline" if candidate.exists() else "gmlw statusline"
-
-
-class SettingsUnreadableError(Exception):
-    """A client settings file exists but is not a readable JSON object.
-
-    Overwriting it would destroy the user's settings, so the run aborts instead.
-    """
-
-    def __init__(self, path: Path) -> None:
-        """Build the error with actionable guidance for ``path``."""
-        self.path = path
-        super().__init__(
-            f"{path} is not valid JSON.\n\n"
-            "The wrapper installs its status line by editing this file, and would have to\n"
-            "overwrite it to continue. Overwriting a file it cannot parse would destroy your\n"
-            "existing settings (model, permissions, env, hooks), so the run is aborted.\n\n"
-            "To fix:\n"
-            f"  1. Check it:   python -m json.tool {path}\n"
-            "  2. Common causes: // or /* */ comments, or a trailing comma -- JSON allows none.\n"
-            f"  3. Or move it aside:  mv {path} {path}.bak   (a fresh one will be created)\n"
-            "Then run gmlw again."
-        )
 
 
 @dataclass(frozen=True)
@@ -86,7 +67,7 @@ def install(path: Path, status_line: dict[str, object]) -> StatusLineSnapshot:
         A snapshot of the prior ``statusLine`` for :func:`restore`.
 
     Raises:
-        SettingsUnreadableError: If ``path`` exists but is not a JSON object; the file
+        ClientSettingsUnusableError: If ``path`` exists but is not a JSON object; the file
             is left untouched.
     """
     settings = _load(path)
@@ -100,7 +81,7 @@ def install(path: Path, status_line: dict[str, object]) -> StatusLineSnapshot:
 def install_best_effort(path: Path, status_line: dict[str, object]) -> StatusLineSnapshot | None:
     """Install the status line, or skip it (with a warning) if the file can't be written.
 
-    A :class:`SettingsUnreadableError` still propagates -- the wrapper never overwrites
+    A :class:`ClientSettingsUnusableError` still propagates -- the wrapper never overwrites
     settings it cannot parse. An ``OSError`` (an unwritable directory or file) is not
     destructive, so the session simply runs without a status line rather than aborting.
 
@@ -131,7 +112,7 @@ def restore(path: Path, snapshot: StatusLineSnapshot) -> None:
     """
     try:
         settings = _load(path)
-    except SettingsUnreadableError:
+    except ClientSettingsUnusableError:
         log.warning(i18n.t("log.statusline_unreadable", path=path))
         return
     if settings.get("statusLine") != snapshot.installed:
@@ -149,9 +130,9 @@ def _load(path: Path) -> dict[str, object]:
     try:
         raw: object = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
-        raise SettingsUnreadableError(path) from error
+        raise ClientSettingsUnusableError(str(path)) from error
     if not isinstance(raw, dict):
-        raise SettingsUnreadableError(path)
+        raise ClientSettingsUnusableError(str(path))
     return cast("dict[str, object]", raw)
 
 

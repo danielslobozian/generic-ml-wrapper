@@ -408,6 +408,7 @@ def build_start_job() -> StartJob:
         launch=_launch_sequence(),
         diagnostics=log.active(),
         localizer=build_localizer(),
+        posix=os.name != "nt",
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
         client_args=config.client_args_for,

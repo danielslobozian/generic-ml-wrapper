@@ -14,10 +14,12 @@ import pytest
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
-from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
+from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
+    ClientSettingsUnusableError,
+)
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
@@ -1432,7 +1434,7 @@ def test_start_aborts_on_unreadable_settings(
 ) -> None:
     class FailingUseCase(StartJob):
         def execute(self, command: StartJobCommand) -> StartJobResult:
-            raise SettingsUnreadableError(Path("/x/.claude/settings.json"))
+            raise ClientSettingsUnusableError("/x/.claude/settings.json")
 
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
     monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())

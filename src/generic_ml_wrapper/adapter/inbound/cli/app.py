@@ -30,13 +30,15 @@ from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
-from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.config import settings_registry
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
-from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
-    CredentialsUnreadableError,
-)
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
+    ClientSettingsUnusableError,
+)
+from generic_ml_wrapper.application.domain.model.credentials_unusable_error import (
+    CredentialsUnusableError,
+)
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
@@ -1022,8 +1024,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
     except (
         IdentifierError,
-        SettingsUnreadableError,
-        CredentialsUnreadableError,
+        ClientSettingsUnusableError,
+        CredentialsUnusableError,
         SpecLoadError,
     ) as error:
         print(_render_error(error), file=sys.stderr)

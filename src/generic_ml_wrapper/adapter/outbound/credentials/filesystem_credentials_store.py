@@ -10,27 +10,12 @@ import tomllib
 from pathlib import Path
 from typing import cast
 
+from generic_ml_wrapper.application.domain.model.credentials_unusable_error import (
+    CredentialsUnusableError,
+)
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 
 _OWNER_READ_WRITE = 0o600
-
-
-class CredentialsUnreadableError(Exception):
-    """The credentials file exists but cannot be parsed as TOML.
-
-    Overwriting it would destroy every stored secret, so the run aborts instead.
-    """
-
-    def __init__(self, path: Path) -> None:
-        """Build the error with actionable guidance for ``path``."""
-        self.path = path
-        super().__init__(
-            f"{path} is not valid TOML.\n\n"
-            "It holds your stored credentials. Rewriting it would parse the corruption as\n"
-            "'no secrets' and destroy them all, so the run is aborted.\n\n"
-            "To fix: repair the TOML by hand, or move it aside\n"
-            f"  (mv {path} {path}.bak)  and re-run `gmlw creds set` to start fresh."
-        )
 
 
 class FilesystemCredentialsStore(CredentialsStorePort):
@@ -63,7 +48,7 @@ class FilesystemCredentialsStore(CredentialsStorePort):
         """Store one credential for a workflow, replacing any prior value.
 
         Raises:
-            CredentialsUnreadableError: If the file exists but is corrupt; it is left
+            CredentialsUnusableError: If the file exists but is corrupt; it is left
                 untouched rather than overwritten (which would destroy every secret).
         """
         data = self._load()
@@ -97,7 +82,7 @@ class FilesystemCredentialsStore(CredentialsStorePort):
             with self._path.open("rb") as handle:
                 return tomllib.load(handle)
         except (OSError, tomllib.TOMLDecodeError) as error:
-            raise CredentialsUnreadableError(self._path) from error
+            raise CredentialsUnusableError(str(self._path)) from error
 
 
 def _dump(data: dict[str, object]) -> str:
