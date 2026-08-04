@@ -654,9 +654,15 @@ def format_job_footprints(footprints: list[JobFootprint], loc: i18n.Localizer | 
             contexts=footprint.contexts,
             transcripts=footprint.transcript_calls,
         )
+        + _kept_marker(footprint.removed, loc)
         for footprint in footprints
     ]
     return "\n".join(lines)
+
+
+def _kept_marker(removed: bool, loc: i18n.Localizer) -> str:
+    """The tail a row carries when it did not go. Empty on a preview, where all go."""
+    return "" if removed else loc.t("delete.row.kept")
 
 
 def format_session_footprints(
@@ -684,6 +690,7 @@ def format_session_footprints(
             contexts=footprint.contexts,
             transcripts=footprint.transcript_calls,
         )
+        + _kept_marker(footprint.removed, loc)
         for footprint in footprints
     ]
     return "\n".join(lines)
@@ -1273,9 +1280,23 @@ def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
     if not _confirm_delete(format_job_footprints(footprints), assume_yes=assume_yes):
         print(i18n.t("delete.cancelled"), file=sys.stderr)
         return 2
-    removed = delete.execute(jobs)
-    print(i18n.t("delete.jobs.done", count=len(removed)), file=sys.stderr)
-    return 0
+    outcome = delete.execute(jobs)
+    kept = [footprint for footprint in outcome if not footprint.removed]
+    if not kept:
+        print(i18n.t("delete.jobs.done", count=len(outcome)), file=sys.stderr)
+        return 0
+    # The receipt: what stayed, in the rows the user already read before confirming.
+    print(format_job_footprints(kept), file=sys.stderr)
+    print(
+        i18n.t(
+            "delete.jobs.partial",
+            removed=len(outcome) - len(kept),
+            count=len(outcome),
+            kept=len(kept),
+        ),
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _sessions_delete(args: argparse.Namespace) -> int:
@@ -1305,9 +1326,23 @@ def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> 
     if not _confirm_delete(format_session_footprints(job, footprints), assume_yes=assume_yes):
         print(i18n.t("delete.cancelled"), file=sys.stderr)
         return 2
-    removed = delete.execute(job, sessions)
-    print(i18n.t("delete.sessions.done", count=len(removed), job=job), file=sys.stderr)
-    return 0
+    outcome = delete.execute(job, sessions)
+    kept = [footprint for footprint in outcome if not footprint.removed]
+    if not kept:
+        print(i18n.t("delete.sessions.done", count=len(outcome), job=job), file=sys.stderr)
+        return 0
+    print(format_session_footprints(job, kept), file=sys.stderr)
+    print(
+        i18n.t(
+            "delete.sessions.partial",
+            removed=len(outcome) - len(kept),
+            count=len(outcome),
+            kept=len(kept),
+            job=job,
+        ),
+        file=sys.stderr,
+    )
+    return 1
 
 
 def _client(raw: str | None) -> str:
@@ -1576,10 +1611,18 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _delete_jobs_in_app(selected: tuple[str, ...]) -> str:
         try:
-            removed = build_delete_jobs().execute(list(selected))
+            outcome = build_delete_jobs().execute(list(selected))
         except NoSuchJobError as error:
             return _render_error(error)
-        return i18n.t("delete.jobs.done", count=len(removed))
+        kept = [footprint for footprint in outcome if not footprint.removed]
+        if not kept:
+            return i18n.t("delete.jobs.done", count=len(outcome))
+        return i18n.t(
+            "delete.jobs.partial",
+            removed=len(outcome) - len(kept),
+            count=len(outcome),
+            kept=len(kept),
+        )
 
     def _preview_sessions(job: str, selected: tuple[str, ...]) -> str:
         try:
@@ -1591,10 +1634,19 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _delete_sessions_in_app(job: str, selected: tuple[str, ...]) -> str:
         try:
-            removed = build_delete_sessions().execute(job, list(selected))
+            outcome = build_delete_sessions().execute(job, list(selected))
         except (NoSuchJobError, NoSuchSessionError) as error:
             return _render_error(error)
-        return i18n.t("delete.sessions.done", count=len(removed), job=job)
+        kept = [footprint for footprint in outcome if not footprint.removed]
+        if not kept:
+            return i18n.t("delete.sessions.done", count=len(outcome), job=job)
+        return i18n.t(
+            "delete.sessions.partial",
+            removed=len(outcome) - len(kept),
+            count=len(outcome),
+            kept=len(kept),
+            job=job,
+        )
 
     # Deleting is the one write the menu does without leaving: it asks in-app and calls
     # these, so the user stays on the list they are clearing instead of being returned to

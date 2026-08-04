@@ -15,6 +15,8 @@ a job safe.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.port.inbound.delete_sessions import (
     DeleteSessions,
@@ -29,6 +31,10 @@ from generic_ml_wrapper.application.port.outbound.session_lock import SessionLoc
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
+if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+
 
 class DeleteSessionsUseCase(DeleteSessions):
     """Measure and remove a job's sessions."""
@@ -41,6 +47,8 @@ class DeleteSessionsUseCase(DeleteSessions):
         ledger: LedgerPurgePort,
         artifacts: ArtifactPurgePort,
         locks: SessionLockPort,
+        diagnostics: Diagnostics,
+        localizer: Localizer,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -54,6 +62,8 @@ class DeleteSessionsUseCase(DeleteSessions):
             usage: Where recorded session costs are read from.
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
+            diagnostics: Where a session whose files would not go is reported.
+            localizer: Renders that report in the language the wrapper is speaking.
             locks: Claims each session, so none is removed while its client runs.
         """
         self._store = store
@@ -62,6 +72,8 @@ class DeleteSessionsUseCase(DeleteSessions):
         self._ledger = ledger
         self._artifacts = artifacts
         self._locks = locks
+        self._diagnostics = diagnostics
+        self._localizer = localizer
 
     def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
         """Report what deleting these sessions would remove, without removing it."""
@@ -70,6 +82,11 @@ class DeleteSessionsUseCase(DeleteSessions):
 
     def execute(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
         """Delete the sessions, their recorded usage, and their files.
+
+        Returns:
+            One footprint per session asked for, each carrying whether it actually went.
+            A session whose files could not be removed keeps its rows and comes back
+            marked, rather than taking the rest of the batch down with it.
 
         Raises:
             SessionRunningError: If one of the sessions has a live client. The batch
@@ -81,13 +98,31 @@ class DeleteSessionsUseCase(DeleteSessions):
         # Measured before the first removal, and returned afterwards: once the rows are
         # gone there is nothing left to count, so "what went" has to be taken up front.
         footprints = self._footprints(job, sessions)
-        for session in sessions:
-            # Held across both removals: a client cannot start against this session in
-            # the gap between its rows going and its files going.
-            with self._locks.claim_session(job, session):
-                self._ledger.purge_session(job, session)
+        return [self._purge(footprint) for footprint in footprints]
+
+    def _purge(self, footprint: SessionFootprint) -> SessionFootprint:
+        """Remove one session's files and then its rows, or report that it stayed.
+
+        The files go first. They are what nothing else can find again: a row names its
+        session and can be asked for a second time, while a file whose row is gone is
+        invisible to every listing the tool has. So a failure here leaves a session that
+        still lists, still resumes, and still deletes on the next attempt -- which is why
+        the rows are only reached once the files are actually gone.
+        """
+        job, session = footprint.job, footprint.session
+        # Held across both removals: a client cannot start against this session in the
+        # gap between its files going and its rows going.
+        with self._locks.claim_session(job, session):
+            try:
                 self._artifacts.purge_session(job, session)
-        return footprints
+            except OSError as error:
+                self._diagnostics.warning(
+                    self._localizer.t("log.session_not_deleted", session=session, error=error),
+                    key="log.session_not_deleted",
+                )
+                return replace(footprint, removed=False)
+            self._ledger.purge_session(job, session)
+        return footprint
 
     def _validate(self, job: str, sessions: Sequence[str]) -> None:
         """Reject the whole batch unless every id in it is recorded.

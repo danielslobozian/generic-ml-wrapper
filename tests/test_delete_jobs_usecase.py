@@ -6,13 +6,23 @@ import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
 from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLocalizerFactory,
+)
 from generic_ml_wrapper.application.domain.model.job_running_error import JobRunningError
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.delete_jobs import JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
+
+
+def _localizer() -> Localizer:
+    """The real English catalogue: these tests assert behaviour, not translations."""
+    return JsonCatalogLocalizerFactory().load("en")
 
 
 class _Fixture:
@@ -25,13 +35,21 @@ class _Fixture:
         self.store.record(Session("beta_001", "beta", "codex", None))
         self.turns = InMemoryPerTurnStore()
         self.usage = InMemoryUsageStore()
-        self.ledger = RecordingLedgerPurge()
-        self.artifacts = RecordingArtifactPurge()
+        self.trace: list[str] = []
+        self.ledger = RecordingLedgerPurge(self.trace)
+        self.artifacts = RecordingArtifactPurge(self.trace)
         self.locks = FakeSessionLock()
 
     def use_case(self) -> DeleteJobsUseCase:
         return DeleteJobsUseCase(
-            self.store, self.turns, self.usage, self.ledger, self.artifacts, self.locks
+            self.store,
+            self.turns,
+            self.usage,
+            self.ledger,
+            self.artifacts,
+            self.locks,
+            NullDiagnostics(),
+            _localizer(),
         )
 
 
@@ -120,4 +138,33 @@ def test_another_job_is_removable_while_one_is_running() -> None:
 
     fixture.use_case().execute(["beta"])
 
+    assert fixture.ledger.purged_jobs == ["beta"]
+
+
+def test_the_files_go_before_the_rows() -> None:
+    """Files first, for the reason the session-level delete gives."""
+    fixture = _Fixture()
+
+    fixture.use_case().execute(["alpha"])
+
+    assert fixture.trace == ["files:alpha", "rows:alpha"]
+
+
+def test_a_job_whose_files_will_not_go_keeps_its_rows() -> None:
+    fixture = _Fixture()
+    fixture.artifacts.unremovable = {"alpha"}
+
+    [outcome] = fixture.use_case().execute(["alpha"])
+
+    assert outcome.removed is False
+    assert fixture.ledger.purged_jobs == []
+
+
+def test_a_failed_job_does_not_stop_the_batch() -> None:
+    fixture = _Fixture()
+    fixture.artifacts.unremovable = {"alpha"}
+
+    outcome = fixture.use_case().execute(["alpha", "beta"])
+
+    assert [footprint.removed for footprint in outcome] == [False, True]
     assert fixture.ledger.purged_jobs == ["beta"]

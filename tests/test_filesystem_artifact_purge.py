@@ -4,7 +4,10 @@
 
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING
+
+import pytest
 
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
     FilesystemArtifactPurge,
@@ -13,6 +16,16 @@ from generic_ml_wrapper.application.port.outbound.artifact_purge import Artifact
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+#: Both platforms deny it, in their own words: "Permission denied" / "Access is denied".
+_DENIED = "denied"
+
+#: Root ignores the permission bits, so the refusal these tests provoke never happens.
+_NOT_AS_ROOT = pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root can remove from a folder it has no write permission on",
+)
 
 
 def _seed(tmp_path: Path) -> FilesystemArtifactPurge:
@@ -118,3 +131,40 @@ def test_roots_that_do_not_exist_are_handled(tmp_path: Path) -> None:
     assert purge.counts_for_job("alpha") == ArtifactCounts(contexts=0, transcript_calls=0)
     purge.purge_job("alpha")
     purge.purge_session("alpha", "alpha_001")
+
+
+@_NOT_AS_ROOT
+def test_a_folder_that_will_not_go_is_reported(tmp_path: Path) -> None:
+    """Absence is fine; refusal is not — the whole point of the delete order.
+
+    Files are removed before the rows that name them, so a purge that failed silently
+    would leave them on disk with nothing left that could ever list them again.
+    """
+    purge = _seed(tmp_path)
+    locked = tmp_path / "transcripts" / "alpha"
+    locked.chmod(0o500)  # the folder itself may not be removed
+    try:
+        with pytest.raises(OSError, match=_DENIED):
+            purge.purge_job("alpha")
+    finally:
+        locked.chmod(0o700)
+
+
+def test_nothing_to_remove_is_still_not_a_failure(tmp_path: Path) -> None:
+    """The distinction the old ignore-everything collapsed: beta never had transcripts."""
+    _seed(tmp_path).purge_job("beta")
+
+
+@_NOT_AS_ROOT
+def test_a_session_whose_folder_will_not_go_is_reported(tmp_path: Path) -> None:
+    purge = _seed(tmp_path)
+    # The session's own folder, not its parent. Windows' read-only attribute stops that
+    # folder being removed but not its children, so locking the parent would let a child
+    # session be deleted there and the test would pass on Linux only.
+    locked = tmp_path / "transcripts" / "alpha" / "alpha_001"
+    locked.chmod(0o500)
+    try:
+        with pytest.raises(OSError, match=_DENIED):
+            purge.purge_session("alpha", "alpha_001")
+    finally:
+        locked.chmod(0o700)
