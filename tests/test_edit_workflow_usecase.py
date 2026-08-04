@@ -41,8 +41,8 @@ class FakeWorkflows(WorkflowSourcePort):
     def names(self) -> list[str]:
         return []
 
-    def exists(self, name: str) -> bool:
-        return self._existing
+    def find(self, name: str) -> Workflow | None:
+        return Workflow(name, name, "") if self._existing else None
 
     def catalog(self) -> list[Workflow]:
         return []
@@ -151,7 +151,9 @@ def test_edits_an_existing_workflow_without_creating_it() -> None:
     )
 
     assert exit_code == 0
-    assert workflows.seeded is True
+    # Editing writes nothing of its own: not the folder, and not the packaged workflows
+    # either. What seeding installs is reserved and could never be the name being edited.
+    assert workflows.seeded is False
     assert workflows.created is None  # editing never creates/overwrites the folder
     assert len(store.recorded) == 1
     # Filed under the authoring job, not under a job named after the workflow: creating and

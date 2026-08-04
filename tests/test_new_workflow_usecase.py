@@ -53,8 +53,8 @@ class FakeWorkflows(WorkflowSourcePort):
     def names(self) -> list[str]:
         return []
 
-    def exists(self, name: str) -> bool:
-        return self._existing
+    def find(self, name: str) -> Workflow | None:
+        return Workflow(name, name, "") if self._existing else None
 
     def catalog(self) -> list[Workflow]:
         return []
@@ -446,3 +446,24 @@ def test_a_draft_on_a_client_that_cannot_reopen_is_refused() -> None:
 def _localizer() -> Localizer:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")
+
+
+def test_a_rejected_name_seeds_nothing() -> None:
+    """Validation comes first, so a name that will not do writes nothing on its way out."""
+    workflows = FakeWorkflows()
+    use_case = _use_case(workflows, FakeStore(), CapturingProvider())
+
+    with pytest.raises(WorkflowNameError):
+        use_case.execute(NewWorkflowCommand(label="create-workflow", client="claude"))
+
+    assert workflows.seeded is False
+
+
+def test_a_name_already_taken_seeds_nothing() -> None:
+    workflows = FakeWorkflows(existing=True)
+    use_case = _use_case(workflows, FakeStore(), CapturingProvider())
+
+    with pytest.raises(WorkflowExistsError):
+        use_case.execute(NewWorkflowCommand(label="nightly-etl", client="claude"))
+
+    assert workflows.seeded is False

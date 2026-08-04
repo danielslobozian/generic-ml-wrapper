@@ -19,7 +19,7 @@ class FakeWorkflows(WorkflowSourcePort):
     def names(self) -> list[str]:
         return self._names
 
-    def exists(self, name: str) -> bool:
+    def find(self, name: str) -> Workflow | None:
         raise NotImplementedError
 
     def catalog(self) -> list[Workflow]:

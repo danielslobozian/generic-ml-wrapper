@@ -3,6 +3,7 @@
 """Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
 import os
+from pathlib import Path
 
 import pytest
 from _delete_doubles import FakeSessionLock
@@ -10,6 +11,9 @@ from _delete_doubles import FakeSessionLock
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
+)
+from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
+    FilesystemWorkflowSource,
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
@@ -82,8 +86,8 @@ class FakeWorkflows(WorkflowSourcePort):
     def names(self) -> list[str]:
         return []
 
-    def exists(self, name: str) -> bool:
-        return name == self._present
+    def find(self, name: str) -> Workflow | None:
+        return Workflow(name, name, "") if name == self._present else None
 
     def catalog(self) -> list[Workflow]:
         return []
@@ -173,7 +177,7 @@ class RecordingHook(Hook):
 def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set, plus the greeting)
     store: FakeStore,
     provider: FakeProvider,
-    workflows: FakeWorkflows | None = None,
+    workflows: WorkflowSourcePort | None = None,  # the fake, or the real source
     credentials: FakeCredentials | None = None,
     hooks: HookRunner | None = None,
     greeting: str | None = None,
@@ -424,6 +428,35 @@ def test_unknown_workflow_is_rejected() -> None:
     with pytest.raises(UnknownWorkflowError):
         _use_case(FakeStore(), FakeProvider(), workflows).execute(
             StartJobCommand(job="JOB-1", client="claude", workflow="missing")
+        )
+
+
+def test_a_run_named_for_an_unknown_workflow_seeds_nothing() -> None:
+    """The refusal comes first; nothing is installed on the way to it."""
+    workflows = FakeWorkflows(present=None)
+
+    with pytest.raises(UnknownWorkflowError):
+        _use_case(FakeStore(), FakeProvider(), workflows).execute(
+            StartJobCommand(job="JOB-1", client="claude", workflow="missing")
+        )
+
+    assert workflows.seeded is False
+
+
+def test_the_meta_workflow_cannot_be_run_as_a_workflow(tmp_path: Path) -> None:
+    """Against the real source: ``--workflow create-workflow`` used to be accepted.
+
+    Asking "does a workflow.md exist there" said yes, because seeding had just installed
+    the meta-workflow. Asking the source for the *workflow* says no — it is hidden from
+    that the same way it is hidden from the listing — so the run is refused, and authoring
+    stays reachable only through the command built for it.
+    """
+    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source.seed()
+
+    with pytest.raises(UnknownWorkflowError):
+        _use_case(FakeStore(), FakeProvider(), source).execute(
+            StartJobCommand(job="JOB-1", client="claude", workflow="create-workflow")
         )
 
 

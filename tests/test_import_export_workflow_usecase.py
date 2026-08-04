@@ -12,6 +12,9 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_backup import (
     FilesystemWorkflowBackup,
 )
+from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
+    FilesystemWorkflowSource,
+)
 from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
@@ -42,8 +45,8 @@ class FakeWorkflows(WorkflowSourcePort):
     def catalog(self) -> list[Workflow]:
         return []
 
-    def exists(self, name: str) -> bool:
-        return name in self._existing
+    def find(self, name: str) -> Workflow | None:
+        return Workflow(name, name, "") if name in self._existing else None
 
     def create(self, name: str) -> str:
         raise NotImplementedError
@@ -245,3 +248,43 @@ def test_an_export_timestamp_is_stripped_from_the_name(tmp_path: Path) -> None:
 def test_an_archive_named_for_a_reserved_workflow_is_refused(tmp_path: Path) -> None:
     with pytest.raises(WorkflowNameError):
         _use_case(tmp_path).execute(_an_archive(tmp_path, "create-workflow.zip"))
+
+
+# ── writing nothing on the way to a refusal ──
+def test_exporting_an_unknown_workflow_writes_nothing_at_all(tmp_path: Path) -> None:
+    """Against the real source, because the claim is about the disk.
+
+    A command that fails used to leave the packaged workflows behind in the user's home —
+    `gmlw workflow export ghost` printed "unknown workflow" and created two directories.
+    """
+    root = tmp_path / "workflows"
+    use_case = ExportWorkflowUseCase(FilesystemWorkflowSource(root), FakeArchive())
+
+    with pytest.raises(WorkflowNotFoundError):
+        use_case.execute("ghost")
+
+    assert not root.exists()
+
+
+def test_exporting_a_reserved_name_writes_nothing_at_all(tmp_path: Path) -> None:
+    root = tmp_path / "workflows"
+    use_case = ExportWorkflowUseCase(FilesystemWorkflowSource(root), FakeArchive())
+
+    with pytest.raises(WorkflowNameError):
+        use_case.execute("create-workflow")
+
+    assert not root.exists()
+
+
+def test_importing_an_unusable_archive_writes_nothing_at_all(tmp_path: Path) -> None:
+    root = tmp_path / "workflows"
+    use_case = ImportWorkflowUseCase(
+        FilesystemWorkflowSource(root),
+        FakeArchive(ArchiveStatus.INCOMPLETE),
+        FilesystemWorkflowBackup(tmp_path / "backups", lambda: _WHEN),
+    )
+
+    with pytest.raises(ArchiveUnreadableError):
+        use_case.execute(_an_archive(tmp_path))
+
+    assert not root.exists()

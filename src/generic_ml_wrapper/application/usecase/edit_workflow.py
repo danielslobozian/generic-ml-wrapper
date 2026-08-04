@@ -78,8 +78,9 @@ class EditWorkflowUseCase(EditWorkflow):
             raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
             raise WorkflowNameError("error.workflow.reserved_name", name=name)
-        self._workflows.seed()
-        if not self._workflows.exists(name):
+        # No seeding here, for the reason `ExportWorkflowUseCase` gives: everything it
+        # installs is already rejected as reserved above.
+        if self._workflows.find(name) is None:
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
 
         folder = self._workflows.folder(name)  # the existing folder — never (re)created

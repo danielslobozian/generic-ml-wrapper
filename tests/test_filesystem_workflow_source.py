@@ -33,16 +33,16 @@ def test_seed_never_overwrites_user_edits(tmp_path: Path) -> None:
     assert (tmp_path / "_common" / "base.md").read_text(encoding="utf-8") == "MINE"
 
 
-def test_exists_and_create(tmp_path: Path) -> None:
+def test_find_and_create(tmp_path: Path) -> None:
     source = FilesystemWorkflowSource(tmp_path)
-    assert source.exists("doc-review") is False
+    assert source.find("doc-review") is None
     folder = source.create("doc-review")
     assert Path(folder) == tmp_path / "doc-review"
     # No per-workflow rules folder: a workflow that behaves wrongly is fixed in the workflow.
     assert not (tmp_path / "doc-review" / "rules").exists()
-    assert source.exists("doc-review") is False  # still no workflow.md
+    assert source.find("doc-review") is None  # still no workflow.md
     (tmp_path / "doc-review" / "workflow.md").write_text("# doc-review", encoding="utf-8")
-    assert source.exists("doc-review") is True
+    assert source.find("doc-review") is not None
 
 
 def test_create_draft_makes_a_sibling_folder_outside_workflows(tmp_path: Path) -> None:
@@ -91,7 +91,9 @@ def test_deploy_draft_moves_the_draft_and_drops_the_marker(tmp_path: Path) -> No
     assert (deployed_dir / "workflow.md").read_text(encoding="utf-8") == "# nightly-etl"
     assert not (deployed_dir / "meta.json").exists()  # transient marker stripped
     assert not draft.exists()  # the draft was moved, not copied
-    assert source.exists("nightly-etl") is True
+    found = source.find("nightly-etl")
+    assert found is not None
+    assert found.slug == "nightly-etl"
 
 
 def _add_workflow(root: Path, name: str) -> None:
@@ -569,3 +571,41 @@ def test_an_older_marker_with_only_a_name_still_parses(tmp_path: Path) -> None:
     assert marker.name == "nightly-etl"
     assert marker.label is None
     assert marker.description == ""
+
+
+def test_find_returns_the_workflow_with_the_words_behind_its_slug(tmp_path: Path) -> None:
+    """A yes/no would have made the caller ask a second question to learn anything."""
+    folder = tmp_path / "nightly-etl"
+    folder.mkdir(parents=True)
+    (folder / "workflow.md").write_text("# steps", encoding="utf-8")
+    (folder / ".about.toml").write_text(
+        'label = "Nightly ETL"\ndescription = "Loads yesterday."\n', encoding="utf-8"
+    )
+
+    found = FilesystemWorkflowSource(tmp_path).find("nightly-etl")
+
+    assert found is not None
+    assert (found.slug, found.label, found.description) == (
+        "nightly-etl",
+        "Nightly ETL",
+        "Loads yesterday.",
+    )
+
+
+def test_a_folder_with_no_steps_file_is_not_a_workflow(tmp_path: Path) -> None:
+    (tmp_path / "half-made").mkdir(parents=True)
+
+    assert FilesystemWorkflowSource(tmp_path).find("half-made") is None
+
+
+def test_the_shared_base_and_the_meta_workflow_are_never_found(tmp_path: Path) -> None:
+    """Hidden from this the same way they are hidden from the listing.
+
+    Otherwise a caller could be handed one of them as if it were a workflow of the user's
+    own — which is what let ``--workflow create-workflow`` be accepted before.
+    """
+    source = FilesystemWorkflowSource(tmp_path)
+    source.seed()
+
+    assert source.find("_common") is None
+    assert source.find("create-workflow") is None

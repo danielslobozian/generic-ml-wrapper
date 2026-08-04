@@ -155,16 +155,22 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             if child.name not in _HIDDEN and (child / "workflow.md").is_file()
         )
 
-    def exists(self, name: str) -> bool:
-        """Return whether ``<root>/<name>/workflow.md`` exists.
+    def find(self, name: str) -> Workflow | None:
+        """Return the workflow at ``<root>/<name>``, or ``None`` if none is runnable there.
+
+        Runnable means the folder holds a ``workflow.md``; the shared base and the
+        meta-workflow are hidden from this the same way they are hidden from the listing,
+        so a caller can never be handed one of them as if it were a user's own.
 
         Args:
             name: The workflow name.
 
         Returns:
-            ``True`` if the workflow has a ``workflow.md``.
+            The workflow with its ``.about.toml`` words, or ``None``.
         """
-        return (self._root / name / "workflow.md").is_file()
+        if name in _HIDDEN or not (self._root / name / "workflow.md").is_file():
+            return None
+        return self._described(name)
 
     def catalog(self) -> list[Workflow]:
         """Return the runnable workflows with their ``.about.toml`` words, sorted by slug.
