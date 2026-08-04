@@ -64,8 +64,10 @@ class SqliteSessionStore(SessionStorePort):
 
         Also flips ``resumable`` on: a client that mints its own id is recorded as
         not-resumable precisely because we had no id to target, so learning one is what
-        makes the session resumable. Scoped by ``job`` as well as ``session_id`` because
-        the ``<job>_NNN`` id is only unique within its job.
+        makes the session resumable. Scoped by ``job`` as well as ``session_id``: the id
+        is unique across the table, so the job adds nothing to the lookup, but it makes
+        the statement match nothing rather than update a stranger's row if the two are
+        ever passed inconsistently.
         """
         with self._ledger.connect() as connection:
             connection.execute(

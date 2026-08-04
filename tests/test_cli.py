@@ -24,6 +24,7 @@ from generic_ml_wrapper.application.domain.model.client_settings_unusable_error 
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
@@ -52,7 +53,6 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import (
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
-    SessionCost,
     TurnRow,
     UsageReport,
 )

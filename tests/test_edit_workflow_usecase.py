@@ -3,6 +3,7 @@
 """Tests for the EditWorkflow use case, driven by fakes."""
 
 import pytest
+from _delete_doubles import FakeSessionLock
 
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
@@ -132,7 +133,10 @@ def _use_case(
         provider,
         uuid_factory=lambda: "fixed-uuid",
         launch=LaunchSequence(
-            HookRunner((), NullDiagnostics(), _localizer()), NullDiagnostics(), _localizer()
+            HookRunner((), NullDiagnostics(), _localizer()),
+            NullDiagnostics(),
+            _localizer(),
+            FakeSessionLock(),
         ),
     )
 

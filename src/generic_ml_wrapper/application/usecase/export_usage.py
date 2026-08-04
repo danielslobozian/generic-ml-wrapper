@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
-    SessionCost,
     TurnRow,
     UsageReport,
 )

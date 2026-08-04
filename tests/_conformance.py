@@ -21,6 +21,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
@@ -87,9 +88,9 @@ class InMemoryUsageStore(UsageStorePort):
     def __init__(self) -> None:
         self._by_job: dict[str, dict[str, float]] = {}
 
-    def record_session_cost(self, job: str, session: str, cost_usd: float) -> None:
+    def record_session_cost(self, job: str, cost: SessionCost) -> None:
         costs = self._by_job.setdefault(job, {})
-        costs[session] = max(costs.get(session, cost_usd), cost_usd)
+        costs[cost.session_id] = max(costs.get(cost.session_id, cost.cost_usd), cost.cost_usd)
 
     def session_costs(self, job: str) -> dict[str, float]:
         return dict(self._by_job.get(job, {}))
@@ -206,6 +207,14 @@ class PerTurnMeteringConformance:
     def make_store(self, tmp_path: Path) -> PerTurnMeteringPort:
         raise NotImplementedError
 
+    def seed_sessions(self, tmp_path: Path, job: str, *sessions: str) -> None:
+        """Record the sessions the turns below belong to.
+
+        A turn belongs to a session, and a backend may refuse one that names a session it
+        does not know -- the SQLite store does, since the schema makes the relationship
+        real. A backend that keeps no sessions of its own leaves this a no-op.
+        """
+
     def _turn(self, session: str, **kwargs: object) -> TurnUsage:
         defaults: dict[str, object] = {"cost_usd": None, "model": None}
         defaults.update(kwargs)
@@ -216,6 +225,7 @@ class PerTurnMeteringConformance:
 
     def test_record_then_read_in_order(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
+        self.seed_sessions(tmp_path, "JOB-1", "JOB-1_001")
         first = TurnUsage("JOB-1_001", 100, 20, 0.01, "Opus 4.8", timestamp=1.0, duration_s=0.5)
         second = TurnUsage("JOB-1_001", 50, 200, None, None)
         store.record("JOB-1", first)
@@ -224,6 +234,7 @@ class PerTurnMeteringConformance:
 
     def test_full_fidelity_round_trip(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
+        self.seed_sessions(tmp_path, "JOB-1", "JOB-1_001")
         turn = TurnUsage(
             "JOB-1_001",
             input_tokens=10,
@@ -241,6 +252,8 @@ class PerTurnMeteringConformance:
 
     def test_turns_are_isolated_per_job(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
+        self.seed_sessions(tmp_path, "JOB-1", "JOB-1_001")
+        self.seed_sessions(tmp_path, "JOB-2", "JOB-2_001")
         store.record("JOB-1", self._turn("JOB-1_001"))
         store.record("JOB-2", self._turn("JOB-2_001"))
         assert store.turns_for_job("JOB-1") == [self._turn("JOB-1_001")]
@@ -252,26 +265,33 @@ class UsageStoreConformance:
     def make_store(self, tmp_path: Path) -> UsageStorePort:
         raise NotImplementedError
 
+    def seed_sessions(self, tmp_path: Path, job: str, *sessions: str) -> None:
+        """Record the sessions the costs below belong to; see the per-turn kit."""
+
     def test_unknown_job_has_no_costs(self, tmp_path: Path) -> None:
         assert self.make_store(tmp_path).session_costs("JOB-9") == {}
 
     def test_record_then_read(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
-        store.record_session_cost("JOB-1", "JOB-1_001", 0.10)
-        store.record_session_cost("JOB-1", "JOB-1_002", 0.25)
+        self.seed_sessions(tmp_path, "JOB-1", "JOB-1_001", "JOB-1_002")
+        store.record_session_cost("JOB-1", SessionCost("JOB-1_001", 0.10))
+        store.record_session_cost("JOB-1", SessionCost("JOB-1_002", 0.25))
         assert store.session_costs("JOB-1") == {"JOB-1_001": 0.10, "JOB-1_002": 0.25}
 
     def test_cost_is_monotonic_highest_wins(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
-        store.record_session_cost("JOB-1", "JOB-1_001", 0.50)
-        store.record_session_cost("JOB-1", "JOB-1_001", 0.20)  # lower: ignored
-        store.record_session_cost("JOB-1", "JOB-1_001", 0.90)  # higher: wins
+        self.seed_sessions(tmp_path, "JOB-1", "JOB-1_001")
+        store.record_session_cost("JOB-1", SessionCost("JOB-1_001", 0.50))
+        store.record_session_cost("JOB-1", SessionCost("JOB-1_001", 0.20))  # lower: ignored
+        store.record_session_cost("JOB-1", SessionCost("JOB-1_001", 0.90))  # higher: wins
         assert store.session_costs("JOB-1") == {"JOB-1_001": 0.90}
 
     def test_costs_are_isolated_per_job(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
-        store.record_session_cost("JOB-1", "JOB-1_001", 0.10)
-        store.record_session_cost("JOB-2", "JOB-2_001", 0.20)
+        self.seed_sessions(tmp_path, "JOB-1", "JOB-1_001")
+        self.seed_sessions(tmp_path, "JOB-2", "JOB-2_001")
+        store.record_session_cost("JOB-1", SessionCost("JOB-1_001", 0.10))
+        store.record_session_cost("JOB-2", SessionCost("JOB-2_001", 0.20))
         assert store.session_costs("JOB-1") == {"JOB-1_001": 0.10}
 
 

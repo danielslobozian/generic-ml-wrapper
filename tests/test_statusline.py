@@ -6,10 +6,16 @@ import json
 
 import pytest
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLocalizerFactory,
+)
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
+from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
@@ -40,12 +46,21 @@ _NO_WORKSPACE = Workspace(folder=None, repo=None, branch=None, short_sha=None, d
 _REPO = Workspace(folder="~/dev/app", repo="app", branch="main", short_sha="abc1234", dirty=3)
 
 
-class FakeUsageStore(UsageStorePort):
-    def __init__(self) -> None:
-        self.recorded: list[tuple[str, str, float]] = []
+def _localizer() -> Localizer:
+    """The real English catalogue: these tests assert behaviour, not translations."""
+    return JsonCatalogLocalizerFactory().load("en")
 
-    def record_session_cost(self, job: str, session: str, cost_usd: float) -> None:
-        self.recorded.append((job, session, cost_usd))
+
+class FakeUsageStore(UsageStorePort):
+    def __init__(self, *, refuse: bool = False) -> None:
+        self.recorded: list[tuple[str, str, float]] = []
+        self.refuse = refuse
+
+    def record_session_cost(self, job: str, cost: SessionCost) -> None:
+        if self.refuse:
+            message = "no such session"
+            raise RuntimeError(message)
+        self.recorded.append((job, cost.session_id, cost.cost_usd))
 
     def session_costs(self, job: str) -> dict[str, float]:
         return {}
@@ -220,6 +235,8 @@ def _use_case(
         usage,
         FakeWorkspaceInspector(workspace),
         turns or FakePerTurnStore(),
+        NullDiagnostics(),
+        _localizer(),
         clock=lambda: now,
     )
 
@@ -230,6 +247,22 @@ def test_use_case_records_cost_and_renders() -> None:
     assert "$0.43" in line
     assert "git app/main" in line
     assert usage.recorded == [("JOB-1", "JOB-1_001", 0.4321)]
+
+
+def test_the_line_still_renders_when_the_store_refuses_the_cost() -> None:
+    """A refused bookkeeping write must not blank the user's status bar.
+
+    Reachable once the tables reference each other: a client whose wrapper process died
+    outlives the session row it was launched under, and keeps piping status payloads at
+    a session that is no longer there.
+    """
+    usage = FakeUsageStore(refuse=True)
+
+    line = _use_case(usage, _REPO).execute(json.dumps(_CLAUDE_PAYLOAD), "JOB-1", "JOB-1_001")
+
+    assert "$0.43" in line
+    assert "git app/main" in line
+    assert usage.recorded == []
 
 
 def test_use_case_shows_only_the_session_row_for_a_single_session() -> None:

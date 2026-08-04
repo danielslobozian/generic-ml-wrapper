@@ -21,6 +21,11 @@ class PerTurnMeteringPort(ABC):
     def record(self, job: str, turn: TurnUsage) -> None:
         """Append one metered turn for a job.
 
+        The turn's session must already be recorded: a turn belongs to a session, and an
+        implementation may refuse one that names a session it does not know. Callers that
+        meter a live client already satisfy this -- the session is persisted before the
+        client is launched.
+
         Args:
             job: The job the turn belongs to.
             turn: The turn's usage.

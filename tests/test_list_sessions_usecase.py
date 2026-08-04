@@ -5,6 +5,7 @@
 from _conformance import InMemoryPerTurnStore, InMemoryUsageStore
 
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
@@ -93,8 +94,8 @@ def test_each_session_carries_its_own_turn_count_and_cost() -> None:
     for session in ("JOB-1_001", "JOB-1_001", "JOB-1_002"):
         turns.record("JOB-1", TurnUsage(session, 10, 5, 0.01, "sonnet"))
     usage = InMemoryUsageStore()
-    usage.record_session_cost("JOB-1", "JOB-1_001", 1.25)
-    usage.record_session_cost("JOB-1", "JOB-1_002", 0.50)
+    usage.record_session_cost("JOB-1", SessionCost("JOB-1_001", 1.25))
+    usage.record_session_cost("JOB-1", SessionCost("JOB-1_002", 0.50))
 
     first, second = _use_case(store, turns, usage).execute("JOB-1")
 

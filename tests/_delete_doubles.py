@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Recording doubles for the two purge ports.
+"""Recording doubles for the two purge ports, and a controllable session lock.
 
 Deliberately *recording* rather than in-memory-realistic. What the delete use cases have
 to get right is which purges they call and — more importantly — which they do not call
@@ -13,11 +13,66 @@ they do from :mod:`_conformance`.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import TYPE_CHECKING
+
+from generic_ml_wrapper.application.domain.model.job_running_error import JobRunningError
+from generic_ml_wrapper.application.domain.model.session_running_error import SessionRunningError
 from generic_ml_wrapper.application.port.outbound.artifact_purge import (
     ArtifactCounts,
     ArtifactPurgePort,
 )
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
+from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+
+class FakeSessionLock(SessionLockPort):
+    """A session lock whose answers a test declares, rather than a real OS lock.
+
+    Grants every claim by default -- most tests are not about what is running -- and a
+    test that *is* names the running sessions or jobs up front. It also records the
+    claims made, so "the delete stopped at the running one" can be asserted directly
+    rather than inferred from what was purged.
+    """
+
+    def __init__(
+        self,
+        running_sessions: set[str] | None = None,
+        running_jobs: set[str] | None = None,
+    ) -> None:
+        self.running_sessions = running_sessions or set()
+        self.running_jobs = running_jobs or set()
+        self.claimed_sessions: list[tuple[str, str]] = []
+        self.claimed_jobs: list[str] = []
+        self.held_sessions: list[tuple[str, str]] = []
+        self.held_jobs: list[str] = []
+
+    @contextmanager
+    def hold_session(self, job: str, session_id: str) -> Generator[None]:
+        self.held_sessions.append((job, session_id))
+        yield
+
+    @contextmanager
+    def hold_job(self, job: str) -> Generator[None]:
+        self.held_jobs.append(job)
+        yield
+
+    @contextmanager
+    def claim_session(self, job: str, session_id: str) -> Generator[None]:
+        if session_id in self.running_sessions:
+            raise SessionRunningError(job, session_id)
+        self.claimed_sessions.append((job, session_id))
+        yield
+
+    @contextmanager
+    def claim_job(self, job: str) -> Generator[None]:
+        if job in self.running_jobs:
+            raise JobRunningError(job)
+        self.claimed_jobs.append(job)
+        yield
 
 
 class RecordingLedgerPurge(LedgerPurgePort):

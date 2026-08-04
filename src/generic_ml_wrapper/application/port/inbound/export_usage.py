@@ -7,6 +7,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
+
 
 @dataclass(frozen=True)
 class TurnRow:
@@ -50,19 +52,6 @@ class ModelTotal:
     output_tokens: int
     cache_tokens: int
     duration_s: float
-
-
-@dataclass(frozen=True)
-class SessionCost:
-    """A session's recorded cost.
-
-    Attributes:
-        session_id: The session's human-readable id.
-        cost_usd: The session's cumulative cost in USD.
-    """
-
-    session_id: str
-    cost_usd: float
 
 
 @dataclass(frozen=True)

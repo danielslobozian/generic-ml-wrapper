@@ -8,9 +8,11 @@ batch is all-or-nothing, so a typo in the third id must leave the first two alon
 
 import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
-from _delete_doubles import RecordingArtifactPurge, RecordingLedgerPurge
+from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
+from generic_ml_wrapper.application.domain.model.session_running_error import SessionRunningError
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.delete_sessions import (
     NoSuchJobError,
@@ -31,17 +33,18 @@ class _Fixture:
         self.usage = InMemoryUsageStore()
         self.ledger = RecordingLedgerPurge()
         self.artifacts = RecordingArtifactPurge()
+        self.locks = FakeSessionLock()
 
     def use_case(self) -> DeleteSessionsUseCase:
         return DeleteSessionsUseCase(
-            self.store, self.turns, self.usage, self.ledger, self.artifacts
+            self.store, self.turns, self.usage, self.ledger, self.artifacts, self.locks
         )
 
 
 def test_preview_measures_without_removing_anything() -> None:
     fixture = _Fixture()
     fixture.turns.record("alpha", TurnUsage("alpha_002", 10, 5, 0.02, "sonnet"))
-    fixture.usage.record_session_cost("alpha", "alpha_002", 0.75)
+    fixture.usage.record_session_cost("alpha", SessionCost("alpha_002", 0.75))
     fixture.artifacts.set_session_counts("alpha", "alpha_002", contexts=1, transcript_calls=6)
 
     assert fixture.use_case().preview("alpha", ["alpha_002"]) == [
@@ -119,3 +122,34 @@ def test_an_empty_request_removes_nothing() -> None:
 
     assert fixture.use_case().execute("alpha", []) == []
     assert fixture.ledger.purged_sessions == []
+
+
+def test_a_running_session_is_refused() -> None:
+    """The reason the lock exists: nothing is removed under a live client."""
+    fixture = _Fixture()
+    fixture.locks.running_sessions = {"alpha_002"}
+
+    with pytest.raises(SessionRunningError) as caught:
+        fixture.use_case().execute("alpha", ["alpha_002"])
+
+    assert caught.value.session == "alpha_002"
+    assert fixture.ledger.purged_sessions == []
+    assert fixture.artifacts.purged_sessions == []
+
+
+def test_a_stopped_sibling_of_a_running_session_is_still_removable() -> None:
+    """Locking the session rather than the job is what buys this."""
+    fixture = _Fixture()
+    fixture.locks.running_sessions = {"alpha_002"}
+
+    fixture.use_case().execute("alpha", ["alpha_001"])
+
+    assert fixture.ledger.purged_sessions == [("alpha", "alpha_001")]
+
+
+def test_the_claim_is_taken_before_anything_is_removed() -> None:
+    fixture = _Fixture()
+
+    fixture.use_case().execute("alpha", ["alpha_001"])
+
+    assert fixture.locks.claimed_sessions == [("alpha", "alpha_001")]

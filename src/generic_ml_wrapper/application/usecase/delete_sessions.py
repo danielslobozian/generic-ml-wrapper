@@ -25,6 +25,7 @@ from generic_ml_wrapper.application.port.inbound.delete_sessions import (
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
@@ -32,13 +33,14 @@ from generic_ml_wrapper.application.port.outbound.usage_store import UsageStoreP
 class DeleteSessionsUseCase(DeleteSessions):
     """Measure and remove a job's sessions."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917  (the read ports it measures with, plus both purges and the lock)
         self,
         store: SessionStorePort,
         turns: PerTurnMeteringPort,
         usage: UsageStorePort,
         ledger: LedgerPurgePort,
         artifacts: ArtifactPurgePort,
+        locks: SessionLockPort,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -52,12 +54,14 @@ class DeleteSessionsUseCase(DeleteSessions):
             usage: Where recorded session costs are read from.
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
+            locks: Claims each session, so none is removed while its client runs.
         """
         self._store = store
         self._turns = turns
         self._usage = usage
         self._ledger = ledger
         self._artifacts = artifacts
+        self._locks = locks
 
     def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
         """Report what deleting these sessions would remove, without removing it."""
@@ -65,14 +69,24 @@ class DeleteSessionsUseCase(DeleteSessions):
         return self._footprints(job, sessions)
 
     def execute(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
-        """Delete the sessions, their recorded usage, and their files."""
+        """Delete the sessions, their recorded usage, and their files.
+
+        Raises:
+            SessionRunningError: If one of the sessions has a live client. The batch
+                stops there, the same way an unrecorded id stops it -- but unlike that
+                check this one cannot be made up front for the whole batch, because the
+                claim must still be held when the rows go.
+        """
         self._validate(job, sessions)
         # Measured before the first removal, and returned afterwards: once the rows are
         # gone there is nothing left to count, so "what went" has to be taken up front.
         footprints = self._footprints(job, sessions)
         for session in sessions:
-            self._ledger.purge_session(job, session)
-            self._artifacts.purge_session(job, session)
+            # Held across both removals: a client cannot start against this session in
+            # the gap between its rows going and its files going.
+            with self._locks.claim_session(job, session):
+                self._ledger.purge_session(job, session)
+                self._artifacts.purge_session(job, session)
         return footprints
 
     def _validate(self, job: str, sessions: Sequence[str]) -> None:

@@ -11,9 +11,9 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
     FilesystemReportExporter,
 )
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ModelTotal,
-    SessionCost,
     UsageReport,
 )
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
