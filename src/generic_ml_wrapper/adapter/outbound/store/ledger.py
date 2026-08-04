@@ -22,12 +22,11 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE jobs (
     job        TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL DEFAULT 'work',   -- 'work' | 'authoring'
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -110,6 +109,12 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         # client_catalog.resumable). Everything else keeps the DEFAULT 1.
         "UPDATE sessions SET resumable = 0 WHERE client IN ('codex', 'vibe')",
     ),
+    # 3: ``jobs.kind`` stopped being written. Nothing to run -- dropping the column would
+    # be a destructive migration for no gain, and its ``DEFAULT 'work'`` means an insert
+    # that never names it still succeeds. An upgraded database therefore keeps a dead
+    # column that a fresh one does not have; the version records where that divergence
+    # begins, so the next migration author does not assume one physical shape.
+    3: (),
 }
 
 

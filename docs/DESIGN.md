@@ -205,19 +205,24 @@ into a standalone project later without change to the ports.
 Everything lives under `~/.gmlw`, owner-only, on your machine.
 
 **The ledger** — a single SQLite file, `~/.gmlw/ledger.db` (WAL; one connection per
-operation; `PRAGMA user_version` schema versioning). Pre-1.0 the schema is *created
-from its final state* (`SCHEMA_VERSION = 1`, one create step, no migrations — a schema
-change is a full store reset). Tables:
+operation; `PRAGMA user_version` schema versioning). Pre-1.0 a fresh database is *created
+from its final state* (`SCHEMA_VERSION = 3`, one create step), and an existing one is
+brought forward by a short list of **additive, non-destructive** migrations — never a
+reset. Tables:
 
 | Table | Holds |
 |---|---|
-| `jobs` | `job`, `kind` (`work` \| `authoring`), `created_at` |
+| `jobs` | `job`, `created_at` |
 | `sessions` | `session_id` (`<job>_NNN`), `job`, `client`, `uuid` |
 | `turns` | one row per metered turn: tokens (incl. cache), `cost_usd`, `model`, timing |
 | `session_costs` | per-session cumulative cost (monotonic upsert — highest wins) |
 
-Authoring sessions share the DB but are tagged `kind = 'authoring'`, so they never
-appear in `gmlw jobs` and their spend is its own bucket.
+A job's name is its identity and the only thing that identifies it — there is no kind,
+no second table, and no rule about who may hold which name. Authoring is an ordinary job
+called `create-workflow`; creating and editing workflows both file under it, and the
+listing use case leaves that one name out because the system chose it rather than the
+user. It is not protected: `gmlw jobs delete create-workflow` removes its history like
+any other, and the workflows it produced are not stored under it.
 
 **Context** — the exact compiled context a session launched with is written to
 `~/.gmlw/contexts/<job>/<session>.context.md` (atomic write). A durable, inspectable

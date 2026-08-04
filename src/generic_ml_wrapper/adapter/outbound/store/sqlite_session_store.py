@@ -2,19 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """SQLite ``SessionStorePort``: sessions in the shared ``ledger.db``.
 
-The store is scoped to a ``kind`` (``work`` or ``authoring``): recording tags the
-job with it and :meth:`jobs` filters by it, so authoring sessions stay out of
-``gmlw jobs`` -- the same separation the old parallel filesystem root gave, without
-a second store.
+Every job is the same kind of thing here. A job's name is its identity and the store
+holds no opinion about what the job is for, so recording a session under a name that
+already exists is how a job accumulates its history rather than a collision to refuse.
+Hiding the one job the system names for itself is a listing concern, not this one's --
+see :class:`~generic_ml_wrapper.application.domain.model.authoring_job.AuthoringJob`.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.job_name_taken_error import (
-    JobNameTakenError,
-)
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
@@ -23,45 +21,30 @@ if TYPE_CHECKING:
 
 
 class SqliteSessionStore(SessionStorePort):
-    """Persist and read sessions in the ledger, scoped to a job ``kind``."""
+    """Persist and read sessions in the ledger."""
 
-    def __init__(self, ledger: Ledger, kind: str = "work") -> None:
-        """Bind the store to the ledger and the job kind it owns.
+    def __init__(self, ledger: Ledger) -> None:
+        """Bind the store to the ledger.
 
         Args:
             ledger: The shared SQLite ledger.
-            kind: The job kind this store records and lists (``work`` | ``authoring``).
         """
         self._ledger = ledger
-        self._kind = kind
 
     def jobs(self) -> list[str]:
-        """Return the ids of this kind's jobs that have recorded sessions, sorted."""
+        """Return the ids of the jobs that have recorded sessions, sorted."""
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT DISTINCT s.job FROM sessions s JOIN jobs j ON s.job = j.job "
-                "WHERE j.kind = ? ORDER BY s.job",
-                (self._kind,),
+                "SELECT DISTINCT job FROM sessions ORDER BY job",
             ).fetchall()
         return [row["job"] for row in rows]
 
     def record(self, session: Session) -> None:
-        """Persist a session, creating its job (tagged with this store's kind) if new.
-
-        Raises:
-            JobNameTakenError: If a job of the other kind already holds the name. One
-                name is one job; reusing it within a kind is how a job accumulates its
-                sessions, but across kinds it would silently merge two.
-        """
+        """Persist a session, creating its job if the name is new."""
         with self._ledger.connect() as connection:
-            row = connection.execute(
-                "SELECT kind FROM jobs WHERE job = ?", (session.job,)
-            ).fetchone()
-            if row is not None and row[0] != self._kind:
-                raise JobNameTakenError(session.job, self._kind, str(row[0]))
             connection.execute(
-                "INSERT OR IGNORE INTO jobs (job, kind) VALUES (?, ?)",
-                (session.job, self._kind),
+                "INSERT OR IGNORE INTO jobs (job) VALUES (?)",
+                (session.job,),
             )
             connection.execute(
                 "INSERT INTO sessions (session_id, job, client, uuid, cwd, resumable) "
@@ -91,19 +74,12 @@ class SqliteSessionStore(SessionStorePort):
             )
 
     def sessions_for_job(self, job: str) -> list[Session]:
-        """Return the sessions recorded for a job of this store's kind, oldest first.
-
-        Scoped to the kind, not just the name. A name identifies exactly one job, so a
-        store asked about a job of the *other* kind is being asked the wrong question and
-        answers with nothing — rather than handing back another kind of work's history,
-        which is what it used to do.
-        """
+        """Return the sessions recorded for a job, oldest first."""
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT s.session_id, s.job, s.client, s.uuid, s.cwd, s.resumable, s.created_at "
-                "FROM sessions s JOIN jobs j ON s.job = j.job "
-                "WHERE s.job = ? AND j.kind = ? ORDER BY s.id",
-                (job, self._kind),
+                "SELECT session_id, job, client, uuid, cwd, resumable, created_at "
+                "FROM sessions WHERE job = ? ORDER BY id",
+                (job,),
             ).fetchall()
         return [
             Session(

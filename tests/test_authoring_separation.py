@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Authoring sessions carry the ``authoring`` kind and never pollute `gmlw jobs`."""
+"""The authoring job is recorded like any other and left out of `gmlw jobs` by name.
+
+There is no second kind of job and no second store. Authoring records into the one
+ledger, under the one name the system chooses for itself, and the listing use case is
+the only thing that treats that name differently.
+"""
 
 from pathlib import Path
 
@@ -13,7 +18,9 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import Sqlit
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
+from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.run import RunContext
+from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
@@ -33,11 +40,11 @@ class _NoLaunch(CliCaller):
         return 0
 
 
-def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
+def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path / "ledger.db")
     new_workflow = NewWorkflowUseCase(
         workflows=FilesystemWorkflowSource(tmp_path / "workflows"),
-        store=SqliteSessionStore(ledger, kind="authoring"),
+        store=SqliteSessionStore(ledger),
         callers=_NoLaunchProvider(),
         uuid_factory=lambda: "u",
         launch=LaunchSequence(
@@ -46,11 +53,28 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
     )
     new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))
 
-    # `gmlw jobs` reads the work kind only -- untouched by authoring.
-    assert ListJobsUseCase(SqliteSessionStore(ledger, kind="work")).execute() == []
-    # The authoring session landed under the authoring kind, always as create-workflow
-    # (the target name is a seed, decided at the end -- sessions accumulate here).
-    assert SqliteSessionStore(ledger, kind="authoring").jobs() == ["create-workflow"]
+    # The session is really there: the store keeps no secrets, so deleting it is possible.
+    # Always as create-workflow -- the target name is a seed, decided at the end.
+    assert SqliteSessionStore(ledger).jobs() == [AuthoringJob.NAME]
+    # `gmlw jobs` leaves that one name out, and it is the only name it leaves out.
+    assert ListJobsUseCase(SqliteSessionStore(ledger)).execute() == []
+
+
+def test_the_listing_hides_nothing_else(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path / "ledger.db")
+    store = SqliteSessionStore(ledger)
+    store.record(
+        Session(
+            session_id="PROJ-482_001",
+            job="PROJ-482",
+            client="claude",
+            uuid=None,
+            cwd="/work",
+            resumable=True,
+        )
+    )
+
+    assert [summary.job for summary in ListJobsUseCase(store).execute()] == ["PROJ-482"]
 
 
 def _localizer() -> Localizer:

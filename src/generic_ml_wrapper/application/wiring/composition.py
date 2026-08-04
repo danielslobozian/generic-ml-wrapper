@@ -793,7 +793,7 @@ def build_new_workflow() -> NewWorkflow:
         A ready-to-run NewWorkflow.
     """
     interceptors = _interceptor_chain()
-    sessions = SqliteSessionStore(_ledger(), kind="authoring")
+    sessions = SqliteSessionStore(_ledger())
     return NewWorkflowUseCase(
         workflows=_workflow_source(interceptors),
         store=sessions,
@@ -817,7 +817,7 @@ def build_edit_workflow() -> EditWorkflow:
         A ready-to-run EditWorkflow.
     """
     interceptors = _interceptor_chain()
-    sessions = SqliteSessionStore(_ledger(), kind="authoring")
+    sessions = SqliteSessionStore(_ledger())
     return EditWorkflowUseCase(
         workflows=_workflow_source(interceptors),
         store=sessions,

@@ -45,7 +45,7 @@ if TYPE_CHECKING:
 
 class TestSqliteSessionStore(SessionStoreConformance):
     def make_store(self, tmp_path: Path) -> SessionStorePort:
-        return SqliteSessionStore(Ledger(tmp_path / "ledger.db"), kind="work")
+        return SqliteSessionStore(Ledger(tmp_path / "ledger.db"))
 
 
 class TestInMemorySessionStore(SessionStoreConformance):

@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **A job is only its name.** The ledger used to tag every job `work` or `authoring` and
+  keep the two apart, which meant a name held by one was refused to the other — and, before
+  that refusal existed, meant the two silently shared a row and leaked each other's
+  sessions. The tag is gone. One name is one job, reusing it is how a job accumulates its
+  history, and nothing is refused. The `jobs.kind` column stops being written; an existing
+  database keeps it, unread and unchanged, rather than being migrated destructively.
+- **Editing a workflow is filed with creating it.** `gmlw workflow edit <name>` used to
+  record its sessions under a job named after the workflow, invisible only because of the
+  tag above. It now files under `create-workflow` alongside `gmlw workflow new`, so all
+  authoring is one history and one cost. Which workflow a session edited is still carried
+  by the session's folder, so `--resume-latest` reopens the right conversation.
+- **`gmlw jobs` leaves out `create-workflow`, and nothing else.** It is the one job name
+  the system chooses for itself. It is not protected: it can be deleted, and its spend is
+  metered, like any other job's.
+
 ## [0.11.0] - 2026-08-02
 
 Things can be removed now. Until this release gmlw only ever accumulated: every job that had
