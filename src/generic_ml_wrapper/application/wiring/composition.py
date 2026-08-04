@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,6 +79,9 @@ from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
+    SqliteStoreMigration,
+)
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
 from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
@@ -128,6 +132,9 @@ from generic_ml_wrapper.application.port.outbound.diagnostics import Diagnostics
 from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.application.port.outbound.store_migration import (
+    StoreMigrationPort,
+)
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
@@ -184,6 +191,18 @@ from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
 def _ledger() -> Ledger:
     """The shared SQLite ledger backing the session/turn/usage stores."""
     return Ledger(paths.ledger)
+
+
+def build_store_migration() -> StoreMigrationPort:
+    """Build the store migration, wired to the ledger's database file.
+
+    Returns:
+        A ready-to-run StoreMigrationPort.
+    """
+    return SqliteStoreMigration(
+        lambda: sqlite3.connect(paths.ledger, timeout=5.0),
+        paths.ledger.parent,
+    )
 
 
 def _transcript_root() -> Path:

@@ -205,10 +205,23 @@ into a standalone project later without change to the ports.
 Everything lives under `~/.gmlw`, owner-only, on your machine.
 
 **The ledger** — a single SQLite file, `~/.gmlw/ledger.db` (WAL; one connection per
-operation; `PRAGMA user_version` schema versioning). Pre-1.0 a fresh database is *created
-from its final state* (`SCHEMA_VERSION = 3`, one create step), and an existing one is
-brought forward by a short list of **additive, non-destructive** migrations — never a
-reset. Tables:
+operation). Its schema is an **ordered lineage of migration files**,
+`store/migrations/NNNN.name.sql`, each named for the version it brings a store *to*, and
+applied by `SqliteStoreMigration` behind `StoreMigrationPort` — the Flyway/Liquibase
+model, not a create-from-final-state script. A database created today runs the same
+lineage an existing one did, so a fresh install and an upgraded machine end in the same
+shape rather than drifting apart.
+
+Each file is applied inside its own transaction together with the version bump that
+records it, so a crash part-way leaves the store at the last version that applied
+cleanly. The applied version lives in a `schema_version` table built to hold exactly one
+row; stores predating it kept their version in `PRAGMA user_version`, which is read once
+to seed the table and never touched again. Migrations run with foreign keys off, because
+changing a column in SQLite means rebuilding the table. The whole sequence is serialized
+by an exclusive lock on `~/.gmlw/store.lock`, so two commands meeting a brand-new
+database cannot both create it. At startup the CLI checks that the shipped lineage can
+reach the version the code expects, and refuses to run if it cannot — the failure a
+missing `.sql` file in a built package would otherwise cause silently. Tables:
 
 | Table | Holds |
 |---|---|

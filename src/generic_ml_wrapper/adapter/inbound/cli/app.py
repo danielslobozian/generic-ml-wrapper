@@ -48,6 +48,9 @@ from generic_ml_wrapper.application.domain.model.migration_report import Migrati
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
+from generic_ml_wrapper.application.domain.model.store_contract_outdated_error import (
+    StoreContractOutdatedError,
+)
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
@@ -97,6 +100,9 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
     UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.port.outbound.store_migration import (
+    CURRENT_SCHEMA_VERSION,
+)
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_application_settings,
@@ -134,6 +140,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_save_usage_report,
     build_set_credential,
     build_start_job,
+    build_store_migration,
     build_workflow_chooser,
 )
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
@@ -907,13 +914,31 @@ def main(argv: list[str] | None = None) -> int:
         The process exit code.
     """
     try:
+        _check_store_contract()
         return _dispatch(sys.argv[1:] if argv is None else argv)
+    except DomainError as error:  # a refusal we phrased ourselves — say it, don't dump it
+        print(_render_error(error), file=sys.stderr)
+        return 1
     except KeyboardInterrupt:
         print(file=sys.stderr)  # a tidy newline after ^C, never a traceback
         return 130
     except Exception as error:  # noqa: BLE001  last resort: no traceback reaches the user
         print(i18n.t("error.unexpected", error=error), file=sys.stderr)
         return 1
+
+
+def _check_store_contract() -> None:
+    """Refuse to run if the shipped migrations cannot reach the schema this build needs.
+
+    A build whose code and migration files disagree can only damage a store: it would
+    read and write through a mapping the tables do not match. The realistic way to get
+    there is packaging — the ``.sql`` files failing to reach the installed wheel — which
+    is exactly the case where failing at the first command beats creating an empty
+    database and calling it success.
+    """
+    implemented = build_store_migration().implemented_version()
+    if implemented < CURRENT_SCHEMA_VERSION:
+        raise StoreContractOutdatedError(implemented, CURRENT_SCHEMA_VERSION)
 
 
 def _render_error(error: Exception) -> str:

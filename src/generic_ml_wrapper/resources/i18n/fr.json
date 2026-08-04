@@ -522,5 +522,9 @@
   "tui.rules.drafts": "{count} désactivée(s)",
   "tui.rules.draft": "brouillon — désactivée, injectée dans aucune session",
   "tui.rules.active": "active",
-  "tui.rules.norule": "(pas de ligne Rule:)"
+  "tui.rules.norule": "(pas de ligne Rule:)",
+  "error.store.migration_failed": "le registre n'a pas pu être mis à niveau (version de schéma {version}).\n\nRien n'a été modifié — vos jobs, sessions et votre historique sont intacts.\nL'échec sous-jacent :  {reason}",
+  "error.store.corrupt": "le registre ne peut pas indiquer sa version de schéma ({rows} lignes de version\ntrouvées, une seule attendue). Il ne sera pas ouvert, car deviner risquerait\nd'abîmer l'historique. Restaurez ~/.gmlw/ledger.db depuis une sauvegarde, ou\ndéplacez-le pour repartir de zéro.",
+  "error.store.schema_too_new": "le registre a été écrit par un gmlw plus récent (version de schéma {found} ; cette\nversion en gère au plus {supported}). Mettez gmlw à niveau :  uv tool upgrade generic-ml-wrapper",
+  "error.store.contract_outdated": "cette installation de gmlw est incomplète : elle attend la version de schéma {required}\nmais ne fournit des migrations que jusqu'à {implemented}. Réinstallez-la :\nuv tool install --force generic-ml-wrapper"
 }

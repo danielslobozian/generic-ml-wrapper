@@ -1,0 +1,9 @@
+-- A job is only its name (version 3).
+--
+-- The point at which ``jobs.kind`` stopped being written: one name is one job, and what
+-- the job is for is not part of who it is. Nothing runs here — the column keeps its
+-- DEFAULT and simply stops being named by any insert. It is removed in 0004, once the
+-- machinery to rebuild a table exists.
+--
+-- The file exists because the lineage must have no gaps: a missing number is a fault,
+-- not a silent skip.
