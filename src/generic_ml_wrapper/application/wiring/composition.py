@@ -45,6 +45,7 @@ from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import
     CacheBackedContextCompressor,
 )
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
+from generic_ml_wrapper.adapter.outbound.config.toml_runtime_config import TomlRuntimeConfig
 from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import TomlSettingsCatalog
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
@@ -88,6 +89,7 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
 )
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.port.inbound.application_settings import ApplicationSettings
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
@@ -108,6 +110,7 @@ from generic_ml_wrapper.application.port.inbound.list_personas import ListPerson
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
+from generic_ml_wrapper.application.port.inbound.list_supported_clients import ListSupportedClients
 from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import ListWorkflowCatalog
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
@@ -122,6 +125,7 @@ from generic_ml_wrapper.application.port.outbound.artifact_purge import Artifact
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
@@ -146,6 +150,9 @@ from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUse
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
+from generic_ml_wrapper.application.usecase.list_supported_clients import (
+    ListSupportedClientsUseCase,
+)
 from generic_ml_wrapper.application.usecase.list_workflow_catalog import (
     ListWorkflowCatalogUseCase,
 )
@@ -153,6 +160,9 @@ from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsU
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.usecase.read_application_settings import (
+    ReadApplicationSettingsUseCase,
+)
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
@@ -543,7 +553,7 @@ def build_workflow_chooser() -> TtyWorkflowChooser:
     return TtyWorkflowChooser(build_localizer())
 
 
-def build_guided_chooser() -> TtyGuidedChooser:
+def build_guided_chooser() -> GuidedChooserPort:
     """Build the guided-vs-quick authoring chooser for ``workflow new`` / ``edit``.
 
     Returns:
@@ -581,6 +591,24 @@ def build_config_commands() -> ConfigCommands:
         config_file=config.config_path,
         settings=TomlSettingsCatalog(),
     )
+
+
+def build_application_settings() -> ApplicationSettings:
+    """Build the ApplicationSettings use case over the user's configured settings.
+
+    Returns:
+        A ready-to-ask ApplicationSettings.
+    """
+    return ReadApplicationSettingsUseCase(TomlRuntimeConfig())
+
+
+def build_list_supported_clients() -> ListSupportedClients:
+    """Build the ListSupportedClients use case over the packaged catalogue.
+
+    Returns:
+        A ready-to-run ListSupportedClients.
+    """
+    return ListSupportedClientsUseCase(TomlClientCatalog())
 
 
 def build_create_axis() -> CreateAxis:

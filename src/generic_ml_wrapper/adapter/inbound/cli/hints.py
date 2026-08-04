@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.wiring import localization as i18n
+from generic_ml_wrapper.application.wiring.composition import build_application_settings
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.paths import paths
 
@@ -58,7 +58,7 @@ def next_hint(loc: Localizer) -> str | None:
     Returns:
         The localised tip, or ``None`` when hints are off or every tip has been shown.
     """
-    if not config.hints_show():
+    if not build_application_settings().hints_enabled():
         return None
     seen = _read_seen()
     for hint_id, key in TIPS:

@@ -7,15 +7,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number
+from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
+from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
-GUIDED = "guided"
-QUICK = "quick"
 
-
-class TtyGuidedChooser:
+class TtyGuidedChooser(GuidedChooserPort):
     """Ask, at authoring start, whether to use the guided experience or the quick one.
 
     Presented on every interactive ``workflow new`` / ``edit`` when neither ``--guided``
@@ -32,22 +31,24 @@ class TtyGuidedChooser:
         """
         self._i18n = i18n
 
-    def choose(self, i18n: Localizer | None = None) -> str | None:
-        """Offer the choice and return ``"guided"``, ``"quick"``, or ``None``.
+    def choose(self, i18n: Localizer | None = None) -> AuthoringMode | None:
+        """Offer the choice and return the chosen mode, or ``None``.
 
         Args:
             i18n: The localiser for the prompt; ``None`` uses the construction-time one.
 
         Returns:
-            ``"guided"`` or ``"quick"``; ``None`` when there is no terminal to prompt on.
+            The chosen :class:`AuthoringMode`; ``None`` when there is no terminal to
+            prompt on, and so nobody to ask.
         """
         loc = i18n or self._i18n
-        return choose_number(
+        picked = choose_number(
             loc.t("guided.header"),
             [
-                Choice(value=GUIDED, label=loc.t("guided.choice_guided")),
-                Choice(value=QUICK, label=loc.t("guided.choice_quick")),
+                Choice(value=AuthoringMode.GUIDED.value, label=loc.t("guided.choice_guided")),
+                Choice(value=AuthoringMode.QUICK.value, label=loc.t("guided.choice_quick")),
             ],
             loc,
             default=0,  # Enter → the guided experience
         )
+        return AuthoringMode(picked) if picked is not None else None

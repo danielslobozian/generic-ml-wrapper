@@ -9,6 +9,7 @@ import signal
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
 from generic_ml_wrapper.adapter.outbound.config.toml_config_reader import CompanionSettings
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobResult
 
@@ -42,13 +43,15 @@ def test_ignore_sigint_is_a_noop() -> None:
 
 
 def test_farewell_is_none_without_a_companion(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app.config, "companion", lambda: CompanionSettings(persona=None, name=None))
+    monkeypatch.setattr(
+        toml_config_reader, "companion", lambda: CompanionSettings(persona=None, name=None)
+    )
     assert app._farewell() is None
 
 
 def test_farewell_greets_the_configured_name(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        app.config, "companion", lambda: CompanionSettings(persona="butler", name="Ada")
+        toml_config_reader, "companion", lambda: CompanionSettings(persona="butler", name="Ada")
     )
     assert app._farewell() == "Bye, Ada."
 

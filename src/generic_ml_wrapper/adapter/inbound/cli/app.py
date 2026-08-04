@@ -28,10 +28,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
-from generic_ml_wrapper.adapter.outbound.config import settings_registry
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
+from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
@@ -43,11 +40,15 @@ from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.invalid_setting_value_error import (
+    InvalidSettingValueError,
+)
 from generic_ml_wrapper.application.domain.model.job_id import JobId
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
+from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
@@ -98,6 +99,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 )
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
+    build_application_settings,
     build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
@@ -121,6 +123,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_plugins,
     build_list_rules,
     build_list_sessions,
+    build_list_supported_clients,
     build_list_workflow_catalog,
     build_list_workflows,
     build_localizer,
@@ -974,7 +977,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     # setup, run by the dispatch below; bootstrapping ahead of it would seed a config that
     # init then mistook for a legacy one. Once initialised, just ensure the layout.
     if args.command not in (None, "statusline", "help"):
-        needs_init = config.init_version() is None
+        needs_init = build_application_settings().setup_needed()
         if needs_init and args.command != "init":
             _announce_init(build_init().execute())
         elif not needs_init:
@@ -1139,7 +1142,7 @@ def _index() -> int:
     ``gmlw tui`` menu; off a terminal ``_tui`` falls back to the plain capability index, so a
     piped/scripted ``gmlw`` never blocks on a menu.
     """
-    if config.init_version() is None:  # first run — setup must win over the menu
+    if build_application_settings().setup_needed():  # first run — setup wins over the menu
         return _run_init()
     return _tui()
 
@@ -1284,7 +1287,7 @@ def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> 
 
 def _client(raw: str | None) -> str:
     """Resolve the client to wrap: the explicit ``--client``, else the config default."""
-    return raw if raw else config.default_client()
+    return build_application_settings().resolve_client(raw)
 
 
 def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | None = None) -> str:
@@ -1310,7 +1313,7 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         if others:
             lines.append(loc.t("client.guidance.use_other", other=others[0]))
     else:
-        supported = ", ".join(info.name for info in TomlClientCatalog().supported())
+        supported = ", ".join(info.name for info in build_list_supported_clients().execute())
         lines = [
             loc.t(
                 "client.guidance.unsupported",
@@ -1320,8 +1323,9 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         ]
     if not readiness.installed:
         lines += ["", loc.t("client.guidance.none_installed")]
-        width = max(len(info.name) for info in TomlClientCatalog().supported())
-        for info in TomlClientCatalog().supported():
+        catalogue = build_list_supported_clients().execute()
+        width = max(len(info.name) for info in catalogue)
+        for info in catalogue:
             lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
         lines.append(loc.t("client.guidance.then_login"))
     return "\n".join(lines)
@@ -1460,7 +1464,7 @@ def _farewell() -> str | None:
     Returns:
         ``"Bye, <name>."``, or ``None`` when the companion is off.
     """
-    settings = config.companion()
+    settings = build_application_settings().companion()
     if settings.persona is None:
         return None
     return i18n.t("farewell", name=settings.name or getpass.getuser())
@@ -1760,7 +1764,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     def _apply_setting(key: str, raw: str) -> ConfigSetResult:
         try:  # a value out of range keeps the editor open with the localised reason
             outcome = config_commands.set(key, raw)
-        except settings_registry.InvalidSettingValueError as error:
+        except InvalidSettingValueError as error:
             return ConfigSetResult(ok=False, message=_render_error(error))
         return ConfigSetResult(
             ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
@@ -2165,7 +2169,7 @@ def _config(args: argparse.Namespace) -> int:
     if args.config_command == "get":
         try:
             view = commands.get(args.key)
-        except settings_registry.UnknownSettingError:
+        except UnknownSettingError:
             print(i18n.t("config.unknown_key", key=args.key), file=sys.stderr)
             return 2
         print(_as_json(_setting_payload(view)) if as_json else format_setting(view))
@@ -2178,10 +2182,10 @@ def _config(args: argparse.Namespace) -> int:
 def _config_set(commands: ConfigCommands, key: str, value: str) -> int:
     try:
         outcome = commands.set(key, value)
-    except settings_registry.UnknownSettingError:
+    except UnknownSettingError:
         print(i18n.t("config.unknown_key", key=key), file=sys.stderr)
         return 2
-    except settings_registry.InvalidSettingValueError as error:
+    except InvalidSettingValueError as error:
         print(_render_error(error), file=sys.stderr)
         return 2
     print(_format_set_outcome(outcome))
@@ -2450,7 +2454,7 @@ def _resolve_guided(args: argparse.Namespace) -> bool:
         return True
     if args.quick:
         return False
-    return build_guided_chooser().choose() == GUIDED  # None (no TTY) → lean
+    return build_guided_chooser().choose() is AuthoringMode.GUIDED  # None (no TTY) → lean
 
 
 def _persona(args: argparse.Namespace) -> int:

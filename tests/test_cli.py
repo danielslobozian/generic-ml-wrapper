@@ -14,6 +14,7 @@ import pytest
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
@@ -153,7 +154,7 @@ def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     and stub the host greeting off so ``start`` tests don't read the real config.
     """
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
-    monkeypatch.setattr(app.config, "init_version", _init_done)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_done)
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate())  # no-op by default
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient())
 
@@ -236,7 +237,7 @@ def test_parser_parses_start_with_flags() -> None:
 
 
 def test_client_defaults_to_config_when_flag_absent() -> None:
-    assert app._client(None) == app.config.default_client()
+    assert app._client(None) == toml_config_reader.default_client()
     assert app._client("cursor") == "cursor"
 
 
@@ -255,7 +256,7 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # First run (no init marker): bare gmlw funnels through the forced setup, not the index.
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     seen: list[str] = []
 
     class _Init(Init):
@@ -302,7 +303,7 @@ def test_bare_gmlw_on_a_tty_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_bare_gmlw_fresh_install_runs_init_not_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
     # First run must win over the menu redirect: init runs, _tui is never reached.
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
     tui_called: list[str] = []
     monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui"))  # must not be called
@@ -880,7 +881,7 @@ def test_gate_forces_init_when_uninitialised(
     boot: list[str] = []
     ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
@@ -897,7 +898,7 @@ def test_init_announcement_speaks_the_chosen_language_not_the_os_locale(
     # Regression: a French OS locale seeds the startup active localiser, but the user
     # chose English in init. The closing narration must speak the CHOSEN language, not $LANG.
     monkeypatch.setattr(app, "build_localizer", lambda: load_localizer("fr"))  # $LANG=fr seed
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), []))  # chose en
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
@@ -912,7 +913,7 @@ def test_gate_skips_init_when_initialised(
 ) -> None:
     boot: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
-    monkeypatch.setattr(app.config, "init_version", _init_done)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_done)
     monkeypatch.setattr(app, "build_init", lambda: pytest.fail("init must not run"))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
@@ -923,7 +924,7 @@ def test_init_command_runs_the_use_case(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     ran: list[str] = []
-    monkeypatch.setattr(app.config, "init_version", _init_done)  # even when already done
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_done)  # even when already done
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
     assert app.main(["init"]) == 0
     assert ran == ["init"]
@@ -937,7 +938,7 @@ def test_init_command_on_a_fresh_install_never_bootstraps_first(
     boot: list[str] = []
     ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
-    monkeypatch.setattr(app.config, "init_version", _init_absent)  # fresh
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)  # fresh
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
     assert app.main(["init"]) == 0
     assert ran == ["init"]  # init ran exactly once
@@ -947,7 +948,7 @@ def test_init_command_on_a_fresh_install_never_bootstraps_first(
 def test_init_announces_no_client_found(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(
         app, "build_init", lambda: _FakeInit(_fresh_outcome(client=None, found=[]), [])
     )
@@ -959,7 +960,7 @@ def test_init_announces_no_client_found(
 def test_init_on_legacy_reports_the_merge_and_any_overwrites(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     outcome = _fresh_outcome(fresh=False, overwrites=("client.default: cursor → claude",))
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(outcome, []))
     _stub_jobs(monkeypatch)
@@ -976,7 +977,7 @@ def test_build_init_wires_a_real_use_case() -> None:
 def test_init_announces_the_chosen_persona(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(persona="butler"), []))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
@@ -1020,7 +1021,7 @@ def test_no_migration_output_when_nothing_moved(
 def test_init_command_runs_migration_after_init(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), []))
     report = MigrationReport(environment="work", moved=["co.md"])
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
@@ -1697,7 +1698,7 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
             self.opened_with = kwargs["current_client"]
 
         def run(self) -> tui.MenuChoice:  # the user switches the default, then starts a job
-            path = app.config.config_path()
+            path = toml_config_reader.config_path()
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('[client]\ndefault = "codex"\n', encoding="utf-8")
             return tui.MenuChoice(action="start", job="alpha")
@@ -2318,7 +2319,7 @@ def test_a_pick_is_not_written_back_as_the_default(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """Per-launch, like --client: choosing once must not change what tomorrow launches on."""
-    monkeypatch.setattr(app.config, "config_path", lambda: tmp_path / "config.toml")
+    monkeypatch.setattr(toml_config_reader, "config_path", lambda: tmp_path / "config.toml")
     (tmp_path / "config.toml").write_text('[client]\ndefault = "claude"\n', encoding="utf-8")
 
     assert _launched_client(monkeypatch, tui.MenuChoice(action="start", job="a", client="codex"))

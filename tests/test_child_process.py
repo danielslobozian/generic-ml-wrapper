@@ -46,7 +46,10 @@ def test_a_termination_aimed_at_the_wrapper_reaches_the_client() -> None:
         os.kill(os.getpid(), signal.SIGTERM)
 
     # Arm a one-shot alarm so the signal arrives while the child is being waited on.
-    signal.signal(signal.SIGALRM, lambda *_: kill_self_once_started())
+    def on_alarm(_signum: int, _frame: object) -> None:
+        kill_self_once_started()
+
+    signal.signal(signal.SIGALRM, on_alarm)
     signal.setitimer(signal.ITIMER_REAL, 0.3)
     try:
         exit_code = ChildProcess().run(sleeper, None, os.environ)
