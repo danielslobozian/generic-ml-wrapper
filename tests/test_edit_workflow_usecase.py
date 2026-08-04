@@ -150,7 +150,9 @@ def test_edits_an_existing_workflow_without_creating_it() -> None:
     assert workflows.seeded is True
     assert workflows.created is None  # editing never creates/overwrites the folder
     assert len(store.recorded) == 1
-    assert store.recorded[0].job == "doc-review"
+    # Filed under the authoring job, not under a job named after the workflow: creating and
+    # editing are one history. Which workflow was edited is carried by the folder below.
+    assert store.recorded[0].job == "create-workflow"
     assert provider.run is not None
     assert provider.run.cwd == "/workflows/doc-review"
     assert provider.run.context == "CONTEXT<authoring:create-workflow>"

@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
@@ -95,10 +96,10 @@ class NewWorkflowUseCase(NewWorkflow):
                 message = f"workflow already exists: {seed!r}"
                 raise WorkflowExistsError(message)
 
-        # Authoring always runs under the create-workflow job (its store is rooted apart
-        # from real work jobs), so sessions accumulate as create-workflow_NNN regardless
-        # of the target name — which is not known until the session ends.
-        job = _META
+        # Authoring always runs under the one authoring job, so sessions accumulate as
+        # create-workflow_NNN regardless of the target name — which is not known until the
+        # session ends. It is an ordinary job; the listing is what leaves it out.
+        job = AuthoringJob.NAME
         session = Session(
             session_id=SessionNaming().next_session_id(job, self._store.ids_for_job(job)),
             job=job,

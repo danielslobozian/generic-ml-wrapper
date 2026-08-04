@@ -94,7 +94,7 @@ def test_a_session_id_is_only_purged_within_its_own_job(tmp_path: Path) -> None:
     sessions = SqliteSessionStore(ledger)
     sessions.record(Session("shared_001", "alpha", "claude", "u-1"))
     with ledger.connect() as connection:  # a same-named session under another job
-        connection.execute("INSERT OR IGNORE INTO jobs (job, kind) VALUES ('beta', 'work')")
+        connection.execute("INSERT OR IGNORE INTO jobs (job) VALUES ('beta')")
         connection.execute(
             "INSERT INTO sessions (session_id, job, client, uuid) "
             "VALUES ('shared_001_b', 'beta', 'claude', 'u-2')"

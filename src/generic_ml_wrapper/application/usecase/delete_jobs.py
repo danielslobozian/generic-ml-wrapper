@@ -12,9 +12,10 @@ residue -- which is the complaint this feature answers, one level down.
 Its footprint is measured the same way, from the folders and the job's rows rather than
 per session, so the number a user is shown is what will actually be removed.
 
-Only jobs the injected store can see are reachable. That store is scoped to ``kind``, so
-wiring it to the ``work`` store makes authoring jobs unreachable here for the same reason
-they are absent from ``gmlw jobs`` -- no extra guard to remember.
+Every recorded job is reachable, including the authoring job. It is hidden from the
+listing because its name is the system's choice rather than the user's, but hiding it
+was never meant to protect it: a user who names it may remove its history like any
+other's, and the workflows that history produced are not stored under it.
 """
 
 from __future__ import annotations
@@ -44,8 +45,7 @@ class DeleteJobsUseCase(DeleteJobs):
         """Wire the use case to the stores it measures and the purges it removes through.
 
         Args:
-            store: Where the jobs and their sessions are read from -- and, being
-                ``kind``-scoped, which jobs are reachable at all.
+            store: Where the jobs and their sessions are read from.
             turns: Where metered turns are read from.
             usage: Where recorded session costs are read from.
             ledger: Removes the recorded rows.

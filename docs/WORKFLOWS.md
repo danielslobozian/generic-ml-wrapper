@@ -16,8 +16,10 @@ If you have never authored one, you can ignore this file entirely and use
     gmlw workflow new <name>     # or seed a name up front (optional)
 
 This runs the shipped `create-workflow` meta-workflow as a metered **authoring**
-session (kind `authoring`, so it stays hidden from `gmlw jobs`; sessions accumulate
-under `create-workflow`). The name is decided at the **end** of the interview, not the
+session. Authoring files under a job called `create-workflow` — creating and editing
+alike — and `gmlw jobs` leaves that one name out, since you never chose it. The job is
+otherwise ordinary: its spend is metered and its history can be deleted like any
+other's. The name is decided at the **end** of the interview, not the
 start — a name given up front is only a seed you can change (though it lets a known name
 fail fast if it is already taken). It is a warm, one-question-at-a-time interview, not a
 form.

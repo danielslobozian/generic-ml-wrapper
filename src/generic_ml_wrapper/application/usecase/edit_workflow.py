@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.run import RunContext
@@ -82,11 +83,12 @@ class EditWorkflowUseCase(EditWorkflow):
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
 
         folder = self._workflows.folder(name)  # the existing folder — never (re)created
-        # The authoring store is rooted apart from real work jobs (composition injects the
-        # authoring root), so the job is just the workflow name.
-        job = name
+        # Editing files under the same job as creating: authoring is one history, whatever
+        # workflow it touches, and one name is all the job listing has to leave out. Which
+        # workflow a session edited is told by its folder, not by the job it is filed under.
+        job = AuthoringJob.NAME
         if command.resume_latest:
-            return self._reopen(job, folder)
+            return self._reopen(job, name, folder)
         session = Session(
             session_id=SessionNaming().next_session_id(job, self._store.ids_for_job(job)),
             job=job,
@@ -121,15 +123,15 @@ class EditWorkflowUseCase(EditWorkflow):
         self._store.record(replace(session, cwd=folder, resumable=caller.can_resume()))
         return self._launch.run(caller, run)
 
-    def _reopen(self, job: str, folder: str) -> int:
+    def _reopen(self, job: str, name: str, folder: str) -> int:
         """Reopen this workflow's most recent editing session, in its own folder.
 
-        Only sessions that ran *in the workflow's folder* count. ``gmlw run <workflow>``
-        and ``gmlw workflow edit <workflow>`` both file under a job named after the
-        workflow, so the job's latest session is just as likely to be a run — and
-        reopening one of those here would relaunch it in the wrong directory, where a
-        cwd-scoped client (Claude) correctly reports no such conversation. An edit is
-        exactly the session whose folder is this one.
+        Only sessions that ran *in the workflow's folder* count. Every edit of every
+        workflow files under the one authoring job, so the job's latest session is just
+        as likely to be an edit of something else — and reopening one of those here would
+        relaunch it in the wrong directory, where a cwd-scoped client (Claude) correctly
+        reports no such conversation. An edit of *this* workflow is exactly the session
+        whose folder is this one.
 
         That also excludes edits recorded before the folder was stored: their ``cwd`` is
         ``None``, so they cannot be told apart from a run, and guessing would reopen the
@@ -144,7 +146,7 @@ class EditWorkflowUseCase(EditWorkflow):
         """
         edits = [s for s in self._store.sessions_for_job(job) if s.cwd == folder]
         if not edits:
-            raise NoEditToResumeError("error.workflow.no_edit_session", name=job)
+            raise NoEditToResumeError("error.workflow.no_edit_session", name=name)
         session = edits[-1]
         run = RunContext(
             job=job,
@@ -154,7 +156,7 @@ class EditWorkflowUseCase(EditWorkflow):
             resume=True,
             cwd=folder,
             kickoff=(
-                f"You are picking up an interrupted edit of the workflow {job!r}. Your "
+                f"You are picking up an interrupted edit of the workflow {name!r}. Your "
                 f"working directory is its folder ({folder}). Take stock of what you had "
                 "already changed, tell me, then carry on from there — do not start over."
             ),
