@@ -80,3 +80,21 @@ layers =
     port
     domain
 exhaustive = true
+
+# Rule 6 — the two adapter sides are independent. An inbound adapter (CLI, TUI) that
+# imports an outbound one is either doing a use case's job itself, or catching a type an
+# adapter invented; both couple the delivery mechanism to whichever technology happens
+# to be installed today. Everything the CLI needs from the outside comes back through a
+# use case, and everything it catches is declared by the application.
+[importlinter:contract:adapter-sides-independent]
+name = Inbound adapters must not import outbound adapters
+type = forbidden
+source_modules =
+    generic_ml_wrapper.adapter.inbound
+forbidden_modules =
+    generic_ml_wrapper.adapter.outbound
+# Direct imports only. Reaching an outbound adapter *through the composition root* is not
+# a leak — it is the composition root doing its job, and every command does it. What this
+# forbids is an inbound adapter naming a concrete outbound one itself, which is how it
+# ends up knowing which technology is installed.
+allow_indirect_imports = true

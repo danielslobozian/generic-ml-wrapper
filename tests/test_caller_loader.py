@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCaller
-from generic_ml_wrapper.adapter.outbound.caller.loader import CallerLoadError, load_caller_class
+from generic_ml_wrapper.adapter.outbound.caller.loader import load_caller_class
+from generic_ml_wrapper.application.domain.model.caller_unavailable_error import (
+    CallerUnavailableError,
+)
 
 _CLAUDE_SPEC = "generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller:ClaudeCliCaller"
 
@@ -31,15 +34,15 @@ def test_loads_a_class_from_a_file_spec(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("spec", ["no-colon", "module:", ":Class"])
 def test_malformed_spec_is_rejected(spec: str) -> None:
-    with pytest.raises(CallerLoadError):
+    with pytest.raises(CallerUnavailableError):
         load_caller_class(spec)
 
 
 def test_missing_module_is_rejected() -> None:
-    with pytest.raises(CallerLoadError):
+    with pytest.raises(CallerUnavailableError):
         load_caller_class("no.such.module:Thing")
 
 
 def test_non_caller_class_is_rejected() -> None:
-    with pytest.raises(CallerLoadError):
+    with pytest.raises(CallerUnavailableError):
         load_caller_class("pathlib:Path")

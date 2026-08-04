@@ -6,12 +6,12 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import context_file, vibe_config
+from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.gateway import openai_chat
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
@@ -160,9 +160,7 @@ class VibeCliCaller(CliCaller):
             "GMLW_SESSION": self.run.session_id,
             "GMLW_CLIENT": self.run.client,
         }
-        # Trusted argv from our resolved run; no shell. The program is PATH-resolved (BINARY).
-        completed = subprocess.run(argv, check=False, cwd=self.run.cwd, env=env)  # noqa: S603
-        return completed.returncode
+        return ChildProcess().run(argv, self.run.cwd, env)
 
 
 def _vibe_metered(method: str, path: str) -> bool:

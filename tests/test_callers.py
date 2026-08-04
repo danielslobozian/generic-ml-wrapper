@@ -3,7 +3,6 @@
 """Tests for the built-in callers and the default provider."""
 
 import json
-import subprocess
 from dataclasses import replace
 from pathlib import Path
 from typing import cast
@@ -16,6 +15,7 @@ from generic_ml_wrapper.adapter.outbound.caller import (
     cursor_cli_caller,
     vibe_cli_caller,
 )
+from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import BINARY, ClaudeCliCaller
 from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCaller
 from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCaller
@@ -114,16 +114,13 @@ def test_command_appends_context_and_kickoff() -> None:
 def test_start_client_runs_the_command_and_exports_env(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         seen["argv"] = argv
         seen["cwd"] = cwd
         seen["env"] = env
-        assert check is False
-        return subprocess.CompletedProcess(argv, returncode=7)
+        return 7
 
-    monkeypatch.setattr(claude_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
     caller = _claude(_run(resume=False, uuid=None, cwd="/work"))
     assert caller.start_client() == 7
     assert seen["argv"] == [BINARY, "-n", "JOB-1_001"]
@@ -137,13 +134,11 @@ def test_start_client_runs_the_command_and_exports_env(monkeypatch: pytest.Monke
 def test_start_client_exports_run_env(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, object] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         seen["env"] = env
-        return subprocess.CompletedProcess(argv, returncode=0)
+        return 0
 
-    monkeypatch.setattr(claude_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
     caller = _claude(_run(resume=False, uuid=None, env=(("EXTRA_VAR", "v1"),)))
     caller.start_client()
     assert cast("dict[str, str]", seen["env"])["EXTRA_VAR"] == "v1"
@@ -152,17 +147,14 @@ def test_start_client_exports_run_env(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_start_client_injects_context_via_a_durable_file(monkeypatch: pytest.MonkeyPatch) -> None:
     written: dict[str, str] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
-        assert check is False
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         assert cwd is None
         flag_index = argv.index("--append-system-prompt-file")
         written["path"] = argv[flag_index + 1]
         written["context"] = Path(argv[flag_index + 1]).read_text(encoding="utf-8")
-        return subprocess.CompletedProcess(argv, returncode=0)
+        return 0
 
-    monkeypatch.setattr(claude_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
     caller = _claude(_run(resume=False, uuid=None, context="MY CONTEXT"))
     assert caller.start_client() == 0
     assert written["context"] == "MY CONTEXT"
@@ -241,13 +233,11 @@ def test_claude_metering_routes_through_the_relay(
     monkeypatch.setattr(claude_cli_caller, "_SETTINGS", settings)
     seen: dict[str, object] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         seen["env"] = env
-        return subprocess.CompletedProcess(argv, returncode=0)
+        return 0
 
-    monkeypatch.setattr(claude_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
     caller = _claude(_run(resume=False, uuid=None))
     assert caller.can_meter_per_call() is True
     caller.start_metering()
@@ -344,16 +334,14 @@ def test_cursor_injects_context_via_a_read_this_file_opening(
 ) -> None:
     seen: dict[str, str] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         opening = argv[-1]
         path = next(token for token in opening.split() if token.endswith(".md"))
         seen["context"] = Path(path).read_text(encoding="utf-8")
         seen["client"] = env["GMLW_CLIENT"]
-        return subprocess.CompletedProcess(argv, returncode=0)
+        return 0
 
-    monkeypatch.setattr(cursor_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
     assert CursorCliCaller(_cursor_run(resume=False, context="MY CONTEXT")).start_client() == 0
     assert seen["context"] == "MY CONTEXT"
     assert seen["client"] == "cursor"
@@ -475,16 +463,14 @@ def test_vibe_meters_but_neither_resumes_nor_delivers_statusline() -> None:
 def test_vibe_injects_context_via_a_read_this_file_opening(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, str] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         opening = argv[-1]
         path = next(token for token in opening.split() if token.endswith(".md"))
         seen["context"] = Path(path).read_text(encoding="utf-8")
         seen["client"] = env["GMLW_CLIENT"]
-        return subprocess.CompletedProcess(argv, returncode=0)
+        return 0
 
-    monkeypatch.setattr(vibe_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
     assert _vibe(_vibe_run(context="MY CONTEXT")).start_client() == 0
     assert seen["context"] == "MY CONTEXT"
     assert seen["client"] == "vibe"
@@ -499,14 +485,12 @@ def test_vibe_metering_routes_through_a_relay_home(
 
     seen: dict[str, str] = {}
 
-    def fake_run(
-        argv: list[str], *, check: bool, cwd: str | None, env: dict[str, str]
-    ) -> subprocess.CompletedProcess[bytes]:
+    def fake_run(_self: ChildProcess, argv: list[str], cwd: str | None, env: dict[str, str]) -> int:
         seen["argv"] = " ".join(argv)
         seen["config"] = (Path(env["VIBE_HOME"]) / "config.toml").read_text(encoding="utf-8")
-        return subprocess.CompletedProcess(argv, returncode=0)
+        return 0
 
-    monkeypatch.setattr(vibe_cli_caller.subprocess, "run", fake_run)
+    monkeypatch.setattr(ChildProcess, "run", fake_run)
 
     caller = _vibe(_vibe_run(kickoff="hi"))
     assert caller.can_meter_per_call() is True

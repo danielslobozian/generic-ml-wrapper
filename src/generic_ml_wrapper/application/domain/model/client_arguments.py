@@ -15,15 +15,8 @@ not speak to the user, and does not decide what a diagnostic looks like.
 
 from __future__ import annotations
 
-import os
 import shlex
 from dataclasses import dataclass
-
-# POSIX-mode splitting treats a backslash as an escape, so a Windows path
-# (``--add-dir C:\work``) would arrive with its separators eaten. Windows keeps the
-# quotes inside the tokens instead, which is what ``subprocess`` re-quotes correctly
-# there anyway.
-_POSIX = os.name != "nt"
 
 
 @dataclass(frozen=True)
@@ -40,11 +33,17 @@ class ClientArguments:
     unparseable: str = ""
 
     @classmethod
-    def parse(cls, text: str) -> ClientArguments:
-        """Split an argument string into launch tokens.
+    def parse(cls, text: str, *, posix: bool) -> ClientArguments:
+        r"""Split an argument string into launch tokens.
 
         Args:
             text: The raw argument string, as configured or typed.
+            posix: Whether to split by POSIX rules. Passed in rather than read from the
+                process: which operating system this is running on is not something the
+                domain may ask. POSIX splitting treats a backslash as an escape, so a
+                Windows path (``--add-dir C:\\work``) would arrive with its separators
+                eaten; Windows keeps the quotes inside the tokens instead, which is what
+                the process launcher re-quotes correctly there anyway.
 
         Returns:
             The parsed arguments; empty tokens when the string is blank, and empty
@@ -53,6 +52,6 @@ class ClientArguments:
         if not text or not text.strip():
             return cls()
         try:
-            return cls(tuple(shlex.split(text, posix=_POSIX)))
+            return cls(tuple(shlex.split(text, posix=posix)))
         except ValueError as error:
             return cls(unparseable=str(error))

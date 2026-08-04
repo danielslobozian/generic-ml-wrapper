@@ -5,10 +5,10 @@
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.caller import context_file, status_line_config
+from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import StatusLineSnapshot
 from generic_ml_wrapper.application.domain.model.run import RunContext
@@ -97,6 +97,4 @@ class CursorCliCaller(CliCaller):
             "GMLW_SESSION": self.run.session_id,
             "GMLW_CLIENT": self.run.client,
         }
-        # Trusted argv from our resolved run; no shell. The program is PATH-resolved (BINARY).
-        completed = subprocess.run(argv, check=False, cwd=self.run.cwd, env=env)  # noqa: S603
-        return completed.returncode
+        return ChildProcess().run(argv, self.run.cwd, env)

@@ -43,6 +43,7 @@ class StartJobUseCase(StartJob):
         launch: LaunchSequence,
         diagnostics: Diagnostics,
         localizer: Localizer,
+        posix: bool,
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],
         client_args: Callable[[str], str] = lambda _client: "",
@@ -60,6 +61,7 @@ class StartJobUseCase(StartJob):
             launch: The bracketed launch sequence (hooks, metering, the client).
             diagnostics: Where a dropped argument string is reported.
             localizer: Renders that report in the language the wrapper is speaking.
+            posix: Whether launch arguments split by POSIX rules (false on Windows).
             greeting: Renders the host greeting, or ``None`` when the companion is off —
                 injected into a new session's context so the client greets in-band.
             capability_card: Renders the ambient "how do I …" card, or ``None`` when the
@@ -79,6 +81,7 @@ class StartJobUseCase(StartJob):
         self._launch = launch
         self._diagnostics = diagnostics
         self._localizer = localizer
+        self._posix = posix
         self._greeting = greeting
         self._capability_card = capability_card
         self._client_args = client_args
@@ -141,7 +144,7 @@ class StartJobUseCase(StartJob):
         so resuming a codex session never picks up arguments configured for claude.
         """
         text = override if override is not None else self._client_args(run.client)
-        arguments = ClientArguments.parse(text)
+        arguments = ClientArguments.parse(text, posix=self._posix)
         if arguments.unparseable:
             self._diagnostics.warning(
                 self._localizer.t(

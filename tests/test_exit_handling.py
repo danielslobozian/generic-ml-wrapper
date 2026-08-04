@@ -9,7 +9,9 @@ import signal
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
 from generic_ml_wrapper.adapter.outbound.config.toml_config_reader import CompanionSettings
+from generic_ml_wrapper.application.port.inbound.start_job import StartJobResult
 
 
 def test_keyboard_interrupt_exits_130_without_a_traceback(
@@ -41,13 +43,15 @@ def test_ignore_sigint_is_a_noop() -> None:
 
 
 def test_farewell_is_none_without_a_companion(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app.config, "companion", lambda: CompanionSettings(persona=None, name=None))
+    monkeypatch.setattr(
+        toml_config_reader, "companion", lambda: CompanionSettings(persona=None, name=None)
+    )
     assert app._farewell() is None
 
 
 def test_farewell_greets_the_configured_name(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        app.config, "companion", lambda: CompanionSettings(persona="butler", name="Ada")
+        toml_config_reader, "companion", lambda: CompanionSettings(persona="butler", name="Ada")
     )
     assert app._farewell() == "Bye, Ada."
 
@@ -64,31 +68,29 @@ def _true_for_client(_client: object) -> bool:
     return True
 
 
-class _TerminatingStartJob:
-    def execute(self, _command: object) -> int:
-        raise app._Terminated
+class _TerminatedStartJob:
+    """A client that was killed by SIGTERM: the run returns, it does not raise."""
+
+    def execute(self, _command: object) -> object:
+        return StartJobResult(exit_code=143, job="test", session_id="test_001")
 
 
-def test_on_termination_raises_terminated(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app.signal, "signal", _noop_signal)  # don't touch real dispositions
-    with pytest.raises(app._Terminated):
-        app._on_termination(signal.SIGTERM, None)
-
-
-def test_client_owns_interrupts_installs_and_restores() -> None:
+def test_client_owns_interrupts_only_takes_the_interrupt() -> None:
+    # A kill is not handled here: the caller adapter forwards it to the client it
+    # launched, so this must leave the termination disposition exactly as it found it.
     before_int = signal.getsignal(signal.SIGINT)
     before_term = signal.getsignal(signal.SIGTERM)
     with app._client_owns_interrupts():
         assert signal.getsignal(signal.SIGINT) is app._ignore_sigint
-        assert signal.getsignal(signal.SIGTERM) is app._on_termination
+        assert signal.getsignal(signal.SIGTERM) is before_term
     assert signal.getsignal(signal.SIGINT) is before_int
     assert signal.getsignal(signal.SIGTERM) is before_term
 
 
-def test_start_returns_143_when_terminated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_terminated_client_reports_128_plus_the_signal(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "_preflight_cwd", _true)
     monkeypatch.setattr(app, "_preflight_client", _true_for_client)
-    monkeypatch.setattr(app, "build_start_job", _TerminatingStartJob)
+    monkeypatch.setattr(app, "build_start_job", _TerminatedStartJob)
     args = argparse.Namespace(
         job="test", client="claude", workflow=None, resume_latest=False, client_args=None
     )

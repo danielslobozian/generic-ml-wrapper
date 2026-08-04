@@ -9,8 +9,10 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
-    CredentialsUnreadableError,
     FilesystemCredentialsStore,
+)
+from generic_ml_wrapper.application.domain.model.credentials_unusable_error import (
+    CredentialsUnusableError,
 )
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialCommand
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
@@ -68,7 +70,7 @@ def test_corrupt_file_aborts_set_and_leaves_secrets_intact(tmp_path: Path) -> No
     path = tmp_path / "credentials.toml"
     path.write_text('[deploy]\nTOKEN = "no close', encoding="utf-8")  # unterminated: invalid TOML
     before = path.read_bytes()
-    with pytest.raises(CredentialsUnreadableError):
+    with pytest.raises(CredentialsUnusableError):
         FilesystemCredentialsStore(path).set("deploy", "OTHER", "new")
     assert path.read_bytes() == before  # never overwritten
 
@@ -76,5 +78,5 @@ def test_corrupt_file_aborts_set_and_leaves_secrets_intact(tmp_path: Path) -> No
 def test_corrupt_file_makes_resolve_raise(tmp_path: Path) -> None:
     path = tmp_path / "credentials.toml"
     path.write_text('x = "no close', encoding="utf-8")
-    with pytest.raises(CredentialsUnreadableError):
+    with pytest.raises(CredentialsUnusableError):
         FilesystemCredentialsStore(path).resolve("deploy")

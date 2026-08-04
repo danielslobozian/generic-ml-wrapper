@@ -11,6 +11,9 @@ from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCli
 from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCaller
 from generic_ml_wrapper.adapter.outbound.caller.loader import load_caller_class
 from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.application.domain.model.unsupported_client_error import (
+    UnsupportedClientError,
+)
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 
 if TYPE_CHECKING:
@@ -20,10 +23,6 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
     from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-
-
-class UnsupportedClientError(ValueError):
-    """Raised when a run's client has no override and no built-in caller."""
 
 
 class DefaultCliCallerProvider(CliCallerProvider):
@@ -90,5 +89,4 @@ class DefaultCliCallerProvider(CliCallerProvider):
             )
         if run.client == "vibe":
             return VibeCliCaller(run, self._metering, self._interceptors, self._transcript)
-        message = f"unsupported client: {run.client!r}"
-        raise UnsupportedClientError(message)
+        raise UnsupportedClientError(run.client)

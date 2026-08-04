@@ -28,24 +28,27 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
-from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
-from generic_ml_wrapper.adapter.outbound.config import settings_registry
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
-from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
-    CredentialsUnreadableError,
-)
+from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
+    ClientSettingsUnusableError,
+)
+from generic_ml_wrapper.application.domain.model.credentials_unusable_error import (
+    CredentialsUnusableError,
+)
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.invalid_setting_value_error import (
+    InvalidSettingValueError,
+)
 from generic_ml_wrapper.application.domain.model.job_id import JobId
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
+from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
@@ -96,6 +99,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 )
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
+    build_application_settings,
     build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
@@ -119,6 +123,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_plugins,
     build_list_rules,
     build_list_sessions,
+    build_list_supported_clients,
     build_list_workflow_catalog,
     build_list_workflows,
     build_localizer,
@@ -972,7 +977,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     # setup, run by the dispatch below; bootstrapping ahead of it would seed a config that
     # init then mistook for a legacy one. Once initialised, just ensure the layout.
     if args.command not in (None, "statusline", "help"):
-        needs_init = config.init_version() is None
+        needs_init = build_application_settings().setup_needed()
         if needs_init and args.command != "init":
             _announce_init(build_init().execute())
         elif not needs_init:
@@ -1022,8 +1027,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
     except (
         IdentifierError,
-        SettingsUnreadableError,
-        CredentialsUnreadableError,
+        ClientSettingsUnusableError,
+        CredentialsUnusableError,
         SpecLoadError,
     ) as error:
         print(_render_error(error), file=sys.stderr)
@@ -1137,7 +1142,7 @@ def _index() -> int:
     ``gmlw tui`` menu; off a terminal ``_tui`` falls back to the plain capability index, so a
     piped/scripted ``gmlw`` never blocks on a menu.
     """
-    if config.init_version() is None:  # first run — setup must win over the menu
+    if build_application_settings().setup_needed():  # first run — setup wins over the menu
         return _run_init()
     return _tui()
 
@@ -1282,7 +1287,7 @@ def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> 
 
 def _client(raw: str | None) -> str:
     """Resolve the client to wrap: the explicit ``--client``, else the config default."""
-    return raw if raw else config.default_client()
+    return build_application_settings().resolve_client(raw)
 
 
 def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | None = None) -> str:
@@ -1308,7 +1313,7 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         if others:
             lines.append(loc.t("client.guidance.use_other", other=others[0]))
     else:
-        supported = ", ".join(info.name for info in TomlClientCatalog().supported())
+        supported = ", ".join(info.name for info in build_list_supported_clients().execute())
         lines = [
             loc.t(
                 "client.guidance.unsupported",
@@ -1318,8 +1323,9 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         ]
     if not readiness.installed:
         lines += ["", loc.t("client.guidance.none_installed")]
-        width = max(len(info.name) for info in TomlClientCatalog().supported())
-        for info in TomlClientCatalog().supported():
+        catalogue = build_list_supported_clients().execute()
+        width = max(len(info.name) for info in catalogue)
+        for info in catalogue:
             lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
         lines.append(loc.t("client.guidance.then_login"))
     return "\n".join(lines)
@@ -1423,10 +1429,6 @@ def _with_cursor_plan(payload_json: str, client: str | None) -> str:  # noqa: PL
     return json.dumps(payload)
 
 
-class _Terminated(Exception):  # noqa: N818  (a control-flow signal, not an *Error)
-    """Raised by the SIGTERM/SIGHUP handler to unwind session teardown before exit."""
-
-
 def _ignore_sigint(_signum: int, _frame: object) -> None:
     """Swallow Ctrl+C while the client owns the terminal.
 
@@ -1436,34 +1438,16 @@ def _ignore_sigint(_signum: int, _frame: object) -> None:
     """
 
 
-def _on_termination(signum: int, _frame: object) -> None:
-    """Convert a kill/hangup into a clean unwind so session teardown runs before exit.
-
-    Raising here propagates out of the blocked client run and triggers the ``finally``
-    that stops the relay and restores the client's status-line hook -- so a killed or
-    hung-up session never leaves gmlw's hook behind in the user's settings. The handler
-    resets itself first, so a repeat signal terminates immediately and cleanup can't
-    itself wedge the exit.
-    """
-    signal.signal(signum, signal.SIG_DFL)
-    raise _Terminated
-
-
 # SIGTERM everywhere; SIGHUP (terminal hangup) only where the platform has it (not Windows).
-_TERMINATION_SIGNALS = (
-    (signal.SIGTERM, signal.SIGHUP) if hasattr(signal, "SIGHUP") else (signal.SIGTERM,)
-)
-
-
 @contextlib.contextmanager
 def _client_owns_interrupts() -> Generator[None, None, None]:
     """Make the client own interrupts for the duration of a session.
 
-    gmlw ignores Ctrl+C (the client handles it) and turns a kill/hangup into a clean
-    unwind so teardown runs, then restores every prior handler on the way out.
+    gmlw ignores Ctrl+C -- the client handles its own interrupt and gmlw only supervises.
+    A kill or hang-up is not handled here at all: the caller adapter forwards it to the
+    client it launched, so the run ends by returning rather than by unwinding.
     """
     previous = [(signal.SIGINT, signal.signal(signal.SIGINT, _ignore_sigint))]
-    previous += [(sig, signal.signal(sig, _on_termination)) for sig in _TERMINATION_SIGNALS]
     try:
         yield
     finally:
@@ -1480,7 +1464,7 @@ def _farewell() -> str | None:
     Returns:
         ``"Bye, <name>."``, or ``None`` when the companion is off.
     """
-    settings = config.companion()
+    settings = build_application_settings().companion()
     if settings.persona is None:
         return None
     return i18n.t("farewell", name=settings.name or getpass.getuser())
@@ -1780,7 +1764,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     def _apply_setting(key: str, raw: str) -> ConfigSetResult:
         try:  # a value out of range keeps the editor open with the localised reason
             outcome = config_commands.set(key, raw)
-        except settings_registry.InvalidSettingValueError as error:
+        except InvalidSettingValueError as error:
             return ConfigSetResult(ok=False, message=_render_error(error))
         return ConfigSetResult(
             ok=True, message=_format_set_outcome(outcome), value=_setting_value(outcome.new, loc)
@@ -1915,8 +1899,6 @@ def _tui_launch_job(
     with _client_owns_interrupts():
         try:
             result = build_start_job().execute(command)
-        except _Terminated:
-            return 143
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
             print(_render_error(error), file=sys.stderr)
             return 2
@@ -1945,13 +1927,12 @@ def _start(args: argparse.Namespace) -> int:
     # session's context by StartJob, so the client renders it in-band — the launch-time
     # stderr greeting was structurally invisible once the client cleared the screen.
     # The client owns the terminal for the session: it handles Ctrl+C itself, and a
-    # kill/hangup is turned into a clean unwind so teardown (relay stop + status-line
-    # restore) always runs -- gmlw never leaves its hook behind in the user's settings.
+    # A kill/hangup is forwarded to the client by the caller adapter, so the run ends by
+    # returning: teardown (relay stop + status-line restore) happens on the way out, and
+    # gmlw never leaves its hook behind in the user's settings.
     with _client_owns_interrupts():
         try:
             result = build_start_job().execute(command)
-        except _Terminated:
-            return 143  # 128 + SIGTERM: terminated, but teardown ran
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
             print(_render_error(error))
             return 2
@@ -2002,8 +1983,6 @@ def _run_workflow(workflow: str, client: str, client_args: str | None = None) ->
     with _client_owns_interrupts():
         try:
             result = build_start_job().execute(command)
-        except _Terminated:
-            return 143  # 128 + SIGTERM: terminated, but teardown ran
         except (UnknownWorkflowError, ResumeNotSupportedError) as error:
             print(_render_error(error))
             return 2
@@ -2190,7 +2169,7 @@ def _config(args: argparse.Namespace) -> int:
     if args.config_command == "get":
         try:
             view = commands.get(args.key)
-        except settings_registry.UnknownSettingError:
+        except UnknownSettingError:
             print(i18n.t("config.unknown_key", key=args.key), file=sys.stderr)
             return 2
         print(_as_json(_setting_payload(view)) if as_json else format_setting(view))
@@ -2203,10 +2182,10 @@ def _config(args: argparse.Namespace) -> int:
 def _config_set(commands: ConfigCommands, key: str, value: str) -> int:
     try:
         outcome = commands.set(key, value)
-    except settings_registry.UnknownSettingError:
+    except UnknownSettingError:
         print(i18n.t("config.unknown_key", key=key), file=sys.stderr)
         return 2
-    except settings_registry.InvalidSettingValueError as error:
+    except InvalidSettingValueError as error:
         print(_render_error(error), file=sys.stderr)
         return 2
     print(_format_set_outcome(outcome))
@@ -2475,7 +2454,7 @@ def _resolve_guided(args: argparse.Namespace) -> bool:
         return True
     if args.quick:
         return False
-    return build_guided_chooser().choose() == GUIDED  # None (no TTY) → lean
+    return build_guided_chooser().choose() is AuthoringMode.GUIDED  # None (no TTY) → lean
 
 
 def _persona(args: argparse.Namespace) -> int:

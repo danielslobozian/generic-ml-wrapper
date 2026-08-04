@@ -4,12 +4,11 @@
 
 from __future__ import annotations
 
+from generic_ml_wrapper.application.domain.model.caller_unavailable_error import (
+    CallerUnavailableError,
+)
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader, SpecLoadError
-
-
-class CallerLoadError(ValueError):
-    """Raised when a caller spec cannot be resolved to a ``CliCaller`` subclass."""
 
 
 def load_caller_class(spec: str) -> type[CliCaller]:
@@ -25,10 +24,10 @@ def load_caller_class(spec: str) -> type[CliCaller]:
         The referenced ``CliCaller`` subclass.
 
     Raises:
-        CallerLoadError: If the spec is malformed, cannot be imported, or does not
+        CallerUnavailableError: If the spec is malformed, cannot be imported, or does not
             name a ``CliCaller`` subclass.
     """
     try:
         return SpecLoader().load_class(spec, CliCaller)
     except SpecLoadError as error:
-        raise CallerLoadError(str(error)) from error
+        raise CallerUnavailableError(str(error)) from error
