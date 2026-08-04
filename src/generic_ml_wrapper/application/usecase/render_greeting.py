@@ -17,9 +17,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
 
+    from generic_ml_wrapper.application.domain.model.companion_settings import CompanionSettings
     from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
     from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
-    from generic_ml_wrapper.common.config import CompanionSettings
 
 
 class RenderGreetingUseCase(RenderGreeting):

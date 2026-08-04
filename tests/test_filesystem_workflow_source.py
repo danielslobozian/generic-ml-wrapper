@@ -5,6 +5,7 @@
 import json
 from pathlib import Path
 
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
@@ -16,7 +17,6 @@ from generic_ml_wrapper.application.domain.service.interceptor_chain import Inte
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
-from generic_ml_wrapper.common import config
 
 
 def test_seed_copies_packaged_defaults(tmp_path: Path) -> None:

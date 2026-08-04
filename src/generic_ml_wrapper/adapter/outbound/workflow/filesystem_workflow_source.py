@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import ABOUT, write_about
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
@@ -23,7 +24,6 @@ from generic_ml_wrapper.application.domain.service import rule_parser
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.common import config
 
 if TYPE_CHECKING:
     from collections.abc import Callable

@@ -5,7 +5,7 @@
 A :class:`GmlwSettings` pydantic-settings model declares each user-tunable *scalar* key
 once — its type, default, allowed values and description. Every surface renders from it:
 the ``config`` commands list/validate against it, help describes keys from it, and
-:mod:`generic_ml_wrapper.common.config` sources its defaults here instead of duplicating
+:mod:`generic_ml_wrapper.adapter.outbound.config.toml_config_reader` sources its defaults here instead of duplicating
 literals.
 
 Scope: the **settable scalar keys** only (``client.default``, ``profile.*``,
@@ -22,7 +22,6 @@ validator for writes; :func:`load` offers a typed read for callers that want one
 from __future__ import annotations
 
 import tomllib
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Literal, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -33,7 +32,13 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
-from generic_ml_wrapper.application.domain.model.domain_error import DomainError
+from generic_ml_wrapper.application.domain.model.invalid_setting_value_error import (
+    InvalidSettingValueError,
+)
+from generic_ml_wrapper.application.domain.model.setting_row import SettingRow
+from generic_ml_wrapper.application.domain.model.unknown_setting_error import (
+    UnknownSettingError,
+)
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.paths import paths
 
@@ -203,64 +208,6 @@ _SECTIONS: tuple[tuple[str, type[_Section]], ...] = (
     ("update", UpdateSettings),
     ("ambient", AmbientSettings),
 )
-
-
-class UnknownSettingError(KeyError):
-    """Raised when a dotted key is not a registered setting."""
-
-    def __init__(self, key: str) -> None:
-        """Record the offending key.
-
-        Args:
-            key: The unknown dotted key.
-        """
-        self.key = key
-        super().__init__(key)
-
-    def __str__(self) -> str:
-        """Render a plain, un-repr'd message (KeyError would quote it)."""
-        return f"unknown setting {self.key!r}"
-
-
-class InvalidSettingValueError(DomainError, ValueError):
-    """Raised when a value is not valid for a setting (bad type or not an allowed value)."""
-
-    def __init__(self, key: str, value: str, choices: tuple[str, ...] | None) -> None:
-        """Record the rejected value and any allowed set.
-
-        Args:
-            key: The dotted key being set.
-            value: The rejected raw value.
-            choices: The allowed values, or ``None`` when the constraint is a type.
-        """
-        self.key = key
-        self.value = value
-        self.choices = choices
-        if choices:
-            super().__init__(
-                "error.setting.invalid_choice", key=key, value=value, choices=", ".join(choices)
-            )
-        else:
-            super().__init__("error.setting.invalid_value", key=key, value=value)
-
-
-@dataclass(frozen=True)
-class SettingRow:
-    """One registered setting's metadata, for rendering help and ``config list``.
-
-    Attributes:
-        key: The dotted key (e.g. ``profile.default_role``).
-        type_name: A short type label (``str``/``bool``/``choice``/``str?``).
-        default: The schema default.
-        choices: The allowed values, or ``None`` when unconstrained.
-        description: A one-line description.
-    """
-
-    key: str
-    type_name: str
-    default: object
-    choices: tuple[str, ...] | None
-    description: str
 
 
 def _field(key: str) -> FieldInfo:

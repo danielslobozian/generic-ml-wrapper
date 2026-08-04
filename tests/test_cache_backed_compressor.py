@@ -15,7 +15,7 @@ from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import
     CacheBackedContextCompressor,
     _stdout,
 )
-from generic_ml_wrapper.common import config
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 
 if TYPE_CHECKING:
     from pathlib import Path

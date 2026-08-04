@@ -6,12 +6,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from generic_ml_wrapper.adapter.outbound.config.toml_config_reader import CompanionSettings
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
-from generic_ml_wrapper.common.config import CompanionSettings
 
 _GREETING = "{daypart}, {name}.{repo_note} How may I be of service?"
 

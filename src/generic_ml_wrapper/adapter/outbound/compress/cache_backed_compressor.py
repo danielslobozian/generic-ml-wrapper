@@ -18,11 +18,11 @@ from generic_ml_cache_core.application.usecase.select_adapter_for_execution_serv
     SelectAdapterForExecutionService,
 )
 
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.application.wiring import localization as i18n
+from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.paths import paths
-from generic_ml_wrapper.common import config
-from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
     from generic_ml_cache_core.application.domain.model.execution.ml_execution import MlExecution

@@ -30,6 +30,8 @@ from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
+from generic_ml_wrapper.adapter.outbound.config import settings_registry
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
 )
@@ -133,11 +135,12 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_start_job,
     build_workflow_chooser,
 )
+from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.wiring.diagnostics_log import (
+    set_active as set_active_diagnostics,
+)
 from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
-from generic_ml_wrapper.common import config, settings_registry
-from generic_ml_wrapper.common.log import log
-from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
 
 if TYPE_CHECKING:
     # argparse does not publicly export the type ``add_subparsers`` returns; alias it once

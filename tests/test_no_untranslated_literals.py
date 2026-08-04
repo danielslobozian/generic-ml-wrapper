@@ -33,9 +33,9 @@ from pathlib import Path
 
 import generic_ml_wrapper
 import generic_ml_wrapper.adapter.inbound.cli.app  # pyright: ignore[reportUnusedImport]
+from generic_ml_wrapper.adapter.outbound.config import settings_registry
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.wiring.localization import SUPPORTED_LANGUAGES
-from generic_ml_wrapper.common import settings_registry
 
 SRC = Path(generic_ml_wrapper.__file__).parent
 

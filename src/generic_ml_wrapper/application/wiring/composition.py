@@ -43,6 +43,8 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultC
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
 )
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
+from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import TomlSettingsCatalog
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
@@ -156,6 +158,7 @@ from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageRe
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.application.wiring import diagnostics_log as log
 from generic_ml_wrapper.application.wiring.localization import (
     SUPPORTED_LANGUAGES,
     Localizer,
@@ -165,7 +168,6 @@ from generic_ml_wrapper.application.wiring.localization import (
 )
 from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
-from generic_ml_wrapper.common import config, log
 
 
 def _ledger() -> Ledger:
@@ -570,7 +572,11 @@ def build_config_commands() -> ConfigCommands:
     Returns:
         A ready-to-run ConfigCommands, writing to ``~/.gmlw/config.toml``.
     """
-    return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
+    return UpdateConfigUseCase(
+        writer=TomlkitConfigWriter(),
+        config_file=config.config_path,
+        settings=TomlSettingsCatalog(),
+    )
 
 
 def build_create_axis() -> CreateAxis:
