@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
+#: Both platforms deny it, in their own words: "Permission denied" / "Access is denied".
+_DENIED = "denied"
+
 #: Root ignores the permission bits, so the refusal these tests provoke never happens.
 _NOT_AS_ROOT = pytest.mark.skipif(
     hasattr(os, "geteuid") and os.geteuid() == 0,
@@ -139,9 +142,9 @@ def test_a_folder_that_will_not_go_is_reported(tmp_path: Path) -> None:
     """
     purge = _seed(tmp_path)
     locked = tmp_path / "transcripts" / "alpha"
-    locked.chmod(0o500)  # readable and searchable, but nothing may be removed from it
+    locked.chmod(0o500)  # the folder itself may not be removed
     try:
-        with pytest.raises(OSError, match="Permission denied"):
+        with pytest.raises(OSError, match=_DENIED):
             purge.purge_job("alpha")
     finally:
         locked.chmod(0o700)
@@ -155,10 +158,13 @@ def test_nothing_to_remove_is_still_not_a_failure(tmp_path: Path) -> None:
 @_NOT_AS_ROOT
 def test_a_session_whose_folder_will_not_go_is_reported(tmp_path: Path) -> None:
     purge = _seed(tmp_path)
-    locked = tmp_path / "transcripts" / "alpha"
+    # The session's own folder, not its parent. Windows' read-only attribute stops that
+    # folder being removed but not its children, so locking the parent would let a child
+    # session be deleted there and the test would pass on Linux only.
+    locked = tmp_path / "transcripts" / "alpha" / "alpha_001"
     locked.chmod(0o500)
     try:
-        with pytest.raises(OSError, match="Permission denied"):
+        with pytest.raises(OSError, match=_DENIED):
             purge.purge_session("alpha", "alpha_001")
     finally:
         locked.chmod(0o700)
