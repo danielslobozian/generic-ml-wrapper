@@ -8,7 +8,7 @@ from rich.console import Console
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
-from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.application.wiring import localization as i18n
 
 
@@ -24,7 +24,7 @@ def _render() -> list[str]:
 def test_banner_shows_derived_version_and_every_client() -> None:
     text = "\n".join(_render())
     assert f"v{__version__}" in text
-    for info in client_catalog.SUPPORTED:
+    for info in TomlClientCatalog().supported():
         assert info.name in text
 
 

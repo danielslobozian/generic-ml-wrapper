@@ -7,7 +7,7 @@ A ``[callers]`` entry counts unconditionally — gmlw has no idea what that call
 and configuring one is already the statement that it works.
 """
 
-from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
 from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsUseCase
 
@@ -26,7 +26,10 @@ def _use_case(
     callers: dict[str, str] | None = None,
 ) -> ListLaunchClientsUseCase:
     return ListLaunchClientsUseCase(
-        FakeDetector(available), lambda: default, lambda: dict(callers or {})
+        FakeDetector(available),
+        lambda: default,
+        lambda: dict(callers or {}),
+        TomlClientCatalog(),
     )
 
 
@@ -42,7 +45,7 @@ def test_nothing_installed_and_nothing_configured_offers_nothing() -> None:
 
 
 def test_installed_built_ins_keep_catalog_order() -> None:
-    order = [info.name for info in client_catalog.SUPPORTED]
+    order = [info.name for info in TomlClientCatalog().supported()]
     clients = _use_case(order[::-1]).execute()
 
     assert [c.name for c in clients] == order
@@ -119,6 +122,6 @@ def test_custom_names_are_sorted_so_the_list_is_stable() -> None:
 
 def test_the_display_name_comes_from_the_catalog() -> None:
     (only,) = _use_case(["claude"]).execute()
-    expected = next(i.display for i in client_catalog.SUPPORTED if i.name == "claude")
+    expected = next(i.display for i in TomlClientCatalog().supported() if i.name == "claude")
 
     assert only.display == expected

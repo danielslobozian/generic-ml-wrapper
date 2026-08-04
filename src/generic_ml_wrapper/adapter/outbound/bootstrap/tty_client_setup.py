@@ -28,12 +28,13 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import outdated
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number, emit
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.client_catalog import ClientInfo, Prerequisite
+    from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
+    from generic_ml_wrapper.application.domain.model.prerequisite import Prerequisite
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
     from generic_ml_wrapper.application.port.outbound.clipboard import ClipboardPort
@@ -116,7 +117,7 @@ class TtyClientSetup(ClientSetupPort):
                 description=self._version_note(info, loc),
             )
             for name in found
-            if (info := client_catalog.by_name(name)) is not None
+            if (info := TomlClientCatalog().by_name(name)) is not None
         ]
         choices.append(Choice(value=_INSTALL, label=loc.t("init.client.menu_install")))
         return choose_number(loc.t("init.client.header"), choices, loc, default=0)
@@ -133,7 +134,7 @@ class TtyClientSetup(ClientSetupPort):
 
     def _maybe_update(self, name: str, loc: Localizer) -> None:
         """When a chosen client is behind its latest, offer to run the update command."""
-        info = client_catalog.by_name(name)
+        info = TomlClientCatalog().by_name(name)
         if info is None:
             return
         installed = self._version.installed(info)
@@ -178,10 +179,10 @@ class TtyClientSetup(ClientSetupPort):
         """Offer every supported client (with its paid-plan framing) to install."""
         choices = [
             Choice(value=info.name, label=info.display, description=info.subscription)
-            for info in client_catalog.SUPPORTED
+            for info in TomlClientCatalog().supported()
         ]
         name = choose_number(loc.t("init.install.header"), choices, loc, skippable=True)
-        return client_catalog.by_name(name) if name else None
+        return TomlClientCatalog().by_name(name) if name else None
 
     def _guide_prereq(self, prereq: Prerequisite, loc: Localizer) -> None:
         """Guide installing a missing prerequisite (e.g. uv) before the client itself."""

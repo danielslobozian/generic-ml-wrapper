@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2026 Daniel Slobozian
+# SPDX-License-Identifier: Apache-2.0
+#
+# The catalogue of supported clients: how to install, update, log in, and version-check.
+#
+# This is data, not code. It is the single source of truth for the built-in clients — the
+# PATH command each one launches (used to detect installs), the OS-specific install/update
+# guidance shown at setup, the login step, and the first-party sources that report the
+# latest published version (so an old install can be flagged). Edit an entry here when a
+# vendor changes a command; the guided setup and the launch preflight both read from it.
+#
+# All URLs are the vendors' own release channels, confirmed against each project's official
+# install script or package registry. Each client carries an ordered list of version probes
+# — a primary channel and a changelog/registry fallback — tried in order until one yields.
+#
+# Order matters: it is the canonical listing order, claude first, matching the built-in
+# default.
+
+# ``uv`` is Astral's Python tool installer. gmlw itself may have arrived via pip / pipx, so
+# uv is not guaranteed to be present even though the user is running gmlw — Vibe's only
+# supported install path needs it, so the guided setup offers it first when absent.
+[prerequisites.uv]
+binary = "uv"
+display = "uv"
+install_unix = "curl -LsSf https://astral.sh/uv/install.sh | sh"
+install_windows = 'powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"'
+
+[[clients]]
+name = "claude"
+binary = "claude"
+display = "Claude Code"
+subscription = "Claude Pro / Max / Team / Enterprise"
+# The native installer is Anthropic's recommended path (npm is now deprecated); it needs
+# only curl and self-updates in the background.
+install_unix = "curl -fsSL https://claude.ai/install.sh | bash"
+install_windows = "irm https://claude.ai/install.ps1 | iex"
+login = "claude"
+login_hint = "client.login_hint.claude"
+update = "claude update"
+# The stable channel the native installer and `claude update` target.
+version_probes = [
+    { kind = "text", url = "https://downloads.claude.ai/claude-code-releases/stable" },
+    { kind = "regex", url = "https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md", selector = '(?m)^#+\s*([0-9]+\.[0-9]+\.[0-9]+)' },
+]
+
+[[clients]]
+name = "cursor"
+binary = "cursor-agent"
+display = "Cursor CLI"
+subscription = "Cursor Pro / Business"
+install_unix = "curl https://cursor.com/install -fsS | bash"
+install_windows = "irm 'https://cursor.com/install?win32=true' | iex"
+login = "cursor-agent login"
+update = "cursor-agent update"
+# Cursor embeds the current version in its own install script's download URL.
+version_probes = [
+    { kind = "regex", url = "https://cursor.com/install", selector = '''lab/([^/"'\s]+)/''' },
+    { kind = "json", url = "https://formulae.brew.sh/api/cask/cursor-cli.json", selector = "version" },
+]
+
+[[clients]]
+name = "codex"
+binary = "codex"
+display = "OpenAI Codex CLI"
+subscription = "ChatGPT Plus / Pro / Team (or an API key)"
+install_unix = "curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+install_windows = 'powershell -ExecutionPolicy ByPass -c "irm https://chatgpt.com/codex/install.ps1 | iex"'
+login = "codex login"
+login_hint = "client.login_hint.codex"
+# Resumable, but not *at launch*: codex mints its own session id and takes no flag to accept
+# ours, so a fresh session has nothing to target. Its caller learns the id off the wire on
+# the first metered turn and binds it, which flips the session's own ``resumable`` on and
+# makes ``codex resume <id>`` work. Hence the hint: the yes is real, one turn in.
+resumable = true
+resume_hint = "client.resume_hint.codex"
+# No dedicated updater subcommand; re-running the native installer upgrades in place.
+version_probes = [
+    { kind = "json", url = "https://registry.npmjs.org/@openai/codex/latest", selector = "version" },
+    { kind = "json", url = "https://api.github.com/repos/openai/codex/releases/latest", selector = "tag_name", strip_prefix = "rust-v" },
+]
+
+[[clients]]
+name = "vibe"
+binary = "vibe"
+display = "Mistral Vibe"
+subscription = "Mistral La Plateforme / Le Chat Pro"
+install_unix = "uv tool install mistral-vibe"
+install_windows = "uv tool install mistral-vibe"
+login = "vibe"
+login_hint = "client.login_hint.vibe"
+# vibe mints its own uuid; it cannot be told a session id at launch.
+resumable = false
+update = "uv tool upgrade mistral-vibe"
+prereq = "uv"
+version_probes = [
+    { kind = "json", url = "https://pypi.org/pypi/mistral-vibe/json", selector = "info.version" },
+    { kind = "json", url = "https://api.github.com/repos/mistralai/mistral-vibe/releases/latest", selector = "tag_name", strip_prefix = "v" },
+]

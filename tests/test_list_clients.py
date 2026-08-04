@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.application.domain.model.client_catalog import ClientInfo
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
+from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 
 
@@ -37,12 +37,15 @@ def test_list_clients_composes_status_versions_and_default() -> None:
         detector=detector,  # type: ignore[arg-type]
         version=versions,  # type: ignore[arg-type]
         default_client=lambda: "claude",
+        catalog=TomlClientCatalog(),
     )
 
     statuses = use_case.execute()
 
     by_name = {status.name: status for status in statuses}
-    assert [status.name for status in statuses] == [info.name for info in client_catalog.SUPPORTED]
+    assert [status.name for status in statuses] == [
+        info.name for info in TomlClientCatalog().supported()
+    ]
     assert by_name["claude"].installed is True
     assert by_name["claude"].version == "1.2.3"
     assert by_name["claude"].is_default is True
@@ -62,6 +65,7 @@ def test_list_clients_skips_version_probe_for_absent_clients() -> None:
         detector=_FakeDetector(["claude"]),  # type: ignore[arg-type]
         version=versions,  # type: ignore[arg-type]
         default_client=lambda: "claude",
+        catalog=TomlClientCatalog(),
     )
 
     use_case.execute()

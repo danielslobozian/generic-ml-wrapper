@@ -28,6 +28,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.config import settings_registry
@@ -35,7 +36,6 @@ from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as con
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
 )
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
@@ -1312,7 +1312,7 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         if others:
             lines.append(loc.t("client.guidance.use_other", other=others[0]))
     else:
-        supported = ", ".join(info.name for info in client_catalog.SUPPORTED)
+        supported = ", ".join(info.name for info in TomlClientCatalog().supported())
         lines = [
             loc.t(
                 "client.guidance.unsupported",
@@ -1322,8 +1322,8 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         ]
     if not readiness.installed:
         lines += ["", loc.t("client.guidance.none_installed")]
-        width = max(len(info.name) for info in client_catalog.SUPPORTED)
-        for info in client_catalog.SUPPORTED:
+        width = max(len(info.name) for info in TomlClientCatalog().supported())
+        for info in TomlClientCatalog().supported():
             lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
         lines.append(loc.t("client.guidance.then_login"))
     return "\n".join(lines)

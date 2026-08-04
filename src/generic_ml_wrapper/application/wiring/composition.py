@@ -32,6 +32,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner imp
     SubprocessCommandRunner,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
@@ -257,6 +258,7 @@ def build_list_clients() -> ListClients:
         detector=PathClientDetector(),
         version=HttpClientVersions(),
         default_client=config.default_client,
+        catalog=TomlClientCatalog(),
     )
 
 
@@ -273,6 +275,7 @@ def build_list_launch_clients() -> ListLaunchClients:
         detector=PathClientDetector(),
         default_client=config.default_client,
         caller_overrides=config.caller_overrides,
+        catalog=TomlClientCatalog(),
     )
 
 
@@ -695,6 +698,7 @@ def build_check_client_ready() -> CheckClientReady:
     return CheckClientReadyUseCase(
         overrides=config.caller_overrides(),
         detector=PathClientDetector(),
+        catalog=TomlClientCatalog(),
     )
 
 
