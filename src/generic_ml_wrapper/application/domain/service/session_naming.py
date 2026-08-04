@@ -9,22 +9,25 @@ import re
 _SUFFIX = re.compile(r"_(\d+)$")
 
 
-def next_session_id(job: str, existing_ids: list[str]) -> str:
-    """Return the next sequential session id for a job.
+class SessionNaming:
+    """Mints the next sequential session id for a job."""
 
-    Ids are ``<job>_NNN`` (three-digit, 1-based). The next number is one past the
-    highest existing suffix, so gaps never cause a collision.
+    def next_session_id(self, job: str, existing_ids: list[str]) -> str:
+        """Return the next sequential session id for a job.
 
-    Args:
-        job: The job identifier.
-        existing_ids: The session ids already recorded for the job.
+        Ids are ``<job>_NNN`` (three-digit, 1-based). The next number is one past the
+        highest existing suffix, so gaps never cause a collision.
 
-    Returns:
-        The next session id, e.g. ``"JOB-1_001"``.
-    """
-    highest = 0
-    for session_id in existing_ids:
-        match = _SUFFIX.search(session_id)
-        if match:
-            highest = max(highest, int(match.group(1)))
-    return f"{job}_{highest + 1:03d}"
+        Args:
+            job: The job identifier.
+            existing_ids: The session ids already recorded for the job.
+
+        Returns:
+            The next session id, e.g. ``"JOB-1_001"``.
+        """
+        highest = 0
+        for session_id in existing_ids:
+            match = _SUFFIX.search(session_id)
+            if match:
+                highest = max(highest, int(match.group(1)))
+        return f"{job}_{highest + 1:03d}"

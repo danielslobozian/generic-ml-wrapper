@@ -12,9 +12,9 @@ from generic_ml_wrapper.application.domain.model.context_source import CompileMo
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-from generic_ml_wrapper.application.domain.service.greeting import greeting_context
+from generic_ml_wrapper.application.domain.service.greeting_composer import GreetingComposer
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
-from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
+from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJob,
@@ -161,7 +161,7 @@ class StartJobUseCase(StartJob):
         greeting = self._greeting()
         if not greeting:
             return run
-        section = greeting_context(greeting)
+        section = GreetingComposer().greeting_context(greeting)
         context = section if run.context is None else f"{section}\n\n{run.context}"
         return replace(run, context=context)
 
@@ -248,7 +248,9 @@ class StartJobUseCase(StartJob):
         if target is not None:
             return self._resumed_run(target), None
         session = Session(
-            session_id=next_session_id(command.job, self._store.ids_for_job(command.job)),
+            session_id=SessionNaming().next_session_id(
+                command.job, self._store.ids_for_job(command.job)
+            ),
             job=command.job,
             client=command.client,
             uuid=self._uuid_factory(),

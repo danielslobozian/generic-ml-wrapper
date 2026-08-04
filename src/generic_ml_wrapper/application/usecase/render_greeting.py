@@ -6,11 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.service.greeting import (
-    daypart,
-    render_greeting,
-    repo_note,
-)
+from generic_ml_wrapper.application.domain.service.greeting_composer import GreetingComposer
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 
 if TYPE_CHECKING:
@@ -67,9 +63,9 @@ class RenderGreetingUseCase(RenderGreeting):
         if persona is None or not persona.greeting.strip():
             return None
         name = settings.name or self._username()
-        return render_greeting(
+        return GreetingComposer().render_greeting(
             persona.greeting,
             name=name,
-            daypart=daypart(self._clock().hour),
-            repo_note=repo_note(self._workspace.inspect()),
+            daypart=GreetingComposer().daypart(self._clock().hour),
+            repo_note=GreetingComposer().repo_note(self._workspace.inspect()),
         )

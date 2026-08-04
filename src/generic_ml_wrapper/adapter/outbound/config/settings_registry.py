@@ -5,8 +5,7 @@
 A :class:`GmlwSettings` pydantic-settings model declares each user-tunable *scalar* key
 once — its type, default, allowed values and description. Every surface renders from it:
 the ``config`` commands list/validate against it, help describes keys from it, and
-:mod:`generic_ml_wrapper.adapter.outbound.config.toml_config_reader` sources its defaults here instead of duplicating
-literals.
+the tolerant reader sources its defaults here instead of duplicating literals.
 
 Scope: the **settable scalar keys** only (``client.default``, ``profile.*``,
 ``logging.level``, ``companion.*``, ``transcript.*``, ``compress.{adapter,model,effort}``,

@@ -18,57 +18,58 @@ _KEY = re.compile(r"(?m)^(?P<key>[A-Za-z_][\w-]*)\s*:\s*(?P<value>.*)$")
 _SPACES = re.compile(r"\s+")
 
 
-def frontmatter_value(text: str, key: str) -> str:
-    """Return a frontmatter key's value, or ``""`` when absent.
+class RuleParser:
+    """Reads a rule file's bookkeeping and its named fields."""
 
-    Args:
-        text: The raw rule text.
-        key: The frontmatter key to read (e.g. ``"status"``).
+    def frontmatter_value(self, text: str, key: str) -> str:
+        """Return a frontmatter key's value, or ``""`` when absent.
 
-    Returns:
-        The value with surrounding whitespace removed, or ``""``.
-    """
-    block = _FRONTMATTER.match(text)
-    if block is None:
+        Args:
+            text: The raw rule text.
+            key: The frontmatter key to read (e.g. ``"status"``).
+
+        Returns:
+            The value with surrounding whitespace removed, or ``""``.
+        """
+        block = _FRONTMATTER.match(text)
+        if block is None:
+            return ""
+        for line in _KEY.finditer(block.group(1)):
+            if line.group("key") == key:
+                return line.group("value").strip()
         return ""
-    for line in _KEY.finditer(block.group(1)):
-        if line.group("key") == key:
-            return line.group("value").strip()
-    return ""
 
+    def field(self, text: str, name: str) -> str:
+        """Return a ``**Name:**`` field's first line, collapsed to a single space.
 
-def field(text: str, name: str) -> str:
-    """Return a ``**Name:**`` field's first line, collapsed to a single space.
+        Only the first line is taken: a listing needs a one-liner, and the full body is
+        available by opening the file. A field that continues onto later lines is therefore
+        truncated at the newline rather than folded in.
 
-    Only the first line is taken: a listing needs a one-liner, and the full body is
-    available by opening the file. A field that continues onto later lines is therefore
-    truncated at the newline rather than folded in.
+        Args:
+            text: The raw rule text.
+            name: The field name, without asterisks or colon (e.g. ``"Rule"``).
 
-    Args:
-        text: The raw rule text.
-        name: The field name, without asterisks or colon (e.g. ``"Rule"``).
+        Returns:
+            The field's first line, or ``""`` when the field is absent or empty.
+        """
+        for match in _FIELD.finditer(text):
+            if match.group("name") == name:
+                return _SPACES.sub(" ", match.group("value")).strip()
+        return ""
 
-    Returns:
-        The field's first line, or ``""`` when the field is absent or empty.
-    """
-    for match in _FIELD.finditer(text):
-        if match.group("name") == name:
-            return _SPACES.sub(" ", match.group("value")).strip()
-    return ""
+    def is_draft(self, text: str) -> bool:
+        """Whether a rule has been switched off, and so is *not* injected into any session.
 
+        A rule is active from creation; ``status: draft`` is the user's own off-switch for
+        retiring one without deleting it. Reads the ``status`` frontmatter key rather than
+        searching the whole file for the phrase, so a rule that merely *mentions* drafting in
+        its prose is not misread.
 
-def is_draft(text: str) -> bool:
-    """Whether a rule has been switched off, and so is *not* injected into any session.
+        Args:
+            text: The raw rule text.
 
-    A rule is active from creation; ``status: draft`` is the user's own off-switch for
-    retiring one without deleting it. Reads the ``status`` frontmatter key rather than
-    searching the whole file for the phrase, so a rule that merely *mentions* drafting in
-    its prose is not misread.
-
-    Args:
-        text: The raw rule text.
-
-    Returns:
-        ``True`` when the rule has been set back to draft.
-    """
-    return frontmatter_value(text, "status").casefold() == "draft"
+        Returns:
+            ``True`` when the rule has been set back to draft.
+        """
+        return self.frontmatter_value(text, "status").casefold() == "draft"

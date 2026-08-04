@@ -7,7 +7,7 @@ from __future__ import annotations
 from importlib import resources
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.service.persona_parser import parse_persona
+from generic_ml_wrapper.application.domain.service.persona_parser import PersonaParser
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 
 if TYPE_CHECKING:
@@ -47,7 +47,7 @@ class FilesystemPersonaSource(PersonaSourcePort):
         """Return the selectable personas, sorted by name (the floor excluded)."""
         self.seed()
         personas = [
-            parse_persona(path.stem, path.read_text(encoding="utf-8"))
+            PersonaParser().parse_persona(path.stem, path.read_text(encoding="utf-8"))
             for path in sorted(self._root.glob("*.md"))
             if not path.name.startswith("_")
         ]
@@ -59,7 +59,7 @@ class FilesystemPersonaSource(PersonaSourcePort):
         path = self._root / f"{name}.md"
         if not path.is_file() or name.startswith("_"):
             return None
-        return parse_persona(name, path.read_text(encoding="utf-8"))
+        return PersonaParser().parse_persona(name, path.read_text(encoding="utf-8"))
 
     def floor(self) -> str:
         """Return the universal floor composed beneath every persona (or ``""``)."""

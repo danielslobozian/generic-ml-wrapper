@@ -27,6 +27,10 @@ class CompileMode(StrEnum):
     WORKFLOW = "workflow"
     AUTHORING = "authoring"
 
+    def includes_workflow(self) -> bool:
+        """Whether this mode composes the workflow's base and steps (workflow/authoring)."""
+        return self in (CompileMode.WORKFLOW, CompileMode.AUTHORING)
+
 
 class CompressorKind(StrEnum):
     """The compression strategy for a source, by the shape of its data.
@@ -92,8 +96,3 @@ CROSS_CUTTING: tuple[ContextSource, ...] = (*PROFILE_FAMILY, *RULE_AXES)
 
 # Every source, in composed order (used to seed defaults and iterate config).
 ALL_SOURCES: tuple[ContextSource, ...] = (*CROSS_CUTTING, BASE, STEPS)
-
-
-def includes_workflow(mode: CompileMode) -> bool:
-    """Whether a mode composes the workflow's base and steps (workflow/authoring)."""
-    return mode in (CompileMode.WORKFLOW, CompileMode.AUTHORING)

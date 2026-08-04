@@ -12,7 +12,7 @@ from generic_ml_wrapper.application.domain.model.identifier_error import Identif
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
+from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     EditWorkflow,
     EditWorkflowCommand,
@@ -49,7 +49,7 @@ class EditWorkflowUseCase(EditWorkflow):
             store: Records the authoring session.
             callers: Resolves the client caller for the run.
             uuid_factory: Mints a client-side session uuid.
-            hooks: The lifecycle hooks bracketing the authoring client run.
+            launch: The bracketed launch sequence (hooks, metering, the client).
         """
         self._workflows = workflows
         self._store = store
@@ -88,7 +88,7 @@ class EditWorkflowUseCase(EditWorkflow):
         if command.resume_latest:
             return self._reopen(job, folder)
         session = Session(
-            session_id=next_session_id(job, self._store.ids_for_job(job)),
+            session_id=SessionNaming().next_session_id(job, self._store.ids_for_job(job)),
             job=job,
             client=command.client,
             uuid=self._uuid_factory(),

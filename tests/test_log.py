@@ -63,7 +63,7 @@ def test_empty_labels_are_ignored() -> None:
 def test_the_default_sink_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
     # Nothing may be written before the composition root installs a sink: the domain
     # imports this module, so it can hold no adapter to fall back on.
-    from generic_ml_wrapper.application.wiring.diagnostics_log import (
+    from generic_ml_wrapper.application.wiring.diagnostics_log import (  # noqa: PLC0415
         _NoDiagnostics,
     )
 

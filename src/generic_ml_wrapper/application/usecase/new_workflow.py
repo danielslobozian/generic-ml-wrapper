@@ -15,7 +15,7 @@ from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
+from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
     NewWorkflowCommand,
@@ -61,7 +61,7 @@ class NewWorkflowUseCase(NewWorkflow):
             store: Records the authoring session.
             callers: Resolves the client caller for the run.
             uuid_factory: Mints a client-side session uuid.
-            hooks: The lifecycle hooks bracketing the authoring client run.
+            launch: The bracketed launch sequence (hooks, metering, the client).
             clock: Returns "now" for the deployed folder's ``.about.toml`` ``created``
                 stamp; injectable so tests are deterministic.
         """
@@ -100,7 +100,7 @@ class NewWorkflowUseCase(NewWorkflow):
         # of the target name — which is not known until the session ends.
         job = _META
         session = Session(
-            session_id=next_session_id(job, self._store.ids_for_job(job)),
+            session_id=SessionNaming().next_session_id(job, self._store.ids_for_job(job)),
             job=job,
             client=command.client,
             uuid=self._uuid_factory(),

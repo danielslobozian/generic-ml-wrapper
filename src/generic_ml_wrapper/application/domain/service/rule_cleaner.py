@@ -11,25 +11,28 @@ _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.DOTALL)
 _BLANKS = re.compile(r"\n{3,}")
 
 
-def clean_rule(text: str, sections: Sequence[str]) -> str:
-    """Strip a rule's frontmatter and any human-only sections, losslessly for the model.
+class RuleCleaner:
+    """Strips a rule down to what the model should see."""
 
-    Removes the leading YAML frontmatter (bookkeeping such as name/status) and each
-    ``**Name:**`` section listed in ``sections`` (running until the next ``**Header:**``
-    marker, a markdown ``# `` heading, or end of text). Blank runs are collapsed. The
-    ``# `` stop is load-bearing: without it a trailing block would swallow the next
-    rule's title. Idempotent.
+    def clean_rule(self, text: str, sections: Sequence[str]) -> str:
+        """Strip a rule's frontmatter and any human-only sections, losslessly for the model.
 
-    Args:
-        text: The raw rule text.
-        sections: Bold-header section names to drop (case-sensitive on the name).
+        Removes the leading YAML frontmatter (bookkeeping such as name/status) and each
+        ``**Name:**`` section listed in ``sections`` (running until the next ``**Header:**``
+        marker, a markdown ``# `` heading, or end of text). Blank runs are collapsed. The
+        ``# `` stop is load-bearing: without it a trailing block would swallow the next
+        rule's title. Idempotent.
 
-    Returns:
-        The cleaned rule text.
-    """
-    text = _FRONTMATTER.sub("", text, count=1)
-    if sections:
-        names = "|".join(re.escape(name) for name in sections)
-        stop = r"(?:^\*\*[^*:\n]+:\*\*|^#\s)"
-        text = re.compile(rf"(?ms)^\*\*(?:{names}):\*\*.*?(?={stop}|\Z)").sub("", text)
-    return _BLANKS.sub("\n\n", text).strip()
+        Args:
+            text: The raw rule text.
+            sections: Bold-header section names to drop (case-sensitive on the name).
+
+        Returns:
+            The cleaned rule text.
+        """
+        text = _FRONTMATTER.sub("", text, count=1)
+        if sections:
+            names = "|".join(re.escape(name) for name in sections)
+            stop = r"(?:^\*\*[^*:\n]+:\*\*|^#\s)"
+            text = re.compile(rf"(?ms)^\*\*(?:{names}):\*\*.*?(?={stop}|\Z)").sub("", text)
+        return _BLANKS.sub("\n\n", text).strip()
