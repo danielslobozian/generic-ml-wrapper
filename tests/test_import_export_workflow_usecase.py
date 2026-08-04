@@ -9,6 +9,10 @@ from pathlib import Path
 
 import pytest
 
+from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_backup import (
+    FilesystemWorkflowBackup,
+)
+from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
@@ -69,11 +73,25 @@ class FakeWorkflows(WorkflowSourcePort):
 
 
 class FakeArchive(WorkflowArchivePort):
-    """Records what it was asked to do, and writes a marker file on unpack."""
+    """Records what it was asked to do, and writes a marker file on unpack.
 
-    def __init__(self) -> None:
+    ``status`` and ``unpack_fails`` are what a test declares up front: whether the archive
+    is worth importing, and whether unpacking it blows up half way. Both are the states
+    the ordering has to survive.
+    """
+
+    def __init__(self, status: ArchiveStatus | None = None, *, unpack_fails: bool = False) -> None:
         self.packed: tuple[Path, str] | None = None
         self.unpacked: tuple[Path, Path] | None = None
+        self.inspected: list[Path] = []
+        self._status = status
+        self._unpack_fails = unpack_fails
+
+    def inspect(self, archive: Path) -> ArchiveStatus:
+        self.inspected.append(archive)
+        if self._status is not None:
+            return self._status
+        return ArchiveStatus.COMPLETE if archive.is_file() else ArchiveStatus.MISSING
 
     def pack(self, folder: Path, slug: str) -> Path:
         self.packed = (folder, slug)
@@ -81,6 +99,11 @@ class FakeArchive(WorkflowArchivePort):
 
     def unpack(self, archive: Path, destination: Path) -> None:
         self.unpacked = (archive, destination)
+        if self._unpack_fails:
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / "half-written").write_text("junk", encoding="utf-8")
+            message = "the disk filled up"
+            raise OSError(message)
         destination.mkdir(parents=True, exist_ok=True)
         (destination / "workflow.md").write_text("# steps", encoding="utf-8")
 
@@ -109,12 +132,21 @@ def test_exporting_a_reserved_or_invalid_name_is_refused(tmp_path: Path, name: s
 
 
 # ── import ──
-def _use_case(tmp_path: Path, existing: set[str] | None = None) -> ImportWorkflowUseCase:
+def _use_case(
+    tmp_path: Path,
+    existing: set[str] | None = None,
+    archive: FakeArchive | None = None,
+) -> ImportWorkflowUseCase:
+    """The use case over a real backup adapter, so the collaboration is the real one.
+
+    Where the backup lands and what it is called are the adapter's own behaviour and are
+    asserted against it directly, in ``test_filesystem_workflow_backup``; what is asserted
+    here is the ordering the use case owns.
+    """
     return ImportWorkflowUseCase(
         FakeWorkflows(tmp_path / "workflows", existing),
-        FakeArchive(),
-        tmp_path / "backups",
-        lambda: _WHEN,
+        archive or FakeArchive(),
+        FilesystemWorkflowBackup(tmp_path / "backups", lambda: _WHEN),
     )
 
 
@@ -141,7 +173,7 @@ def test_an_existing_name_is_reported_rather_than_overwritten(tmp_path: Path) ->
     assert result.backup is None
 
 
-def test_replacing_moves_the_old_workflow_to_a_timestamped_backup(tmp_path: Path) -> None:
+def test_replacing_displaces_the_old_workflow_and_reports_where_it_went(tmp_path: Path) -> None:
     existing = tmp_path / "workflows" / "nightly-etl"
     existing.mkdir(parents=True)
     (existing / "workflow.md").write_text("the old one", encoding="utf-8")
@@ -149,26 +181,58 @@ def test_replacing_moves_the_old_workflow_to_a_timestamped_backup(tmp_path: Path
     result = _use_case(tmp_path, {"nightly-etl"}).execute(_an_archive(tmp_path), replace=True)
 
     assert result.outcome is ImportOutcome.REPLACED
-    assert result.backup == str(tmp_path / "backups" / "nightly-etl" / "20260729-153012")
     assert result.backup is not None
     # Moved, not deleted: replacing is never a one-way door.
     assert Path(result.backup, "workflow.md").read_text(encoding="utf-8") == "the old one"
     assert Path(result.path, "workflow.md").read_text(encoding="utf-8") == "# steps"
 
 
-def test_the_backup_lives_outside_the_workflows_folder(tmp_path: Path) -> None:
-    # The requirement: a backup must never be listed as a workflow. Keeping it out of
-    # the workflows root makes that structural rather than a filter to remember.
-    existing = tmp_path / "workflows" / "nightly-etl"
-    existing.mkdir(parents=True)
-    result = _use_case(tmp_path, {"nightly-etl"}).execute(_an_archive(tmp_path), replace=True)
-    assert result.backup is not None
-    assert (tmp_path / "workflows") not in Path(result.backup).parents
-
-
 def test_a_missing_archive_is_refused(tmp_path: Path) -> None:
     with pytest.raises(ArchiveUnreadableError):
         _use_case(tmp_path).execute(str(tmp_path / "nope.zip"))
+
+
+def test_an_archive_with_no_workflow_is_refused_before_anything_moves(tmp_path: Path) -> None:
+    """The defect this slot exists for: the installed workflow used to be gone by now."""
+    existing = tmp_path / "workflows" / "nightly-etl"
+    existing.mkdir(parents=True)
+    (existing / "workflow.md").write_text("the old one", encoding="utf-8")
+    archive = FakeArchive(ArchiveStatus.INCOMPLETE)
+
+    with pytest.raises(ArchiveUnreadableError):
+        _use_case(tmp_path, {"nightly-etl"}, archive).execute(_an_archive(tmp_path), replace=True)
+
+    assert archive.unpacked is None  # never even tried
+    assert (existing / "workflow.md").read_text(encoding="utf-8") == "the old one"
+    assert not (tmp_path / "backups").exists()
+
+
+def test_a_failed_unpack_puts_the_old_workflow_back(tmp_path: Path) -> None:
+    """The other half: the archive looked fine and the disk gave out part way through."""
+    existing = tmp_path / "workflows" / "nightly-etl"
+    existing.mkdir(parents=True)
+    (existing / "workflow.md").write_text("the old one", encoding="utf-8")
+
+    with pytest.raises(OSError, match="the disk filled up"):
+        _use_case(tmp_path, {"nightly-etl"}, FakeArchive(unpack_fails=True)).execute(
+            _an_archive(tmp_path), replace=True
+        )
+
+    assert (existing / "workflow.md").read_text(encoding="utf-8") == "the old one"
+    # The half-written replacement went with the failure rather than into the workflow.
+    assert not (existing / "half-written").exists()
+
+
+def test_an_occupied_folder_that_is_not_a_workflow_is_still_displaced(tmp_path: Path) -> None:
+    """Otherwise an interrupted import's leftovers would be folded into the new one."""
+    stray = tmp_path / "workflows" / "nightly-etl"
+    stray.mkdir(parents=True)
+    (stray / "leftover.md").write_text("residue", encoding="utf-8")
+
+    result = _use_case(tmp_path).execute(_an_archive(tmp_path))
+
+    assert result.outcome is ImportOutcome.REPLACED
+    assert not (stray / "leftover.md").exists()
 
 
 def test_an_export_timestamp_is_stripped_from_the_name(tmp_path: Path) -> None:
