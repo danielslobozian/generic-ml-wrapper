@@ -192,6 +192,7 @@
   "error.identifier.workflow_name": "nom de workflow invalide « {value} » : caractères autorisés : lettres minuscules, chiffres et « - » ; doit commencer par une lettre ou un chiffre",
   "error.identifier.env_var_name": "nom de variable d'environnement invalide « {value} » : caractères autorisés : lettres, chiffres et « _ » ; ne doit pas commencer par un chiffre",
   "error.job.not_found": "job inconnu : « {job} » n'a aucune activité enregistrée (voir : gmlw jobs)",
+  "error.job.name_taken": "il existe déjà un job « {job} » de type {existing_kind}.\n\nLe nom d'un job est son identité : un nom, un job. Choisissez un autre nom, ou\nsupprimez d'abord le job existant :  gmlw delete job {job}",
   "error.session.not_found": "session inconnue : « {session} » n'est pas enregistrée pour le job « {job} » (voir : gmlw sessions {job})",
   "error.workflow.reserved_name": "nom de workflow réservé : « {name} »",
   "error.workflow.not_found": "workflow inconnu : « {name} »",

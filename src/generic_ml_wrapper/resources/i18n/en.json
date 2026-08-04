@@ -192,6 +192,7 @@
   "error.identifier.workflow_name": "invalid workflow name '{value}': allowed characters are lowercase letters, digits and '-'; it must start with a letter or digit",
   "error.identifier.env_var_name": "invalid environment-variable name '{value}': allowed characters are letters, digits and '_'; it must not start with a digit",
   "error.job.not_found": "unknown job: '{job}' has no recorded activity (see: gmlw jobs)",
+  "error.job.name_taken": "there is already a {existing_kind} job named '{job}'.\n\nA job's name is its identity, so one name is one job. Pick another name, or delete\nthe existing job first:  gmlw delete job {job}",
   "error.session.not_found": "unknown session: '{session}' is not recorded for job '{job}' (see: gmlw sessions {job})",
   "error.workflow.reserved_name": "reserved workflow name: '{name}'",
   "error.workflow.not_found": "unknown workflow: '{name}'",

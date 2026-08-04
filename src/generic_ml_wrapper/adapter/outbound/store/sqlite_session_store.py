@@ -12,6 +12,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.job_name_taken_error import (
+    JobNameTakenError,
+)
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
@@ -43,8 +46,19 @@ class SqliteSessionStore(SessionStorePort):
         return [row["job"] for row in rows]
 
     def record(self, session: Session) -> None:
-        """Persist a session, creating its job (tagged with this store's kind) if new."""
+        """Persist a session, creating its job (tagged with this store's kind) if new.
+
+        Raises:
+            JobNameTakenError: If a job of the other kind already holds the name. One
+                name is one job; reusing it within a kind is how a job accumulates its
+                sessions, but across kinds it would silently merge two.
+        """
         with self._ledger.connect() as connection:
+            row = connection.execute(
+                "SELECT kind FROM jobs WHERE job = ?", (session.job,)
+            ).fetchone()
+            if row is not None and row[0] != self._kind:
+                raise JobNameTakenError(session.job, self._kind, str(row[0]))
             connection.execute(
                 "INSERT OR IGNORE INTO jobs (job, kind) VALUES (?, ?)",
                 (session.job, self._kind),
@@ -77,12 +91,19 @@ class SqliteSessionStore(SessionStorePort):
             )
 
     def sessions_for_job(self, job: str) -> list[Session]:
-        """Return the sessions recorded for a job, oldest first."""
+        """Return the sessions recorded for a job of this store's kind, oldest first.
+
+        Scoped to the kind, not just the name. A name identifies exactly one job, so a
+        store asked about a job of the *other* kind is being asked the wrong question and
+        answers with nothing — rather than handing back another kind of work's history,
+        which is what it used to do.
+        """
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT session_id, job, client, uuid, cwd, resumable, created_at "
-                "FROM sessions WHERE job = ? ORDER BY id",
-                (job,),
+                "SELECT s.session_id, s.job, s.client, s.uuid, s.cwd, s.resumable, s.created_at "
+                "FROM sessions s JOIN jobs j ON s.job = j.job "
+                "WHERE s.job = ? AND j.kind = ? ORDER BY s.id",
+                (job, self._kind),
             ).fetchall()
         return [
             Session(
