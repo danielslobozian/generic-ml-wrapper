@@ -32,6 +32,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner imp
     SubprocessCommandRunner,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
@@ -43,6 +44,8 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultC
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
 )
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
+from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import TomlSettingsCatalog
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
@@ -84,7 +87,6 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
     LocalGitWorkspaceInspector,
 )
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
@@ -132,8 +134,10 @@ from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSession
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -155,20 +159,21 @@ from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageRe
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
-from generic_ml_wrapper.common import config, paths
-from generic_ml_wrapper.common.i18n import (
+from generic_ml_wrapper.application.wiring import diagnostics_log as log
+from generic_ml_wrapper.application.wiring.localization import (
     SUPPORTED_LANGUAGES,
     Localizer,
     active,
     load_localizer,
     resolve_language,
 )
-from generic_ml_wrapper.common.spec_loader import load_class
+from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
 
 
 def _ledger() -> Ledger:
     """The shared SQLite ledger backing the session/turn/usage stores."""
-    return Ledger(paths.LEDGER)
+    return Ledger(paths.ledger)
 
 
 def _transcript_root() -> Path:
@@ -179,7 +184,7 @@ def _transcript_root() -> Path:
     record into their own would leave behind precisely the files they asked to be rid of.
     """
     settings = config.transcript()
-    return Path(settings.root) if settings.root else paths.TRANSCRIPTS
+    return Path(settings.root) if settings.root else paths.transcripts
 
 
 def _transcript() -> TranscriptPort | None:
@@ -196,7 +201,7 @@ def _artifact_purge() -> ArtifactPurgePort:
     enabled -- they may have been on when the sessions being deleted ran, and their files
     outlive the setting.
     """
-    return FilesystemArtifactPurge(paths.CONTEXTS, _transcript_root())
+    return FilesystemArtifactPurge(paths.contexts, _transcript_root())
 
 
 def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource:
@@ -209,15 +214,15 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
         A workflow source that compiles context from workflows, profile, and rules.
     """
     return FilesystemWorkflowSource(
-        paths.WORKFLOWS,
-        paths.PROFILE,
-        paths.TEMPLATES,
+        paths.workflows,
+        paths.profile,
+        paths.templates,
         interceptors,
         personas=build_persona_source(),
         compressor=CacheBackedContextCompressor(),
         startup=config.startup,
         companion=lambda: config.companion().persona,
-        environments_root=paths.ENVIRONMENTS,
+        environments_root=paths.environments,
         default_environment=config.default_environment,
         default_role=config.default_role,
         user_name=lambda: config.companion().name,
@@ -231,7 +236,7 @@ def build_persona_source() -> FilesystemPersonaSource:
     Returns:
         A persona source that seeds and reads the packaged personas.
     """
-    return FilesystemPersonaSource(paths.PERSONAS)
+    return FilesystemPersonaSource(paths.personas)
 
 
 def build_list_personas() -> ListPersonas:
@@ -253,6 +258,7 @@ def build_list_clients() -> ListClients:
         detector=PathClientDetector(),
         version=HttpClientVersions(),
         default_client=config.default_client,
+        catalog=TomlClientCatalog(),
     )
 
 
@@ -269,6 +275,7 @@ def build_list_launch_clients() -> ListLaunchClients:
         detector=PathClientDetector(),
         default_client=config.default_client,
         caller_overrides=config.caller_overrides,
+        catalog=TomlClientCatalog(),
     )
 
 
@@ -278,7 +285,7 @@ def build_plugin_source() -> FilesystemPluginSource:
     Returns:
         A plugin source that lists plugins and resolves id references.
     """
-    return FilesystemPluginSource(paths.PLUGINS)
+    return FilesystemPluginSource(paths.plugins)
 
 
 def build_list_plugins() -> ListPlugins:
@@ -317,7 +324,9 @@ def build_check_for_update() -> CheckForUpdate:
         package="generic-ml-wrapper",
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
-        cache_path=paths.STATE / "update-check.json",
+        cache_path=paths.state / "update-check.json",
+        diagnostics=log.active(),
+        localizer=build_localizer(),
     )
 
 
@@ -336,7 +345,7 @@ def _interceptor_chain() -> InterceptorChain:
         # A configured-but-unloadable spec is a config error the user should see -- not a
         # silent no-op that disables an interceptor they asked for. load_class raises
         # SpecLoadError, which the CLI surfaces (nothing configured -> nothing loaded).
-        interceptor_class = load_class(spec, InterceptorPort)
+        interceptor_class = SpecLoader().load_class(spec, InterceptorPort)
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((target, interceptor_class()))  # pyright: ignore[reportAbstractUsage]
@@ -358,11 +367,20 @@ def _hook_runner() -> HookRunner:
     plugins = build_plugin_source()
     loaded: list[tuple[HookPhase, str | None, HookPort]] = []
     for phase, spec, client in config.hooks():
-        hook_class = load_class(plugins.resolve_hook(spec), HookPort)
+        hook_class = SpecLoader().load_class(plugins.resolve_hook(spec), HookPort)
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]
-    return HookRunner(loaded)
+    return HookRunner(loaded, log.active(), build_localizer())
+
+
+def _launch_sequence() -> LaunchSequence:
+    """Build the bracketed launch sequence shared by every use case that runs a client.
+
+    Returns:
+        The sequence, carrying the configured hooks and where a bad teardown is reported.
+    """
+    return LaunchSequence(_hook_runner(), log.active(), build_localizer())
 
 
 def build_start_job() -> StartJob:
@@ -386,8 +404,10 @@ def build_start_job() -> StartJob:
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         cwd_factory=os.getcwd,
-        credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
-        hooks=_hook_runner(),
+        credentials=FilesystemCredentialsStore(paths.credentials),
+        launch=_launch_sequence(),
+        diagnostics=log.active(),
+        localizer=build_localizer(),
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
         client_args=config.client_args_for,
@@ -468,7 +488,7 @@ def build_export_workflow() -> ExportWorkflow:
     """
     return ExportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
+        archive=ZipWorkflowArchive(paths.exports, lambda: datetime.now(UTC)),
     )
 
 
@@ -480,8 +500,8 @@ def build_import_workflow() -> ImportWorkflow:
     """
     return ImportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
-        backups_root=paths.WORKFLOW_BACKUPS,
+        archive=ZipWorkflowArchive(paths.exports, lambda: datetime.now(UTC)),
+        backups_root=paths.workflow_backups,
         clock=lambda: datetime.now(UTC),
     )
 
@@ -537,7 +557,7 @@ def build_set_credential() -> SetCredential:
     Returns:
         A ready-to-run SetCredential.
     """
-    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.CREDENTIALS))
+    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.credentials))
 
 
 def build_bootstrap() -> Bootstrap:
@@ -546,7 +566,7 @@ def build_bootstrap() -> Bootstrap:
     Returns:
         A ready-to-run Bootstrap.
     """
-    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.home))
 
 
 def build_config_commands() -> ConfigCommands:
@@ -555,7 +575,11 @@ def build_config_commands() -> ConfigCommands:
     Returns:
         A ready-to-run ConfigCommands, writing to ``~/.gmlw/config.toml``.
     """
-    return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
+    return UpdateConfigUseCase(
+        writer=TomlkitConfigWriter(),
+        config_file=config.config_path,
+        settings=TomlSettingsCatalog(),
+    )
 
 
 def build_create_axis() -> CreateAxis:
@@ -566,7 +590,7 @@ def build_create_axis() -> CreateAxis:
         pointing ``profile.default_<kind>`` at the new slug in ``config.toml``.
     """
     return CreateAxisUseCase(
-        catalog=FilesystemAxisCatalog(paths.HOME),
+        catalog=FilesystemAxisCatalog(paths.home),
         writer=TomlkitConfigWriter(),
         config_file=config.config_path,
         clock=lambda: datetime.now(UTC).astimezone(),
@@ -579,7 +603,7 @@ def build_axis_catalog() -> AxisCatalogPort:
     Returns:
         A ready-to-use :class:`AxisCatalogPort` for listing the axis slug-folders.
     """
-    return FilesystemAxisCatalog(paths.HOME)
+    return FilesystemAxisCatalog(paths.home)
 
 
 def build_list_rules() -> ListRules:
@@ -589,7 +613,7 @@ def build_list_rules() -> ListRules:
         A ready-to-run ListRules over the environment and role rule folders.
     """
     return ListRulesUseCase(
-        catalog=FilesystemRuleCatalog(paths.HOME, FilesystemAxisCatalog(paths.HOME))
+        catalog=FilesystemRuleCatalog(paths.home, FilesystemAxisCatalog(paths.home))
     )
 
 
@@ -603,7 +627,7 @@ def build_migrate_layout() -> MigrateLayout:
         A ready-to-run MigrateLayout.
     """
     return MigrateLayoutUseCase(
-        FilesystemLayoutMigrator(paths.HOME),
+        FilesystemLayoutMigrator(paths.home),
         environment=config.default_environment,
     )
 
@@ -616,7 +640,7 @@ def build_migrate_slugs() -> MigrateSlugs:
     Returns:
         A ready-to-run MigrateSlugs.
     """
-    return MigrateSlugsUseCase(FilesystemSlugMigrator(paths.HOME))
+    return MigrateSlugsUseCase(FilesystemSlugMigrator(paths.home))
 
 
 def build_init() -> Init:
@@ -633,7 +657,7 @@ def build_init() -> Init:
     seed_i18n = load_localizer(seed_language)
     return InitUseCase(
         detector=PathClientDetector(),
-        seeder=FilesystemLayoutSeeder(paths.HOME),
+        seeder=FilesystemLayoutSeeder(paths.home),
         language_chooser=TtyLanguageChooser(seed_i18n),
         text_prompt=TtyTextPrompt(seed_i18n),
         axis_chooser=TtyAxisChooser(seed_i18n),
@@ -674,6 +698,7 @@ def build_check_client_ready() -> CheckClientReady:
     return CheckClientReadyUseCase(
         overrides=config.caller_overrides(),
         detector=PathClientDetector(),
+        catalog=TomlClientCatalog(),
     )
 
 
@@ -698,7 +723,7 @@ def build_save_usage_report() -> SaveUsageReport:
     return SaveUsageReportUseCase(
         export=build_export_usage(),
         exporter=FilesystemReportExporter(
-            paths.EXPORTS, clock=lambda: datetime.now(UTC).astimezone()
+            paths.exports, clock=lambda: datetime.now(UTC).astimezone()
         ),
     )
 
@@ -752,7 +777,7 @@ def build_new_workflow() -> NewWorkflow:
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
-        hooks=_hook_runner(),
+        launch=_launch_sequence(),
     )
 
 
@@ -776,7 +801,7 @@ def build_edit_workflow() -> EditWorkflow:
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
-        hooks=_hook_runner(),
+        launch=_launch_sequence(),
     )
 
 
@@ -813,7 +838,7 @@ def build_diagnostics(
     if config.log_to_file(path):
         sinks.append(
             RollingFileDiagnostics(
-                paths.LOG_FILE,
+                paths.log_file,
                 level=level,
                 max_bytes=config.log_max_bytes(path),
                 backup_count=config.log_backup_count(path),

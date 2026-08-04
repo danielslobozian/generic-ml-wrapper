@@ -12,8 +12,12 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.adapter.outbound.config import settings_registry
 from generic_ml_wrapper.application.domain.model import context_source
-from generic_ml_wrapper.common import paths, settings_registry
+from generic_ml_wrapper.application.domain.model.companion_settings import (
+    CompanionSettings,
+)
+from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,7 +45,7 @@ _HOOK_PHASES = frozenset({"pre-launch", "post-session"})
 
 def config_path() -> Path:
     """Return the config file path (``~/.gmlw/config.toml``)."""
-    return paths.HOME / "config.toml"
+    return paths.home / "config.toml"
 
 
 _config_path = config_path  # internal alias, kept for the accessors below
@@ -453,21 +457,6 @@ def compress(path: Path | None = None) -> CompressSettings:
         effort=effort if isinstance(effort, str) and effort else _DEFAULT_COMPRESS_EFFORT,
         prompts=prompts,
     )
-
-
-@dataclass(frozen=True)
-class CompanionSettings:
-    """Resolved ``[companion]`` settings.
-
-    Attributes:
-        persona: The selected persona name, or ``None`` — the companion is invisible
-            (no injected persona, no host greeting) until one is chosen.
-        name: The name the host greeting addresses the user by, or ``None`` to fall
-            back (to the OS user today; to the learned name once that lands).
-    """
-
-    persona: str | None
-    name: str | None
 
 
 def companion(path: Path | None = None) -> CompanionSettings:

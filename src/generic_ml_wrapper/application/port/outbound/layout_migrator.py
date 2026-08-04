@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+    from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 
 
 class LayoutMigratorPort(ABC):

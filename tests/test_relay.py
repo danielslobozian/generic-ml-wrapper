@@ -24,7 +24,7 @@ from generic_ml_wrapper.application.domain.service.interceptor_chain import Inte
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
-from generic_ml_wrapper.common.log import set_active
+from generic_ml_wrapper.application.wiring.diagnostics_log import set_active
 
 _SSE = (
     b'data: {"type":"message_start","message":{"model":"m","usage":{"input_tokens":10}}}\n\n'

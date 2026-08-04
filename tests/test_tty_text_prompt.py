@@ -8,7 +8,7 @@ import pytest
 
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_text_prompt
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
-from generic_ml_wrapper.common.i18n import load_localizer
+from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")
 

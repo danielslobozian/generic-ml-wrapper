@@ -4,15 +4,21 @@
 
 from pathlib import Path
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLocalizerFactory,
+)
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
 from generic_ml_wrapper.application.domain.model.run import RunContext
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
+from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 
@@ -34,7 +40,9 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
         store=SqliteSessionStore(ledger, kind="authoring"),
         callers=_NoLaunchProvider(),
         uuid_factory=lambda: "u",
-        hooks=HookRunner(()),
+        launch=LaunchSequence(
+            HookRunner((), NullDiagnostics(), _localizer()), NullDiagnostics(), _localizer()
+        ),
     )
     new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))
 
@@ -43,3 +51,8 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
     # The authoring session landed under the authoring kind, always as create-workflow
     # (the target name is a seed, decided at the end -- sessions accumulate here).
     assert SqliteSessionStore(ledger, kind="authoring").jobs() == ["create-workflow"]
+
+
+def _localizer() -> Localizer:
+    """The real English catalogue: these tests assert behaviour, not translations."""
+    return JsonCatalogLocalizerFactory().load("en")

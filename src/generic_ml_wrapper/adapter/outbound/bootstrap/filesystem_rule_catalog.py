@@ -11,13 +11,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.axis import AxisKind
-from generic_ml_wrapper.application.domain.model.rule_catalog import (
-    RuleAxis,
-    RuleGroup,
-    RuleSummary,
-)
-from generic_ml_wrapper.application.domain.service import rule_parser
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
+from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
+from generic_ml_wrapper.application.domain.model.rule_summary import RuleSummary
+from generic_ml_wrapper.application.domain.service.rule_parser import RuleParser
 from generic_ml_wrapper.application.port.outbound.rule_catalog import RuleCatalogPort
 
 if TYPE_CHECKING:
@@ -86,10 +84,10 @@ class FilesystemRuleCatalog(RuleCatalogPort):
             summaries.append(
                 RuleSummary(
                     slug=path.name[: -len(_SUFFIX)],
-                    rule=rule_parser.field(text, "Rule"),
-                    when=rule_parser.field(text, "When"),
-                    strength=rule_parser.field(text, "Strength"),
-                    draft=rule_parser.is_draft(text),
+                    rule=RuleParser().field(text, "Rule"),
+                    when=RuleParser().field(text, "When"),
+                    strength=RuleParser().field(text, "Strength"),
+                    draft=RuleParser().is_draft(text),
                     path=str(path),
                 )
             )

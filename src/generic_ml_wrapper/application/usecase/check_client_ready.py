@@ -6,13 +6,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     CheckClientReady,
     ClientReadiness,
 )
 
 if TYPE_CHECKING:
+    from generic_ml_wrapper.application.port.outbound.client_catalog import ClientCatalogPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
 
 
@@ -24,15 +24,23 @@ class CheckClientReadyUseCase(CheckClientReady):
     is ready only when its command is on ``PATH``. Anything else is not ready.
     """
 
-    def __init__(self, *, overrides: dict[str, str], detector: ClientDetectorPort) -> None:
+    def __init__(
+        self,
+        *,
+        overrides: dict[str, str],
+        detector: ClientDetectorPort,
+        catalog: ClientCatalogPort,
+    ) -> None:
         """Wire the use case to the config overrides and the install detector.
 
         Args:
             overrides: The ``[callers]`` client-to-spec overrides.
             detector: Reports which supported clients are installed.
+            catalog: The supported clients and their facts.
         """
         self._overrides = overrides
         self._detector = detector
+        self._catalog = catalog
 
     def execute(self, client: str) -> ClientReadiness:
         """Report whether ``client`` can launch, with guidance when it cannot.
@@ -46,7 +54,7 @@ class CheckClientReadyUseCase(CheckClientReady):
         installed = tuple(self._detector.available())
         if client in self._overrides:  # a custom caller — trust it, do not gate on PATH
             return ClientReadiness(client=client, ready=True, missing=None, installed=installed)
-        info = client_catalog.by_name(client)
+        info = self._catalog.by_name(client)
         ready = info is not None and client in installed
         return ClientReadiness(
             client=client,

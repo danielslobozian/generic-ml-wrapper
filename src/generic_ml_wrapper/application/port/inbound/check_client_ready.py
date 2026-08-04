@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.client_catalog import ClientInfo
+    from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 
 
 @dataclass(frozen=True)

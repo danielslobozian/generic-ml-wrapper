@@ -6,20 +6,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.service.greeting import (
-    daypart,
-    render_greeting,
-    repo_note,
-)
+from generic_ml_wrapper.application.domain.service.greeting_composer import GreetingComposer
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
 
+    from generic_ml_wrapper.application.domain.model.companion_settings import CompanionSettings
     from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
     from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
-    from generic_ml_wrapper.common.config import CompanionSettings
 
 
 class RenderGreetingUseCase(RenderGreeting):
@@ -67,9 +63,9 @@ class RenderGreetingUseCase(RenderGreeting):
         if persona is None or not persona.greeting.strip():
             return None
         name = settings.name or self._username()
-        return render_greeting(
+        return GreetingComposer().render_greeting(
             persona.greeting,
             name=name,
-            daypart=daypart(self._clock().hour),
-            repo_note=repo_note(self._workspace.inspect()),
+            daypart=GreetingComposer().daypart(self._clock().hour),
+            repo_note=GreetingComposer().repo_note(self._workspace.inspect()),
         )

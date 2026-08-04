@@ -3,11 +3,7 @@
 """Tests for the context-source taxonomy."""
 
 from generic_ml_wrapper.application.domain.model import context_source
-from generic_ml_wrapper.application.domain.model.context_source import (
-    CompileMode,
-    CompressorKind,
-    includes_workflow,
-)
+from generic_ml_wrapper.application.domain.model.context_source import CompileMode, CompressorKind
 
 
 def test_modes_are_their_config_keys() -> None:
@@ -17,9 +13,9 @@ def test_modes_are_their_config_keys() -> None:
 
 
 def test_only_workflow_modes_include_base_and_steps() -> None:
-    assert includes_workflow(CompileMode.WORKFLOW) is True
-    assert includes_workflow(CompileMode.AUTHORING) is True
-    assert includes_workflow(CompileMode.DEFAULT) is False
+    assert CompileMode.WORKFLOW.includes_workflow() is True
+    assert CompileMode.AUTHORING.includes_workflow() is True
+    assert CompileMode.DEFAULT.includes_workflow() is False
 
 
 def test_source_kinds_follow_the_data_shape() -> None:

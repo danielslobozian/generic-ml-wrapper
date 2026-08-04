@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
     AxisLabelError,
@@ -13,7 +14,6 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
     CreateAxisCommand,
     CreateAxisResult,
 )
-from generic_ml_wrapper.common.slug import slugify
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -66,7 +66,7 @@ class CreateAxisUseCase(CreateAxis):
             AxisLabelError: If the label is empty or slugifies to nothing.
             AxisExistsError: If a folder for the derived slug already exists.
         """
-        slug = slugify(command.label)
+        slug = Slug.of(command.label).value
         if not slug:
             raise AxisLabelError("error.axis.label_invalid", label=command.label)
         if self._catalog.exists(command.kind, slug):

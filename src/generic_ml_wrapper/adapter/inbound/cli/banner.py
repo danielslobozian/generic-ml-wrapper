@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import sys
 
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 
 # The product name is not translated; the two lines of prose around it are, and are
 # resolved per call rather than at import so they follow the active localiser.

@@ -14,7 +14,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from generic_ml_wrapper.common import paths
+from generic_ml_wrapper.application.wiring.paths import paths
 
 
 def write(job: str, session: str, context: str) -> Path:
@@ -28,7 +28,7 @@ def write(job: str, session: str, context: str) -> Path:
     Returns:
         The path to the written ``<session>.context.md`` file.
     """
-    directory = paths.CONTEXTS / job
+    directory = paths.contexts / job
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{session}.context.md"
     # Atomic: same-dir temp + replace, so a crash mid-write can't leave a torn artifact.

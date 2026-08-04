@@ -6,12 +6,10 @@ from __future__ import annotations
 
 import pytest
 
-from generic_ml_wrapper.application.domain.model.identifiers import (
-    EnvVarName,
-    IdentifierError,
-    JobId,
-    WorkflowName,
-)
+from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.job_id import JobId
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 
 
 @pytest.mark.parametrize("value", ["JOB-1", "JOB-123", "test_1", "a", "A9", "x" * 64])

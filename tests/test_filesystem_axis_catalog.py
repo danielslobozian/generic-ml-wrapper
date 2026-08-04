@@ -11,7 +11,7 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalog,
 )
-from generic_ml_wrapper.application.domain.model.axis import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 
 _WHEN = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 

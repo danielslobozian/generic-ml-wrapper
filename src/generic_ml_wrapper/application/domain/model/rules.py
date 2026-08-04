@@ -51,7 +51,7 @@ you have not seen yet.
 is stripped before the model sees the rule.
 """
 
-_DIRECTIVE = """\
+DIRECTIVE_TEMPLATE = """\
 ## Rules — the user's demanded reflexes
 
 The user keeps rules that gmlw reads into every AI tool they use, so a standard held in
@@ -106,33 +106,3 @@ reshaped it, follow their version:
 
 {template}
 """
-
-
-def rule_capture_directive(
-    *, environment: str, role: str, environment_dir: str, role_dir: str, template: str
-) -> str:
-    """Render the always-on rule-capture directive for this session's active axes.
-
-    The directive is gmlw's own voice to the client, injected at the head of the ``rules``
-    context section so a demanded correction becomes a draft rule in any session — even one
-    with no rules yet. It names the two concrete destinations rather than a general one,
-    because at the moment a rule is born exactly one environment and one role are active.
-
-    Args:
-        environment: The active environment's slug.
-        role: The active role's slug.
-        environment_dir: The environment's rules folder, as a user-readable path.
-        role_dir: The role's rules folder, as a user-readable path.
-        template: The rule template's text, read from the user's templates folder so their
-            edits are what the model follows.
-
-    Returns:
-        The rendered directive.
-    """
-    return _DIRECTIVE.format(
-        environment=environment,
-        role=role,
-        environment_dir=environment_dir,
-        role_dir=role_dir,
-        template=template.strip(),
-    )

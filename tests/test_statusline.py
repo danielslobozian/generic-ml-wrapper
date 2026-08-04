@@ -10,11 +10,7 @@ from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import Clau
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
-from generic_ml_wrapper.application.domain.service.statusline_renderer import (
-    format_age,
-    render_statusline,
-    render_usage_row,
-)
+from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
@@ -126,30 +122,35 @@ def test_claude_parser_tolerates_missing_fields() -> None:
 
 # ── renderer ──
 def test_render_omits_missing_fields() -> None:
-    assert render_statusline(_status(), _NO_WORKSPACE) == ""
-    assert render_statusline(_status(model="Opus 4.8"), _NO_WORKSPACE) == "Opus 4.8"
+    assert StatuslineRenderer().render_statusline(_status(), _NO_WORKSPACE) == ""
+    assert (
+        StatuslineRenderer().render_statusline(_status(model="Opus 4.8"), _NO_WORKSPACE)
+        == "Opus 4.8"
+    )
 
 
 def test_render_context_shows_denominator() -> None:
     status = _status(context_pct=34, context_tokens=68000, context_window_size=200000)
-    assert render_statusline(status, _NO_WORKSPACE) == "ctx 68k/200k (34%)"
+    assert StatuslineRenderer().render_statusline(status, _NO_WORKSPACE) == "ctx 68k/200k (34%)"
 
 
 def test_render_context_compact_and_computes_pct_when_absent() -> None:
     # 1M window, fractional-k tokens; percentage computed since the client omitted it.
     status = _status(context_tokens=155615, context_window_size=1_000_000)
-    assert render_statusline(status, _NO_WORKSPACE) == "ctx 155.6k/1M (16%)"
+    assert StatuslineRenderer().render_statusline(status, _NO_WORKSPACE) == "ctx 155.6k/1M (16%)"
 
 
 def test_render_context_falls_back_to_pct_without_tokens_or_size() -> None:
-    assert render_statusline(_status(context_pct=34), _NO_WORKSPACE) == "ctx 34%"
+    assert (
+        StatuslineRenderer().render_statusline(_status(context_pct=34), _NO_WORKSPACE) == "ctx 34%"
+    )
 
 
 def test_render_full_line() -> None:
     status = _status(
         model="Opus 4.8", context_pct=34, extras=("quota 5h 12% · wk 47%",), session_cost_usd=0.43
     )
-    line = render_statusline(status, _REPO)
+    line = StatuslineRenderer().render_statusline(status, _REPO)
     assert "git app/main abc1234 dirty:3" in line
     assert "📁 ~/dev/app" in line
     assert "Opus 4.8" in line
@@ -160,43 +161,49 @@ def test_render_full_line() -> None:
 
 def test_render_places_extras_between_context_and_cost() -> None:
     status = _status(context_pct=34, extras=("quota 5h 12%", "plan auto 8%"), session_cost_usd=0.43)
-    line = render_statusline(status, _NO_WORKSPACE)
+    line = StatuslineRenderer().render_statusline(status, _NO_WORKSPACE)
     assert line == "ctx 34%  ·  quota 5h 12%  ·  plan auto 8%  ·  $0.43"
 
 
 def test_render_git_omits_sha_and_dirty_when_clean() -> None:
     clean = Workspace(folder=None, repo="app", branch="main", short_sha=None, dirty=0)
-    assert render_statusline(_status(), clean) == "git app/main"
+    assert StatuslineRenderer().render_statusline(_status(), clean) == "git app/main"
 
 
 def test_render_git_without_repo_name() -> None:
     detached = Workspace(folder=None, repo=None, branch="wip", short_sha=None, dirty=0)
-    assert render_statusline(_status(), detached) == "git wip"
+    assert StatuslineRenderer().render_statusline(_status(), detached) == "git wip"
 
 
 # ── usage footer rows ──
 def test_render_usage_row_with_turns() -> None:
     assert (
-        render_usage_row("job", "JOB-1", 3, 45194, 0.43)
+        StatuslineRenderer().render_usage_row("job", "JOB-1", 3, 45194, 0.43)
         == "  job JOB-1 · 3 turns · 45.2k tok · $0.43"
     )
 
 
 def test_render_usage_row_compacts_large_totals_to_k_m_g() -> None:
     # A heavy job's cache-dominated total stays scannable: k -> M -> G.
-    assert "45.2k tok" in render_usage_row("job", "J", 3, 45_194, 1.0)
-    assert "487M tok" in render_usage_row("job", "J", 900, 487_000_000, 1.0)
-    assert "8.5G tok" in render_usage_row("job", "wrapper", 3251, 8_472_936_150, 663.70)
-    assert "999 tok" in render_usage_row("job", "J", 1, 999, 1.0)  # below 1000 stays exact
+    assert "45.2k tok" in StatuslineRenderer().render_usage_row("job", "J", 3, 45_194, 1.0)
+    assert "487M tok" in StatuslineRenderer().render_usage_row("job", "J", 900, 487_000_000, 1.0)
+    assert "8.5G tok" in StatuslineRenderer().render_usage_row(
+        "job", "wrapper", 3251, 8_472_936_150, 663.70
+    )
+    assert "999 tok" in StatuslineRenderer().render_usage_row(
+        "job", "J", 1, 999, 1.0
+    )  # below 1000 stays exact
 
 
 def test_render_usage_row_without_turns_shows_only_cost() -> None:
-    assert render_usage_row("job", "JOB-1", 0, 0, 0.43) == "  job JOB-1 · $0.43"
+    assert (
+        StatuslineRenderer().render_usage_row("job", "JOB-1", 0, 0, 0.43) == "  job JOB-1 · $0.43"
+    )
 
 
 def test_render_usage_row_session_label() -> None:
     assert (
-        render_usage_row("session", "JOB-1_002", 2, 100, 0.10)
+        StatuslineRenderer().render_usage_row("session", "JOB-1_002", 2, 100, 0.10)
         == "  session JOB-1_002 · 2 turns · 100 tok · $0.10"
     )
 
@@ -289,19 +296,22 @@ def test_use_case_tolerates_bad_json() -> None:
     ],
 )
 def test_format_age_uses_two_significant_units(seconds: int, rendered: str) -> None:
-    assert format_age(seconds) == rendered
+    assert StatuslineRenderer().format_age(seconds) == rendered
 
 
 def test_the_age_is_bound_to_the_name_not_added_as_a_field() -> None:
     # Layout B: the dot separators read as a list of measurements -- turns, tokens,
     # dollars -- and the age is a property of the thing measured, not one more of them.
-    row = render_usage_row("session", "JOB-1_002", 3, 45194, 0.43, 6300)
+    row = StatuslineRenderer().render_usage_row("session", "JOB-1_002", 3, 45194, 0.43, 6300)
     assert row.startswith("  session JOB-1_002 (1h45m) · ")
 
 
 def test_a_row_without_an_age_is_unchanged() -> None:
     # A session launched but never prompted has no first turn, so it has no age.
-    assert render_usage_row("session", "JOB-1_002", 0, 0, 0.0) == "  session JOB-1_002 · $0.00"
+    assert (
+        StatuslineRenderer().render_usage_row("session", "JOB-1_002", 0, 0, 0.0)
+        == "  session JOB-1_002 · $0.00"
+    )
 
 
 _EPOCH = 1_700_000_000.0  # a real wall-clock, not the 0.0 that means "not recorded"

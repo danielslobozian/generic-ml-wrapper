@@ -9,7 +9,7 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.application.domain.model.persona import Persona
-from generic_ml_wrapper.common.i18n import load_localizer
+from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")
 _PERSONAS = [Persona("plain", "Neutral.", "", "b"), Persona("butler", "A Jeeves.", "", "b")]

@@ -7,7 +7,7 @@ stdout; warnings, traces and caught failures come here, and *where* here is — 
 file, stderr, both, or nowhere — is decided once at the composition root and never at a
 call site::
 
-    from generic_ml_wrapper.common.log import log
+    from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
     log.warning(i18n.t("log.relay_failed", error=error), client="claude")
     log.bind(job, session).error(i18n.t("log.gateway_crashed"), exc=error)
@@ -18,10 +18,13 @@ installed by :func:`set_active` — the same shape ``i18n.set_active`` already u
 active localiser, and for the same reason: threading a logger through every constructor
 in the app buys nothing when there is exactly one of it per process.
 
-**This module deliberately imports no sink.** The domain imports it (a domain service
-logs), so anything it imports the domain transitively imports too — and the domain may
-not reach an adapter. Hence the default is the no-op below, and the composition root
-installs a real sink as its first act. Nothing logs before that point.
+**This module deliberately imports no sink.** The default below is a no-op, and the
+composition root installs a real sink as its first act; nothing logs before that point.
+
+It lives with the composition root because that is what it is: one destination chosen
+once per process. **Nothing in the application ring may use it** — a use case or a domain
+service that needs to report something is handed a
+:class:`~generic_ml_wrapper.application.domain.service.diagnostics.Diagnostics`.
 
 The message handed to a sink is **already localised**: resolving a catalogue key is the
 caller's job (``i18n.t(...)``), so a sink stays a dumb destination.

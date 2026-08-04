@@ -9,7 +9,9 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.migration import SlugMigrationReport
+    from generic_ml_wrapper.application.domain.model.slug_migration_report import (
+        SlugMigrationReport,
+    )
     from generic_ml_wrapper.application.port.outbound.slug_migrator import SlugMigratorPort
 
 

@@ -12,18 +12,19 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import ABOUT, write_about
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
-from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE, rule_capture_directive
+from generic_ml_wrapper.application.domain.model.rule_capture_directive import RuleCaptureDirective
+from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
 from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.domain.service import rule_parser
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
-from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
+from generic_ml_wrapper.application.domain.service.rule_cleaner import RuleCleaner
+from generic_ml_wrapper.application.domain.service.rule_parser import RuleParser
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.common import config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -384,7 +385,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         env_dir = self._environment_rules_dir()
         role_dir = self._role_rules_dir()
         parts: list[str] = [
-            rule_capture_directive(
+            RuleCaptureDirective().render(
                 environment=self._default_environment(),
                 role=self._default_role(),
                 environment_dir=str(env_dir) if env_dir else "(no environment configured)",
@@ -437,7 +438,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self, mode: CompileMode, name: str | None, settings: dict[str, config.SourceSetting]
     ) -> str:
         """Compose the shared base and the workflow's steps (workflow/authoring only)."""
-        if not context_source.includes_workflow(mode):
+        if not mode.includes_workflow():
             return ""
         parts: list[str] = []
         base = self._maybe_compress(
@@ -562,8 +563,8 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             raw = path.read_text(encoding="utf-8").strip()
             # Draft-ness is a frontmatter key, not a phrase: a substring search over the
             # whole file silently dropped any live rule that merely mentioned drafting.
-            if raw and not rule_parser.is_draft(raw):
-                rule = clean_rule(raw, _STRIP_SECTIONS)
+            if raw and not RuleParser().is_draft(raw):
+                rule = RuleCleaner().clean_rule(raw, _STRIP_SECTIONS)
                 if rule:
                     cleaned.append(rule)
         return "\n\n---\n\n".join(cleaned)

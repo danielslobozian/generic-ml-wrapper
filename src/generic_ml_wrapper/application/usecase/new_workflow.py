@@ -10,11 +10,12 @@ from datetime import UTC, datetime
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft
-from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
-from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
+from generic_ml_wrapper.application.domain.model.slug import Slug
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
+from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflow,
     NewWorkflowCommand,
@@ -27,8 +28,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.launch import run_with_hooks
-from generic_ml_wrapper.common.slug import slugify
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 
 _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
@@ -51,7 +51,7 @@ class NewWorkflowUseCase(NewWorkflow):
         store: SessionStorePort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
-        hooks: HookRunner,
+        launch: LaunchSequence,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         """Wire the use case to its outbound ports.
@@ -61,7 +61,7 @@ class NewWorkflowUseCase(NewWorkflow):
             store: Records the authoring session.
             callers: Resolves the client caller for the run.
             uuid_factory: Mints a client-side session uuid.
-            hooks: The lifecycle hooks bracketing the authoring client run.
+            launch: The bracketed launch sequence (hooks, metering, the client).
             clock: Returns "now" for the deployed folder's ``.about.toml`` ``created``
                 stamp; injectable so tests are deterministic.
         """
@@ -69,7 +69,7 @@ class NewWorkflowUseCase(NewWorkflow):
         self._store = store
         self._callers = callers
         self._uuid_factory = uuid_factory
-        self._hooks = hooks
+        self._launch = launch
         self._clock = clock
 
     def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
@@ -89,7 +89,7 @@ class NewWorkflowUseCase(NewWorkflow):
         if command.resume_draft is not None or command.resume_latest:
             return self._reopen(command)
         if command.label is not None:  # a seed label lets a known collision fail fast
-            seed = slugify(command.label)
+            seed = Slug.of(command.label).value
             self._validate(seed)
             if self._workflows.exists(seed):
                 message = f"workflow already exists: {seed!r}"
@@ -100,7 +100,7 @@ class NewWorkflowUseCase(NewWorkflow):
         # of the target name — which is not known until the session ends.
         job = _META
         session = Session(
-            session_id=next_session_id(job, self._store.ids_for_job(job)),
+            session_id=SessionNaming().next_session_id(job, self._store.ids_for_job(job)),
             job=job,
             client=command.client,
             uuid=self._uuid_factory(),
@@ -121,7 +121,7 @@ class NewWorkflowUseCase(NewWorkflow):
         # left unset, which is what made an interrupted interview unrecoverable: the
         # session claimed a folder it had not stored, on a client nobody had asked.
         self._store.record(replace(session, cwd=draft, resumable=caller.can_resume()))
-        exit_code = run_with_hooks(caller, run, self._hooks)
+        exit_code = self._launch.run(caller, run)
         return self._finalize(exit_code, draft)
 
     def _reopen(self, command: NewWorkflowCommand) -> NewWorkflowResult:
@@ -166,7 +166,7 @@ class NewWorkflowUseCase(NewWorkflow):
                 client=session.client,
                 session_id=session.session_id,
             )
-        exit_code = run_with_hooks(caller, run, self._hooks)
+        exit_code = self._launch.run(caller, run)
         return self._finalize(exit_code, draft.path)
 
     def _target_draft(self, command: NewWorkflowCommand) -> Draft:
@@ -204,7 +204,7 @@ class NewWorkflowUseCase(NewWorkflow):
         label = marker.label or marker.name
         if not marker.finished or label is None:
             return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
-        slug = slugify(label) if marker.label else label
+        slug = Slug.of(label).value if marker.label else label
         try:
             self._validate(slug)
         except WorkflowNameError:  # the label yielded nothing usable — keep the draft

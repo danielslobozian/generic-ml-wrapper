@@ -12,11 +12,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.common import config, i18n, paths
-from generic_ml_wrapper.common.log import log
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
+from generic_ml_wrapper.application.wiring import localization as i18n
+from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 # The tips, in reveal order. Each is (stable id, catalogue key). The id is what's recorded
 # as seen, so reordering or rewording a tip never re-shows an already-seen one.
@@ -31,7 +33,7 @@ TIPS: tuple[tuple[str, str], ...] = (
 def _read_seen() -> set[str]:
     """Return the set of tip ids already shown (empty on any read error)."""
     try:
-        text = (paths.STATE / "hints-seen").read_text(encoding="utf-8")
+        text = (paths.state / "hints-seen").read_text(encoding="utf-8")
     except OSError:
         return set()
     return {line.strip() for line in text.splitlines() if line.strip()}
@@ -40,8 +42,8 @@ def _read_seen() -> set[str]:
 def _mark_seen(hint_id: str) -> None:
     """Record ``hint_id`` as shown (best-effort; a write error is logged, not raised)."""
     try:
-        paths.STATE.mkdir(parents=True, exist_ok=True)
-        with (paths.STATE / "hints-seen").open("a", encoding="utf-8") as handle:
+        paths.state.mkdir(parents=True, exist_ok=True)
+        with (paths.state / "hints-seen").open("a", encoding="utf-8") as handle:
             handle.write(f"{hint_id}\n")
     except OSError as error:
         log.debug(i18n.t("log.hint_not_recorded", hint=hint_id, error=error))

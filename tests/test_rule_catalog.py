@@ -12,7 +12,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog impor
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_catalog import (
     FilesystemRuleCatalog,
 )
-from generic_ml_wrapper.application.domain.model.rule_catalog import RuleAxis
+from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
 
 
 def _catalog(home: Path) -> FilesystemRuleCatalog:

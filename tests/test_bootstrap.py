@@ -8,7 +8,7 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeeder,
 )
-from generic_ml_wrapper.application.domain.model.axis import AxisSelection
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
     InitPersist,
     InitSelections,

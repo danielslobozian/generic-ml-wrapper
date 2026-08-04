@@ -8,7 +8,7 @@ import pytest
 
 from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import StderrDiagnostics
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-from generic_ml_wrapper.common.log import Log, active, set_active
+from generic_ml_wrapper.application.wiring.diagnostics_log import Log, active, set_active
 
 
 @pytest.fixture(autouse=True)
@@ -63,7 +63,9 @@ def test_empty_labels_are_ignored() -> None:
 def test_the_default_sink_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
     # Nothing may be written before the composition root installs a sink: the domain
     # imports this module, so it can hold no adapter to fall back on.
-    from generic_ml_wrapper.common.log import _NoDiagnostics  # noqa: PLC0415
+    from generic_ml_wrapper.application.wiring.diagnostics_log import (  # noqa: PLC0415
+        _NoDiagnostics,
+    )
 
     set_active(_NoDiagnostics())
     Log().error("into the void")

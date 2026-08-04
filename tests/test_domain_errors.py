@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import pytest
 
-from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
+from generic_ml_wrapper.adapter.outbound.config.settings_registry import InvalidSettingValueError
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
     AxisLabelError,
@@ -33,9 +35,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     UnknownWorkflowError,
 )
-from generic_ml_wrapper.common import i18n
-from generic_ml_wrapper.common.errors import DomainError
-from generic_ml_wrapper.common.settings_registry import InvalidSettingValueError
+from generic_ml_wrapper.application.wiring import localization as i18n
 
 _EN = i18n.load_localizer("en")
 _FR = i18n.load_localizer("fr")

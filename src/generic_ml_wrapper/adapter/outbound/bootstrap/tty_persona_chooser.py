@@ -11,7 +11,7 @@ from generic_ml_wrapper.application.port.outbound.persona_chooser import Persona
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.persona import Persona
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 class TtyPersonaChooser(PersonaChooserPort):

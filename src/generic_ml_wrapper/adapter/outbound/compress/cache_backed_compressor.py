@@ -18,9 +18,11 @@ from generic_ml_cache_core.application.usecase.select_adapter_for_execution_serv
     SelectAdapterForExecutionService,
 )
 
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
-from generic_ml_wrapper.common import config, i18n, paths
-from generic_ml_wrapper.common.log import log
+from generic_ml_wrapper.application.wiring import localization as i18n
+from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
     from generic_ml_cache_core.application.domain.model.execution.ml_execution import MlExecution
@@ -97,8 +99,8 @@ class CacheBackedContextCompressor(ContextCompressorPort):
             client = resolver.resolve_local_client(descriptor.adapter_id)
             return {settings.adapter: cast("RegisteredAdapterPort", client)}
 
-        paths.COMPRESS_CACHE.mkdir(parents=True, exist_ok=True)
-        api = build_application_api(paths.COMPRESS_CACHE, runners)
+        paths.compress_cache.mkdir(parents=True, exist_ok=True)
+        api = build_application_api(paths.compress_cache, runners)
         return api.run_ml.execute(command)
 
 

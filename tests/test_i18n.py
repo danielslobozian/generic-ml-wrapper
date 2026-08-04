@@ -7,14 +7,14 @@ from importlib import resources
 
 import pytest
 
-from generic_ml_wrapper.application.domain.model.identifiers import (
-    IdentifierError,
-    JobId,
-    WorkflowName,
-)
-from generic_ml_wrapper.common.i18n import (
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     SUPPORTED_LANGUAGES,
-    Localizer,
+    JsonCatalogLocalizer,
+)
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.job_id import JobId
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
+from generic_ml_wrapper.application.wiring.localization import (
     active,
     load_localizer,
     resolve_language,
@@ -29,19 +29,22 @@ def _catalog(lang: str) -> dict[str, str]:
 
 
 def test_t_returns_template_without_params() -> None:
-    assert Localizer("en", {"greet": "Hello"}).t("greet") == "Hello"
+    assert JsonCatalogLocalizer("en", {"greet": "Hello"}).t("greet") == "Hello"
 
 
 def test_t_formats_params() -> None:
-    assert Localizer("en", {"pick": "Pick [{range}]"}).t("pick", range="1-3") == "Pick [1-3]"
+    assert (
+        JsonCatalogLocalizer("en", {"pick": "Pick [{range}]"}).t("pick", range="1-3")
+        == "Pick [1-3]"
+    )
 
 
 def test_t_unknown_key_returns_the_key() -> None:
-    assert Localizer("en", {}).t("missing.key") == "missing.key"
+    assert JsonCatalogLocalizer("en", {}).t("missing.key") == "missing.key"
 
 
 def test_t_missing_param_falls_back_to_the_raw_template() -> None:
-    assert Localizer("en", {"x": "{a}-{b}"}).t("x", a="1") == "{a}-{b}"
+    assert JsonCatalogLocalizer("en", {"x": "{a}-{b}"}).t("x", a="1") == "{a}-{b}"
 
 
 def test_resolve_language_from_a_posix_lang() -> None:

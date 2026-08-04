@@ -5,8 +5,8 @@
 from __future__ import annotations
 
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
-from generic_ml_wrapper.common import i18n
-from generic_ml_wrapper.common.log import log
+from generic_ml_wrapper.application.wiring import localization as i18n
+from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 
 class MessageSizeLogger(InterceptorPort):

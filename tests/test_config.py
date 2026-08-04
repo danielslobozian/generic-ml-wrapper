@@ -4,8 +4,8 @@
 
 from pathlib import Path
 
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
-from generic_ml_wrapper.common import config
 
 
 def _write(tmp_path: Path, body: str) -> Path:

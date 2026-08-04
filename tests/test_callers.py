@@ -10,6 +10,7 @@ from typing import cast
 
 import pytest
 
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.caller import (
     claude_cli_caller,
     cursor_cli_caller,
@@ -23,7 +24,6 @@ from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     UnsupportedClientError,
 )
 from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
-from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -406,7 +406,7 @@ def test_a_caller_outside_the_catalog_can_still_declare_itself_resumable() -> No
             return 0
 
     run = RunContext("JOB-1", "JOB-1_001", "cursor-mitm", None, False)
-    assert client_catalog.by_name("cursor-mitm") is None, "precondition: not a built-in"
+    assert TomlClientCatalog().by_name("cursor-mitm") is None, "precondition: not a built-in"
     assert _PluginCaller(run).can_resume() is True
 
 

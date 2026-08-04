@@ -11,7 +11,7 @@ from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLa
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+    from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
     from generic_ml_wrapper.application.port.outbound.layout_migrator import LayoutMigratorPort
 
 

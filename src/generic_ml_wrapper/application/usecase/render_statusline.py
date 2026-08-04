@@ -11,12 +11,8 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-
-from generic_ml_wrapper.application.domain.service.statusline_renderer import (
-    render_statusline,
-    render_usage_row,
-)
+from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
@@ -68,7 +64,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         status = self._parser.parse(_decode(payload_json))
         if job and session and status.session_cost_usd is not None:
             self._usage.record_session_cost(job, session, status.session_cost_usd)
-        line = render_statusline(status, self._workspace.inspect())
+        line = StatuslineRenderer().render_statusline(status, self._workspace.inspect())
         footer = self._usage_footer(job, session) if job else ""
         if not footer:
             return line
@@ -88,7 +84,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         if session is not None:
             session_turns = [turn for turn in turns if turn.session_id == session]
             rows.append(
-                render_usage_row(
+                StatuslineRenderer().render_usage_row(
                     "session",
                     session,
                     len(session_turns),
@@ -103,7 +99,7 @@ class RenderStatuslineUseCase(RenderStatusline):
             if not spans_other_sessions:
                 return rows[0]
         rows.append(
-            render_usage_row(
+            StatuslineRenderer().render_usage_row(
                 "job",
                 job,
                 len(turns),

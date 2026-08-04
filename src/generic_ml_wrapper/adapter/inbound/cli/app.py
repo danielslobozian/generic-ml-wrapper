@@ -28,27 +28,26 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import GUIDED
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
+from generic_ml_wrapper.adapter.outbound.config import settings_registry
+from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
 )
-from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.application.domain.model.axis import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
-from generic_ml_wrapper.application.domain.model.identifiers import (
-    EnvVarName,
-    IdentifierError,
-    JobId,
-    WorkflowName,
-)
-from generic_ml_wrapper.application.domain.model.migration import (
-    MigrationReport,
-    SlugMigrationReport,
-)
+from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.job_id import JobId
+from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
@@ -95,6 +94,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
     UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_axis_catalog,
     build_bootstrap,
@@ -131,11 +131,12 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_start_job,
     build_workflow_chooser,
 )
-from generic_ml_wrapper.common import config, i18n, paths, settings_registry
-from generic_ml_wrapper.common.errors import DomainError
-from generic_ml_wrapper.common.log import log
-from generic_ml_wrapper.common.log import set_active as set_active_diagnostics
-from generic_ml_wrapper.common.spec_loader import SpecLoadError
+from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.wiring.diagnostics_log import (
+    set_active as set_active_diagnostics,
+)
+from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
 
 if TYPE_CHECKING:
     # argparse does not publicly export the type ``add_subparsers`` returns; alias it once
@@ -1307,7 +1308,7 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         if others:
             lines.append(loc.t("client.guidance.use_other", other=others[0]))
     else:
-        supported = ", ".join(info.name for info in client_catalog.SUPPORTED)
+        supported = ", ".join(info.name for info in TomlClientCatalog().supported())
         lines = [
             loc.t(
                 "client.guidance.unsupported",
@@ -1317,8 +1318,8 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         ]
     if not readiness.installed:
         lines += ["", loc.t("client.guidance.none_installed")]
-        width = max(len(info.name) for info in client_catalog.SUPPORTED)
-        for info in client_catalog.SUPPORTED:
+        width = max(len(info.name) for info in TomlClientCatalog().supported())
+        for info in TomlClientCatalog().supported():
             lines.append(f"  {info.name:<{width}}  {info.install_for(system)}")
         lines.append(loc.t("client.guidance.then_login"))
     return "\n".join(lines)
@@ -1413,7 +1414,7 @@ def _with_cursor_plan(payload_json: str, client: str | None) -> str:  # noqa: PL
     if payload.get("plan"):  # cursor already carried a plan
         return payload_json
     try:
-        plan = json.loads(paths.CURSOR_PLAN.read_text(encoding="utf-8"))
+        plan = json.loads(paths.cursor_plan.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return payload_json
     if not isinstance(plan, dict):

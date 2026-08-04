@@ -16,13 +16,13 @@ import sys
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number, emit
-from generic_ml_wrapper.application.domain.model.axis import AxisSelection
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
+from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
-from generic_ml_wrapper.common.slug import slugify
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.axis import AxisPrompt
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.model.axis_prompt import AxisPrompt
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 # Sentinel option value: "type a role/environment other than the offered examples".
 _TYPE_YOUR_OWN = "\x00type-your-own"
@@ -75,7 +75,7 @@ class TtyAxisChooser(AxisChooserPort):
         if typed is None or not typed.strip():
             return AxisSelection(default, default, default)
         label = typed.strip()
-        slug = slugify(label) or default
+        slug = Slug.of(label).value or default
         emit(loc.t(prompt.saved_key, slug=slug))
         return AxisSelection(slug, label, label)
 

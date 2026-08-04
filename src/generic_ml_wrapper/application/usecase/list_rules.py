@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.rule_catalog import RuleGroup
+    from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
     from generic_ml_wrapper.application.port.outbound.rule_catalog import RuleCatalogPort
 
 

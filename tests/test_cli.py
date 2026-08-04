@@ -13,10 +13,12 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
-from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
-from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
+from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
+from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
@@ -94,8 +96,8 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
-from generic_ml_wrapper.common import paths
-from generic_ml_wrapper.common.i18n import load_localizer
+from generic_ml_wrapper.application.wiring.localization import load_localizer
+from generic_ml_wrapper.application.wiring.paths import paths
 
 
 class _RecordingBootstrap(Bootstrap):
@@ -774,9 +776,8 @@ def test_build_render_statusline_wires_a_real_use_case() -> None:
 def test_cursor_plan_cache_is_merged_into_the_payload(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    cache = tmp_path / "cursor-plan.json"
-    cache.write_text('{"auto_pct": 6.2, "api_pct": 3.4}', encoding="utf-8")
-    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    app.paths.cursor_plan.write_text('{"auto_pct": 6.2, "api_pct": 3.4}', encoding="utf-8")
     merged = app._with_cursor_plan('{"model": {"display_name": "Composer"}}', "cursor")
     assert json.loads(merged)["plan"] == {"auto_pct": 6.2, "api_pct": 3.4}
 
@@ -784,9 +785,8 @@ def test_cursor_plan_cache_is_merged_into_the_payload(
 def test_cursor_plan_untouched_for_other_clients_or_when_present(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    cache = tmp_path / "cursor-plan.json"
-    cache.write_text('{"auto_pct": 1}', encoding="utf-8")
-    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    app.paths.cursor_plan.write_text('{"auto_pct": 1}', encoding="utf-8")
     assert app._with_cursor_plan("{}", "claude") == "{}"  # not cursor
     kept = '{"plan": {"auto_pct": 9}}'
     assert app._with_cursor_plan(kept, "cursor") == kept  # payload already carries a plan
@@ -795,9 +795,8 @@ def test_cursor_plan_untouched_for_other_clients_or_when_present(
 def test_statusline_renders_the_cursor_plan_block_end_to_end(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    cache = tmp_path / "cursor-plan.json"
-    cache.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
-    monkeypatch.setattr(app.paths, "CURSOR_PLAN", cache)
+    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    app.paths.cursor_plan.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
     monkeypatch.setenv("GMLW_CLIENT", "cursor")
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"model": {"display_name": "Composer"}}'))
     assert app.main(["statusline"]) == 0  # real cursor parser + renderer
@@ -1063,7 +1062,7 @@ def test_start_aborts_with_guidance_when_client_missing(
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
     readiness = ClientReadiness(
-        client="cursor", ready=False, missing=client_catalog.CURSOR, installed=()
+        client="cursor", ready=False, missing=_client("cursor"), installed=()
     )
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
 
@@ -1079,7 +1078,10 @@ def test_start_missing_client_suggests_an_installed_alternative(
 ) -> None:
     monkeypatch.setattr(app, "build_start_job", lambda: None)
     readiness = ClientReadiness(
-        client="claude", ready=False, missing=client_catalog.CLAUDE, installed=("codex",)
+        client="claude",
+        ready=False,
+        missing=_client("claude"),
+        installed=("codex",),
     )
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["start", "JOB-1"]) == 2
@@ -1091,12 +1093,12 @@ def test_start_lists_all_when_no_client_installed(
 ) -> None:
     monkeypatch.setattr(app, "build_start_job", lambda: None)
     readiness = ClientReadiness(
-        client="claude", ready=False, missing=client_catalog.CLAUDE, installed=()
+        client="claude", ready=False, missing=_client("claude"), installed=()
     )
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["start", "JOB-1"]) == 2
     err = capsys.readouterr().err
-    for info in client_catalog.SUPPORTED:  # every supported client's install is offered
+    for info in TomlClientCatalog().supported():  # every supported client's install is offered
         assert info.install_for(platform.system()) in err
 
 
@@ -1104,12 +1106,10 @@ def test_workflow_new_aborts_when_client_missing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_new_workflow", lambda: None)
-    readiness = ClientReadiness(
-        client="codex", ready=False, missing=client_catalog.CODEX, installed=()
-    )
+    readiness = ClientReadiness(client="codex", ready=False, missing=_client("codex"), installed=())
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
-    assert client_catalog.CODEX.install_for(platform.system()) in capsys.readouterr().err
+    assert _client("codex").install_for(platform.system()) in capsys.readouterr().err
 
 
 def test_build_check_client_ready_wires_a_real_use_case() -> None:
@@ -1501,7 +1501,7 @@ def test_config_set_persists_and_echoes_the_change(
     assert app.main(["config", "set", "profile.default_role", "reviewer"]) == 0
     out = capsys.readouterr().out
     assert "profile.default_role = reviewer" in out
-    assert 'default_role = "reviewer"' in (paths.HOME / "config.toml").read_text(encoding="utf-8")
+    assert 'default_role = "reviewer"' in (paths.home / "config.toml").read_text(encoding="utf-8")
 
 
 def test_config_set_invalid_value_errors(
@@ -1560,8 +1560,8 @@ def test_exit_receipt_tip_is_shown_once_then_suppressed(
 def test_exit_receipt_tip_suppressed_when_hints_disabled(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    (paths.HOME).mkdir(parents=True, exist_ok=True)
-    (paths.HOME / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
+    (paths.home).mkdir(parents=True, exist_ok=True)
+    (paths.home / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
 
     class FakeUseCase(StartJob):
         def execute(self, command: StartJobCommand) -> StartJobResult:
@@ -2355,3 +2355,10 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
 
 def test_build_list_launch_clients_is_wired() -> None:
     assert isinstance(composition.build_list_launch_clients(), ListLaunchClients)
+
+
+def _client(name: str) -> ClientInfo:
+    """The packaged catalogue entry for *name* — these tests assume it exists."""
+    info = TomlClientCatalog().by_name(name)
+    assert info is not None
+    return info

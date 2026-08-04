@@ -6,13 +6,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.axis import ENVIRONMENT_PROMPT, ROLE_PROMPT
+from generic_ml_wrapper.application.domain.model.axis_prompt import ENVIRONMENT_PROMPT, ROLE_PROMPT
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.outbound.layout_seeder import InitSelections
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
     from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
@@ -21,7 +22,6 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
     from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
     from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
-    from generic_ml_wrapper.common.i18n import Localizer
 
 
 class InitUseCase(Init):

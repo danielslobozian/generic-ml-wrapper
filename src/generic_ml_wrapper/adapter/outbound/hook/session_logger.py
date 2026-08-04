@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
-from generic_ml_wrapper.common import paths
+from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -48,7 +48,7 @@ class SessionLogger(HookPort):
 
     def _path(self) -> Path:
         """The session log location (``~/.gmlw/sessions.log``)."""
-        return paths.HOME / _LOG
+        return paths.home / _LOG
 
     @staticmethod
     def _line(context: HookContext) -> str:

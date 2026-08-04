@@ -36,9 +36,10 @@ from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
-from generic_ml_wrapper.application.domain.model.rule_catalog import RuleAxis, RuleGroup
+from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
+from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.application.wiring import localization as i18n
 
 
 def _key(key: str, action: str, label: str, **options: object) -> Binding:

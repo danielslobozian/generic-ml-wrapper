@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 class TtyWorkflowChooser:

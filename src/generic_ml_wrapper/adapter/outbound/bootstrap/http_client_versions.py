@@ -23,7 +23,8 @@ from typing import TYPE_CHECKING, cast
 from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.client_catalog import ClientInfo, VersionProbe
+    from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
+    from generic_ml_wrapper.application.domain.model.version_probe import VersionProbe
 
 # A version token: a dotted number run plus any build/date suffix. Matches semver
 # (``2.1.215``) and Cursor's date-hash (``2026.07.16-899851b``) alike.

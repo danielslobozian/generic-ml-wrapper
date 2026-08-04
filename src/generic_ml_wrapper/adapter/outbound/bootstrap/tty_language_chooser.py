@@ -10,7 +10,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, cho
 from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.common.i18n import Localizer
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 # Endonyms — a language names itself the same regardless of the UI language, so these
 # labels need no translation. Codes without an entry fall back to the bare code.

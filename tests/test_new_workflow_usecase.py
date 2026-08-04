@@ -4,12 +4,16 @@
 
 import pytest
 
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLocalizerFactory,
+)
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
+from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
     NewWorkflowCommand,
     NoSuchDraftError,
@@ -20,6 +24,8 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
+from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 
 _UNFINISHED = DraftMarker(None, finished=False)
@@ -131,7 +137,13 @@ def _use_case(
     workflows: FakeWorkflows, store: FakeStore, provider: CapturingProvider
 ) -> NewWorkflowUseCase:
     return NewWorkflowUseCase(
-        workflows, store, provider, uuid_factory=lambda: "fixed-uuid", hooks=HookRunner(())
+        workflows,
+        store,
+        provider,
+        uuid_factory=lambda: "fixed-uuid",
+        launch=LaunchSequence(
+            HookRunner((), NullDiagnostics(), _localizer()), NullDiagnostics(), _localizer()
+        ),
     )
 
 
@@ -425,3 +437,8 @@ def test_a_draft_on_a_client_that_cannot_reopen_is_refused() -> None:
         _use_case(workflows, store, CapturingProvider(can_resume=False)).execute(
             NewWorkflowCommand(label=None, client="claude", resume_latest=True)
         )
+
+
+def _localizer() -> Localizer:
+    """The real English catalogue: these tests assert behaviour, not translations."""
+    return JsonCatalogLocalizerFactory().load("en")

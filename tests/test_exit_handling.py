@@ -9,7 +9,7 @@ import signal
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
-from generic_ml_wrapper.common.config import CompanionSettings
+from generic_ml_wrapper.adapter.outbound.config.toml_config_reader import CompanionSettings
 
 
 def test_keyboard_interrupt_exits_130_without_a_traceback(

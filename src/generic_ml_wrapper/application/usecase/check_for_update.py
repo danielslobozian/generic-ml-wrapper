@@ -9,13 +9,13 @@ from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
-from generic_ml_wrapper.common import i18n
-from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
 
 # How long a cached "latest" answer is trusted before checking PyPI again. Not user-
@@ -53,6 +53,8 @@ class CheckForUpdateUseCase(CheckForUpdate):
         enabled: Callable[[], bool],
         clock: Callable[[], datetime],
         cache_path: Path,
+        diagnostics: Diagnostics,
+        localizer: Localizer,
     ) -> None:
         """Wire the use case to its version source, cache file, and clock.
 
@@ -64,6 +66,8 @@ class CheckForUpdateUseCase(CheckForUpdate):
                 touching the cache file or the network.
             clock: Returns the current time (injected for deterministic tests).
             cache_path: Where the last-checked timestamp and version are cached.
+            diagnostics: Where a failed cache write is reported.
+            localizer: Renders that report in the language the wrapper is speaking.
         """
         self._checker = checker
         self._current_version = current_version
@@ -71,6 +75,8 @@ class CheckForUpdateUseCase(CheckForUpdate):
         self._enabled = enabled
         self._clock = clock
         self._cache_path = cache_path
+        self._diagnostics = diagnostics
+        self._localizer = localizer
 
     def execute(self) -> str | None:
         """Return a newer version, checking PyPI at most once per cache TTL.
@@ -126,4 +132,7 @@ class CheckForUpdateUseCase(CheckForUpdate):
                 encoding="utf-8",
             )
         except OSError as error:
-            log.debug(i18n.t("log.update_cache_not_recorded", error=error))
+            self._diagnostics.debug(
+                self._localizer.t("log.update_cache_not_recorded", error=error),
+                key="log.update_cache_not_recorded",
+            )

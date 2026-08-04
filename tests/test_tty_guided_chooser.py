@@ -12,7 +12,7 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import (
     QUICK,
     TtyGuidedChooser,
 )
-from generic_ml_wrapper.common.i18n import load_localizer
+from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")
 
