@@ -522,5 +522,9 @@
   "tui.rules.drafts": "{count} switched off",
   "tui.rules.draft": "draft — switched off, injected into no session",
   "tui.rules.active": "active",
-  "tui.rules.norule": "(no Rule: line)"
+  "tui.rules.norule": "(no Rule: line)",
+  "error.store.migration_failed": "the ledger could not be upgraded (schema version {version}).\n\nNothing was changed — your jobs, sessions and usage history are as they were.\nThe underlying failure was:  {reason}",
+  "error.store.corrupt": "the ledger cannot say which schema version it is at ({rows} version rows found,\nexpected one). It will not be opened, because guessing could damage the history\nit holds. Restore ~/.gmlw/ledger.db from a backup, or move it aside to start fresh.",
+  "error.store.schema_too_new": "the ledger was written by a newer gmlw (schema version {found}; this build understands\nup to {supported}). Upgrade gmlw to open it:  uv tool upgrade generic-ml-wrapper",
+  "error.store.contract_outdated": "this gmlw install is incomplete: it expects ledger schema version {required} but ships\nmigrations only up to {implemented}. Reinstall it:  uv tool install --force generic-ml-wrapper"
 }

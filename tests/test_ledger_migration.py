@@ -1,32 +1,86 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ledger migrations are additive: no version loses history, and none rewrites a row.
+"""The ledger's schema is an ordered lineage of files, and every step of it is tested.
 
-v1->v2 adds cwd/resumable. v2->v3 runs nothing at all: ``jobs.kind`` simply stopped being
-written, and dropping it from an existing database would be destructive for no gain. An
-upgraded database therefore keeps a dead column a fresh one never had, which is exactly
-what these tests pin -- inserts must not care that it is there.
+Two properties matter more than the rest. A database created today and one carried
+forward from the very first release must end in the *same* shape, because they run the
+same lineage — a fresh install does not get a shortcut. And a migration that fails must
+leave the store at the last version that applied cleanly, never half-way between two.
 """
 
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+import pytest
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-
-_V1_SESSIONS = (
-    "CREATE TABLE jobs (job TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'work', "
-    "created_at TEXT NOT NULL DEFAULT (datetime('now')));"
-    "CREATE TABLE sessions (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, "
-    "job TEXT NOT NULL, client TEXT NOT NULL, uuid TEXT, "
-    "created_at TEXT NOT NULL DEFAULT (datetime('now')));"
+from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import SqliteStoreMigration
+from generic_ml_wrapper.application.domain.model.migration_failed_error import (
+    MigrationFailedError,
 )
+from generic_ml_wrapper.application.domain.model.store_corrupt_error import StoreCorruptError
+from generic_ml_wrapper.application.domain.model.store_schema_too_new_error import (
+    StoreSchemaTooNewError,
+)
+from generic_ml_wrapper.application.port.outbound.store_migration import (
+    CURRENT_SCHEMA_VERSION,
+    StoreMigrationPort,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+#: The schema of the initial public commit (`dd7fe43`), transcribed here rather than read
+#: from the shipped `0001` file — a fixture built out of the thing under test cannot catch
+#: that thing being wrong. All four tables, because a real database has all four; an
+#: earlier fixture built only two and hid a divergence between fresh and upgraded stores.
+_V1_SCHEMA = """
+CREATE TABLE jobs (
+    job        TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL DEFAULT 'work',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE sessions (
+    id         INTEGER PRIMARY KEY,
+    session_id TEXT NOT NULL UNIQUE,
+    job        TEXT NOT NULL,
+    client     TEXT NOT NULL,
+    uuid       TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_sessions_job ON sessions(job);
+CREATE TABLE turns (
+    id                    INTEGER PRIMARY KEY,
+    job                   TEXT NOT NULL,
+    session_id            TEXT NOT NULL,
+    turn_id               TEXT,
+    input_tokens          INTEGER NOT NULL,
+    output_tokens         INTEGER NOT NULL,
+    cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
+    cost_usd              REAL,
+    model                 TEXT,
+    timestamp             REAL NOT NULL DEFAULT 0,
+    duration_s            REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_turns_job ON turns(job);
+CREATE TABLE session_costs (
+    session_id TEXT PRIMARY KEY,
+    job        TEXT NOT NULL,
+    cost_usd   REAL NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX idx_session_costs_job ON session_costs(job);
+"""
 
 
 def _write_v1(path: Path) -> None:
+    """A database as the first release left it: no version table, version 1 in the header."""
     connection = sqlite3.connect(path)
-    connection.executescript(_V1_SESSIONS)
+    connection.executescript(_V1_SCHEMA)
     connection.execute("INSERT INTO jobs (job) VALUES ('T-1')")
     insert = "INSERT INTO sessions (session_id, job, client, uuid) VALUES (?, 'T-1', ?, ?)"
     connection.execute(insert, ("T-1_001", "claude", "u1"))
@@ -36,51 +90,176 @@ def _write_v1(path: Path) -> None:
     connection.close()
 
 
-def test_migration_adds_columns_and_preserves_rows(tmp_path: Path) -> None:
+def _version(path: Path) -> int:
+    connection = sqlite3.connect(path)
+    try:
+        return int(connection.execute("SELECT version FROM schema_version").fetchone()[0])
+    finally:
+        connection.close()
+
+
+def _columns(path: Path, table: str) -> set[str]:
+    connection = sqlite3.connect(path)
+    try:
+        return {row[1] for row in connection.execute(f"PRAGMA table_info({table})")}
+    finally:
+        connection.close()
+
+
+def _connect_to(path: Path) -> Callable[[], sqlite3.Connection]:
+    return lambda: sqlite3.connect(path)
+
+
+def test_an_untouched_database_is_migrated_to_current(tmp_path: Path) -> None:
     db = tmp_path / "ledger.db"
     _write_v1(db)
 
     with Ledger(db).connect() as connection:
-        version = connection.execute("PRAGMA user_version").fetchone()[0]
         rows = connection.execute(
             "SELECT session_id, client, cwd, resumable FROM sessions ORDER BY id"
         ).fetchall()
 
-    assert version == 3  # bumped
+    assert _version(db) == CURRENT_SCHEMA_VERSION
     assert [r["session_id"] for r in rows] == ["T-1_001", "T-1_002"]  # history kept
-    assert all(r["cwd"] is None for r in rows)  # new column, unknown for old rows
-    # resumable backfilled from the client: claude yes, codex no.
+    assert all(r["cwd"] is None for r in rows)  # added by 0002, unknown for old rows
+    # 0002 backfills resumability from the client: claude yes, codex no.
     assert {r["client"]: r["resumable"] for r in rows} == {"claude": 1, "codex": 0}
 
 
-def test_migration_is_idempotent(tmp_path: Path) -> None:
+def test_migrating_twice_changes_nothing(tmp_path: Path) -> None:
     db = tmp_path / "ledger.db"
     _write_v1(db)
-    with Ledger(db).connect():  # first open migrates
+    with Ledger(db).connect():
         pass
-    with Ledger(db).connect() as connection:  # second open is a no-op
-        version = connection.execute("PRAGMA user_version").fetchone()[0]
-    assert version == 3
+    with Ledger(db).connect():  # a second ledger, a second run
+        pass
+
+    assert _version(db) == CURRENT_SCHEMA_VERSION
 
 
-def test_an_upgraded_database_keeps_its_dead_kind_column_and_still_accepts_jobs(
+def test_a_fresh_database_and_an_upgraded_one_end_identical(tmp_path: Path) -> None:
+    # The reason the lineage was reconstructed rather than collapsed into one file: a
+    # new install runs the same steps an old database did, so neither drifts.
+    fresh = tmp_path / "fresh.db"
+    upgraded = tmp_path / "upgraded.db"
+    _write_v1(upgraded)
+    with Ledger(fresh).connect(), Ledger(upgraded).connect():
+        pass
+
+    for table in ("jobs", "sessions", "turns", "session_costs"):
+        assert _columns(fresh, table) == _columns(upgraded, table)
+    assert "kind" not in _columns(fresh, "jobs")  # dropped by 0004, in both
+
+
+def test_the_version_is_seeded_from_the_old_header_then_owned_by_the_table(
     tmp_path: Path,
 ) -> None:
     db = tmp_path / "ledger.db"
-    _write_v1(db)  # v1 already has jobs.kind; v2->v3 leaves it alone
+    _write_v1(db)  # header says 1, no schema_version table exists
+    with Ledger(db).connect():
+        pass
 
-    with Ledger(db).connect() as connection:
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
-        # The store no longer names the column. Its DEFAULT is what keeps this legal.
-        connection.execute("INSERT OR IGNORE INTO jobs (job) VALUES ('T-2')")
-        kinds = dict(connection.execute("SELECT job, kind FROM jobs ORDER BY job"))
+    assert _version(db) == CURRENT_SCHEMA_VERSION
+    # The header is left where it was — it is read once and never written again.
+    connection = sqlite3.connect(db)
+    try:
+        assert int(connection.execute("PRAGMA user_version").fetchone()[0]) == 1
+    finally:
+        connection.close()
 
-    assert "kind" in columns  # not dropped: dropping it would be a destructive migration
-    assert kinds == {"T-1": "work", "T-2": "work"}  # the old row untouched, the new defaulted
+
+def test_a_store_newer_than_this_build_fails_loud(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    with Ledger(db).connect():
+        pass
+    connection = sqlite3.connect(db)
+    connection.execute("UPDATE schema_version SET version = ?", (CURRENT_SCHEMA_VERSION + 5,))
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(StoreSchemaTooNewError) as caught, Ledger(db).connect():
+        pass
+
+    assert caught.value.found == CURRENT_SCHEMA_VERSION + 5
+    assert caught.value.supported == CURRENT_SCHEMA_VERSION
 
 
-def test_a_fresh_database_has_no_kind_column(tmp_path: Path) -> None:
-    with Ledger(tmp_path / "ledger.db").connect() as connection:
-        columns = {row[1] for row in connection.execute("PRAGMA table_info(jobs)")}
+def test_a_second_version_row_cannot_be_written(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    with Ledger(db).connect():
+        pass
+    connection = sqlite3.connect(db)
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            connection.execute("INSERT INTO schema_version (id, version) VALUES (2, 9)")
+    finally:
+        connection.close()
 
-    assert "kind" not in columns
+
+def test_an_ambiguous_version_fails_loud(tmp_path: Path) -> None:
+    # Built by hand, because the table's own constraint refuses it: a legacy store from
+    # before that constraint could still hold two rows, and guessing between them would
+    # either re-run a migration or write through a mapping the tables do not match.
+    db = tmp_path / "ledger.db"
+    connection = sqlite3.connect(db)
+    connection.execute("CREATE TABLE schema_version (id INTEGER, version INTEGER NOT NULL)")
+    connection.executemany(
+        "INSERT INTO schema_version (id, version) VALUES (?, ?)", [(1, 1), (2, 2)]
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(StoreCorruptError) as caught, Ledger(db).connect():
+        pass
+
+    assert caught.value.rows == 2
+
+
+def test_a_failing_file_rolls_back_and_leaves_the_last_good_version(tmp_path: Path) -> None:
+    lineage = tmp_path / "migrations"
+    lineage.mkdir()
+    (lineage / "0001.good.sql").write_text("CREATE TABLE kept (a TEXT);", encoding="utf-8")
+    (lineage / "0002.bad.sql").write_text(
+        "CREATE TABLE gone (b TEXT);\nSELECT this_is_not_valid_sql(;", encoding="utf-8"
+    )
+    db = tmp_path / "ledger.db"
+    migration = SqliteStoreMigration(_connect_to(db), tmp_path, migrations_dir=lineage)
+
+    with pytest.raises(MigrationFailedError) as caught:
+        migration.migrate_to_current()
+
+    assert caught.value.version == 2
+    assert _version(db) == 1  # 0001 stands
+    connection = sqlite3.connect(db)
+    try:
+        tables = {r[0] for r in connection.execute("SELECT name FROM sqlite_master")}
+    finally:
+        connection.close()
+    assert "kept" in tables  # the file that succeeded
+    assert "gone" not in tables  # the failed file left nothing behind
+
+
+def test_a_gap_in_the_lineage_fails_loud(tmp_path: Path) -> None:
+    lineage = tmp_path / "migrations"
+    lineage.mkdir()
+    (lineage / "0001.only.sql").write_text("CREATE TABLE a (x TEXT);", encoding="utf-8")
+    (lineage / "0003.later.sql").write_text("CREATE TABLE c (z TEXT);", encoding="utf-8")
+    db = tmp_path / "ledger.db"
+    migration = SqliteStoreMigration(_connect_to(db), tmp_path, migrations_dir=lineage)
+
+    with pytest.raises(MigrationFailedError) as caught:
+        migration.migrate_to_current()
+
+    assert caught.value.version == 2  # the missing one, not the last one
+    assert _version(db) == 1
+
+
+def test_the_runner_is_a_store_migration_port(tmp_path: Path) -> None:
+    migration = SqliteStoreMigration(_connect_to(tmp_path / "ledger.db"), tmp_path)
+    assert isinstance(migration, StoreMigrationPort)
+
+
+def test_the_shipped_lineage_reaches_the_version_this_build_requires(tmp_path: Path) -> None:
+    # The handshake that fails a build whose code and files disagree.
+    migration = SqliteStoreMigration(_connect_to(tmp_path / "ledger.db"), tmp_path)
+    assert migration.implemented_version() == CURRENT_SCHEMA_VERSION

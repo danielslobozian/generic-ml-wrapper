@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The ledger's schema is now a first-class, ordered set of migrations.** It used to be
+  one create-from-final-state script for new databases plus a small dictionary of extra
+  statements for existing ones, which meant a fresh install and an upgraded machine could
+  end up with quietly different tables. The schema is now a numbered lineage of `.sql`
+  files applied in order — the model Flyway and Liquibase use — and everyone runs the same
+  steps, so both end identical.
+  - Each file is applied inside its own transaction along with the version bump recording
+    it, so an interrupted upgrade leaves the database at the last version that applied
+    cleanly rather than half-way between two.
+  - The applied version moves out of the SQLite file header into a `schema_version` table
+    that can only ever hold one row. Existing databases are read once from the header to
+    seed it; nothing needs doing on your side.
+  - Upgrades are serialized by a lock, so two `gmlw` commands starting at the same moment
+    against a new database cannot collide while creating it.
+  - A database written by a **newer** gmlw is now refused with an explanation instead of
+    being opened and written through the wrong mapping. Likewise an incomplete install
+    whose migration files are missing is caught at the first command.
+  - Because complex migrations are now safe to run, `jobs.kind` — dead since the previous
+    entry — is genuinely removed rather than left in place.
+
 ### Changed
 - **A job is only its name.** The ledger used to tag every job `work` or `authoring` and
   keep the two apart, which meant a name held by one was refused to the other — and, before
