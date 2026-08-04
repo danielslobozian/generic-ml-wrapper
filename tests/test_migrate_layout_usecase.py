@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the MigrateLayout use case: resolves the active environment, then migrates."""
 
-from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.port.outbound.layout_migrator import LayoutMigratorPort
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
 

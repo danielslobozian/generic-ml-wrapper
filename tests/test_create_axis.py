@@ -10,7 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
     AxisLabelError,

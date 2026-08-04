@@ -11,12 +11,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.axis import AxisKind
-from generic_ml_wrapper.application.domain.model.rule_catalog import (
-    RuleAxis,
-    RuleGroup,
-    RuleSummary,
-)
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
+from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
+from generic_ml_wrapper.application.domain.model.rule_summary import RuleSummary
 from generic_ml_wrapper.application.domain.service import rule_parser
 from generic_ml_wrapper.application.port.outbound.rule_catalog import RuleCatalogPort
 

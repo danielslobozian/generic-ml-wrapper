@@ -7,7 +7,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.edit_workflow import WorkflowNotFoundError
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError

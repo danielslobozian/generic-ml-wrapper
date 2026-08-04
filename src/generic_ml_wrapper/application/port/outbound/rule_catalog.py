@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.rule_catalog import RuleGroup
+    from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
 
 
 class RuleCatalogPort(ABC):

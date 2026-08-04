@@ -4,7 +4,8 @@
 
 from __future__ import annotations
 
-from generic_ml_wrapper.application.domain.model.axis import AxisPrompt, AxisSelection
+from generic_ml_wrapper.application.domain.model.axis_prompt import AxisPrompt
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort

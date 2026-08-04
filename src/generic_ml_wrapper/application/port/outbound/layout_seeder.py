@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.axis import AxisSelection
+    from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 
 
 @dataclass(frozen=True)

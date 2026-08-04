@@ -8,7 +8,8 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.import_workflow import (
     ArchiveUnreadableError,
     ImportOutcome,

@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
 from generic_ml_wrapper.adapter.outbound.bootstrap.file_creation_time import FileCreationTime
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
-from generic_ml_wrapper.application.domain.model.migration import SlugMigrationReport
 from generic_ml_wrapper.application.domain.model.slug import Slug
+from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
 from generic_ml_wrapper.application.port.outbound.slug_migrator import SlugMigratorPort
 
 if TYPE_CHECKING:

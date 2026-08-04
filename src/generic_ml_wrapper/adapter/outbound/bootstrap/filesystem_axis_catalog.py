@@ -9,7 +9,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import ABOUT, write_about
-from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 
 if TYPE_CHECKING:

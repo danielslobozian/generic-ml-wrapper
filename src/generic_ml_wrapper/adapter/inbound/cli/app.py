@@ -36,22 +36,18 @@ from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as con
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
 )
-from generic_ml_wrapper.application.domain.model.axis import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
-from generic_ml_wrapper.application.domain.model.identifiers import (
-    EnvVarName,
-    IdentifierError,
-    JobId,
-    WorkflowName,
-)
-from generic_ml_wrapper.application.domain.model.migration import (
-    MigrationReport,
-    SlugMigrationReport,
-)
+from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
+from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.job_id import JobId
+from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,

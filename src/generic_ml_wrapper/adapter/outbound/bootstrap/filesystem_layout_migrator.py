@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.port.outbound.layout_migrator import LayoutMigratorPort
 
 if TYPE_CHECKING:

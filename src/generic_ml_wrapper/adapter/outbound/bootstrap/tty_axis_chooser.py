@@ -16,12 +16,12 @@ import sys
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number, emit
-from generic_ml_wrapper.application.domain.model.axis import AxisSelection
+from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.axis import AxisPrompt
+    from generic_ml_wrapper.application.domain.model.axis_prompt import AxisPrompt
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 # Sentinel option value: "type a role/environment other than the offered examples".

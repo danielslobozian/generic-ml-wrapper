@@ -35,11 +35,9 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     UsageView,
     _Row,
 )
-from generic_ml_wrapper.application.domain.model.rule_catalog import (
-    RuleAxis,
-    RuleGroup,
-    RuleSummary,
-)
+from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
+from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
+from generic_ml_wrapper.application.domain.model.rule_summary import RuleSummary
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]

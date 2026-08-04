@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.axis import ENVIRONMENT_PROMPT, ROLE_PROMPT
+from generic_ml_wrapper.application.domain.model.axis_prompt import ENVIRONMENT_PROMPT, ROLE_PROMPT
 from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
 from generic_ml_wrapper.application.port.outbound.layout_seeder import InitSelections
 
