@@ -86,15 +86,18 @@ class NewWorkflowUseCase(NewWorkflow):
             WorkflowNameError: If a given name is invalid or reserved.
             WorkflowExistsError: If a given name already exists (fail fast, up front).
         """
-        self._workflows.seed()
         if command.resume_draft is not None or command.resume_latest:
+            self._workflows.seed()
             return self._reopen(command)
         if command.label is not None:  # a seed label lets a known collision fail fast
             seed = Slug.of(command.label).value
             self._validate(seed)
-            if self._workflows.exists(seed):
+            if self._workflows.find(seed) is not None:
                 message = f"workflow already exists: {seed!r}"
                 raise WorkflowExistsError(message)
+        # Only now, with the name known good and free: authoring reads the shared base, so
+        # it has to exist -- but a rejected name must not have written anything first.
+        self._workflows.seed()
 
         # Authoring always runs under the one authoring job, so sessions accumulate as
         # create-workflow_NNN regardless of the target name — which is not known until the
@@ -210,7 +213,7 @@ class NewWorkflowUseCase(NewWorkflow):
             self._validate(slug)
         except WorkflowNameError:  # the label yielded nothing usable — keep the draft
             return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, slug or label, draft)
-        if self._workflows.exists(slug):
+        if self._workflows.find(slug) is not None:
             return NewWorkflowResult(exit_code, WorkflowOutcome.COLLISION, slug, draft)
         deployed = self._workflows.deploy_draft(
             draft, slug, label, marker.description, self._clock().isoformat()

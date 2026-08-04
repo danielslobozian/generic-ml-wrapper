@@ -68,7 +68,7 @@ class ImportWorkflowUseCase(ImportWorkflow):
         self._workflows.seed()
         target = Path(self._workflows.folder(name))
 
-        if self._workflows.exists(name) and not replace:
+        if self._workflows.find(name) is not None and not replace:
             # Reported rather than overwritten, so the caller can ask the user first.
             return ImportWorkflowResult(ImportOutcome.REFUSED, name, str(target))
 

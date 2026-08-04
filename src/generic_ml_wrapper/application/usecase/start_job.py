@@ -195,9 +195,12 @@ class StartJobUseCase(StartJob):
         return run if not context else replace(run, context=context)
 
     def _attach_workflow(self, run: RunContext, workflow: str) -> RunContext:
-        self._workflows.seed()
-        if not self._workflows.exists(workflow):
+        # Asked before anything is installed: a run named for a workflow that is not there
+        # writes nothing on its way to being refused. The seed follows, because composing
+        # the run's context reads the shared base and that has to be on disk by then.
+        if self._workflows.find(workflow) is None:
             raise UnknownWorkflowError("error.workflow.unknown", name=workflow)
+        self._workflows.seed()
         kickoff = (
             f"You are running the {workflow!r} workflow for {run.job}. Orient first — "
             "read your context, look at what already exists, report where things stand, "

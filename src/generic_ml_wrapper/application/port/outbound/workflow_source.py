@@ -31,14 +31,20 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
-    def exists(self, name: str) -> bool:
-        """Return whether a runnable workflow exists.
+    def find(self, name: str) -> Workflow | None:
+        """Return the runnable workflow of that name, or ``None`` if there is none.
+
+        Hands back the workflow rather than a yes/no, so a caller that has to know a
+        workflow exists before acting on it does not then have to ask a second question to
+        learn anything about it. ``None`` rather than an exception because what an absent
+        workflow means differs by caller -- unknown to one, free to take to another -- and
+        the caller is the one that knows which.
 
         Args:
             name: The workflow name.
 
         Returns:
-            ``True`` if the workflow has a ``workflow.md``.
+            The workflow, or ``None`` when no runnable workflow has that name.
         """
 
     @abstractmethod
