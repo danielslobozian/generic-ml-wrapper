@@ -85,6 +85,9 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
 )
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
 from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
+from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_backup import (
+    FilesystemWorkflowBackup,
+)
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
 )
@@ -540,8 +543,7 @@ def build_import_workflow() -> ImportWorkflow:
     return ImportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
         archive=ZipWorkflowArchive(paths.exports, lambda: datetime.now(UTC)),
-        backups_root=paths.workflow_backups,
-        clock=lambda: datetime.now(UTC),
+        backups=FilesystemWorkflowBackup(paths.workflow_backups, lambda: datetime.now(UTC)),
     )
 
 

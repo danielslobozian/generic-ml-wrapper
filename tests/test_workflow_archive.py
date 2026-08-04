@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import ZipWorkflowArchive
+from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
 
 _WHEN = datetime(2026, 7, 29, 15, 30, 12, tzinfo=UTC)
 
@@ -106,3 +107,65 @@ def test_unpacking_leaves_no_scratch_folder_behind(tmp_path: Path) -> None:
     destination = tmp_path / "dest" / "wf"
     archive.unpack(written, destination)
     assert [p.name for p in destination.parent.iterdir()] == ["wf"]
+
+
+# ── inspect: what an archive is, asked before anything is done on its behalf ──
+def test_an_archive_carrying_a_workflow_reads_as_complete(tmp_path: Path) -> None:
+    _a_workflow(tmp_path / "nightly-etl")
+    written = _archive(tmp_path / "exports").pack(tmp_path / "nightly-etl", "nightly-etl")
+
+    assert _archive(tmp_path).inspect(written) is ArchiveStatus.COMPLETE
+
+
+def test_an_archive_with_no_steps_file_reads_as_incomplete(tmp_path: Path) -> None:
+    written = tmp_path / "not-a-workflow.zip"
+    with zipfile.ZipFile(written, "w") as zipped:
+        zipped.writestr("README.md", "hello")
+
+    assert _archive(tmp_path).inspect(written) is ArchiveStatus.INCOMPLETE
+
+
+def test_a_nested_steps_file_reads_as_incomplete(tmp_path: Path) -> None:
+    """It would not be installed, so it must not be reported as importable.
+
+    Only a top-level ``workflow.md`` is portable; one inside a folder is left where it
+    lands. Reporting COMPLETE here would displace the user's workflow for an archive that
+    then installs nothing.
+    """
+    written = tmp_path / "nested.zip"
+    with zipfile.ZipFile(written, "w") as zipped:
+        zipped.writestr("inner/workflow.md", "# steps")
+
+    assert _archive(tmp_path).inspect(written) is ArchiveStatus.INCOMPLETE
+
+
+def test_a_traversing_steps_entry_reads_as_complete(tmp_path: Path) -> None:
+    """``extractall`` strips the traversal, so this one really does land at the top."""
+    written = tmp_path / "traversing.zip"
+    with zipfile.ZipFile(written, "w") as zipped:
+        zipped.writestr("../../workflow.md", "# steps")
+
+    assert _archive(tmp_path).inspect(written) is ArchiveStatus.COMPLETE
+
+
+def test_an_absent_file_reads_as_missing(tmp_path: Path) -> None:
+    assert _archive(tmp_path).inspect(tmp_path / "nope.zip") is ArchiveStatus.MISSING
+
+
+def test_a_file_that_is_not_a_zip_reads_as_missing(tmp_path: Path) -> None:
+    """Both answer the caller's real question — is there something to import here — as no."""
+    written = tmp_path / "notazip.zip"
+    written.write_text("this is not a zip", encoding="utf-8")
+
+    assert _archive(tmp_path).inspect(written) is ArchiveStatus.MISSING
+
+
+def test_inspecting_writes_nothing(tmp_path: Path) -> None:
+    """The whole point of it: it is safe to ask before anything has been displaced."""
+    _a_workflow(tmp_path / "nightly-etl")
+    written = _archive(tmp_path / "exports").pack(tmp_path / "nightly-etl", "nightly-etl")
+    before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
+
+    _archive(tmp_path).inspect(written)
+
+    assert sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*")) == before
