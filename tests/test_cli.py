@@ -56,6 +56,7 @@ from generic_ml_wrapper.application.port.inbound.check_launch_location import (
     CheckLaunchLocationUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
+from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
@@ -90,7 +91,6 @@ from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
 from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
-from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
 from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
@@ -304,14 +304,17 @@ def test_bare_gmlw_on_a_tty_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> N
     assert called == ["tui"]
 
 
-def test_bare_gmlw_fresh_install_runs_init_not_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    # First run must win over the menu redirect: init runs, _tui is never reached.
+def test_bare_gmlw_fresh_install_runs_init_then_opens_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Setup wins over the menu, and the menu opens behind it: someone who has just answered
+    # the interview has earned something to look at, and it proves the setup works.
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
     tui_called: list[str] = []
-    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui"))  # must not be called
+    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui") or 0)
     assert app.main([]) == 0
-    assert tui_called == []
+    assert tui_called == ["tui"]
 
 
 def test_init_prints_the_reinit_hint(
@@ -756,7 +759,7 @@ def test_statusline_command_reads_stdin_and_prints(
 ) -> None:
     seen: dict[str, str | None] = {}
 
-    class FakeUseCase(RenderStatuslineUseCase):
+    class FakeUseCase(ComposeStatuslineUseCase):
         def execute(self, payload_json: str) -> str:
             seen["payload"] = payload_json
             return "Opus 4.8  ·  $0.43"
@@ -764,7 +767,7 @@ def test_statusline_command_reads_stdin_and_prints(
     def _build_statusline(*_: object) -> FakeUseCase:
         return FakeUseCase()
 
-    monkeypatch.setattr(app, "build_render_statusline", _build_statusline)
+    monkeypatch.setattr(app, "build_compose_statusline", _build_statusline)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"cost": {"total_cost_usd": 0.43}}'))
 
     assert app.main(["statusline"]) == 0
@@ -774,8 +777,8 @@ def test_statusline_command_reads_stdin_and_prints(
     assert "$0.43" in capsys.readouterr().out
 
 
-def test_build_render_statusline_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_render_statusline(), RenderStatuslineUseCase)
+def test_build_compose_statusline_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_compose_statusline(), ComposeStatuslineUseCase)
 
 
 def test_statusline_renders_the_cursor_plan_block_end_to_end(
@@ -806,14 +809,14 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     calls: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
-    class _Status(RenderStatuslineUseCase):
+    class _Status(ComposeStatuslineUseCase):
         def execute(self, payload_json: str) -> str:
             return ""
 
     def _build_status(*_: object) -> _Status:
         return _Status()
 
-    monkeypatch.setattr(app, "build_render_statusline", _build_status)
+    monkeypatch.setattr(app, "build_compose_statusline", _build_status)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO(""))
     assert app.main(["statusline"]) == 0
     assert calls == []

@@ -7,7 +7,7 @@ from __future__ import annotations
 from importlib import resources
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.service.persona_parser import PersonaParser
+from generic_ml_wrapper.adapter.outbound.persona.persona_parser import PersonaParser
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 
 if TYPE_CHECKING:

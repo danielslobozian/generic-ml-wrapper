@@ -1,6 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Pure parsing of a persona file: frontmatter metadata plus the tone body."""
+"""Parsing a persona file: frontmatter metadata plus the tone body.
+
+A file format, not a domain rule. Frontmatter delimiters, quoted values and a
+``·``-separated dimensions line are facts about how a persona is *written down*, not
+about what a persona is -- so they live beside the adapter that reads the files, which
+is the only thing that ever sees the text.
+"""
 
 from __future__ import annotations
 

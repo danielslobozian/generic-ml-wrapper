@@ -82,7 +82,7 @@ def test_statusline_degrades_to_an_empty_line_on_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    monkeypatch.setattr(app, "build_render_statusline", _boom_statusline_builder)
+    monkeypatch.setattr(app, "build_compose_statusline", _boom_statusline_builder)
     assert app._statusline() == 0
     out = capsys.readouterr().out
     assert out == "\n"  # one empty line, never a traceback

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for status parsing, rendering, and the RenderStatuslineUseCase use case."""
+"""Tests for status parsing, rendering, and the ComposeStatuslineUseCase use case."""
 
 import json
 
@@ -26,7 +26,7 @@ from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffP
 from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
-from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineService
+from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
 
 _NOW = 1_000_000.0
 _CLAUDE_PAYLOAD: dict[str, object] = {
@@ -256,8 +256,8 @@ def _use_case(  # noqa: PLR0913, PLR0917  (its ports, plus the run and the clock
     now: float = 0.0,
     job: str | None = None,
     session: str | None = None,
-) -> RenderStatuslineService:
-    return RenderStatuslineService(
+) -> ComposeStatuslineService:
+    return ComposeStatuslineService(
         _FixedParsers(),
         _FakeHandoff(job, session),
         usage,

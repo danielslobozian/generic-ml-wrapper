@@ -96,10 +96,12 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_check_for_update,
     build_check_launch_location,
     build_check_store_contract,
+    build_compose_statusline,
     build_config_commands,
     build_create_axis,
     build_delete_jobs,
     build_delete_sessions,
+    build_describe_build,
     build_diagnostics,
     build_edit_workflow,
     build_export_usage,
@@ -122,8 +124,6 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_layout,
     build_migrate_slugs,
     build_new_workflow,
-    build_render_statusline,
-    build_render_version,
     build_save_usage_report,
     build_set_credential,
     build_start_job,
@@ -289,7 +289,7 @@ def _as_json(payload: object) -> str:
 
 def _version_string() -> str:
     """Return the line ``--version`` prints."""
-    return build_render_version().execute()
+    return build_describe_build().execute()
 
 
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative parser wiring)
@@ -1152,12 +1152,16 @@ def _index() -> int:
     """Bare ``gmlw``: run the forced setup on a fresh install, else open the interactive menu.
 
     First run wins over everything — a brand-new user is funnelled through init before any
-    menu. Once initialised, bare ``gmlw`` becomes the front door: on a terminal it opens the
-    ``gmlw tui`` menu; off a terminal ``_tui`` falls back to the plain capability index, so a
-    piped/scripted ``gmlw`` never blocks on a menu.
+    menu, and the menu then opens behind it: someone who has just answered six questions has
+    earned something to look at, and it proves the setup works. Once initialised, bare
+    ``gmlw`` becomes the front door: on a terminal it opens the ``gmlw tui`` menu; off a
+    terminal ``_tui`` falls back to the plain capability index, so a piped/scripted ``gmlw``
+    never blocks on a menu.
     """
     if build_application_settings().setup_needed():  # first run — setup wins over the menu
-        return _run_init()
+        exit_code = _run_init()
+        if exit_code != 0:
+            return exit_code
     return _tui()
 
 
@@ -1414,7 +1418,7 @@ def _statusline() -> int:
     # renders this output in place of its own status, so a traceback would land on screen.
     try:
         payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
-        line = build_render_statusline().execute(payload)
+        line = build_compose_statusline().execute(payload)
     except Exception as error:  # noqa: BLE001  degrade to an empty line, never error at the client
         log.warning(f"status line render failed: {error}")
         print()

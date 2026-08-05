@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class RenderVersionUseCase(ABC):
+class DescribeBuildUseCase(ABC):
     """Render what this build is, for a person reading it in a terminal."""
 
     @abstractmethod

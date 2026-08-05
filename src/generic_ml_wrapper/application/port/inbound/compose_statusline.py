@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class RenderStatuslineUseCase(ABC):
+class ComposeStatuslineUseCase(ABC):
     """Render a client's status line and record its usage."""
 
     @abstractmethod

@@ -150,10 +150,12 @@ from generic_ml_wrapper.application.port.inbound.check_launch_location import (
 from generic_ml_wrapper.application.port.inbound.check_store_contract import (
     CheckStoreContractUseCase,
 )
+from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
+from generic_ml_wrapper.application.port.inbound.describe_build import DescribeBuildUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
@@ -177,8 +179,6 @@ from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkf
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
-from generic_ml_wrapper.application.port.inbound.render_version import RenderVersionUseCase
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
@@ -202,9 +202,11 @@ from generic_ml_wrapper.application.usecase.check_launch_location import (
 from generic_ml_wrapper.application.usecase.check_store_contract import (
     CheckStoreContractService,
 )
+from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisService
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
+from generic_ml_wrapper.application.usecase.describe_build import DescribeBuildService
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowService
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageService
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService
@@ -234,8 +236,6 @@ from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowServi
 from generic_ml_wrapper.application.usecase.read_application_settings import (
     ReadApplicationSettingsService,
 )
-from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineService
-from generic_ml_wrapper.application.usecase.render_version import RenderVersionService
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
 from generic_ml_wrapper.application.usecase.start_job import StartJobService
@@ -679,13 +679,13 @@ def build_check_store_contract() -> CheckStoreContractUseCase:
     return CheckStoreContractService(migration=build_store_migration())
 
 
-def build_render_version() -> RenderVersionUseCase:
-    """Build the RenderVersionUseCase use case wired to the build stamp.
+def build_describe_build() -> DescribeBuildUseCase:
+    """Build the DescribeBuildUseCase use case wired to the build stamp.
 
     Returns:
-        A ready-to-run RenderVersionUseCase.
+        A ready-to-run DescribeBuildUseCase.
     """
-    return RenderVersionService(build_info=ModuleBuildInfoAdapter())
+    return DescribeBuildService(build_info=ModuleBuildInfoAdapter())
 
 
 def build_check_launch_location() -> CheckLaunchLocationUseCase:
@@ -882,17 +882,17 @@ def build_save_usage_report() -> SaveUsageReportUseCase:
     )
 
 
-def build_render_statusline() -> RenderStatuslineUseCase:
-    """Build the RenderStatuslineUseCase use case.
+def build_compose_statusline() -> ComposeStatuslineUseCase:
+    """Build the ComposeStatuslineUseCase use case.
 
     It takes no client: the status line is invoked by a client the wrapper launched, and
     that launch already announced which one it was. The use case reads that announcement
     and resolves its own parser, so nothing upstream has to know either.
 
     Returns:
-        A ready-to-run RenderStatuslineUseCase.
+        A ready-to-run ComposeStatuslineUseCase.
     """
-    return RenderStatuslineService(
+    return ComposeStatuslineService(
         parsers=CataloguedStatusParsersAdapter(paths.cursor_plan),
         handoff=EnvironmentRunHandoffAdapter(),
         usage=SqliteUsageStoreAdapter(_ledger()),
