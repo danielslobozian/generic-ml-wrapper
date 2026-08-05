@@ -15,6 +15,7 @@ import json
 from importlib import resources
 from typing import cast
 
+from generic_ml_wrapper.application.port.outbound.language_catalog import LanguageCatalogPort
 from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 # The languages the wrapper can speak to the user. English is the base and the fallback.
@@ -63,6 +64,18 @@ class JsonCatalogLocalizerAdapter(LocalizerPort):
             return template.format(**params)
         except (KeyError, IndexError, ValueError):
             return template
+
+
+class JsonCatalogLanguageCatalogAdapter(LanguageCatalogPort):
+    """Reports which languages this build packaged a catalogue for."""
+
+    def supported_languages(self) -> list[str]:
+        """Return the supported language codes, in canonical order."""
+        return list(SUPPORTED_LANGUAGES)
+
+    def default_language(self) -> str:
+        """Return the code used when nobody has chosen one."""
+        return DEFAULT_LANGUAGE
 
 
 class JsonCatalogLocalizerFactory:

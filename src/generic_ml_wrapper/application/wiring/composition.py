@@ -88,6 +88,9 @@ from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
     StderrDiagnosticsAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.diagnostics.tee_diagnostics import TeeDiagnosticsAdapter
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLanguageCatalogAdapter,
+)
 from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
     FilesystemPersonaSourceAdapter,
 )
@@ -161,6 +164,13 @@ from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.init import InitUseCase
+from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
+    ListAuthoringModesUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_available_languages import (
+    ListAvailableLanguagesUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_axis_examples import ListAxisExamplesUseCase
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
@@ -215,6 +225,11 @@ from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflo
 from generic_ml_wrapper.application.usecase.init import InitService
 from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
+from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuthoringModesService
+from generic_ml_wrapper.application.usecase.list_available_languages import (
+    ListAvailableLanguagesService,
+)
+from generic_ml_wrapper.application.usecase.list_axis_examples import ListAxisExamplesService
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsService
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
@@ -994,3 +1009,30 @@ def build_diagnostics(
     if not sinks:
         return NullDiagnosticsAdapter()
     return sinks[0] if len(sinks) == 1 else TeeDiagnosticsAdapter(*sinks)
+
+
+def build_list_available_languages() -> ListAvailableLanguagesUseCase:
+    """Build the ListAvailableLanguagesUseCase use case over the packaged catalogues.
+
+    Returns:
+        A ready-to-ask ListAvailableLanguagesUseCase.
+    """
+    return ListAvailableLanguagesService(JsonCatalogLanguageCatalogAdapter())
+
+
+def build_list_authoring_modes() -> ListAuthoringModesUseCase:
+    """Build the ListAuthoringModesUseCase use case.
+
+    Returns:
+        A ready-to-ask ListAuthoringModesUseCase.
+    """
+    return ListAuthoringModesService()
+
+
+def build_list_axis_examples() -> ListAxisExamplesUseCase:
+    """Build the ListAxisExamplesUseCase use case over the offered role/environment examples.
+
+    Returns:
+        A ready-to-ask ListAxisExamplesUseCase.
+    """
+    return ListAxisExamplesService()
