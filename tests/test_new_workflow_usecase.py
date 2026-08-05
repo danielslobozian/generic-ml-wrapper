@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import pytest
 from _delete_doubles import FakeSessionLock
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -25,7 +26,6 @@ from generic_ml_wrapper.application.port.inbound.workflow_outcome import Workflo
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
@@ -454,7 +454,7 @@ def test_a_draft_on_a_client_that_cannot_reopen_is_refused() -> None:
         )
 
 
-def _localizer() -> LocalizerPort:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")
 

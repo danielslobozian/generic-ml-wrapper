@@ -6,6 +6,7 @@ import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
 from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -16,11 +17,10 @@ from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 
 
-def _localizer() -> LocalizerPort:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")
 

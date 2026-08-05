@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -20,7 +21,6 @@ from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffPort
 from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
@@ -52,7 +52,7 @@ _NO_WORKSPACE = Workspace(folder=None, repo=None, branch=None, short_sha=None, d
 _REPO = Workspace(folder="~/dev/app", repo="app", branch="main", short_sha="abc1234", dirty=3)
 
 
-def _localizer() -> LocalizerPort:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")
 

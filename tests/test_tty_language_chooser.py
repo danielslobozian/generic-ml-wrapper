@@ -6,10 +6,10 @@ import io
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import (
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_language_chooser import (
     TtyLanguageChooserAdapter,
 )
+from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")

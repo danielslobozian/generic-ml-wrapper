@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
+    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 # The topics, in display order. Each name maps to catalogue keys ``help.<name>.summary``
 # (the one-line listing) and ``help.<name>.body`` (the full explainer).
 TOPICS: tuple[str, ...] = ("job-vs-workflow", "start-vs-run", "personas", "cost")
@@ -23,7 +23,7 @@ def _key(topic: str) -> str:
     return topic.replace("-", "_")
 
 
-def render_topic_list(loc: LocalizerPort) -> str:
+def render_topic_list(loc: MessageSource) -> str:
     """Render the list of help topics with their one-line summaries.
 
     Args:
@@ -41,7 +41,7 @@ def render_topic_list(loc: LocalizerPort) -> str:
     return "\n".join(lines)
 
 
-def render_topic(loc: LocalizerPort, topic: str) -> str | None:
+def render_topic(loc: MessageSource, topic: str) -> str | None:
     """Render one topic's explainer, or ``None`` when the topic is unknown.
 
     Args:

@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.application.domain.model.axis_prompt import AxisPrompt
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.persona import Persona
@@ -14,7 +15,6 @@ from generic_ml_wrapper.application.port.outbound.init_persist import InitPersis
 from generic_ml_wrapper.application.port.outbound.init_selections import InitSelections
 from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
 from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
@@ -65,7 +65,7 @@ class _RecordingTextPrompt(TextPromptPort):
         self._answers = answers or {}
         self.calls: list[tuple[str, str, str | None]] = []
 
-    def ask(self, header: str, default: str, i18n: LocalizerPort | None = None) -> str:
+    def ask(self, header: str, default: str, i18n: MessageSource | None = None) -> str:
         self.calls.append((header, default, i18n.lang if i18n else None))
         return self._answers.get(header, default)
 
@@ -77,7 +77,7 @@ class _RecordingAxisChooser(AxisChooserPort):
         self.calls: list[tuple[AxisPrompt, str, str | None]] = []
 
     def choose(
-        self, prompt: AxisPrompt, default: str, i18n: LocalizerPort | None = None
+        self, prompt: AxisPrompt, default: str, i18n: MessageSource | None = None
     ) -> AxisSelection:
         self.calls.append((prompt, default, i18n.lang if i18n else None))
         return AxisSelection(default, default, default)
@@ -102,7 +102,7 @@ class _FakePersonaChooser(PersonaChooserPort):
         self._choice = choice
         self.lang: str | None = None
 
-    def choose(self, personas: list[Persona], i18n: LocalizerPort | None = None) -> str | None:
+    def choose(self, personas: list[Persona], i18n: MessageSource | None = None) -> str | None:
         self.lang = i18n.lang if i18n else None
         return self._choice
 
@@ -118,7 +118,7 @@ class _FakeClientSetup(ClientSetupPort):
         self.found: list[str] | None = None
         self.lang: str | None = None
 
-    def choose(self, found: list[str], i18n: LocalizerPort | None = None) -> str | None:
+    def choose(self, found: list[str], i18n: MessageSource | None = None) -> str | None:
         self.found = found
         self.lang = i18n.lang if i18n else None
         if self._choice is _KEEP_FOUND:

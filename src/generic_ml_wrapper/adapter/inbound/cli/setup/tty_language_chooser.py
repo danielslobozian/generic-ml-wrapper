@@ -6,11 +6,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
 from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
+    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 # Endonyms — a language names itself the same regardless of the UI language, so these
 # labels need no translation. Codes without an entry fall back to the bare code.
 _ENDONYMS = {"en": "English", "fr": "Français"}
@@ -24,7 +24,7 @@ class TtyLanguageChooserAdapter(LanguageChooserPort):
     than declining — the rest of the forced init has to have a voice.
     """
 
-    def __init__(self, i18n: LocalizerPort) -> None:
+    def __init__(self, i18n: MessageSource) -> None:
         """Bind the chooser to the seed localiser for its (first-step) prompt text.
 
         Args:

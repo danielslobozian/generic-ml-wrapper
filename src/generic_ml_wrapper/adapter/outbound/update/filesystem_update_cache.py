@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class FilesystemUpdateCacheAdapter(UpdateCachePort):
@@ -27,19 +26,15 @@ class FilesystemUpdateCacheAdapter(UpdateCachePort):
     every launch with nobody able to see why.
     """
 
-    def __init__(
-        self, cache_file: Path, diagnostics: DiagnosticsPort, localizer: LocalizerPort
-    ) -> None:
+    def __init__(self, cache_file: Path, diagnostics: DiagnosticsPort) -> None:
         """Bind the cache to its file and to where a failed write is reported.
 
         Args:
             cache_file: The file the last check is kept in (its folder is created).
             diagnostics: Where a failed write is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
         """
         self._cache_file = cache_file
         self._diagnostics = diagnostics
-        self._localizer = localizer
 
     def last_check(self) -> UpdateCheck | None:
         """Return the recorded check, or ``None`` when there is not a usable one."""

@@ -7,8 +7,8 @@ from __future__ import annotations
 import io
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_axis_chooser import TtyAxisChooserAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_axis_chooser, tty_prompt
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooserAdapter
 from generic_ml_wrapper.application.domain.model.axis_prompt import ENVIRONMENT_PROMPT
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 

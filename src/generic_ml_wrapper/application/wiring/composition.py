@@ -12,6 +12,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_axis_chooser import TtyAxisChooserAdapter
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooserAdapter
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_language_chooser import (
+    TtyLanguageChooserAdapter,
+)
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_persona_chooser import (
+    TtyPersonaChooserAdapter,
+)
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_text_prompt import TtyTextPromptAdapter
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalogAdapter,
 )
@@ -45,18 +55,8 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import Syste
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooserAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetupAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooserAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import (
-    TtyLanguageChooserAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import (
-    TtyPersonaChooserAdapter,
-)
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_secret_prompt import TtySecretPromptAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPromptAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     DefaultCliCallerProviderAdapter,
 )
@@ -258,7 +258,7 @@ from generic_ml_wrapper.application.usecase.update_config import UpdateConfigSer
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
 from generic_ml_wrapper.application.wiring.localization import (
     SUPPORTED_LANGUAGES,
-    LocalizerPort,
+    MessageSource,
     active,
     load_localizer,
     resolve_language,
@@ -438,9 +438,7 @@ def build_check_for_update() -> CheckForUpdateUseCase:
         package="generic-ml-wrapper",
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
-        cache=FilesystemUpdateCacheAdapter(
-            paths.state / "update-check.json", log.active(), build_localizer()
-        ),
+        cache=FilesystemUpdateCacheAdapter(paths.state / "update-check.json", log.active()),
     )
 
 
@@ -845,7 +843,7 @@ def build_init() -> InitUseCase:
     )
 
 
-def build_localizer() -> LocalizerPort:
+def build_localizer() -> MessageSource:
     """Build the localiser for the language the wrapper speaks to the user.
 
     Prefers the init-chosen ``[language] code``; falls back to ``$LANG`` (English when

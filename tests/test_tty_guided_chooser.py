@@ -6,8 +6,8 @@ import io
 
 import pytest
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooserAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooserAdapter
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 

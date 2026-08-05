@@ -1,14 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The outbound port for localisation: where a catalogue key becomes a sentence.
+"""Where a catalogue key becomes a sentence, in the language the user chose.
 
-The port *is* the contract. There is no second interface behind it: an abstraction the
-application owns and an adapter implements is what a port already means, so declaring one
-in the domain and extending it here would invent a layer the pattern does not have.
-
-Nothing in the domain renders prose. A domain type carries a catalogue key and the params
-to fill it; turning that into a sentence in one language happens outside the ring, through
-this port.
+Not a port. Nothing in the application asks for a label: a domain type carries a catalogue
+key and the params to fill it, a query returns codes, and a log line is written in English
+for whoever debugs it. Turning a key into a sentence needs a language and a reader, and
+both of those live at the delivery edge -- which is where this lives, the way Spring's
+``MessageSource`` is held by the controller advice rather than by the domain.
 """
 
 from __future__ import annotations
@@ -16,11 +14,11 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class LocalizerPort(ABC):
+class MessageSource(ABC):
     """A resolved string catalogue for one language.
 
     Where the strings come from — packaged JSON, a bundle, a stub in a test — is a wiring
-    choice, which is the whole reason this is a port.
+    choice, which is why it is an interface at all.
     """
 
     @property

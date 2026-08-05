@@ -15,14 +15,14 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number, emit
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number, emit
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
 
 if TYPE_CHECKING:
+    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
     from generic_ml_wrapper.application.domain.model.axis_prompt import AxisPrompt
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 # Sentinel option value: "type a role/environment other than the offered examples".
 _TYPE_YOUR_OWN = "\x00type-your-own"
 
@@ -30,7 +30,7 @@ _TYPE_YOUR_OWN = "\x00type-your-own"
 class TtyAxisChooserAdapter(AxisChooserPort):
     """Guide the role/environment choice at an interactive terminal."""
 
-    def __init__(self, i18n: LocalizerPort) -> None:
+    def __init__(self, i18n: MessageSource) -> None:
         """Bind the chooser to a localiser for its prompt text.
 
         Args:
@@ -39,7 +39,7 @@ class TtyAxisChooserAdapter(AxisChooserPort):
         self._i18n = i18n
 
     def choose(
-        self, prompt: AxisPrompt, default: str, i18n: LocalizerPort | None = None
+        self, prompt: AxisPrompt, default: str, i18n: MessageSource | None = None
     ) -> AxisSelection:
         """Offer the examples plus "type your own"; return the resolved selection.
 
@@ -68,7 +68,7 @@ class TtyAxisChooserAdapter(AxisChooserPort):
             )
         return self._type_your_own(prompt, default, loc)
 
-    def _type_your_own(self, prompt: AxisPrompt, default: str, loc: LocalizerPort) -> AxisSelection:
+    def _type_your_own(self, prompt: AxisPrompt, default: str, loc: MessageSource) -> AxisSelection:
         """Read a free-text answer, keep it as the label, and derive + echo its slug."""
         typed = self._read(loc.t(prompt.prompt_key))
         if typed is None or not typed.strip():

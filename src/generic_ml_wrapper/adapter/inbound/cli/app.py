@@ -523,7 +523,7 @@ def _add_help_parser(sub: _SubParsers) -> None:
     )
 
 
-def format_jobs(summaries: list[JobSummary], loc: i18n.LocalizerPort | None = None) -> str:
+def format_jobs(summaries: list[JobSummary], loc: i18n.MessageSource | None = None) -> str:
     """Render the job summaries as human-readable lines.
 
     Args:
@@ -546,7 +546,7 @@ def format_jobs(summaries: list[JobSummary], loc: i18n.LocalizerPort | None = No
 
 
 def format_sessions(
-    job: str, sessions: list[SessionSummary], loc: i18n.LocalizerPort | None = None
+    job: str, sessions: list[SessionSummary], loc: i18n.MessageSource | None = None
 ) -> str:
     """Render a job's sessions as human-readable lines.
 
@@ -582,7 +582,7 @@ def format_sessions(
     return "\n".join(lines)
 
 
-def format_session_usage(session: SessionSummary, loc: i18n.LocalizerPort | None = None) -> str:
+def format_session_usage(session: SessionSummary, loc: i18n.MessageSource | None = None) -> str:
     """Render one session's usage — or the word for "nothing happened here".
 
     A session with no turns is named rather than shown as ``0 turn(s) $0.00``: it is the
@@ -603,7 +603,7 @@ def format_session_usage(session: SessionSummary, loc: i18n.LocalizerPort | None
 
 
 def format_job_footprints(
-    footprints: list[JobFootprint], loc: i18n.LocalizerPort | None = None
+    footprints: list[JobFootprint], loc: i18n.MessageSource | None = None
 ) -> str:
     """Render what deleting these jobs would remove.
 
@@ -636,13 +636,13 @@ def format_job_footprints(
     return "\n".join(lines)
 
 
-def _kept_marker(removed: bool, loc: i18n.LocalizerPort) -> str:
+def _kept_marker(removed: bool, loc: i18n.MessageSource) -> str:
     """The tail a row carries when it did not go. Empty on a preview, where all go."""
     return "" if removed else loc.t("delete.row.kept")
 
 
 def format_session_footprints(
-    job: str, footprints: list[SessionFootprint], loc: i18n.LocalizerPort | None = None
+    job: str, footprints: list[SessionFootprint], loc: i18n.MessageSource | None = None
 ) -> str:
     """Render what deleting these sessions would remove.
 
@@ -672,7 +672,7 @@ def format_session_footprints(
     return "\n".join(lines)
 
 
-def format_usage(report: UsageReport, loc: i18n.LocalizerPort | None = None) -> str:
+def format_usage(report: UsageReport, loc: i18n.MessageSource | None = None) -> str:
     """Render a job's usage report: per-turn rows, totals by model, cost, and totals.
 
     Args:
@@ -743,14 +743,14 @@ def _clock(timestamp: float) -> str:
 
 
 def _tokens(
-    input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.LocalizerPort
+    input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.MessageSource
 ) -> str:
     """Render a token triple as ``  <in>(+<cache> cache)+<out> tok`` for the report."""
     cache = loc.t("usage.cache", cache=cache_tokens) if cache_tokens else ""
     return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
 
 
-def format_drafts(drafts: list[Draft], loc: i18n.LocalizerPort | None = None) -> str:
+def format_drafts(drafts: list[Draft], loc: i18n.MessageSource | None = None) -> str:
     """Render the unfinished authoring drafts as human-readable lines.
 
     Args:
@@ -776,7 +776,7 @@ def format_drafts(drafts: list[Draft], loc: i18n.LocalizerPort | None = None) ->
     return "\n".join(lines)
 
 
-def format_workflows(workflows: list[Workflow], loc: i18n.LocalizerPort | None = None) -> str:
+def format_workflows(workflows: list[Workflow], loc: i18n.MessageSource | None = None) -> str:
     """Render the runnable workflows as human-readable lines.
 
     Shows the slug the user types beside the label its author gave it. A workflow
@@ -806,7 +806,7 @@ def format_workflows(workflows: list[Workflow], loc: i18n.LocalizerPort | None =
     return "\n".join(lines)
 
 
-def format_personas(personas: list[Persona], loc: i18n.LocalizerPort | None = None) -> str:
+def format_personas(personas: list[Persona], loc: i18n.MessageSource | None = None) -> str:
     """Render the selectable personas as human-readable lines.
 
     Args:
@@ -828,7 +828,7 @@ def format_personas(personas: list[Persona], loc: i18n.LocalizerPort | None = No
     return "\n".join(lines)
 
 
-def format_plugins(plugins: list[Plugin], loc: i18n.LocalizerPort | None = None) -> str:
+def format_plugins(plugins: list[Plugin], loc: i18n.MessageSource | None = None) -> str:
     """Render the installed plugins as human-readable lines.
 
     Args:
@@ -850,14 +850,14 @@ def format_plugins(plugins: list[Plugin], loc: i18n.LocalizerPort | None = None)
     return "\n".join(lines)
 
 
-def _client_version_label(status: ListedClient, loc: i18n.LocalizerPort) -> str:
+def _client_version_label(status: ListedClient, loc: i18n.MessageSource) -> str:
     """Render a client's version cell — shared by the CLI table and the TUI Clients view."""
     if not status.installed:
         return loc.t("clients.not_installed")
     return status.version or loc.t("clients.version_unknown")
 
 
-def format_clients(statuses: list[ListedClient], loc: i18n.LocalizerPort | None = None) -> str:
+def format_clients(statuses: list[ListedClient], loc: i18n.MessageSource | None = None) -> str:
     """Render the supported clients as human-readable lines: version, resume, default.
 
     Args:
@@ -917,7 +917,7 @@ def _check_store_contract() -> None:
     build_check_store_contract().execute()
 
 
-def _login_line(info: ClientInfo, loc: i18n.LocalizerPort) -> str:
+def _login_line(info: ClientInfo, loc: i18n.MessageSource) -> str:
     """The login command, with its localised note when it has one.
 
     The command itself is never translated -- it is something the user types. Only the
@@ -1337,7 +1337,7 @@ def _client(raw: str | None) -> str:
 
 
 def format_client_guidance(
-    readiness: ClientReadiness, loc: i18n.LocalizerPort | None = None
+    readiness: ClientReadiness, loc: i18n.MessageSource | None = None
 ) -> str:
     """Render install/login guidance for a client that cannot launch.
 
@@ -2073,7 +2073,7 @@ def _creds(args: argparse.Namespace) -> int:
     return 0
 
 
-def _setting_value(value: object, loc: i18n.LocalizerPort) -> str:
+def _setting_value(value: object, loc: i18n.MessageSource) -> str:
     """Render a setting value for display: ``(unset)`` for None, lower-case for bools."""
     if value is None:
         return loc.t("config.unset")
@@ -2082,7 +2082,7 @@ def _setting_value(value: object, loc: i18n.LocalizerPort) -> str:
     return str(value)
 
 
-def format_setting_list(views: list[SettingView], loc: i18n.LocalizerPort | None = None) -> str:
+def format_setting_list(views: list[SettingView], loc: i18n.MessageSource | None = None) -> str:
     """Render every setting with its current value and description (aligned).
 
     Args:
@@ -2103,7 +2103,7 @@ def format_setting_list(views: list[SettingView], loc: i18n.LocalizerPort | None
     return "\n".join(lines)
 
 
-def format_setting(view: SettingView, loc: i18n.LocalizerPort | None = None) -> str:
+def format_setting(view: SettingView, loc: i18n.MessageSource | None = None) -> str:
     """Render a single setting: value, description, default and any allowed values.
 
     Args:
@@ -2160,7 +2160,7 @@ def _config_set(commands: ConfigCommandsUseCase, key: str, value: str) -> int:
     return 0
 
 
-def _format_set_outcome(outcome: SetOutcome, loc: i18n.LocalizerPort | None = None) -> str:
+def _format_set_outcome(outcome: SetOutcome, loc: i18n.MessageSource | None = None) -> str:
     """Render the localised summary of a ``config set`` — never silent about the change."""
     loc = loc or i18n.active()
     if not outcome.changed:

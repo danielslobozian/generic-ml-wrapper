@@ -15,15 +15,15 @@ import json
 from importlib import resources
 from typing import cast
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.application.port.outbound.language_catalog import LanguageCatalogPort
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 # The languages the wrapper can speak to the user. English is the base and the fallback.
 SUPPORTED_LANGUAGES: tuple[str, ...] = ("en", "fr")
 DEFAULT_LANGUAGE = "en"
 
 
-class JsonCatalogLocalizerAdapter(LocalizerPort):
+class JsonCatalogLocalizerAdapter(MessageSource):
     """A resolved string catalogue for one language, English-merged, with parameters."""
 
     def __init__(self, lang: str, catalog: dict[str, str]) -> None:

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from _delete_doubles import FakeSessionLock
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -35,7 +36,6 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
@@ -635,6 +635,6 @@ def test_unparseable_configured_args_are_dropped_but_reported(
     assert capsys.readouterr().err == "", "and not by dumping a traceback on the client's screen"
 
 
-def _localizer() -> LocalizerPort:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")
