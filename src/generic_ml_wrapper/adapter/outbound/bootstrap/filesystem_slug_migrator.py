@@ -92,7 +92,7 @@ class FilesystemSlugMigratorAdapter(SlugMigratorPort):
         """Repoint the given ``[profile]`` keys in the home's config, preserving the rest."""
         config = self._home / _CONFIG
         if config.exists():
-            TomlkitConfigWriterAdapter().merge(config, entries)
+            TomlkitConfigWriterAdapter(lambda: config).merge(entries)
 
     @staticmethod
     def _created_iso(folder: Path) -> str:

@@ -16,7 +16,6 @@ from generic_ml_wrapper.application.port.inbound.create_axis_result import Creat
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
-    from pathlib import Path
 
     from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
     from generic_ml_wrapper.application.port.outbound.config_writer import ConfigWriterPort
@@ -35,7 +34,6 @@ class CreateAxisService(CreateAxisUseCase):
         self,
         catalog: AxisCatalogPort,
         writer: ConfigWriterPort,
-        config_file: Callable[[], Path],
         clock: Callable[[], datetime],
     ) -> None:
         """Wire the use case to its catalog, config writer, and clock.
@@ -43,12 +41,10 @@ class CreateAxisService(CreateAxisUseCase):
         Args:
             catalog: Reads and creates the axis slug-folders.
             writer: Persists ``profile.default_<kind>`` when the axis is made default.
-            config_file: Resolves the config file path (indirection for tests).
             clock: Returns "now" for the folder's ``.about.toml`` ``created`` stamp.
         """
         self._catalog = catalog
         self._writer = writer
-        self._config_file = config_file
         self._clock = clock
 
     def execute(self, command: CreateAxisCommand) -> CreateAxisResult:
@@ -73,9 +69,7 @@ class CreateAxisService(CreateAxisUseCase):
             command.kind, slug, command.label, command.description, self._clock().isoformat()
         )
         if command.make_default:
-            self._writer.merge(
-                self._config_file(), [("profile", f"default_{command.kind.value}", slug)]
-            )
+            self._writer.merge([("profile", f"default_{command.kind.value}", slug)])
         return CreateAxisResult(
             kind=command.kind, slug=slug, label=command.label, made_default=command.make_default
         )

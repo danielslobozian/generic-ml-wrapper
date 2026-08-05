@@ -16,11 +16,16 @@ from generic_ml_wrapper.application.domain.model.archive_status import ArchiveSt
 _WHEN = datetime(2026, 7, 29, 15, 30, 12, tzinfo=UTC)
 
 
+def _text(location: Path | str) -> str:
+    """The port speaks text; a test that built a Path hands over its text."""
+    return str(location)
+
+
 def _archive(root: Path) -> ZipWorkflowArchiveAdapter:
     return ZipWorkflowArchiveAdapter(root, lambda: _WHEN)
 
 
-def _a_workflow(folder: Path) -> Path:
+def _a_workflow(folder: Path) -> str:
     """A workflow folder holding both what travels and what must not."""
     (folder / "scripts").mkdir(parents=True)
     (folder / "scripts" / "__pycache__").mkdir()
@@ -32,7 +37,7 @@ def _a_workflow(folder: Path) -> Path:
     (folder / ".claude" / "settings.local.json").write_text('{"permissions": {}}', encoding="utf-8")
     (folder / "draft.md").write_text("private notes", encoding="utf-8")
     (folder / "parking-lot.md").write_text("more notes", encoding="utf-8")
-    return folder
+    return str(folder)
 
 
 def test_packing_takes_the_steps_the_words_and_the_scripts(tmp_path: Path) -> None:
@@ -61,13 +66,13 @@ def test_packing_leaves_bytecode_and_authoring_residue_behind(tmp_path: Path) ->
 
 def test_the_archive_is_named_for_the_workflow_and_the_moment(tmp_path: Path) -> None:
     written = _archive(tmp_path / "exports").pack(_a_workflow(tmp_path / "wf"), "nightly-etl")
-    assert written.name == "nightly-etl-20260729-153012.zip"
+    assert Path(written).name == "nightly-etl-20260729-153012.zip"
 
 
 def test_a_round_trip_restores_what_travelled(tmp_path: Path) -> None:
     archive = _archive(tmp_path / "exports")
     written = archive.pack(_a_workflow(tmp_path / "wf"), "nightly-etl")
-    archive.unpack(written, tmp_path / "restored")
+    archive.unpack(written, str(tmp_path / "restored"))
     restored = sorted(  # posix-rendered: the expectation is about *which* files, not os.sep
         p.relative_to(tmp_path / "restored").as_posix()
         for p in (tmp_path / "restored").rglob("*")
@@ -84,7 +89,7 @@ def test_unpacking_cannot_write_outside_the_destination(tmp_path: Path) -> None:
     with zipfile.ZipFile(evil, "w") as archive:
         archive.writestr("../../ESCAPED.md", "out")
         archive.writestr("workflow.md", "# steps")
-    _archive(tmp_path / "exports").unpack(evil, tmp_path / "dest" / "wf")
+    _archive(tmp_path / "exports").unpack(str(evil), str(tmp_path / "dest" / "wf"))
     assert not (tmp_path / "ESCAPED.md").exists()
     assert (tmp_path / "dest" / "wf" / "workflow.md").is_file()
 
@@ -98,7 +103,7 @@ def test_unpacking_ignores_files_a_workflow_has_no_business_carrying(tmp_path: P
         archive.writestr(".claude/settings.local.json", '{"permissions": {"allow": ["Bash(*)"]}}')
         archive.writestr("scripts/ok.py", "print('ok')")
     destination = tmp_path / "dest" / "wf"
-    _archive(tmp_path / "exports").unpack(hostile, destination)
+    _archive(tmp_path / "exports").unpack(str(hostile), str(destination))
     assert not (destination / ".claude").exists()
     assert (destination / "scripts" / "ok.py").is_file()
 
@@ -107,16 +112,16 @@ def test_unpacking_leaves_no_scratch_folder_behind(tmp_path: Path) -> None:
     archive = _archive(tmp_path / "exports")
     written = archive.pack(_a_workflow(tmp_path / "wf"), "nightly-etl")
     destination = tmp_path / "dest" / "wf"
-    archive.unpack(written, destination)
+    archive.unpack(written, str(destination))
     assert [p.name for p in destination.parent.iterdir()] == ["wf"]
 
 
 # ── inspect: what an archive is, asked before anything is done on its behalf ──
 def test_an_archive_carrying_a_workflow_reads_as_complete(tmp_path: Path) -> None:
     _a_workflow(tmp_path / "nightly-etl")
-    written = _archive(tmp_path / "exports").pack(tmp_path / "nightly-etl", "nightly-etl")
+    written = _archive(tmp_path / "exports").pack(str(tmp_path / "nightly-etl"), "nightly-etl")
 
-    assert _archive(tmp_path).inspect(written) is ArchiveStatus.COMPLETE
+    assert _archive(tmp_path).inspect(_text(written)) is ArchiveStatus.COMPLETE
 
 
 def test_an_archive_with_no_steps_file_reads_as_incomplete(tmp_path: Path) -> None:
@@ -124,7 +129,7 @@ def test_an_archive_with_no_steps_file_reads_as_incomplete(tmp_path: Path) -> No
     with zipfile.ZipFile(written, "w") as zipped:
         zipped.writestr("README.md", "hello")
 
-    assert _archive(tmp_path).inspect(written) is ArchiveStatus.INCOMPLETE
+    assert _archive(tmp_path).inspect(_text(written)) is ArchiveStatus.INCOMPLETE
 
 
 def test_a_nested_steps_file_reads_as_incomplete(tmp_path: Path) -> None:
@@ -138,7 +143,7 @@ def test_a_nested_steps_file_reads_as_incomplete(tmp_path: Path) -> None:
     with zipfile.ZipFile(written, "w") as zipped:
         zipped.writestr("inner/workflow.md", "# steps")
 
-    assert _archive(tmp_path).inspect(written) is ArchiveStatus.INCOMPLETE
+    assert _archive(tmp_path).inspect(_text(written)) is ArchiveStatus.INCOMPLETE
 
 
 def test_a_traversing_steps_entry_reads_as_complete(tmp_path: Path) -> None:
@@ -147,11 +152,11 @@ def test_a_traversing_steps_entry_reads_as_complete(tmp_path: Path) -> None:
     with zipfile.ZipFile(written, "w") as zipped:
         zipped.writestr("../../workflow.md", "# steps")
 
-    assert _archive(tmp_path).inspect(written) is ArchiveStatus.COMPLETE
+    assert _archive(tmp_path).inspect(_text(written)) is ArchiveStatus.COMPLETE
 
 
 def test_an_absent_file_reads_as_missing(tmp_path: Path) -> None:
-    assert _archive(tmp_path).inspect(tmp_path / "nope.zip") is ArchiveStatus.MISSING
+    assert _archive(tmp_path).inspect(str(tmp_path / "nope.zip")) is ArchiveStatus.MISSING
 
 
 def test_a_file_that_is_not_a_zip_reads_as_missing(tmp_path: Path) -> None:
@@ -159,15 +164,15 @@ def test_a_file_that_is_not_a_zip_reads_as_missing(tmp_path: Path) -> None:
     written = tmp_path / "notazip.zip"
     written.write_text("this is not a zip", encoding="utf-8")
 
-    assert _archive(tmp_path).inspect(written) is ArchiveStatus.MISSING
+    assert _archive(tmp_path).inspect(_text(written)) is ArchiveStatus.MISSING
 
 
 def test_inspecting_writes_nothing(tmp_path: Path) -> None:
     """The whole point of it: it is safe to ask before anything has been displaced."""
     _a_workflow(tmp_path / "nightly-etl")
-    written = _archive(tmp_path / "exports").pack(tmp_path / "nightly-etl", "nightly-etl")
+    written = _archive(tmp_path / "exports").pack(str(tmp_path / "nightly-etl"), "nightly-etl")
     before = sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*"))
 
-    _archive(tmp_path).inspect(written)
+    _archive(tmp_path).inspect(_text(written))
 
     assert sorted(p.relative_to(tmp_path) for p in tmp_path.rglob("*")) == before

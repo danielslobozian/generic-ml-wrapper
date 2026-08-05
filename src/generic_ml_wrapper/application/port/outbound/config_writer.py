@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
 
 class ConfigWriterPort(ABC):
@@ -22,16 +21,16 @@ class ConfigWriterPort(ABC):
     """
 
     @abstractmethod
-    def merge(
-        self, path: Path, entries: Sequence[tuple[str, str, object | None]]
-    ) -> tuple[str, ...]:
+    def merge(self, entries: Sequence[tuple[str, str, object | None]]) -> tuple[str, ...]:
         """Apply ``(table, key, value)`` entries to the config, in order.
 
         A non-``None`` value sets the key (creating the table if absent); a ``None`` value
         clears the key (removing it if present). The file is created if it does not exist.
 
+        Which file that is belongs to the implementation. A caller that named it would be
+        holding storage configuration it has no use for and cannot verify.
+
         Args:
-            path: The config file to merge into.
             entries: The ``(table, key, value)`` triples to apply.
 
         Returns:

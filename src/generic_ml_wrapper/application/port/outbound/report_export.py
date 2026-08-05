@@ -5,23 +5,24 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class ReportExportPort(ABC):
     """Persist a rendered usage report to a file the user can open elsewhere."""
 
     @abstractmethod
-    def write(self, job: str, content: str) -> Path:
-        """Write ``content`` as this job's export, returning the file written.
+    def write(self, job: str, content: str) -> str:
+        """Write ``content`` as this job's export, returning where it was written.
+
+        The destination comes back as text, not as a filesystem type: it is an answer to
+        be shown, and nobody above this line opens it, joins onto it, or reads from it.
+        The words placed around it are the delivery layer's, which is where the
+        localiser lives.
 
         Args:
             job: The job the report belongs to (used to name the file).
             content: The already-serialised report (e.g. JSON).
 
         Returns:
-            The path of the file written — so the destination is surfaced, never silent.
+            Where the file was written — so the destination is surfaced, never silent.
         """

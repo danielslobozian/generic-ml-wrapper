@@ -1,17 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the CheckForUpdateUseCase use case (a cached, rate-limited PyPI version check)."""
+"""Tests for the CheckForUpdateUseCase use case (a cached, rate-limited PyPI version check).
+
+The cache is a fake here, not a file. What this use case decides is *whether the cached
+answer is still good enough to skip the network*, and that decision is visible entirely in
+which collaborator it asks. How the answer is stored is the adapter's, and is tested
+against a real file in ``test_filesystem_update_cache``.
+"""
 
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
-)
+from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
+from generic_ml_wrapper.application.port.outbound.update_cache import UpdateCachePort
 from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateService
 
@@ -28,10 +30,24 @@ class _Checker(VersionCheckPort):
         return self.latest
 
 
+class _Cache(UpdateCachePort):
+    def __init__(self, cached: UpdateCheck | None = None) -> None:
+        self.cached = cached
+        self.reads = 0
+        self.recorded: list[UpdateCheck] = []
+
+    def last_check(self) -> UpdateCheck | None:
+        self.reads += 1
+        return self.cached
+
+    def record(self, check: UpdateCheck) -> None:
+        self.recorded.append(check)
+
+
 def _use_case(
-    tmp_path: Path,
     *,
     checker: VersionCheckPort,
+    cache: UpdateCachePort,
     current_version: str = "1.0.0",
     enabled: bool = True,
     now: datetime = _NOW,
@@ -42,84 +58,65 @@ def _use_case(
         package="generic-ml-wrapper",
         enabled=lambda: enabled,
         clock=lambda: now,
-        cache_path=tmp_path / "update-check.json",
-        diagnostics=NullDiagnosticsAdapter(),
-        localizer=JsonCatalogLocalizerFactory().load("en"),
+        cache=cache,
     )
 
 
-def test_off_never_touches_the_checker_or_cache(tmp_path: Path) -> None:
-    checker = _Checker("2.0.0")
-    result = _use_case(tmp_path, checker=checker, enabled=False).execute()
+def test_off_never_touches_the_checker_or_cache() -> None:
+    checker, cache = _Checker("2.0.0"), _Cache()
+    result = _use_case(checker=checker, cache=cache, enabled=False).execute()
     assert result is None
     assert checker.calls == 0
-    assert not (tmp_path / "update-check.json").exists()
+    assert cache.reads == 0
+    assert cache.recorded == []
 
 
-def test_missing_cache_calls_the_checker_and_writes_a_fresh_cache(tmp_path: Path) -> None:
-    checker = _Checker("2.0.0")
-    cache_path = tmp_path / "update-check.json"
-    result = _use_case(tmp_path, checker=checker).execute()
+def test_missing_cache_calls_the_checker_and_records_the_answer() -> None:
+    checker, cache = _Checker("2.0.0"), _Cache()
+    result = _use_case(checker=checker, cache=cache).execute()
     assert result == "2.0.0"
     assert checker.calls == 1
-    written = json.loads(cache_path.read_text(encoding="utf-8"))
-    assert written == {"checked_at": _NOW.isoformat(), "latest": "2.0.0"}
+    assert cache.recorded == [UpdateCheck(_NOW, "2.0.0")]
 
 
-def test_fresh_cache_is_reused_without_calling_the_checker(tmp_path: Path) -> None:
-    cache_path = tmp_path / "update-check.json"
-    cache_path.write_text(
-        json.dumps({"checked_at": (_NOW - timedelta(hours=1)).isoformat(), "latest": "2.0.0"}),
-        encoding="utf-8",
-    )
+def test_fresh_cache_is_reused_without_calling_the_checker() -> None:
+    cache = _Cache(UpdateCheck(_NOW - timedelta(hours=1), "2.0.0"))
     checker = _Checker("3.0.0")  # would be the "real" answer if the port were called
-    result = _use_case(tmp_path, checker=checker).execute()
+    result = _use_case(checker=checker, cache=cache).execute()
     assert result == "2.0.0"
     assert checker.calls == 0
+    assert cache.recorded == []
 
 
-def test_stale_cache_calls_the_checker_again(tmp_path: Path) -> None:
-    cache_path = tmp_path / "update-check.json"
-    cache_path.write_text(
-        json.dumps({"checked_at": (_NOW - timedelta(hours=25)).isoformat(), "latest": "2.0.0"}),
-        encoding="utf-8",
-    )
+def test_stale_cache_calls_the_checker_again() -> None:
+    cache = _Cache(UpdateCheck(_NOW - timedelta(hours=25), "2.0.0"))
     checker = _Checker("2.1.0")
-    result = _use_case(tmp_path, checker=checker).execute()
+    result = _use_case(checker=checker, cache=cache).execute()
     assert result == "2.1.0"
     assert checker.calls == 1
+    assert cache.recorded == [UpdateCheck(_NOW, "2.1.0")]
 
 
-def test_checker_failure_produces_no_notice_and_no_cache_write(tmp_path: Path) -> None:
-    cache_path = tmp_path / "update-check.json"
-    checker = _Checker(None)
-    result = _use_case(tmp_path, checker=checker).execute()
+def test_checker_failure_produces_no_notice_and_records_nothing() -> None:
+    checker, cache = _Checker(None), _Cache()
+    result = _use_case(checker=checker, cache=cache).execute()
     assert result is None
-    assert not cache_path.exists()
+    assert cache.recorded == []
 
 
-def test_equal_version_is_not_an_update(tmp_path: Path) -> None:
+def test_equal_version_is_not_an_update() -> None:
     checker = _Checker("1.0.0")
-    result = _use_case(tmp_path, checker=checker, current_version="1.0.0").execute()
+    result = _use_case(checker=checker, cache=_Cache(), current_version="1.0.0").execute()
     assert result is None
 
 
-def test_older_version_is_not_an_update(tmp_path: Path) -> None:
+def test_older_version_is_not_an_update() -> None:
     checker = _Checker("0.9.0")
-    result = _use_case(tmp_path, checker=checker, current_version="1.0.0").execute()
+    result = _use_case(checker=checker, cache=_Cache(), current_version="1.0.0").execute()
     assert result is None
 
 
-def test_unparseable_cached_version_is_treated_as_not_newer(tmp_path: Path) -> None:
+def test_unparseable_version_is_treated_as_not_newer() -> None:
     checker = _Checker("not-a-version")
-    result = _use_case(tmp_path, checker=checker).execute()
+    result = _use_case(checker=checker, cache=_Cache()).execute()
     assert result is None
-
-
-def test_malformed_cache_file_is_ignored_like_a_missing_one(tmp_path: Path) -> None:
-    cache_path = tmp_path / "update-check.json"
-    cache_path.write_text("not json", encoding="utf-8")
-    checker = _Checker("2.0.0")
-    result = _use_case(tmp_path, checker=checker).execute()
-    assert result == "2.0.0"
-    assert checker.calls == 1

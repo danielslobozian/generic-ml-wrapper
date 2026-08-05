@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -19,7 +18,6 @@ from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalo
 from generic_ml_wrapper.application.port.outbound.config_writer import ConfigWriterPort
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisService
 
-_CONFIG = Path("/scratch/config.toml")
 _WHEN = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 
@@ -44,19 +42,15 @@ class _FakeCatalog(AxisCatalogPort):
 
 class _FakeWriter(ConfigWriterPort):
     def __init__(self) -> None:
-        self.merges: list[tuple[Path, list[tuple[str, str, object | None]]]] = []
+        self.merges: list[list[tuple[str, str, object | None]]] = []
 
-    def merge(
-        self, path: Path, entries: Sequence[tuple[str, str, object | None]]
-    ) -> tuple[str, ...]:
-        self.merges.append((path, list(entries)))
+    def merge(self, entries: Sequence[tuple[str, str, object | None]]) -> tuple[str, ...]:
+        self.merges.append(list(entries))
         return ()
 
 
 def _use_case(catalog: _FakeCatalog, writer: _FakeWriter) -> CreateAxisService:
-    return CreateAxisService(
-        catalog=catalog, writer=writer, config_file=lambda: _CONFIG, clock=lambda: _WHEN
-    )
+    return CreateAxisService(catalog=catalog, writer=writer, clock=lambda: _WHEN)
 
 
 def test_creates_the_folder_with_a_slug_derived_from_the_label() -> None:
@@ -79,7 +73,7 @@ def test_make_default_writes_the_profile_key_for_the_kind() -> None:
         CreateAxisCommand(kind=AxisKind.ROLE, label="Code Reviewer", make_default=True)
     )
     assert result.made_default is True
-    assert writer.merges == [(_CONFIG, [("profile", "default_role", "code-reviewer")])]
+    assert writer.merges == [[("profile", "default_role", "code-reviewer")]]
 
 
 def test_empty_or_unusable_label_raises() -> None:

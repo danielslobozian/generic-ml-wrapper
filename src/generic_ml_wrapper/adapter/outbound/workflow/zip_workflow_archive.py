@@ -47,7 +47,7 @@ class ZipWorkflowArchiveAdapter(WorkflowArchivePort):
         self._root = root
         self._clock = clock
 
-    def inspect(self, archive: Path) -> ArchiveStatus:
+    def inspect(self, archive: str) -> ArchiveStatus:
         """Read the archive's index and report whether it carries a workflow.
 
         The path is resolved the way a shell would resolve it -- a leading ``~`` means the
@@ -60,7 +60,7 @@ class ZipWorkflowArchiveAdapter(WorkflowArchivePort):
         distinction the caller draws is "is there something to import here", and an
         unreadable file answers that the same way an absent one does.
         """
-        resolved = archive.expanduser()
+        resolved = Path(archive).expanduser()
         if not resolved.is_file():
             return ArchiveStatus.MISSING
         try:
@@ -72,20 +72,21 @@ class ZipWorkflowArchiveAdapter(WorkflowArchivePort):
             return ArchiveStatus.COMPLETE
         return ArchiveStatus.INCOMPLETE
 
-    def pack(self, folder: Path, slug: str) -> Path:
+    def pack(self, folder: str, slug: str) -> str:
         """Write the folder's portable contents to ``<root>/<slug>-<timestamp>.zip``.
 
         Timestamped like the usage-report exporter, so exporting the same workflow twice
         keeps both rather than silently overwriting the earlier one.
         """
+        source = Path(folder)
         self._root.mkdir(parents=True, exist_ok=True)
         target = self._root / f"{slug}-{self._clock().strftime('%Y%m%d-%H%M%S')}.zip"
         with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as archive:
-            for path in sorted(_portable_paths(folder)):
-                archive.write(path, path.relative_to(folder).as_posix())
-        return target
+            for path in sorted(_portable_paths(source)):
+                archive.write(path, path.relative_to(source).as_posix())
+        return str(target)
 
-    def unpack(self, archive: Path, destination: Path) -> None:
+    def unpack(self, archive: str, destination: str) -> None:
         """Extract the archive and keep only its portable contents.
 
         Extraction goes through ``zipfile.extractall``, which already neutralises path
@@ -97,15 +98,16 @@ class ZipWorkflowArchiveAdapter(WorkflowArchivePort):
         so the portable set is applied again on the way in: it is extracted to a scratch
         folder, and only the allowed paths are moved across.
         """
-        archive = archive.expanduser()  # as inspect resolved it
-        scratch = destination.parent / f".{destination.name}.unpacking"
+        source = Path(archive).expanduser()  # as inspect resolved it
+        target = Path(destination)
+        scratch = target.parent / f".{target.name}.unpacking"
         shutil.rmtree(scratch, ignore_errors=True)
         try:
-            with zipfile.ZipFile(archive) as zipped:
+            with zipfile.ZipFile(source) as zipped:
                 zipped.extractall(scratch)
-            destination.mkdir(parents=True, exist_ok=True)
+            target.mkdir(parents=True, exist_ok=True)
             for path in sorted(_portable_paths(scratch)):
-                landing = destination / path.relative_to(scratch)
+                landing = target / path.relative_to(scratch)
                 landing.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(path), str(landing))
         finally:

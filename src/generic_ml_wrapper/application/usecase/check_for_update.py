@@ -4,18 +4,17 @@
 
 from __future__ import annotations
 
-import json
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdateUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from pathlib import Path
+    from datetime import datetime
 
-    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.update_cache import UpdateCachePort
     from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
 
 # How long a cached "latest" answer is trusted before checking PyPI again. Not user-
@@ -52,31 +51,25 @@ class CheckForUpdateService(CheckForUpdateUseCase):
         package: str,
         enabled: Callable[[], bool],
         clock: Callable[[], datetime],
-        cache_path: Path,
-        diagnostics: Diagnostics,
-        localizer: Localizer,
+        cache: UpdateCachePort,
     ) -> None:
-        """Wire the use case to its version source, cache file, and clock.
+        """Wire the use case to its version source, its cache, and the clock.
 
         Args:
             checker: Reads the package's latest published version.
             current_version: The running gmlw version (``__version__``).
             package: The distribution name to check (``"generic-ml-wrapper"``).
             enabled: Resolves ``[update] check`` -- ``False`` short-circuits before
-                touching the cache file or the network.
+                asking the cache or the network.
             clock: Returns the current time (injected for deterministic tests).
-            cache_path: Where the last-checked timestamp and version are cached.
-            diagnostics: Where a failed cache write is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
+            cache: Remembers what the last check found, and where that is kept.
         """
         self._checker = checker
         self._current_version = current_version
         self._package = package
         self._enabled = enabled
         self._clock = clock
-        self._cache_path = cache_path
-        self._diagnostics = diagnostics
-        self._localizer = localizer
+        self._cache = cache
 
     def execute(self) -> str | None:
         """Return a newer version, checking PyPI at most once per cache TTL.
@@ -88,14 +81,14 @@ class CheckForUpdateService(CheckForUpdateUseCase):
         if not self._enabled():
             return None
         now = self._clock()
-        cached = self._read_cache()
-        if cached is not None and now - cached[0] < _TTL:
-            latest = cached[1]
+        cached = self._cache.last_check()
+        if cached is not None and now - cached.checked_at < _TTL:
+            latest = cached.latest
         else:
             latest = self._checker.latest_version(self._package)
             if latest is None:
                 return None
-            self._write_cache(now, latest)
+            self._cache.record(UpdateCheck(now, latest))
         return latest if self._is_newer(latest) else None
 
     def _is_newer(self, latest: str) -> bool:
@@ -105,34 +98,3 @@ class CheckForUpdateService(CheckForUpdateUseCase):
         if latest_parsed is None or current_parsed is None:
             return False
         return latest_parsed > current_parsed
-
-    def _read_cache(self) -> tuple[datetime, str] | None:
-        """Return ``(checked_at, latest)`` from the cache file, or ``None`` if unusable.
-
-        A missing or malformed cache is the ordinary first-run state, not a fault
-        worth logging -- only a failed *write* (below) is, since that is the case
-        that would otherwise silently keep re-checking every launch.
-        """
-        try:
-            data = json.loads(self._cache_path.read_text(encoding="utf-8"))
-            checked_at = datetime.fromisoformat(data["checked_at"])
-            latest = data["latest"]
-        except (OSError, ValueError, KeyError, TypeError):
-            return None
-        if not isinstance(latest, str) or not latest:
-            return None
-        return checked_at, latest
-
-    def _write_cache(self, checked_at: datetime, latest: str) -> None:
-        """Best-effort write of the cache file; a write failure is logged, not raised."""
-        try:
-            self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-            self._cache_path.write_text(
-                json.dumps({"checked_at": checked_at.isoformat(), "latest": latest}),
-                encoding="utf-8",
-            )
-        except OSError as error:
-            self._diagnostics.debug(
-                self._localizer.t("log.update_cache_not_recorded", error=error),
-                key="log.update_cache_not_recorded",
-            )

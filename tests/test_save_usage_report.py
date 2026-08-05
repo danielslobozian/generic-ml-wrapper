@@ -28,14 +28,14 @@ class _FakeExport:
 
 
 class _RecordingExporter:
-    def __init__(self, path: Path) -> None:
-        self._path = path
+    def __init__(self, location: str) -> None:
+        self._location = location
         self.job: str | None = None
         self.content: str | None = None
 
-    def write(self, job: str, content: str) -> Path:
+    def write(self, job: str, content: str) -> str:
         self.job, self.content = job, content
-        return self._path
+        return self._location
 
 
 def _report() -> UsageReport:
@@ -48,14 +48,14 @@ def _report() -> UsageReport:
     )
 
 
-def test_save_usage_report_serialises_json_and_returns_the_written_path() -> None:
-    exporter = _RecordingExporter(Path("/exports/alpha-x.json"))
+def test_save_usage_report_serialises_json_and_returns_where_it_was_written() -> None:
+    exporter = _RecordingExporter("/exports/alpha-x.json")
     export = _FakeExport(_report())
     use_case = SaveUsageReportService(export=export, exporter=exporter)  # type: ignore[arg-type]
 
     result = use_case.execute("alpha")
 
-    assert result == Path("/exports/alpha-x.json")
+    assert result == "/exports/alpha-x.json"
     assert export.seen == "alpha"
     assert exporter.job == "alpha"
     payload = json.loads(exporter.content or "")
@@ -69,8 +69,8 @@ def test_filesystem_report_exporter_writes_a_timestamped_file(tmp_path: Path) ->
     clock = lambda: datetime(2026, 7, 24, 10, 15, 0, tzinfo=UTC)  # noqa: E731 (fixed test clock)
     exporter = FilesystemReportExporterAdapter(root, clock=clock)
 
-    path = exporter.write("alpha", '{"job": "alpha"}')
+    written = exporter.write("alpha", '{"job": "alpha"}')
 
-    assert path == root / "alpha-20260724-101500.json"
-    assert path.read_text(encoding="utf-8") == '{"job": "alpha"}'
+    assert written == str(root / "alpha-20260724-101500.json")
+    assert Path(written).read_text(encoding="utf-8") == '{"job": "alpha"}'
     assert root.is_dir()  # the root was created

@@ -12,7 +12,7 @@ from tomlkit.items import Table
 from generic_ml_wrapper.application.port.outbound.config_writer import ConfigWriterPort
 
 if TYPE_CHECKING:
-    from collections.abc import MutableMapping, Sequence
+    from collections.abc import Callable, MutableMapping, Sequence
     from pathlib import Path
 
 
@@ -25,18 +25,26 @@ class TomlkitConfigWriterAdapter(ConfigWriterPort):
     in place, never regenerated.
     """
 
-    def merge(
-        self, path: Path, entries: Sequence[tuple[str, str, object | None]]
-    ) -> tuple[str, ...]:
+    def __init__(self, config_file: Callable[[], Path]) -> None:
+        """Bind the writer to the config file it maintains.
+
+        Args:
+            config_file: Resolves the config file's location. Asked at each merge rather
+                than once, so a test that redirects the config root mid-run is answered
+                with where the file is now, not where it was when the writer was built.
+        """
+        self._config_file = config_file
+
+    def merge(self, entries: Sequence[tuple[str, str, object | None]]) -> tuple[str, ...]:
         """Set or clear each ``(table, key, value)`` entry; return the replaced lines.
 
         Args:
-            path: The config file to merge into (created if absent).
             entries: The ``(table, key, value)`` triples; ``None`` clears the key.
 
         Returns:
             The ``"table.key: old → new"`` lines for entries that changed an existing value.
         """
+        path = self._config_file()
         text = path.read_text(encoding="utf-8") if path.exists() else ""
         doc = tomlkit.parse(text)
         # tomlkit's containers are mapping-like but loosely typed; view them as typed

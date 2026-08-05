@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
     from generic_ml_wrapper.application.port.outbound.report_export import ReportExportPort
 
@@ -30,8 +28,8 @@ class SaveUsageReportService(SaveUsageReportUseCase):
         self._export = export
         self._exporter = exporter
 
-    def execute(self, job: str) -> Path:
-        """Build the report, serialise it as JSON, and write it — returning the file path."""
+    def execute(self, job: str) -> str:
+        """Build the report, serialise it as JSON, and write it — returning where it went."""
         report = self._export.execute(job)
         content = json.dumps(asdict(report), indent=2)
         return self._exporter.write(job, content)

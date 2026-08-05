@@ -119,6 +119,9 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
     SqliteStoreMigrationAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStoreAdapter
+from generic_ml_wrapper.adapter.outbound.update.filesystem_update_cache import (
+    FilesystemUpdateCacheAdapter,
+)
 from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import (
     PypiVersionCheckerAdapter,
 )
@@ -423,9 +426,9 @@ def build_check_for_update() -> CheckForUpdateUseCase:
         package="generic-ml-wrapper",
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
-        cache_path=paths.state / "update-check.json",
-        diagnostics=log.active(),
-        localizer=build_localizer(),
+        cache=FilesystemUpdateCacheAdapter(
+            paths.state / "update-check.json", log.active(), build_localizer()
+        ),
     )
 
 
@@ -730,9 +733,8 @@ def build_config_commands() -> ConfigCommandsUseCase:
         A ready-to-run ConfigCommandsUseCase, writing to ``~/.gmlw/config.toml``.
     """
     return UpdateConfigService(
-        writer=TomlkitConfigWriterAdapter(),
-        config_file=config.config_path,
-        settings=TomlSettingsCatalogAdapter(),
+        writer=TomlkitConfigWriterAdapter(config.config_path),
+        settings=TomlSettingsCatalogAdapter(config.config_path),
     )
 
 
@@ -763,8 +765,7 @@ def build_create_axis() -> CreateAxisUseCase:
     """
     return CreateAxisService(
         catalog=FilesystemAxisCatalogAdapter(paths.home),
-        writer=TomlkitConfigWriterAdapter(),
-        config_file=config.config_path,
+        writer=TomlkitConfigWriterAdapter(config.config_path),
         clock=lambda: datetime.now(UTC).astimezone(),
     )
 
