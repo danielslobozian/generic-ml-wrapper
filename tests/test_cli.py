@@ -28,6 +28,9 @@ from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
 )
+from generic_ml_wrapper.application.domain.model.companion_settings import (
+    CompanionSettings,
+)
 from generic_ml_wrapper.application.domain.model.launch_location import (
     LaunchLocation,
     LaunchLocationProblem,
@@ -87,7 +90,6 @@ from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
 from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
-from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
 from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
@@ -1030,8 +1032,9 @@ def test_start_does_not_print_the_greeting_to_stderr(
     assert "# Greeting" not in capsys.readouterr().err  # no greeting on stderr anymore
 
 
-def test_build_render_greeting_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_render_greeting(), RenderGreetingUseCase)
+def test_persona_greeting_is_none_without_a_companion(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(composition.config, "companion", lambda: CompanionSettings(None, None))
+    assert composition._persona_greeting() is None
 
 
 def _not_ready(client: str, installed: tuple[str, ...] = ()) -> ClientReadiness:

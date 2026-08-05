@@ -142,7 +142,7 @@
   "run.needs_workflow": "gmlw : run a besoin d'un workflow.\n  gmlw run <workflow>   exécuter un workflow directement (le job porte son nom)\nListez ceux disponibles avec :  gmlw workflow list",
   "run.no_workflows": "gmlw : aucun workflow à exécuter pour l'instant. Créez-en un avec :  gmlw workflow new <name>",
   "run.echo": "  la prochaine fois :  gmlw run {workflow}",
-  "farewell": "À bientôt, {name}.",
+  "farewell": "À bientôt.",
   "creds.stored": "enregistré {workflow}.{name}",
   "axis.created": "{kind} « {label} » créé → {slug}",
   "axis.made_default": "{kind} par défaut : « {slug} »",

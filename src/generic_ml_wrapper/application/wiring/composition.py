@@ -177,8 +177,6 @@ from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkf
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.render_farewell import RenderFarewellUseCase
-from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.render_version import RenderVersionUseCase
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
@@ -236,8 +234,6 @@ from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowServi
 from generic_ml_wrapper.application.usecase.read_application_settings import (
     ReadApplicationSettingsService,
 )
-from generic_ml_wrapper.application.usecase.render_farewell import RenderFarewellService
-from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingService
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineService
 from generic_ml_wrapper.application.usecase.render_version import RenderVersionService
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
@@ -399,19 +395,20 @@ def build_list_plugins() -> ListPluginsUseCase:
     return ListPluginsService(build_plugin_source())
 
 
-def build_render_greeting() -> RenderGreetingUseCase:
-    """Build the RenderGreetingUseCase use case wired to the persona source and live facts.
+def _persona_greeting() -> str | None:
+    """The selected persona's greeting instruction, or ``None`` when there is none.
 
-    Returns:
-        A ready-to-run RenderGreetingUseCase (free, local; no metering).
+    The line is the persona's own text, handed to the client unchanged. gmlw composes
+    nothing: it does not know the hour in the user's words, and it has no business
+    writing prose in a language it picked.
     """
-    return RenderGreetingService(
-        personas=build_persona_source(),
-        companion=config.companion,
-        workspace=LocalGitWorkspaceInspectorAdapter(),
-        clock=lambda: datetime.now().astimezone(),
-        username=getpass.getuser,
-    )
+    settings = config.companion()
+    if settings.persona is None:
+        return None
+    persona = build_persona_source().get(settings.persona)
+    if persona is None or not persona.greeting.strip():
+        return None
+    return persona.greeting
 
 
 def build_check_for_update() -> CheckForUpdateUseCase:
@@ -517,7 +514,7 @@ def build_start_job() -> StartJobUseCase:
         diagnostics=log.active(),
         localizer=build_localizer(),
         posix=os.name != "nt",
-        greeting=lambda: build_render_greeting().execute(),
+        greeting=_persona_greeting,
         capability_card=_capability_card,
         client_args=config.client_args_for,
     )
@@ -693,19 +690,6 @@ def build_render_version() -> RenderVersionUseCase:
         A ready-to-run RenderVersionUseCase.
     """
     return RenderVersionService(build_info=ModuleBuildInfoAdapter())
-
-
-def build_render_farewell() -> RenderFarewellUseCase:
-    """Build the RenderFarewellUseCase use case wired to the companion settings.
-
-    Returns:
-        A ready-to-run RenderFarewellUseCase.
-    """
-    return RenderFarewellService(
-        settings=build_application_settings(),
-        system=OsSystemInfoAdapter(),
-        localizer=build_localizer(),
-    )
 
 
 def build_check_launch_location() -> CheckLaunchLocationUseCase:

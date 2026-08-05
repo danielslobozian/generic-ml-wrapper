@@ -122,7 +122,6 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_layout,
     build_migrate_slugs,
     build_new_workflow,
-    build_render_farewell,
     build_render_statusline,
     build_render_version,
     build_save_usage_report,
@@ -1424,9 +1423,13 @@ def _statusline() -> int:
     return 0
 
 
-def _farewell() -> str | None:
-    """Return the parting line, or ``None`` when the companion is off."""
-    return build_render_farewell().execute()
+def _farewell() -> str:
+    """Return the parting line, in the language the wrapper is speaking.
+
+    A label, so the terminal renders it. There is no use case behind a goodbye: nothing
+    is decided, nothing is read, and nothing is persisted.
+    """
+    return i18n.t("farewell")
 
 
 def _tui() -> int:
@@ -1911,9 +1914,7 @@ def _start(args: argparse.Namespace) -> int:
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:
         print(_render_error(error))
         return 2
-    farewell = _farewell()
-    if farewell:
-        print(farewell, file=sys.stderr)
+    print(_farewell(), file=sys.stderr)
     _print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
     return result.exit_code
 
@@ -1960,9 +1961,7 @@ def _run_workflow(workflow: str, client: str, client_args: str | None = None) ->
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:
         print(_render_error(error))
         return 2
-    farewell = _farewell()
-    if farewell:
-        print(farewell, file=sys.stderr)
+    print(_farewell(), file=sys.stderr)
     _print_exit_receipt(result)
     return result.exit_code
 
