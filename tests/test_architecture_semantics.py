@@ -56,6 +56,59 @@ _REACHES_OUT = frozenset(
 
 _CORE = ("application/domain", "application/port")
 
+#: The delivery surface: everything a person or another program talks to us through.
+_INBOUND = ("adapter/inbound",)
+
+#: What an inbound adapter is allowed to name on our own side of the line. It drives the
+#: application through its inbound ports, speaks the domain's types because those ports take
+#: and return them, and asks the wiring to assemble what it drives. Nothing else -- and
+#: notably not an outbound *port*: a rule that names only outbound adapters leaves the port
+#: as an open door, which is exactly how the CLI came to import one.
+_INBOUND_MAY_NAME = (
+    # The distribution's own version constant. Not a ring, and not a reach: it is a fact
+    # about the build, and rendering it is the delivery layer's job.
+    "generic_ml_wrapper.__init__",
+    "generic_ml_wrapper.adapter.inbound",
+    "generic_ml_wrapper.application.port.inbound",
+    "generic_ml_wrapper.application.domain",
+    "generic_ml_wrapper.application.wiring",
+)
+
+#: Ways of *acquiring* state. An inbound adapter parses what it was handed, calls a port,
+#: and renders the answer; anything here fetches something it was not given, and belongs
+#: behind an outbound port or in the wiring.
+#:
+#: Three deliberate absences. ``sys`` is the command line's own channel -- its arguments and
+#: its two output streams -- and banning it would ban the adapter from speaking at all.
+#: ``json`` turns a value into text and back, reaching nothing, for the same reason the core
+#: is allowed it. ``datetime`` is arithmetic on a value it was given; asking the clock what
+#: time it is arrives through a port, and no inbound adapter does that today.
+_ACQUIRES = frozenset(
+    {
+        "pathlib",
+        "shutil",
+        "os",
+        "sqlite3",
+        "subprocess",
+        "socket",
+        "ssl",
+        "urllib",
+        "http",
+        "requests",
+        "httpx",
+        "tomllib",
+        "tomlkit",
+        "tempfile",
+        "glob",
+        "signal",
+        "importlib",
+        "getpass",
+        "platform",
+        "sysconfig",
+        "shlex",
+    }
+)
+
 
 def _modules(*roots: str) -> list[Path]:
     """Return every non-``__init__`` module under *roots*, failing loudly if empty."""
@@ -92,6 +145,64 @@ def test_the_core_reaches_nothing_outside_itself() -> None:
         if reached:
             offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(reached)}")
     assert not offenders, "the core reaches outside itself:\n" + "\n".join(offenders)
+
+
+def _imported_modules(tree: ast.Module) -> set[str]:
+    """Every module an import names in full, not just its top-level package.
+
+    :func:`_imported_roots` collapses to the root, which cannot tell an inbound port from
+    an outbound one -- and that distinction is the whole of the check below.
+    """
+    modules: set[str] = set()
+    for node in tree.body:  # module level only, matching _imported_roots
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    return modules
+
+
+def test_inbound_adapters_name_only_what_they_drive() -> None:
+    """An inbound adapter reaches the application through its inbound ports, or not at all.
+
+    An allowlist rather than a denylist, because the failure this catches is a *new* kind
+    of reach nobody thought to forbid. Listing what is permitted fails on the reach that
+    has not been invented yet; listing what is forbidden never does.
+    """
+    offenders: list[str] = []
+    for path in _modules(*_INBOUND):
+        named = _imported_modules(ast.parse(path.read_text(encoding="utf-8")))
+        strayed = sorted(
+            module
+            for module in named
+            if module.startswith("generic_ml_wrapper")
+            and module != "generic_ml_wrapper"  # see _INBOUND_MAY_NAME's first entry
+            and not module.startswith(_INBOUND_MAY_NAME)
+        )
+        if strayed:
+            offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(strayed)}")
+    assert not offenders, "an inbound adapter named something it does not drive:\n" + "\n".join(
+        offenders
+    )
+
+
+def test_inbound_adapters_acquire_nothing() -> None:
+    """An inbound adapter parses its input, calls a port, and renders the answer.
+
+    Reading a file, asking the operating system anything, installing a process handler or
+    loading code by name are acquisitions: they fetch state the adapter was not handed.
+    They belong behind an outbound port, or in the wiring that assembles the application.
+    Parsing its own input and formatting its own output are not acquisitions -- that is the
+    channel, which is what the adapter exists to speak.
+    """
+    offenders: list[str] = []
+    for path in _modules(*_INBOUND):
+        reached = sorted(_imported_roots(ast.parse(path.read_text(encoding="utf-8"))) & _ACQUIRES)
+        if reached:
+            offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(reached)}")
+    assert not offenders, "an inbound adapter acquired what it was not handed:\n" + "\n".join(
+        offenders
+    )
 
 
 def test_no_adapter_defines_an_exception() -> None:

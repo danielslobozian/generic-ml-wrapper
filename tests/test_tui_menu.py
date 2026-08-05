@@ -1188,6 +1188,10 @@ class _RecordingArchiver:
         self.installed.append((archive, replace))
         if self._clash and not replace:
             return ImportAttempt("a workflow named 'doc-review' already exists.", True)
+        if not Path(archive).expanduser().is_file():
+            # What the real closure renders when the import refuses an unreadable archive.
+            # The form used to check this itself; the import answers it now.
+            return ImportAttempt("✗ no file there")
         self.catalogue = [
             *_ARCHIVE_WORKFLOWS,
             Workflow(slug="fresh", label="Fresh", description=""),
@@ -1341,8 +1345,8 @@ def test_declining_a_clash_leaves_the_existing_workflow_alone(tmp_path: Path) ->
 
 
 def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:
-    # Checked in-form so a typo is fixed here rather than tearing the menu down to fail
-    # at the prompt.
+    # A typo is corrected here rather than tearing the menu down. The check itself is the
+    # import's; what this pins is that its refusal leaves the form standing.
     app = _workflow_app()
 
     async def scenario() -> None:

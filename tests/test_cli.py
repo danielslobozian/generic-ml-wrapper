@@ -22,6 +22,10 @@ from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
 )
+from generic_ml_wrapper.application.domain.model.launch_location import (
+    LaunchLocation,
+    LaunchLocationProblem,
+)
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
@@ -31,6 +35,9 @@ from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     CheckClientReady,
     ClientReadiness,
+)
+from generic_ml_wrapper.application.port.inbound.check_launch_location import (
+    CheckLaunchLocation,
 )
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.create_axis import (
@@ -749,26 +756,25 @@ def test_build_export_usage_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_export_usage(), ExportUsage)
 
 
-def test_statusline_command_reads_stdin_env_and_prints(
+def test_statusline_command_reads_stdin_and_prints(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     seen: dict[str, str | None] = {}
 
     class FakeUseCase(RenderStatusline):
-        def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
+        def execute(self, payload_json: str) -> str:
             seen["payload"] = payload_json
-            seen["job"] = job
             return "Opus 4.8  ·  $0.43"
 
     def _build_statusline(*_: object) -> FakeUseCase:
         return FakeUseCase()
 
     monkeypatch.setattr(app, "build_render_statusline", _build_statusline)
-    monkeypatch.setenv("GMLW_JOB", "JOB-1")
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"cost": {"total_cost_usd": 0.43}}'))
 
     assert app.main(["statusline"]) == 0
-    assert seen["job"] == "JOB-1"
+    # Only the payload crosses this boundary. Which run it belongs to is read by the use
+    # case from what the launch announced, not handed over by whoever invoked the command.
     assert '"total_cost_usd": 0.43' in (seen["payload"] or "")
     assert "$0.43" in capsys.readouterr().out
 
@@ -777,30 +783,11 @@ def test_build_render_statusline_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_render_statusline(), RenderStatusline)
 
 
-def test_cursor_plan_cache_is_merged_into_the_payload(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
-    app.paths.cursor_plan.write_text('{"auto_pct": 6.2, "api_pct": 3.4}', encoding="utf-8")
-    merged = app._with_cursor_plan('{"model": {"display_name": "Composer"}}', "cursor")
-    assert json.loads(merged)["plan"] == {"auto_pct": 6.2, "api_pct": 3.4}
-
-
-def test_cursor_plan_untouched_for_other_clients_or_when_present(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
-    app.paths.cursor_plan.write_text('{"auto_pct": 1}', encoding="utf-8")
-    assert app._with_cursor_plan("{}", "claude") == "{}"  # not cursor
-    kept = '{"plan": {"auto_pct": 9}}'
-    assert app._with_cursor_plan(kept, "cursor") == kept  # payload already carries a plan
-
-
 def test_statusline_renders_the_cursor_plan_block_end_to_end(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
-    app.paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
-    app.paths.cursor_plan.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
+    paths.cursor_plan.parent.mkdir(parents=True, exist_ok=True)
+    paths.cursor_plan.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
     monkeypatch.setenv("GMLW_CLIENT", "cursor")
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"model": {"display_name": "Composer"}}'))
     assert app.main(["statusline"]) == 0  # real cursor parser + renderer
@@ -825,7 +812,7 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
     class _Status(RenderStatusline):
-        def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
+        def execute(self, payload_json: str) -> str:
             return ""
 
     def _build_status(*_: object) -> _Status:
@@ -1054,6 +1041,24 @@ def test_build_render_greeting_wires_a_real_use_case() -> None:
     assert isinstance(composition.build_render_greeting(), RenderGreeting)
 
 
+def _not_ready(client: str, installed: tuple[str, ...] = ()) -> ClientReadiness:
+    """A not-ready verdict shaped the way the use case now builds one.
+
+    The install commands are resolved by the use case, not by whoever renders them, so a
+    fake that omitted them would let the guidance print ``None`` and the test still pass.
+    """
+    catalogue = TomlClientCatalog().supported()
+    system = platform.system()
+    return ClientReadiness(
+        client=client,
+        ready=False,
+        missing=_client(client),
+        installed=installed,
+        install_command=_client(client).install_for(system),
+        catalogue_install_commands=tuple((e.name, e.install_for(system)) for e in catalogue),
+    )
+
+
 def test_start_aborts_with_guidance_when_client_missing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1065,9 +1070,7 @@ def test_start_aborts_with_guidance_when_client_missing(
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    readiness = ClientReadiness(
-        client="cursor", ready=False, missing=_client("cursor"), installed=()
-    )
+    readiness = _not_ready("cursor")
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
 
     assert app.main(["start", "JOB-1", "--client", "cursor"]) == 2
@@ -1081,12 +1084,7 @@ def test_start_missing_client_suggests_an_installed_alternative(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_start_job", lambda: None)
-    readiness = ClientReadiness(
-        client="claude",
-        ready=False,
-        missing=_client("claude"),
-        installed=("codex",),
-    )
+    readiness = _not_ready("claude", installed=("codex",))
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["start", "JOB-1"]) == 2
     assert "--client codex" in capsys.readouterr().err  # suggest the one they have
@@ -1096,9 +1094,7 @@ def test_start_lists_all_when_no_client_installed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_start_job", lambda: None)
-    readiness = ClientReadiness(
-        client="claude", ready=False, missing=_client("claude"), installed=()
-    )
+    readiness = _not_ready("claude")
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["start", "JOB-1"]) == 2
     err = capsys.readouterr().err
@@ -1110,7 +1106,7 @@ def test_workflow_new_aborts_when_client_missing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_new_workflow", lambda: None)
-    readiness = ClientReadiness(client="codex", ready=False, missing=_client("codex"), installed=())
+    readiness = _not_ready("codex")
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
     assert _client("codex").install_for(platform.system()) in capsys.readouterr().err
@@ -1123,10 +1119,11 @@ def test_build_check_client_ready_wires_a_real_use_case() -> None:
 def test_start_aborts_cleanly_when_the_cwd_is_deleted(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def _dead_cwd() -> str:
-        raise FileNotFoundError
+    class _CurrentGone(CheckLaunchLocation):
+        def execute(self, session_folder: str | None = None) -> LaunchLocation:
+            return LaunchLocation(LaunchLocationProblem.CURRENT_GONE)
 
-    monkeypatch.setattr(app.os, "getcwd", _dead_cwd)
+    monkeypatch.setattr(app, "build_check_launch_location", lambda: _CurrentGone())
     monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
     assert app.main(["start", "JOB-1"]) == 2
     assert "current directory no longer exists" in capsys.readouterr().err
@@ -1145,7 +1142,9 @@ def test_creds_set_reads_stdin_and_stores_without_echoing(
     monkeypatch.setattr(app.sys, "stdin", io.StringIO("ghp_secret\n"))
 
     assert app.main(["creds", "set", "doc-review", "GITHUB_TOKEN"]) == 0
-    assert seen["command"] == SetCredentialCommand("doc-review", "GITHUB_TOKEN", "ghp_secret")
+    # The command names what to store, not the secret: reading it is an outward reach, so
+    # the use case does it. How it is read without echoing is asserted against that prompt.
+    assert seen["command"] == SetCredentialCommand("doc-review", "GITHUB_TOKEN")
     out = capsys.readouterr().out
     assert "stored doc-review.GITHUB_TOKEN" in out
     assert "ghp_secret" not in out  # the secret is never echoed

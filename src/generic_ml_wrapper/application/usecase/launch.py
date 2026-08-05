@@ -27,6 +27,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+    from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
     from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
     from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 
@@ -40,6 +41,7 @@ class LaunchSequence:
         diagnostics: Diagnostics,
         localizer: Localizer,
         locks: SessionLockPort,
+        interrupts: InterruptScopePort,
     ) -> None:
         """Bind the sequence to its hooks and the collaborators that report a bad teardown.
 
@@ -48,11 +50,13 @@ class LaunchSequence:
             diagnostics: Where a failed metering teardown is reported.
             localizer: Renders that report in the language the wrapper is speaking.
             locks: Marks the session and its job as running for as long as the client is.
+            interrupts: Hands the interrupt to the client while it holds the terminal.
         """
         self._hooks = hooks
         self._diagnostics = diagnostics
         self._localizer = localizer
         self._locks = locks
+        self._interrupts = interrupts
 
     def run(self, caller: CliCaller, run: RunContext) -> int:
         """Run the client through its lifecycle: pre-launch hooks, metering, post-session hooks.
@@ -75,7 +79,14 @@ class LaunchSequence:
         # job's, held alongside its other live sessions, so the job cannot be deleted
         # while any of them is. The operating system drops both if this process dies, so
         # a crash never leaves either undeletable.
-        with self._locks.hold_job(run.job), self._locks.hold_session(run.job, run.session_id):
+        with (
+            self._locks.hold_job(run.job),
+            self._locks.hold_session(run.job, run.session_id),
+            # The client owns the terminal from here, and owns the interrupt with it: an
+            # interrupt is meant for the work it is doing, not for the wrapper supervising
+            # it. Taking it here would unwind straight past the teardown below.
+            self._interrupts.client_owns_interrupts(),
+        ):
             return self._bracketed(caller, run)
 
     def _bracketed(self, caller: CliCaller, run: RunContext) -> int:

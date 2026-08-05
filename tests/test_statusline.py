@@ -12,12 +12,16 @@ from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
 )
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+from generic_ml_wrapper.application.domain.model.run_handoff import RunHandoff
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
+from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffPort
+from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
@@ -224,14 +228,34 @@ def test_render_usage_row_session_label() -> None:
 
 
 # ── use case ──
-def _use_case(
+class _FixedParsers(StatusParsersPort):
+    """One parser whatever the client: which parser is chosen is asserted elsewhere."""
+
+    def for_client(self, client: str | None) -> ClientStatusParserPort:
+        return ClaudeStatusParser(clock=_clock)
+
+
+class _FakeHandoff(RunHandoffPort):
+    """The run a launch would have announced to the status line."""
+
+    def __init__(self, job: str | None = None, session: str | None = None) -> None:
+        self._handoff = RunHandoff(job=job, session_id=session, client="claude")
+
+    def current(self) -> RunHandoff:
+        return self._handoff
+
+
+def _use_case(  # noqa: PLR0913, PLR0917  (its ports, plus the run and the clock a test pins)
     usage: FakeUsageStore,
     workspace: Workspace,
     turns: FakePerTurnStore | None = None,
     now: float = 0.0,
+    job: str | None = None,
+    session: str | None = None,
 ) -> RenderStatuslineUseCase:
     return RenderStatuslineUseCase(
-        ClaudeStatusParser(clock=_clock),
+        _FixedParsers(),
+        _FakeHandoff(job, session),
         usage,
         FakeWorkspaceInspector(workspace),
         turns or FakePerTurnStore(),
@@ -243,7 +267,9 @@ def _use_case(
 
 def test_use_case_records_cost_and_renders() -> None:
     usage = FakeUsageStore()
-    line = _use_case(usage, _REPO).execute(json.dumps(_CLAUDE_PAYLOAD), "JOB-1", "JOB-1_001")
+    line = _use_case(usage, _REPO, job="JOB-1", session="JOB-1_001").execute(
+        json.dumps(_CLAUDE_PAYLOAD)
+    )
     assert "$0.43" in line
     assert "git app/main" in line
     assert usage.recorded == [("JOB-1", "JOB-1_001", 0.4321)]
@@ -258,7 +284,9 @@ def test_the_line_still_renders_when_the_store_refuses_the_cost() -> None:
     """
     usage = FakeUsageStore(refuse=True)
 
-    line = _use_case(usage, _REPO).execute(json.dumps(_CLAUDE_PAYLOAD), "JOB-1", "JOB-1_001")
+    line = _use_case(usage, _REPO, job="JOB-1", session="JOB-1_001").execute(
+        json.dumps(_CLAUDE_PAYLOAD)
+    )
 
     assert "$0.43" in line
     assert "git app/main" in line
@@ -273,7 +301,9 @@ def test_use_case_shows_only_the_session_row_for_a_single_session() -> None:
             )
         ]
     )
-    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
+    out = _use_case(
+        FakeUsageStore(), _NO_WORKSPACE, turns, job="JOB-1", session="JOB-1_001"
+    ).execute("{}")
     # one session → just the current-session row (no separate job total)
     assert out == "  session JOB-1_001 · 1 turns · 45.2k tok · $0.00"
 
@@ -286,7 +316,9 @@ def test_use_case_shows_session_then_job_row_across_sessions() -> None:
             TurnUsage("JOB-1_002", 10, 5, None, "m"),
         ]
     )
-    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
+    out = _use_case(
+        FakeUsageStore(), _NO_WORKSPACE, turns, job="JOB-1", session="JOB-1_002"
+    ).execute("{}")
     # current session first, then the job total across both sessions
     assert out == (
         "  session JOB-1_002 · 2 turns · 355 tok · $0.00\n  job JOB-1 · 3 turns · 475 tok · $0.00"
@@ -294,21 +326,21 @@ def test_use_case_shows_session_then_job_row_across_sessions() -> None:
 
 
 def test_use_case_has_no_footer_without_job_usage() -> None:
-    out = _use_case(FakeUsageStore(), _NO_WORKSPACE).execute(
-        json.dumps(_CLAUDE_PAYLOAD), "JOB-1", "JOB-1_001"
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, job="JOB-1", session="JOB-1_001").execute(
+        json.dumps(_CLAUDE_PAYLOAD)
     )
     assert "\n" not in out  # no turns recorded and the fake reports no costs
 
 
 def test_use_case_skips_recording_without_job_or_session() -> None:
     usage = FakeUsageStore()
-    _use_case(usage, _NO_WORKSPACE).execute(json.dumps(_CLAUDE_PAYLOAD), None, None)
+    _use_case(usage, _NO_WORKSPACE, job=None, session=None).execute(json.dumps(_CLAUDE_PAYLOAD))
     assert usage.recorded == []
 
 
 def test_use_case_tolerates_bad_json() -> None:
     usage = FakeUsageStore()
-    line = _use_case(usage, _NO_WORKSPACE).execute("not json", "J", "J_1")
+    line = _use_case(usage, _NO_WORKSPACE, job="J", session="J_1").execute("not json")
     assert line == ""
     assert usage.recorded == []
 
@@ -360,18 +392,28 @@ def test_the_footer_shows_how_long_the_session_and_job_have_been_going() -> None
             TurnUsage("JOB-1_002", 10, 5, None, "m", timestamp=_EPOCH + 20 * hour),
         ]
     )
-    line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 24 * hour).execute(
-        "{}", "JOB-1", "JOB-1_002"
-    )
+    line = _use_case(
+        FakeUsageStore(),
+        _NO_WORKSPACE,
+        turns,
+        now=_EPOCH + 24 * hour,
+        job="JOB-1",
+        session="JOB-1_002",
+    ).execute("{}")
     assert "session JOB-1_002 (4h)" in line
     assert "job JOB-1 (1d)" in line
 
 
 def test_a_session_with_no_turns_yet_shows_no_age() -> None:
     turns = FakePerTurnStore([TurnUsage("JOB-1_001", 10, 5, None, "m", timestamp=_EPOCH)])
-    line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 3600.0).execute(
-        "{}", "JOB-1", "JOB-1_002"
-    )
+    line = _use_case(
+        FakeUsageStore(),
+        _NO_WORKSPACE,
+        turns,
+        now=_EPOCH + 3600.0,
+        job="JOB-1",
+        session="JOB-1_002",
+    ).execute("{}")
     assert "session JOB-1_002 · " in line  # named, but no parenthesised age
     assert "session JOB-1_002 (" not in line
 
@@ -385,7 +427,12 @@ def test_a_turn_with_no_recorded_time_does_not_anchor_the_age() -> None:
             TurnUsage("JOB-1_002", 10, 5, None, "m", timestamp=_EPOCH),
         ]
     )
-    line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 7200.0).execute(
-        "{}", "JOB-1", "JOB-1_002"
-    )
+    line = _use_case(
+        FakeUsageStore(),
+        _NO_WORKSPACE,
+        turns,
+        now=_EPOCH + 7200.0,
+        job="JOB-1",
+        session="JOB-1_002",
+    ).execute("{}")
     assert "(2h)" in line

@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import ClassVar, cast
 
 from textual import work
@@ -1045,17 +1044,16 @@ class ImportWorkflowScreen(Screen[None]):
         self.query_one("#archive", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Check the archive is there, then install it."""
+        """Hand the typed path to the import, and show whatever comes back.
+
+        Whether there is a file there, and what ``~`` means, are not this screen's
+        questions -- the import answers both, and refuses with a message of its own. Asking
+        first only made two places responsible for the same answer.
+        """
         raw = event.value.strip()
         if not raw:
             return
-        archive = Path(raw).expanduser()
-        if not archive.is_file():
-            self.query_one("#detail", Static).update(
-                f"✗ {i18n.active().t('tui.wf.import.missing')}"
-            )
-            return
-        self._install(str(archive), replace=False)
+        self._install(raw, replace=False)
 
     def _install(self, archive: str, *, replace: bool) -> None:
         """Install the archive, asking about a name clash if the use case reports one."""

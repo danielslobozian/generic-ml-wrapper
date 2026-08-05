@@ -18,8 +18,9 @@ from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
-from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
+from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffPort
+from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 
@@ -29,7 +30,8 @@ class RenderStatuslineUseCase(RenderStatusline):
 
     def __init__(  # noqa: PLR0913, PLR0917  (its outbound ports, plus the pair that reports a refused write)
         self,
-        parser: ClientStatusParserPort,
+        parsers: StatusParsersPort,
+        handoff: RunHandoffPort,
         usage: UsageStorePort,
         workspace: WorkspaceInspectorPort,
         turns: PerTurnMeteringPort,
@@ -40,7 +42,8 @@ class RenderStatuslineUseCase(RenderStatusline):
         """Wire the use case to its outbound ports.
 
         Args:
-            parser: The client's status-payload parser.
+            parsers: Resolves the parser for whichever client was launched.
+            handoff: Reports the run this status line was launched as part of.
             usage: Where recorded session cost is persisted and read.
             workspace: The inspector for the client-agnostic environment facts.
             turns: The per-turn store, read for the job's cumulative usage footer.
@@ -49,7 +52,8 @@ class RenderStatuslineUseCase(RenderStatusline):
             clock: Returns the current epoch seconds, for the session/job ages;
                 injectable so tests are deterministic.
         """
-        self._parser = parser
+        self._parsers = parsers
+        self._handoff = handoff
         self._usage = usage
         self._workspace = workspace
         self._turns = turns
@@ -57,7 +61,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         self._localizer = localizer
         self._clock = clock
 
-    def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
+    def execute(self, payload_json: str) -> str:
         """Parse the payload, record usage, and render the status line.
 
         The live status is the first line; when a job is active, its cumulative
@@ -65,13 +69,13 @@ class RenderStatuslineUseCase(RenderStatusline):
 
         Args:
             payload_json: The raw JSON the client piped to the status-line command.
-            job: The active job, or ``None`` if unknown (usage is not recorded then).
-            session: The active session, or ``None`` if unknown.
 
         Returns:
             The status line (one or two lines) to print.
         """
-        status = self._parser.parse(_decode(payload_json))
+        run = self._handoff.current()
+        job, session = run.job, run.session_id
+        status = self._parsers.for_client(run.client).parse(_decode(payload_json))
         if job and session and status.session_cost_usd is not None:
             self._record_cost(job, SessionCost(session, status.session_cost_usd))
         line = StatuslineRenderer().render_statusline(status, self._workspace.inspect())

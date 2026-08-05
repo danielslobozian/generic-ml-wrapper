@@ -27,7 +27,12 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_catalog impor
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_slug_migrator import (
     FilesystemSlugMigrator,
 )
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_working_folder import (
+    FilesystemWorkingFolder,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import HttpClientVersions
+from generic_ml_wrapper.adapter.outbound.bootstrap.module_build_info import ModuleBuildInfo
+from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSystemInfo
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
 from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner import (
     SubprocessCommandRunner,
@@ -39,9 +44,16 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyCl
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_secret_prompt import TtySecretPrompt
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
+from generic_ml_wrapper.adapter.outbound.caller.environment_run_handoff import (
+    EnvironmentRunHandoff,
+)
+from generic_ml_wrapper.adapter.outbound.caller.signal_interrupt_scope import (
+    SignalInterruptScope,
+)
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
 )
@@ -64,8 +76,9 @@ from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source impor
 from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import (
     FilesystemPluginSource,
 )
-from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
-from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
+from generic_ml_wrapper.adapter.outbound.status.catalogued_status_parsers import (
+    CataloguedStatusParsers,
+)
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
     FilesystemArtifactPurge,
 )
@@ -101,6 +114,8 @@ from generic_ml_wrapper.application.port.inbound.application_settings import App
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
+from generic_ml_wrapper.application.port.inbound.check_launch_location import CheckLaunchLocation
+from generic_ml_wrapper.application.port.inbound.check_store_contract import CheckStoreContract
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs
@@ -124,14 +139,15 @@ from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkf
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
+from generic_ml_wrapper.application.port.inbound.render_farewell import RenderFarewell
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.render_version import RenderVersion
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
-from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
@@ -144,6 +160,12 @@ from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPo
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
+from generic_ml_wrapper.application.usecase.check_launch_location import (
+    CheckLaunchLocationUseCase,
+)
+from generic_ml_wrapper.application.usecase.check_store_contract import (
+    CheckStoreContractUseCase,
+)
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsUseCase
@@ -175,8 +197,10 @@ from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCa
 from generic_ml_wrapper.application.usecase.read_application_settings import (
     ReadApplicationSettingsUseCase,
 )
+from generic_ml_wrapper.application.usecase.render_farewell import RenderFarewellUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.usecase.render_version import RenderVersionUseCase
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
@@ -419,7 +443,13 @@ def _launch_sequence() -> LaunchSequence:
     Returns:
         The sequence, carrying the configured hooks and where a bad teardown is reported.
     """
-    return LaunchSequence(_hook_runner(), log.active(), build_localizer(), _session_locks())
+    return LaunchSequence(
+        _hook_runner(),
+        log.active(),
+        build_localizer(),
+        _session_locks(),
+        SignalInterruptScope(),
+    )
 
 
 def build_start_job() -> StartJob:
@@ -602,7 +632,50 @@ def build_set_credential() -> SetCredential:
     Returns:
         A ready-to-run SetCredential.
     """
-    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.credentials))
+    return SetCredentialUseCase(
+        store=FilesystemCredentialsStore(paths.credentials),
+        prompt=TtySecretPrompt(),
+    )
+
+
+def build_check_store_contract() -> CheckStoreContract:
+    """Build the CheckStoreContract use case wired to the shipped migrations.
+
+    Returns:
+        A ready-to-run CheckStoreContract.
+    """
+    return CheckStoreContractUseCase(migration=build_store_migration())
+
+
+def build_render_version() -> RenderVersion:
+    """Build the RenderVersion use case wired to the build stamp.
+
+    Returns:
+        A ready-to-run RenderVersion.
+    """
+    return RenderVersionUseCase(build_info=ModuleBuildInfo())
+
+
+def build_render_farewell() -> RenderFarewell:
+    """Build the RenderFarewell use case wired to the companion settings.
+
+    Returns:
+        A ready-to-run RenderFarewell.
+    """
+    return RenderFarewellUseCase(
+        settings=build_application_settings(),
+        system=OsSystemInfo(),
+        localizer=build_localizer(),
+    )
+
+
+def build_check_launch_location() -> CheckLaunchLocation:
+    """Build the CheckLaunchLocation use case wired to the filesystem.
+
+    Returns:
+        A ready-to-run CheckLaunchLocation.
+    """
+    return CheckLaunchLocationUseCase(folders=FilesystemWorkingFolder())
 
 
 def build_bootstrap() -> Bootstrap:
@@ -762,6 +835,7 @@ def build_check_client_ready() -> CheckClientReady:
         overrides=config.caller_overrides(),
         detector=PathClientDetector(),
         catalog=TomlClientCatalog(),
+        system=OsSystemInfo(),
     )
 
 
@@ -791,35 +865,25 @@ def build_save_usage_report() -> SaveUsageReport:
     )
 
 
-def build_render_statusline(client: str | None = None) -> RenderStatusline:
-    """Build the RenderStatusline use case, with the client's own status parser.
+def build_render_statusline() -> RenderStatusline:
+    """Build the RenderStatusline use case.
 
-    The status line renders for the clients that host one (claude, cursor); each
-    parses its own payload (both are Claude-Code-compatible for model/context, but
-    the allowance block differs -- claude's rate-limit quota vs cursor's plan pools).
-
-    Args:
-        client: The client whose payload is being parsed (from ``GMLW_CLIENT``);
-            selects the parser. Absent/unknown falls back to the Claude parser.
+    It takes no client: the status line is invoked by a client the wrapper launched, and
+    that launch already announced which one it was. The use case reads that announcement
+    and resolves its own parser, so nothing upstream has to know either.
 
     Returns:
         A ready-to-run RenderStatusline.
     """
     return RenderStatuslineUseCase(
-        parser=_status_parser(client),
+        parsers=CataloguedStatusParsers(paths.cursor_plan),
+        handoff=EnvironmentRunHandoff(),
         usage=SqliteUsageStore(_ledger()),
         workspace=LocalGitWorkspaceInspector(),
         turns=SqlitePerTurnStore(_ledger()),
         diagnostics=log.active(),
         localizer=build_localizer(),
     )
-
-
-def _status_parser(client: str | None) -> ClientStatusParserPort:
-    """Select the status-payload parser for a client."""
-    if client == "cursor":
-        return CursorStatusParser()
-    return ClaudeStatusParser()
 
 
 def build_new_workflow() -> NewWorkflow:

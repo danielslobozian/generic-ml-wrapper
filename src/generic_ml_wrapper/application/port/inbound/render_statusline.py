@@ -11,13 +11,16 @@ class RenderStatusline(ABC):
     """Render a client's status line and record its usage."""
 
     @abstractmethod
-    def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
+    def execute(self, payload_json: str) -> str:
         """Parse the client's payload, record usage, and render the status line.
+
+        Which run this belongs to is not passed in. The status line is invoked by a client
+        the wrapper launched, and that launch already announced the job, the session and
+        the client to it -- so the run is something to be read, not something a caller
+        must know and hand over.
 
         Args:
             payload_json: The raw JSON the client piped to the status-line command.
-            job: The active job, or ``None`` if unknown (usage is not recorded then).
-            session: The active session, or ``None`` if unknown.
 
         Returns:
             The status line to print (may be empty if the client reported nothing).

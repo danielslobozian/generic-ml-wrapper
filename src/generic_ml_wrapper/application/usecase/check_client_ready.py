@@ -14,6 +14,7 @@ from generic_ml_wrapper.application.port.inbound.check_client_ready import (
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.client_catalog import ClientCatalogPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
+    from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 
 
 class CheckClientReadyUseCase(CheckClientReady):
@@ -30,6 +31,7 @@ class CheckClientReadyUseCase(CheckClientReady):
         overrides: dict[str, str],
         detector: ClientDetectorPort,
         catalog: ClientCatalogPort,
+        system: SystemInfoPort,
     ) -> None:
         """Wire the use case to the config overrides and the install detector.
 
@@ -37,10 +39,12 @@ class CheckClientReadyUseCase(CheckClientReady):
             overrides: The ``[callers]`` client-to-spec overrides.
             detector: Reports which supported clients are installed.
             catalog: The supported clients and their facts.
+            system: Names the platform, so the install commands can be resolved here.
         """
         self._overrides = overrides
         self._detector = detector
         self._catalog = catalog
+        self._system = system
 
     def execute(self, client: str) -> ClientReadiness:
         """Report whether ``client`` can launch, with guidance when it cannot.
@@ -56,9 +60,15 @@ class CheckClientReadyUseCase(CheckClientReady):
             return ClientReadiness(client=client, ready=True, missing=None, installed=installed)
         info = self._catalog.by_name(client)
         ready = info is not None and client in installed
+        missing = None if ready else info
+        system = self._system.platform_name()
         return ClientReadiness(
             client=client,
             ready=ready,
-            missing=None if ready else info,
+            missing=missing,
             installed=installed,
+            install_command=None if missing is None else missing.install_for(system),
+            catalogue_install_commands=tuple(
+                (entry.name, entry.install_for(system)) for entry in self._catalog.supported()
+            ),
         )
