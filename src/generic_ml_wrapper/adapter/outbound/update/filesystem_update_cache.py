@@ -14,8 +14,8 @@ from generic_ml_wrapper.application.port.outbound.update_cache import UpdateCach
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class FilesystemUpdateCacheAdapter(UpdateCachePort):
@@ -27,7 +27,9 @@ class FilesystemUpdateCacheAdapter(UpdateCachePort):
     every launch with nobody able to see why.
     """
 
-    def __init__(self, cache_file: Path, diagnostics: Diagnostics, localizer: Localizer) -> None:
+    def __init__(
+        self, cache_file: Path, diagnostics: DiagnosticsPort, localizer: LocalizerPort
+    ) -> None:
         """Bind the cache to its file and to where a failed write is reported.
 
         Args:

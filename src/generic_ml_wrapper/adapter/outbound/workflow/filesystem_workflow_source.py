@@ -21,10 +21,10 @@ from generic_ml_wrapper.application.domain.model.rule_capture_directive import R
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
 from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import RuleCleaner
 from generic_ml_wrapper.application.domain.service.rule_parser import RuleParser
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 if TYPE_CHECKING:
     from collections.abc import Callable

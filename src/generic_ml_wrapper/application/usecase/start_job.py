@@ -15,15 +15,15 @@ from generic_ml_wrapper.application.domain.model.resume_not_supported_error impo
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.domain.service.greeting_composer import GreetingComposer
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
 from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
 from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
@@ -41,8 +41,8 @@ class StartJobService(StartJobUseCase):
         cwd_factory: Callable[[], str],
         credentials: CredentialsStorePort,
         launch: LaunchSequence,
-        diagnostics: Diagnostics,
-        localizer: Localizer,
+        diagnostics: DiagnosticsPort,
+        localizer: LocalizerPort,
         posix: bool,
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],

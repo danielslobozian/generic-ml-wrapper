@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.axis_prompt import AxisPrompt
     from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class AxisChooserPort(ABC):
@@ -18,7 +18,7 @@ class AxisChooserPort(ABC):
 
     @abstractmethod
     def choose(
-        self, prompt: AxisPrompt, default: str, i18n: Localizer | None = None
+        self, prompt: AxisPrompt, default: str, i18n: LocalizerPort | None = None
     ) -> AxisSelection:
         """Return the chosen axis.
 

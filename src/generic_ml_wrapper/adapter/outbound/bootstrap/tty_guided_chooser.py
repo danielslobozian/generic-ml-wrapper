@@ -11,7 +11,7 @@ from generic_ml_wrapper.application.domain.model.authoring_mode import Authoring
 from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class TtyGuidedChooserAdapter(GuidedChooserPort):
@@ -23,7 +23,7 @@ class TtyGuidedChooserAdapter(GuidedChooserPort):
     ``None`` and the caller falls back to the lean interview.
     """
 
-    def __init__(self, i18n: Localizer) -> None:
+    def __init__(self, i18n: LocalizerPort) -> None:
         """Bind the chooser to a localiser for its prompt text.
 
         Args:
@@ -31,7 +31,7 @@ class TtyGuidedChooserAdapter(GuidedChooserPort):
         """
         self._i18n = i18n
 
-    def choose(self, i18n: Localizer | None = None) -> AuthoringMode | None:
+    def choose(self, i18n: LocalizerPort | None = None) -> AuthoringMode | None:
         """Offer the choice and return the chosen mode, or ``None``.
 
         Args:

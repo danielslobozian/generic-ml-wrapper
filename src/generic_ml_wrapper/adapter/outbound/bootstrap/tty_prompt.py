@@ -6,7 +6,7 @@ One implementation behind every first-run picker (client, persona, …). It writ
 list to stderr and reads a line from stdin, so stdout stays clean for ``--json`` and
 view output, and it declines (returns ``None``) whenever either end is not a TTY — a
 piped or automated run never blocks. The fixed fragments (the pick line, the range
-error) are localised through a :class:`Localizer`; the caller passes already-localised
+error) are localised through a :class:`LocalizerPort`; the caller passes already-localised
 choices, so this stays dependency-free and framework-free.
 """
 
@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 @dataclass(frozen=True)
@@ -42,7 +42,7 @@ class Choice:
 def choose_number(
     header: str,
     choices: Sequence[Choice],
-    i18n: Localizer,
+    i18n: LocalizerPort,
     *,
     default: int | None = None,
     skippable: bool = False,

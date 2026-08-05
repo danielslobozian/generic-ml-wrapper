@@ -19,11 +19,11 @@ from generic_ml_wrapper.application.port.outbound.cli_caller_provider import Cli
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
-    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
     from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 
 class DefaultCliCallerProviderAdapter(CliCallerProviderPort):

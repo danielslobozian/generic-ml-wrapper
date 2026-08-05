@@ -11,7 +11,7 @@ from generic_ml_wrapper.application.port.outbound.persona_chooser import Persona
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.persona import Persona
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class TtyPersonaChooserAdapter(PersonaChooserPort):
@@ -21,7 +21,7 @@ class TtyPersonaChooserAdapter(PersonaChooserPort):
     declines, leaving the companion off — a stranger is never assigned a character.
     """
 
-    def __init__(self, i18n: Localizer) -> None:
+    def __init__(self, i18n: LocalizerPort) -> None:
         """Bind the chooser to a localiser for its prompt text.
 
         Args:
@@ -29,7 +29,7 @@ class TtyPersonaChooserAdapter(PersonaChooserPort):
         """
         self._i18n = i18n
 
-    def choose(self, personas: list[Persona], i18n: Localizer | None = None) -> str | None:
+    def choose(self, personas: list[Persona], i18n: LocalizerPort | None = None) -> str | None:
         """Offer the personas and return the chosen name, or ``None`` to decline.
 
         Args:

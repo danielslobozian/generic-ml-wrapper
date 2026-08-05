@@ -6,15 +6,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.service.hook import HookPhase
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from generic_ml_wrapper.application.domain.service.hook import HookContext
-
+    from generic_ml_wrapper.application.domain.model.hook_context import HookContext
 _LOG = "sessions.log"
 
 

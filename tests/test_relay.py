@@ -19,12 +19,12 @@ from generic_ml_wrapper.adapter.outbound.gateway.relay import (
     _tee,
 )
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
+from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.wiring.diagnostics_log import set_active
 
 _SSE = (
@@ -386,7 +386,7 @@ def test_request_with_an_origin_header_is_refused() -> None:
 # ---------------------------------------------------------------------------
 
 
-class _Recording(Diagnostics):
+class _Recording(DiagnosticsPort):
     """A sink that keeps what it was handed, so a test can assert the failure was logged."""
 
     def __init__(self) -> None:

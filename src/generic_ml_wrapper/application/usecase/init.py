@@ -14,12 +14,12 @@ from generic_ml_wrapper.application.port.outbound.init_selections import InitSel
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
     from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
     from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
     from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
     from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
     from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
     from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
@@ -48,7 +48,7 @@ class InitService(InitUseCase):
         personas: PersonaSourcePort,
         persona_chooser: PersonaChooserPort,
         client_setup: ClientSetupPort,
-        localizer_factory: Callable[[str], Localizer],
+        localizer_factory: Callable[[str], LocalizerPort],
         languages: list[str],
         default_language: str,
         default_name: str,

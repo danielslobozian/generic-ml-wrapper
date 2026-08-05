@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from generic_ml_wrapper.application.domain.service.interceptor import Interceptor
+    from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 
 
 class InterceptorChain:
@@ -22,7 +22,7 @@ class InterceptorChain:
     wire targets (``request``/``response``). An empty chain is the identity.
     """
 
-    def __init__(self, interceptors: Sequence[tuple[str, Interceptor]]) -> None:
+    def __init__(self, interceptors: Sequence[tuple[str, InterceptorPort]]) -> None:
         """Bind the chain to its ordered interceptors.
 
         Args:

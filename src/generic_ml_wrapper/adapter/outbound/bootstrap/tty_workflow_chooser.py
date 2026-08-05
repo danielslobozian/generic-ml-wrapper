@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_prompt import Choice, choose_number
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class TtyWorkflowChooser:
@@ -26,7 +26,7 @@ class TtyWorkflowChooser:
     the user toward naming a workflow explicitly.
     """
 
-    def __init__(self, i18n: Localizer) -> None:
+    def __init__(self, i18n: LocalizerPort) -> None:
         """Bind the chooser to a localiser for its prompt text.
 
         Args:
@@ -34,7 +34,7 @@ class TtyWorkflowChooser:
         """
         self._i18n = i18n
 
-    def choose(self, names: list[str], i18n: Localizer | None = None) -> str | None:
+    def choose(self, names: list[str], i18n: LocalizerPort | None = None) -> str | None:
         """Offer ``names`` and return the chosen workflow, or ``None`` to decline.
 
         Args:

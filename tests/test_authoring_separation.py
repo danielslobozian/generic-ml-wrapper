@@ -25,13 +25,13 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import (
     InterruptScopePort,
 )
+from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
@@ -97,6 +97,6 @@ def test_the_listing_hides_nothing_else(tmp_path: Path) -> None:
     assert [summary.job for summary in ListJobsService(store).execute()] == ["PROJ-482"]
 
 
-def _localizer() -> Localizer:
+def _localizer() -> LocalizerPort:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")

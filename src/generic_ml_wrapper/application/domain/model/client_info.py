@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.prerequisite import Prerequisite
     from generic_ml_wrapper.application.domain.model.version_probe import VersionProbe
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
 @dataclass(frozen=True)
@@ -67,22 +66,3 @@ class ClientInfo:
     def update_for(self, system: str) -> str:
         """Return the upgrade command for an OS: the dedicated updater, else the installer."""
         return self.update or self.install_for(system)
-
-    def login_for(self, loc: Localizer) -> str:
-        """Return the login command, with its localised note when it has one.
-
-        The command itself is never translated — it is something the user types. Only the
-        note beside it is prose, so only the note goes through the catalogue.
-
-        The localiser is required rather than defaulted: the domain does not know which
-        language the process is speaking, and must not go looking for it.
-
-        Args:
-            loc: The localiser to render the note through.
-
-        Returns:
-            e.g. ``claude   (first run opens a browser)``, or bare ``cursor-agent login``.
-        """
-        if not self.login_hint:
-            return self.login
-        return f"{self.login}   ({loc.t(self.login_hint)})"

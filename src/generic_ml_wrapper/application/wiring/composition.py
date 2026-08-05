@@ -137,8 +137,7 @@ from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import (
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspectorAdapter,
 )
-from generic_ml_wrapper.application.domain.service.hook import HookPhase
-from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.port.inbound.application_settings import (
     ApplicationSettingsUseCase,
 )
@@ -214,6 +213,7 @@ from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflo
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowService
 from generic_ml_wrapper.application.usecase.init import InitService
+from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsService
@@ -247,7 +247,7 @@ from generic_ml_wrapper.application.usecase.update_config import UpdateConfigSer
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
 from generic_ml_wrapper.application.wiring.localization import (
     SUPPORTED_LANGUAGES,
-    Localizer,
+    LocalizerPort,
     active,
     load_localizer,
     resolve_language,
@@ -850,7 +850,7 @@ def build_init() -> InitUseCase:
     )
 
 
-def build_localizer() -> Localizer:
+def build_localizer() -> LocalizerPort:
     """Build the localiser for the language the wrapper speaks to the user.
 
     Prefers the init-chosen ``[language] code``; falls back to ``$LANG`` (English when

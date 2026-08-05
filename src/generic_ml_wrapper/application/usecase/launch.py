@@ -21,14 +21,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.service.hook import HookContext, HookPhase
+from generic_ml_wrapper.application.domain.model.hook_context import HookContext
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
-    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
+    from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
     from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
     from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
     from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 
@@ -39,8 +40,8 @@ class LaunchSequence:
     def __init__(
         self,
         hooks: HookRunner,
-        diagnostics: Diagnostics,
-        localizer: Localizer,
+        diagnostics: DiagnosticsPort,
+        localizer: LocalizerPort,
         locks: SessionLockPort,
         interrupts: InterruptScopePort,
     ) -> None:

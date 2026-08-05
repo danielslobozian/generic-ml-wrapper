@@ -9,10 +9,10 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.port.inbound.render_farewell import RenderFarewellUseCase
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.inbound.application_settings import (
         ApplicationSettingsUseCase,
     )
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
     from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 
 
@@ -23,7 +23,7 @@ class RenderFarewellService(RenderFarewellUseCase):
         self,
         settings: ApplicationSettingsUseCase,
         system: SystemInfoPort,
-        localizer: Localizer,
+        localizer: LocalizerPort,
     ) -> None:
         """Wire the use case to the companion's settings and the host's account name.
 

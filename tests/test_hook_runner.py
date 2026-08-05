@@ -6,8 +6,10 @@ from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import Nul
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
-from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
+from generic_ml_wrapper.application.domain.model.hook_context import HookContext
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
+from generic_ml_wrapper.application.port.outbound.hook import HookPort
+from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 
 
@@ -24,7 +26,7 @@ def _context(phase: HookPhase, client: str = "claude", exit_code: int | None = N
     )
 
 
-class _Recording(Hook):
+class _Recording(HookPort):
     def __init__(self, log: list[str], label: str) -> None:
         self._log = log
         self._label = label
@@ -33,7 +35,7 @@ class _Recording(Hook):
         self._log.append(self._label)
 
 
-class _Boom(Hook):
+class _Boom(HookPort):
     def run(self, context: HookContext) -> None:
         raise RuntimeError("hook blew up")
 
@@ -89,6 +91,6 @@ def test_empty_runner_is_a_no_op() -> None:
     )  # does not raise
 
 
-def _localizer() -> Localizer:
+def _localizer() -> LocalizerPort:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")

@@ -22,11 +22,11 @@ from generic_ml_wrapper.application.domain.model.workflow_name_error import Work
 from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
     WorkflowNotFoundError,
 )
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
+from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowService
@@ -318,6 +318,6 @@ def test_an_edit_recorded_before_its_folder_was_stored_is_not_resumed() -> None:
         ).execute(EditWorkflowCommand(name="nightly-etl", client="claude", resume_latest=True))
 
 
-def _localizer() -> Localizer:
+def _localizer() -> LocalizerPort:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")

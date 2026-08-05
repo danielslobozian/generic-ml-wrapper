@@ -8,14 +8,14 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class TextPromptPort(ABC):
     """Ask a single free-text question with a default, declining to it off a terminal."""
 
     @abstractmethod
-    def ask(self, header: str, default: str, i18n: Localizer | None = None) -> str:
+    def ask(self, header: str, default: str, i18n: LocalizerPort | None = None) -> str:
         """Ask ``header`` and return the typed answer, or ``default``.
 
         Never returns ``None`` or an empty string: a forced pass must always resolve a

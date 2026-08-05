@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-    from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.domain.model.hook_context import HookContext
+    from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
+    from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+    from generic_ml_wrapper.application.port.outbound.hook import HookPort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class HookRunner:
@@ -30,9 +32,9 @@ class HookRunner:
 
     def __init__(
         self,
-        hooks: Sequence[tuple[HookPhase, str | None, Hook]],
-        diagnostics: Diagnostics,
-        localizer: Localizer,
+        hooks: Sequence[tuple[HookPhase, str | None, HookPort]],
+        diagnostics: DiagnosticsPort,
+        localizer: LocalizerPort,
     ) -> None:
         """Bind the runner to its ordered hooks and the collaborators that report failures.
 

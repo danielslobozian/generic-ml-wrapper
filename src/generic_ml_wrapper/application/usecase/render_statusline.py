@@ -11,9 +11,8 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
-
+    from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
@@ -35,8 +34,8 @@ class RenderStatuslineService(RenderStatuslineUseCase):
         usage: UsageStorePort,
         workspace: WorkspaceInspectorPort,
         turns: PerTurnMeteringPort,
-        diagnostics: Diagnostics,
-        localizer: Localizer,
+        diagnostics: DiagnosticsPort,
+        localizer: LocalizerPort,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """Wire the use case to its outbound ports.

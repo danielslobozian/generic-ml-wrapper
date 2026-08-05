@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class ClientSetupPort(ABC):
@@ -22,7 +22,7 @@ class ClientSetupPort(ABC):
     """
 
     @abstractmethod
-    def choose(self, found: list[str], i18n: Localizer | None = None) -> str | None:
+    def choose(self, found: list[str], i18n: LocalizerPort | None = None) -> str | None:
         """Settle the default client, guiding an install/update as needed.
 
         Args:

@@ -37,10 +37,10 @@ from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetu
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
     from generic_ml_wrapper.application.domain.model.prerequisite import Prerequisite
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
     from generic_ml_wrapper.application.port.outbound.clipboard import ClipboardPort
     from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 # Sentinel option value: "install a client other than the ones already here".
 _INSTALL = "\x00install"
@@ -51,12 +51,25 @@ def _on_path(binary: str) -> bool:
     return shutil.which(binary) is not None
 
 
+def _login_line(info: ClientInfo, loc: LocalizerPort) -> str:
+    """The login command, with its localised note when it has one.
+
+    The command itself is never translated -- it is something the user types. Only the
+    note beside it is prose, so only the note goes through the catalogue. Rendered here
+    rather than on :class:`ClientInfo`: the type carries the command and the key, and
+    turning a key into a sentence needs a language, which the domain does not have.
+    """
+    if not info.login_hint:
+        return info.login
+    return f"{info.login}   ({loc.t(info.login_hint)})"
+
+
 class TtyClientSetupAdapter(ClientSetupPort):
     """Guide the default-client choice, install, and update at an interactive terminal."""
 
     def __init__(  # noqa: PLR0913  (small injected collaborators, all defaulted)
         self,
-        i18n: Localizer,
+        i18n: LocalizerPort,
         *,
         version: ClientVersionPort,
         runner: CommandRunnerPort,
@@ -90,7 +103,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
         self._interval = poll_interval_s
         self._attempts = poll_attempts
 
-    def choose(self, found: list[str], i18n: Localizer | None = None) -> str | None:
+    def choose(self, found: list[str], i18n: LocalizerPort | None = None) -> str | None:
         """Run the conversation and return the settled default client (or ``None``).
 
         Args:
@@ -110,7 +123,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
         self._maybe_update(picked, loc)
         return picked
 
-    def _pick(self, found: list[str], loc: Localizer) -> str | None:
+    def _pick(self, found: list[str], loc: LocalizerPort) -> str | None:
         """Offer the installed clients (with versions) plus an "install another" option."""
         choices = [
             Choice(
@@ -124,7 +137,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
         choices.append(Choice(value=_INSTALL, label=loc.t("init.client.menu_install")))
         return choose_number(loc.t("init.client.header"), choices, loc, default=0)
 
-    def _version_note(self, info: ClientInfo, loc: Localizer) -> str:
+    def _version_note(self, info: ClientInfo, loc: LocalizerPort) -> str:
         """Describe an installed client: up to date, an update available, or unknown."""
         installed = self._version.installed(info)
         latest = self._version.latest(info)
@@ -134,7 +147,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
             return loc.t("init.client.note_current", version=installed)
         return loc.t("init.client.note_installed")
 
-    def _maybe_update(self, name: str, loc: Localizer) -> None:
+    def _maybe_update(self, name: str, loc: LocalizerPort) -> None:
         """When a chosen client is behind its latest, offer to run the update command."""
         info = TomlClientCatalogAdapter().by_name(name)
         if info is None:
@@ -159,7 +172,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
         if choice == "update":
             self._run(command, loc)
 
-    def _install_flow(self, found: list[str], loc: Localizer) -> str | None:
+    def _install_flow(self, found: list[str], loc: LocalizerPort) -> str | None:
         """Pick a client to install, satisfy any prerequisite, guide it, and verify."""
         target = self._pick_target(loc)
         if target is None:
@@ -170,14 +183,14 @@ class TtyClientSetupAdapter(ClientSetupPort):
             target.display,
             target.install_for(self._system),
             target.binary,
-            target.login_for(loc),
+            _login_line(target, loc),
             loc,
         )
         if installed or self._present(target.binary):
             return target.name
         return found[0] if found else None
 
-    def _pick_target(self, loc: Localizer) -> ClientInfo | None:
+    def _pick_target(self, loc: LocalizerPort) -> ClientInfo | None:
         """Offer every supported client (with its paid-plan framing) to install."""
         choices = [
             Choice(value=info.name, label=info.display, description=info.subscription)
@@ -186,13 +199,13 @@ class TtyClientSetupAdapter(ClientSetupPort):
         name = choose_number(loc.t("init.install.header"), choices, loc, skippable=True)
         return TomlClientCatalogAdapter().by_name(name) if name else None
 
-    def _guide_prereq(self, prereq: Prerequisite, loc: Localizer) -> None:
+    def _guide_prereq(self, prereq: Prerequisite, loc: LocalizerPort) -> None:
         """Guide installing a missing prerequisite (e.g. uv) before the client itself."""
         emit(loc.t("init.prereq.needed", display=prereq.display))
         self._guide(prereq.display, prereq.install_for(self._system), prereq.binary, None, loc)
 
     def _guide(
-        self, display: str, command: str, binary: str, login: str | None, loc: Localizer
+        self, display: str, command: str, binary: str, login: str | None, loc: LocalizerPort
     ) -> bool:
         """Show the install command, offer to run it, and verify the binary appears.
 
@@ -220,7 +233,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
             self._run(command, loc)
         return self._verify(binary, display, loc)
 
-    def _verify(self, binary: str, display: str, loc: Localizer) -> bool:
+    def _verify(self, binary: str, display: str, loc: LocalizerPort) -> bool:
         """Poll PATH for ``binary``; after a few tries, offer a manual re-check or skip."""
         for _ in range(self._attempts):
             if self._present(binary):
@@ -245,7 +258,7 @@ class TtyClientSetupAdapter(ClientSetupPort):
         emit(loc.t("init.install.gaveup", display=display))
         return False
 
-    def _run(self, command: str, loc: Localizer) -> None:
+    def _run(self, command: str, loc: LocalizerPort) -> None:
         """Run a command via the injected runner and narrate a non-zero exit."""
         emit(loc.t("init.install.running", command=command))
         code = self._runner.run(command)

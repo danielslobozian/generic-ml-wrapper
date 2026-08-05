@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.hook.session_logger import SessionLoggerAdapter
-from generic_ml_wrapper.application.domain.service.hook import HookContext, HookPhase
+from generic_ml_wrapper.application.domain.model.hook_context import HookContext
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.wiring.paths import paths
 
 

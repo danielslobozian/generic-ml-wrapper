@@ -35,8 +35,8 @@ from generic_ml_wrapper.application.port.outbound.session_store import SessionSt
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class DeleteJobsService(DeleteJobsUseCase):
@@ -50,8 +50,8 @@ class DeleteJobsService(DeleteJobsUseCase):
         ledger: LedgerPurgePort,
         artifacts: ArtifactPurgePort,
         locks: SessionLockPort,
-        diagnostics: Diagnostics,
-        localizer: Localizer,
+        diagnostics: DiagnosticsPort,
+        localizer: LocalizerPort,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 

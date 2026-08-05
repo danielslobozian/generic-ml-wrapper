@@ -9,14 +9,14 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.persona import Persona
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class PersonaChooserPort(ABC):
     """Offer a persona choice; declining leaves the companion off (invisible)."""
 
     @abstractmethod
-    def choose(self, personas: list[Persona], i18n: Localizer | None = None) -> str | None:
+    def choose(self, personas: list[Persona], i18n: LocalizerPort | None = None) -> str | None:
         """Pick a persona from the offered list, or decline.
 
         Args:

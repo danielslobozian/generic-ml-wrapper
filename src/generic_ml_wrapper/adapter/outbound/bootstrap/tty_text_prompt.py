@@ -16,13 +16,13 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.service.localizer import Localizer
+    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class TtyTextPromptAdapter(TextPromptPort):
     """Ask one free-text question at an interactive terminal; else return the default."""
 
-    def __init__(self, i18n: Localizer) -> None:
+    def __init__(self, i18n: LocalizerPort) -> None:
         """Bind the prompt to a localiser for its fixed ``[default …]`` fragment.
 
         Args:
@@ -30,7 +30,7 @@ class TtyTextPromptAdapter(TextPromptPort):
         """
         self._i18n = i18n
 
-    def ask(self, header: str, default: str, i18n: Localizer | None = None) -> str:
+    def ask(self, header: str, default: str, i18n: LocalizerPort | None = None) -> str:
         """Ask ``header`` and return the typed answer, or ``default``.
 
         Writes to ``sys.stderr`` and reads from ``sys.stdin`` (both resolved at call

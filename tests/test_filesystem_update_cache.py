@@ -15,7 +15,7 @@ from generic_ml_wrapper.adapter.outbound.update.filesystem_update_cache import (
     FilesystemUpdateCacheAdapter,
 )
 from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 _WHEN = datetime(2026, 7, 30, 12, 0, 0)
 
 
-class _RecordingDiagnostics(Diagnostics):
+class _RecordingDiagnostics(DiagnosticsPort):
     def __init__(self) -> None:
         self.keys: list[str] = []
 
@@ -41,7 +41,7 @@ class _RecordingDiagnostics(Diagnostics):
 
 
 def _cache(
-    cache_file: Path, diagnostics: Diagnostics | None = None
+    cache_file: Path, diagnostics: DiagnosticsPort | None = None
 ) -> FilesystemUpdateCacheAdapter:
     return FilesystemUpdateCacheAdapter(
         cache_file,

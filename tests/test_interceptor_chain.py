@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
+from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.wiring import composition
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoadError
 

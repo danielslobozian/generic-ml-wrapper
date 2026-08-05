@@ -24,6 +24,13 @@ A location arriving as a *request parameter* is data, not a reach: the user said
 this file", and passing that through to a port is exactly the use case's job. What it may
 not do is hold one as state.
 
+`test_a_port_is_the_contract` — a port declares its own methods and extends nothing but
+`ABC`. A port already *is* the abstraction the application owns and an adapter implements,
+so a second interface behind it is a layer the pattern does not have. This one was written
+after four ports were found extending an empty domain interface each: the domain may not
+import a port, so an interface was put in the domain and the port made to extend it —
+scaffolding built to get around a layering rule rather than to express a contract.
+
 `test_no_adapter_defines_an_exception` — an exception that leaves an adapter is part of a
 contract, and a contract belongs to the application. An adapter-owned type forces every
 caller to know which adapter is installed, and it cannot carry a catalogue key, so it
@@ -295,6 +302,39 @@ def test_inbound_adapters_acquire_nothing() -> None:
         if reached:
             offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(reached)}")
     assert not offenders, "an inbound adapter acquired what it was not handed:\n" + "\n".join(
+        offenders
+    )
+
+
+#: Both port rings. A port is a contract wherever it faces.
+_PORTS = ("application/port",)
+
+#: The role suffixes that mark a class as a port rather than a transport type sharing the
+#: package. An enum of outcomes declaring ``Enum`` as its base is not a port and not a
+#: finding; ``ImportOutcomeUseCase`` would be.
+_PORT_SUFFIXES = ("Port", "UseCase")
+
+
+def test_a_port_is_the_contract() -> None:
+    """A port declares its own methods and extends nothing but ``ABC``.
+
+    The failure this exists to catch is not a naming slip, it is a whole invented layer:
+    an interface declared somewhere the port may reach, and the port reduced to an empty
+    subtype of it. That reads as tidy and costs the architecture its central claim —
+    that the port *is* the boundary, owned by the application, implemented by an adapter.
+    """
+    offenders: list[str] = []
+    for path in _modules(*_PORTS):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef) or not node.name.endswith(_PORT_SUFFIXES):
+                continue
+            inherited = [ast.unparse(base) for base in node.bases if ast.unparse(base) != "ABC"]
+            if inherited:
+                offenders.append(
+                    f"{path.relative_to(_SOURCE)}: {node.name} extends {', '.join(inherited)}"
+                )
+    assert not offenders, "a port is standing in front of another interface:\n" + "\n".join(
         offenders
     )
 

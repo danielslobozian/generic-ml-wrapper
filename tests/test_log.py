@@ -9,7 +9,7 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
     StderrDiagnosticsAdapter,
 )
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.wiring.diagnostics_log import Log, active, set_active
 
 
@@ -20,7 +20,7 @@ def _restore_sink() -> Iterator[None]:
     set_active(previous)
 
 
-class _Recorder(Diagnostics):
+class _Recorder(DiagnosticsPort):
     """A sink that keeps what it was handed, for asserting on the call, not the format."""
 
     def __init__(self) -> None:

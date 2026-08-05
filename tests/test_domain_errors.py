@@ -67,8 +67,10 @@ _CASES: list[DomainError] = [
 
 @pytest.mark.parametrize("error", _CASES, ids=lambda error: error.catalogue_key)
 def test_domain_error_renders_in_every_language(error: DomainError) -> None:
-    rendered_en = error.localized(_EN)
-    rendered_fr = error.localized(_FR)
+    # Rendered the way a caller renders it: the error carries the key and the params, and
+    # whoever caught it holds the localiser. The error itself never reaches for one.
+    rendered_en = _EN.t(error.catalogue_key, **error.params)
+    rendered_fr = _FR.t(error.catalogue_key, **error.params)
     assert rendered_en != error.catalogue_key, "no English template for this key"
     assert rendered_fr != error.catalogue_key, "no French template for this key"
     assert rendered_en != rendered_fr, "French falls back to the English template"
