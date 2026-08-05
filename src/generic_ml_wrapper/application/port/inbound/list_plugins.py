@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.plugin import Plugin
 
 
-class ListPlugins(ABC):
+class ListPluginsUseCase(ABC):
     """List the plugins installed under the plugins directory."""
 
     @abstractmethod

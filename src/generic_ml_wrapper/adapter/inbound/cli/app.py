@@ -51,7 +51,7 @@ from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
-    ConfigCommands,
+    ConfigCommandsUseCase,
     SetOutcome,
     SettingView,
 )
@@ -1708,7 +1708,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
 
     # Config Get/Set: the settings snapshot + a setter, injected like the switchers. The picker
-    # reads the snapshot; a set goes through the same ConfigCommands.set the CLI's `config set`
+    # reads the snapshot; a set goes through the same ConfigCommandsUseCase.set that
+    # the CLI's `config set` uses
     # uses (values/defaults pre-rendered through _setting_value so the app stays format-free).
     loc = i18n.active()
 
@@ -1887,7 +1888,7 @@ def _start(args: argparse.Namespace) -> int:
     if not _preflight_client(client):  # client not installed — guide, don't launch
         return 2
     # The free host greeting (when a companion persona is set) is now injected into the
-    # session's context by StartJob, so the client renders it in-band — the launch-time
+    # session's context by StartJobUseCase, so the client renders it in-band — the launch-time
     # stderr greeting was structurally invisible once the client cleared the screen.
     # The client owns the terminal for the session: it handles Ctrl+C itself, and a
     # A kill/hangup is forwarded to the client by the caller adapter, so the run ends by
@@ -2131,7 +2132,7 @@ def _config(args: argparse.Namespace) -> int:
     return 0
 
 
-def _config_set(commands: ConfigCommands, key: str, value: str) -> int:
+def _config_set(commands: ConfigCommandsUseCase, key: str, value: str) -> int:
     try:
         outcome = commands.set(key, value)
     except UnknownSettingError:

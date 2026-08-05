@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The RenderGreeting use case: compose the free host greeting from live facts."""
+"""The RenderGreetingUseCase use case: compose the free host greeting from live facts."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.service.greeting_composer import GreetingComposer
-from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
+from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 
 
-class RenderGreetingUseCase(RenderGreeting):
+class RenderGreetingService(RenderGreetingUseCase):
     """Fill the selected persona's greeting template from the clock, name, and git.
 
     Free — no tokens: it is composed locally and printed at launch, never sent to a

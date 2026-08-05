@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the CheckForUpdate use case (a cached, rate-limited PyPI version check)."""
+"""Tests for the CheckForUpdateUseCase use case (a cached, rate-limited PyPI version check)."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
 from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
-from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
+from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateService
 
 _NOW = datetime(2026, 7, 30, 12, 0, 0)
 
@@ -35,15 +35,15 @@ def _use_case(
     current_version: str = "1.0.0",
     enabled: bool = True,
     now: datetime = _NOW,
-) -> CheckForUpdateUseCase:
-    return CheckForUpdateUseCase(
+) -> CheckForUpdateService:
+    return CheckForUpdateService(
         checker=checker,
         current_version=current_version,
         package="generic-ml-wrapper",
         enabled=lambda: enabled,
         clock=lambda: now,
         cache_path=tmp_path / "update-check.json",
-        diagnostics=NullDiagnostics(),
+        diagnostics=NullDiagnosticsAdapter(),
         localizer=JsonCatalogLocalizerFactory().load("en"),
     )
 

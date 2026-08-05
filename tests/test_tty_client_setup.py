@@ -9,7 +9,7 @@ import io
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetupAdapter
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
 from generic_ml_wrapper.application.port.outbound.clipboard import ClipboardPort
@@ -111,8 +111,8 @@ def _setup(
     runner: _FakeRunner | None = None,
     clipboard: _FakeClipboard | None = None,
     sleeps: list[float] | None = None,
-) -> TtyClientSetup:
-    return TtyClientSetup(
+) -> TtyClientSetupAdapter:
+    return TtyClientSetupAdapter(
         _I18N,
         version=versions or _FakeVersions(),
         runner=runner or _FakeRunner(env),

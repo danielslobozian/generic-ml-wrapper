@@ -46,7 +46,7 @@ class ArchiveUnreadableError(DomainError, ValueError):
     """Raised when the archive is missing, not a zip, or holds no workflow."""
 
 
-class ImportWorkflow(ABC):
+class ImportWorkflowUseCase(ABC):
     """Install a workflow from an archive, displacing any it replaces."""
 
     @abstractmethod

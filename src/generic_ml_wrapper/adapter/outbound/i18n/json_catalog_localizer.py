@@ -3,7 +3,7 @@
 """Localisation: a tiny JSON-backed string catalogue with English fallback.
 
 The catalogue lives in packaged ``resources/i18n/<lang>.json`` as flat, dotted keys
-mapped to ``str.format`` templates. A :class:`JsonCatalogLocalizer` merges the chosen
+mapped to ``str.format`` templates. A :class:`JsonCatalogLocalizerAdapter` merges the chosen
 language over English, so a missing translation degrades to English rather than a raw
 key. This is deliberately *not* gettext: app-wide copy, no plural rules (labels dodge
 plurals with the ``job(s)`` convention), zero dependencies.
@@ -22,7 +22,7 @@ SUPPORTED_LANGUAGES: tuple[str, ...] = ("en", "fr")
 DEFAULT_LANGUAGE = "en"
 
 
-class JsonCatalogLocalizer(LocalizerPort):
+class JsonCatalogLocalizerAdapter(LocalizerPort):
     """A resolved string catalogue for one language, English-merged, with parameters."""
 
     def __init__(self, lang: str, catalog: dict[str, str]) -> None:
@@ -83,7 +83,7 @@ class JsonCatalogLocalizerFactory:
         code = env_lang.split(".")[0].split("_")[0].strip().lower()
         return code if code in SUPPORTED_LANGUAGES else default
 
-    def load(self, lang: str) -> JsonCatalogLocalizer:
+    def load(self, lang: str) -> JsonCatalogLocalizerAdapter:
         """Build a localiser for ``lang``, merged over the English base.
 
         Args:
@@ -94,7 +94,7 @@ class JsonCatalogLocalizerFactory:
         """
         base = self._read_catalog(DEFAULT_LANGUAGE)
         catalog = base if lang == DEFAULT_LANGUAGE else {**base, **self._read_catalog(lang)}
-        return JsonCatalogLocalizer(lang, catalog)
+        return JsonCatalogLocalizerAdapter(lang, catalog)
 
     def _read_catalog(self, lang: str) -> dict[str, str]:
         """Read ``resources/i18n/<lang>.json`` as a flat ``str -> str`` map (empty if absent)."""

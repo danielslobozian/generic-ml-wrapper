@@ -8,14 +8,16 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
-from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import ZipWorkflowArchive
+from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import (
+    ZipWorkflowArchiveAdapter,
+)
 from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
 
 _WHEN = datetime(2026, 7, 29, 15, 30, 12, tzinfo=UTC)
 
 
-def _archive(root: Path) -> ZipWorkflowArchive:
-    return ZipWorkflowArchive(root, lambda: _WHEN)
+def _archive(root: Path) -> ZipWorkflowArchiveAdapter:
+    return ZipWorkflowArchiveAdapter(root, lambda: _WHEN)
 
 
 def _a_workflow(folder: Path) -> Path:

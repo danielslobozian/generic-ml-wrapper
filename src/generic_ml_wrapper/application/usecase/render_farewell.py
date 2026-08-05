@@ -1,27 +1,27 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The RenderFarewell use case: say goodbye, if there is anyone to say it."""
+"""The RenderFarewellUseCase use case: say goodbye, if there is anyone to say it."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.render_farewell import RenderFarewell
+from generic_ml_wrapper.application.port.inbound.render_farewell import RenderFarewellUseCase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
     from generic_ml_wrapper.application.port.inbound.application_settings import (
-        ApplicationSettings,
+        ApplicationSettingsUseCase,
     )
     from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 
 
-class RenderFarewellUseCase(RenderFarewell):
+class RenderFarewellService(RenderFarewellUseCase):
     """Compose the parting line, falling back to the account name when none is set."""
 
     def __init__(
         self,
-        settings: ApplicationSettings,
+        settings: ApplicationSettingsUseCase,
         system: SystemInfoPort,
         localizer: Localizer,
     ) -> None:

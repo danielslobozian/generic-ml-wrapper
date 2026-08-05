@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.persona import Persona
 
 
-class ListPersonas(ABC):
+class ListPersonasUseCase(ABC):
     """List the personas a run can adopt."""
 
     @abstractmethod

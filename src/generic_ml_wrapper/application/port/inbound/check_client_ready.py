@@ -39,7 +39,7 @@ class ClientReadiness:
     catalogue_install_commands: tuple[tuple[str, str], ...] = ()
 
 
-class CheckClientReady(ABC):
+class CheckClientReadyUseCase(ABC):
     """Report whether a resolved client can launch before the wrapper tries."""
 
     @abstractmethod

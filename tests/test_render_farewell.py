@@ -8,12 +8,14 @@ from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
 from generic_ml_wrapper.application.domain.model.companion_settings import CompanionSettings
-from generic_ml_wrapper.application.port.inbound.application_settings import ApplicationSettings
+from generic_ml_wrapper.application.port.inbound.application_settings import (
+    ApplicationSettingsUseCase,
+)
 from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
-from generic_ml_wrapper.application.usecase.render_farewell import RenderFarewellUseCase
+from generic_ml_wrapper.application.usecase.render_farewell import RenderFarewellService
 
 
-class _Settings(ApplicationSettings):
+class _Settings(ApplicationSettingsUseCase):
     def __init__(self, persona: str | None, name: str | None) -> None:
         self._companion = CompanionSettings(persona=persona, name=name)
 
@@ -43,8 +45,8 @@ class _System(SystemInfoPort):
 
 def _use_case(
     persona: str | None, name: str | None, username: str = "ada"
-) -> RenderFarewellUseCase:
-    return RenderFarewellUseCase(
+) -> RenderFarewellService:
+    return RenderFarewellService(
         _Settings(persona, name), _System(username), JsonCatalogLocalizerFactory().load("en")
     )
 

@@ -26,7 +26,7 @@ class SetCredentialCommand:
     value: str | None = None
 
 
-class SetCredential(ABC):
+class SetCredentialUseCase(ABC):
     """Store a single workflow credential in the wrapper's own store."""
 
     @abstractmethod

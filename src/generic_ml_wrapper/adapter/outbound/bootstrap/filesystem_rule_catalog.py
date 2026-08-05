@@ -30,7 +30,7 @@ _SUFFIX = ".rule.md"
 _AXES = ((RuleAxis.ENVIRONMENT, AxisKind.ENVIRONMENT), (RuleAxis.ROLE, AxisKind.ROLE))
 
 
-class FilesystemRuleCatalog(RuleCatalogPort):
+class FilesystemRuleCatalogAdapter(RuleCatalogPort):
     """List the populated rule groups by walking each axis's slug-folders."""
 
     def __init__(self, home: Path, axes: AxisCatalogPort) -> None:

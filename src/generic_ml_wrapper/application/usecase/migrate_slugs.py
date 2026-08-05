@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The MigrateSlugs use case: rename legacy role/environment folders to clean slugs."""
+"""The MigrateSlugsUseCase use case: rename legacy role/environment folders to clean slugs."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
+from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.slug_migration_report import (
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.slug_migrator import SlugMigratorPort
 
 
-class MigrateSlugsUseCase(MigrateSlugs):
+class MigrateSlugsService(MigrateSlugsUseCase):
     """Run the slug migrator. Kept independent of init (runs after it, idempotently)."""
 
     def __init__(self, migrator: SlugMigratorPort) -> None:

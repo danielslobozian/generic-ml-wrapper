@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The NewWorkflow use case: author a workflow via the create-workflow interview."""
+"""The NewWorkflowUseCase use case: author a workflow via the create-workflow interview."""
 
 from __future__ import annotations
 
@@ -18,15 +18,15 @@ from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
-    NewWorkflow,
     NewWorkflowCommand,
     NewWorkflowResult,
+    NewWorkflowUseCase,
     NoSuchDraftError,
     WorkflowExistsError,
     WorkflowNameError,
     WorkflowOutcome,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
@@ -35,7 +35,7 @@ _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
 
 
-class NewWorkflowUseCase(NewWorkflow):
+class NewWorkflowService(NewWorkflowUseCase):
     """Author a workflow in a draft folder, then deploy it once the session names it.
 
     The name is decided at the end of the interview, not the start, so authoring runs
@@ -50,7 +50,7 @@ class NewWorkflowUseCase(NewWorkflow):
         self,
         workflows: WorkflowSourcePort,
         store: SessionStorePort,
-        callers: CliCallerProvider,
+        callers: CliCallerProviderPort,
         uuid_factory: Callable[[], str],
         launch: LaunchSequence,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),

@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.companion_settings import CompanionSettings
 
 
-class TomlRuntimeConfig(RuntimeConfigPort):
+class TomlRuntimeConfigAdapter(RuntimeConfigPort):
     """Read the run-shaping settings from the TOML config file, tolerantly.
 
     Every answer falls back to a sane default when the file is absent or malformed: a

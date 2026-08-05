@@ -1,15 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for ListLaunchClients: what a launch can actually be pointed at.
+"""Tests for ListLaunchClientsUseCase: what a launch can actually be pointed at.
 
 Two sources, two different rules. A built-in counts only when its binary is on ``PATH``.
 A ``[callers]`` entry counts unconditionally — gmlw has no idea what that caller needs,
 and configuring one is already the statement that it works.
 """
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
+    TomlClientCatalogAdapter,
+)
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
-from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsUseCase
+from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsService
 
 
 class FakeDetector(ClientDetectorPort):
@@ -24,12 +26,12 @@ def _use_case(
     available: list[str],
     default: str = "claude",
     callers: dict[str, str] | None = None,
-) -> ListLaunchClientsUseCase:
-    return ListLaunchClientsUseCase(
+) -> ListLaunchClientsService:
+    return ListLaunchClientsService(
         FakeDetector(available),
         lambda: default,
         lambda: dict(callers or {}),
-        TomlClientCatalog(),
+        TomlClientCatalogAdapter(),
     )
 
 
@@ -45,7 +47,7 @@ def test_nothing_installed_and_nothing_configured_offers_nothing() -> None:
 
 
 def test_installed_built_ins_keep_catalog_order() -> None:
-    order = [info.name for info in TomlClientCatalog().supported()]
+    order = [info.name for info in TomlClientCatalogAdapter().supported()]
     clients = _use_case(order[::-1]).execute()
 
     assert [c.name for c in clients] == order
@@ -122,6 +124,6 @@ def test_custom_names_are_sorted_so_the_list_is_stable() -> None:
 
 def test_the_display_name_comes_from_the_catalog() -> None:
     (only,) = _use_case(["claude"]).execute()
-    expected = next(i.display for i in TomlClientCatalog().supported() if i.name == "claude")
+    expected = next(i.display for i in TomlClientCatalogAdapter().supported() if i.name == "claude")
 
     assert only.display == expected

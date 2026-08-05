@@ -17,7 +17,7 @@ _MODULE = "generic_ml_wrapper._build_info"
 _ATTRIBUTE = "BUILD_ID"
 
 
-class ModuleBuildInfo(BuildInfoPort):
+class ModuleBuildInfoAdapter(BuildInfoPort):
     """Read the build stamp from the module the packaging step writes."""
 
     def build_id(self) -> str | None:

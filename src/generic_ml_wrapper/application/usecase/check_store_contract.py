@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The CheckStoreContract use case: the build and its migrations must agree."""
+"""The CheckStoreContractUseCase use case: the build and its migrations must agree."""
 
 from __future__ import annotations
 
@@ -9,14 +9,16 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.domain.model.store_contract_outdated_error import (
     StoreContractOutdatedError,
 )
-from generic_ml_wrapper.application.port.inbound.check_store_contract import CheckStoreContract
+from generic_ml_wrapper.application.port.inbound.check_store_contract import (
+    CheckStoreContractUseCase,
+)
 from generic_ml_wrapper.application.port.outbound.store_migration import CURRENT_SCHEMA_VERSION
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.store_migration import StoreMigrationPort
 
 
-class CheckStoreContractUseCase(CheckStoreContract):
+class CheckStoreContractService(CheckStoreContractUseCase):
     """Compare what this build requires against what its migrations can deliver."""
 
     def __init__(self, migration: StoreMigrationPort) -> None:

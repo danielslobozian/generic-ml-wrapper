@@ -1,19 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListPersonas use case: report the selectable personas."""
+"""The ListPersonasUseCase use case: report the selectable personas."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
+from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonasUseCase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.persona import Persona
     from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 
 
-class ListPersonasUseCase(ListPersonas):
+class ListPersonasService(ListPersonasUseCase):
     """Return the selectable personas from the persona source."""
 
     def __init__(self, personas: PersonaSourcePort) -> None:

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
 
 
-class ListRules(ABC):
+class ListRulesUseCase(ABC):
     """List the environments and roles that hold rules."""
 
     @abstractmethod

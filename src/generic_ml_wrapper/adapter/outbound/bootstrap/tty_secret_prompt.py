@@ -15,7 +15,7 @@ import sys
 from generic_ml_wrapper.application.port.outbound.secret_prompt import SecretPromptPort
 
 
-class TtySecretPrompt(SecretPromptPort):
+class TtySecretPromptAdapter(SecretPromptPort):
     """Read a secret from the terminal without echoing it, or from a pipe."""
 
     def ask_secret(self, label: str) -> str:

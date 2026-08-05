@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class RenderGreeting(ABC):
+class RenderGreetingUseCase(ABC):
     """Compose the wrapper's free, local host greeting for the selected persona."""
 
     @abstractmethod

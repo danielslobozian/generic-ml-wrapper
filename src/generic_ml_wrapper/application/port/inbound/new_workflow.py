@@ -83,7 +83,7 @@ class NoSuchDraftError(DomainError, ValueError):
     """Raised when a draft asked for by key does not exist, or none is resumable."""
 
 
-class NewWorkflow(ABC):
+class NewWorkflowUseCase(ABC):
     """Author a new workflow through the create-workflow interview."""
 
     @abstractmethod

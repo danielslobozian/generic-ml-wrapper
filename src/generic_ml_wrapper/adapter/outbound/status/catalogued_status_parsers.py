@@ -13,8 +13,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
-from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
+from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import (
+    ClaudeStatusParserAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import (
+    CursorStatusParserAdapter,
+)
 from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
 
 if TYPE_CHECKING:
@@ -27,7 +31,7 @@ if TYPE_CHECKING:
 _CURSOR = "cursor"
 
 
-class CataloguedStatusParsers(StatusParsersPort):
+class CataloguedStatusParsersAdapter(StatusParsersPort):
     """Hand out the parser a client's status payload needs."""
 
     def __init__(self, cursor_plan_cache: Path) -> None:
@@ -42,5 +46,5 @@ class CataloguedStatusParsers(StatusParsersPort):
     def for_client(self, client: str | None) -> ClientStatusParserPort:
         """Return the parser for ``client``, defaulting to Claude's."""
         if client == _CURSOR:
-            return CursorStatusParser(self._cursor_plan_cache)
-        return ClaudeStatusParser()
+            return CursorStatusParserAdapter(self._cursor_plan_cache)
+        return ClaudeStatusParserAdapter()

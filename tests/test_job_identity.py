@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.session import Session
 
@@ -37,8 +37,8 @@ def _session(job: str, number: int, cwd: str = "/work") -> Session:
     )
 
 
-def _store(tmp_path: Path) -> SqliteSessionStore:
-    return SqliteSessionStore(Ledger(tmp_path / "ledger.db"))
+def _store(tmp_path: Path) -> SqliteSessionStoreAdapter:
+    return SqliteSessionStoreAdapter(Ledger(tmp_path / "ledger.db"))
 
 
 def test_reusing_a_name_is_how_a_job_accumulates(tmp_path: Path) -> None:

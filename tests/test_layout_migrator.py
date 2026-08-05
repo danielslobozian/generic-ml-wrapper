@@ -5,7 +5,7 @@
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator import (
-    FilesystemLayoutMigrator,
+    FilesystemLayoutMigratorAdapter,
 )
 
 
@@ -16,7 +16,7 @@ def _company(home: Path) -> Path:
 
 
 def test_no_old_layout_is_a_noop(tmp_path: Path) -> None:
-    report = FilesystemLayoutMigrator(tmp_path).migrate("work")
+    report = FilesystemLayoutMigratorAdapter(tmp_path).migrate("work")
     assert not report.did_anything
     assert report.environment == "work"
 
@@ -26,7 +26,7 @@ def test_moves_company_into_the_environment(tmp_path: Path) -> None:
     (company / "stack.md").write_text("hexagonal", encoding="utf-8")
     (company / "policies.md").write_text("test first", encoding="utf-8")
 
-    report = FilesystemLayoutMigrator(tmp_path).migrate("work")
+    report = FilesystemLayoutMigratorAdapter(tmp_path).migrate("work")
 
     assert sorted(report.moved) == ["policies.md", "stack.md"]
     assert report.skipped == []
@@ -39,7 +39,7 @@ def test_moves_company_into_the_environment(tmp_path: Path) -> None:
 def test_migrates_into_the_active_environment_name(tmp_path: Path) -> None:
     company = _company(tmp_path)
     (company / "co.md").write_text("acme", encoding="utf-8")
-    report = FilesystemLayoutMigrator(tmp_path).migrate("acme-corp")
+    report = FilesystemLayoutMigratorAdapter(tmp_path).migrate("acme-corp")
     assert report.environment == "acme-corp"
     assert (tmp_path / "environments" / "acme-corp" / "co.md").read_text(encoding="utf-8") == "acme"
 
@@ -48,7 +48,7 @@ def test_moves_subdirectories_too(tmp_path: Path) -> None:
     company = _company(tmp_path)
     (company / "sub").mkdir()
     (company / "sub" / "deep.md").write_text("nested", encoding="utf-8")
-    report = FilesystemLayoutMigrator(tmp_path).migrate("work")
+    report = FilesystemLayoutMigratorAdapter(tmp_path).migrate("work")
     assert report.moved == ["sub"]
     assert (tmp_path / "environments" / "work" / "sub" / "deep.md").read_text(
         encoding="utf-8"
@@ -63,7 +63,7 @@ def test_never_overwrites_a_colliding_target_entry(tmp_path: Path) -> None:
     target.mkdir(parents=True)
     (target / "stack.md").write_text("KEEP from env", encoding="utf-8")
 
-    report = FilesystemLayoutMigrator(tmp_path).migrate("work")
+    report = FilesystemLayoutMigratorAdapter(tmp_path).migrate("work")
 
     assert report.moved == ["fresh.md"]
     assert report.skipped == ["stack.md"]
@@ -77,7 +77,7 @@ def test_never_overwrites_a_colliding_target_entry(tmp_path: Path) -> None:
 def test_is_idempotent_across_runs(tmp_path: Path) -> None:
     company = _company(tmp_path)
     (company / "co.md").write_text("acme", encoding="utf-8")
-    migrator = FilesystemLayoutMigrator(tmp_path)
+    migrator = FilesystemLayoutMigratorAdapter(tmp_path)
     first = migrator.migrate("work")
     second = migrator.migrate("work")
     assert first.moved == ["co.md"]

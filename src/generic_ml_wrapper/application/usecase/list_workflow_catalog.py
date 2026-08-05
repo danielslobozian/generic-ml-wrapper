@@ -1,19 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListWorkflowCatalog use case: workflows with their labels and descriptions."""
+"""The ListWorkflowCatalogUseCase use case: workflows with their labels and descriptions."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import ListWorkflowCatalog
+from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import (
+    ListWorkflowCatalogUseCase,
+)
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.workflow import Workflow
     from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 
 
-class ListWorkflowCatalogUseCase(ListWorkflowCatalog):
+class ListWorkflowCatalogService(ListWorkflowCatalogUseCase):
     """List the described workflows from the workflow source."""
 
     def __init__(self, workflows: WorkflowSourcePort) -> None:

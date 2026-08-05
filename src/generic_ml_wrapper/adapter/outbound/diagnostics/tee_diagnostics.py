@@ -7,7 +7,7 @@ from __future__ import annotations
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
 
-class TeeDiagnostics(DiagnosticsPort):
+class TeeDiagnosticsAdapter(DiagnosticsPort):
     """Emit each record to every wrapped sink, in order.
 
     This is what lets "write it to the file *and* show it to me" stay a wiring decision:

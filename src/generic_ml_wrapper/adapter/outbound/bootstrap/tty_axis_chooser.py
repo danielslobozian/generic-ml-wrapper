@@ -28,7 +28,7 @@ if TYPE_CHECKING:
 _TYPE_YOUR_OWN = "\x00type-your-own"
 
 
-class TtyAxisChooser(AxisChooserPort):
+class TtyAxisChooserAdapter(AxisChooserPort):
     """Guide the role/environment choice at an interactive terminal."""
 
     def __init__(self, i18n: Localizer) -> None:

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the SaveUsageReport use case and the filesystem report exporter."""
+"""Tests for the SaveUsageReportUseCase use case and the filesystem report exporter."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
-    FilesystemReportExporter,
+    FilesystemReportExporterAdapter,
 )
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ModelTotal,
     UsageReport,
 )
-from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
+from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
 
 
 class _FakeExport:
@@ -53,7 +53,7 @@ def _report() -> UsageReport:
 def test_save_usage_report_serialises_json_and_returns_the_written_path() -> None:
     exporter = _RecordingExporter(Path("/exports/alpha-x.json"))
     export = _FakeExport(_report())
-    use_case = SaveUsageReportUseCase(export=export, exporter=exporter)  # type: ignore[arg-type]
+    use_case = SaveUsageReportService(export=export, exporter=exporter)  # type: ignore[arg-type]
 
     result = use_case.execute("alpha")
 
@@ -69,7 +69,7 @@ def test_save_usage_report_serialises_json_and_returns_the_written_path() -> Non
 def test_filesystem_report_exporter_writes_a_timestamped_file(tmp_path: Path) -> None:
     root = tmp_path / "exports"  # deliberately absent — the exporter must create it
     clock = lambda: datetime(2026, 7, 24, 10, 15, 0, tzinfo=UTC)  # noqa: E731 (fixed test clock)
-    exporter = FilesystemReportExporter(root, clock=clock)
+    exporter = FilesystemReportExporterAdapter(root, clock=clock)
 
     path = exporter.write("alpha", '{"job": "alpha"}')
 

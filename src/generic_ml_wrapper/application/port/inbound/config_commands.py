@@ -46,7 +46,7 @@ class SetOutcome:
     changed: bool
 
 
-class ConfigCommands(ABC):
+class ConfigCommandsUseCase(ABC):
     """View and change the settable scalar settings, validated against the registry."""
 
     @abstractmethod

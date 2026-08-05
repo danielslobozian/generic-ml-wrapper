@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The RenderVersion use case: name this build in one line."""
+"""The RenderVersionUseCase use case: name this build in one line."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper import __version__
-from generic_ml_wrapper.application.port.inbound.render_version import RenderVersion
+from generic_ml_wrapper.application.port.inbound.render_version import RenderVersionUseCase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.build_info import BuildInfoPort
@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 _UNBUILT = "source, unbuilt"
 
 
-class RenderVersionUseCase(RenderVersion):
+class RenderVersionService(RenderVersionUseCase):
     """Compose the version line from the running version and the build stamp."""
 
     def __init__(self, build_info: BuildInfoPort) -> None:

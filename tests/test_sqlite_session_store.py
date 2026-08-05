@@ -7,15 +7,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
 from generic_ml_wrapper.application.domain.model.session import Session
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _store(tmp_path: Path) -> SqliteSessionStore:
-    return SqliteSessionStore(Ledger(tmp_path / "ledger.db"))
+def _store(tmp_path: Path) -> SqliteSessionStoreAdapter:
+    return SqliteSessionStoreAdapter(Ledger(tmp_path / "ledger.db"))
 
 
 def test_unknown_job_is_empty(tmp_path: Path) -> None:
@@ -54,8 +54,8 @@ def test_jobs_lists_recorded_jobs_sorted(tmp_path: Path) -> None:
 def test_two_stores_on_one_ledger_see_the_same_jobs(tmp_path: Path) -> None:
     # The store carries no scope of its own: two instances over one ledger are one view.
     ledger = Ledger(tmp_path / "ledger.db")
-    one = SqliteSessionStore(ledger)
-    another = SqliteSessionStore(ledger)
+    one = SqliteSessionStoreAdapter(ledger)
+    another = SqliteSessionStoreAdapter(ledger)
 
     another.record(Session("doc-review_001", "doc-review", "claude", None))
     one.record(Session("JOB-1_001", "JOB-1", "claude", None))

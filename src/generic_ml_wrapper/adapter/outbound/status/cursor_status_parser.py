@@ -23,7 +23,7 @@ def _dig(payload: object, *keys: str) -> object:
     return current
 
 
-class CursorStatusParser(ClientStatusParserPort):
+class CursorStatusParserAdapter(ClientStatusParserPort):
     """Read model and context fill from cursor-agent's status payload.
 
     cursor-agent pipes a Claude-Code-compatible payload, so ``model.display_name``

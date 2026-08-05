@@ -11,14 +11,14 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.workflow import Workflow
 
 
-class ListWorkflowCatalog(ABC):
+class ListWorkflowCatalogUseCase(ABC):
     """List the runnable workflows with their labels and descriptions."""
 
     @abstractmethod
     def execute(self) -> list[Workflow]:
         """List the workflows, sorted by slug.
 
-        The richer counterpart to ``ListWorkflows``, which returns bare slugs for the
+        The richer counterpart to ``ListWorkflowsUseCase``, which returns bare slugs for the
         pickers that only need something to launch.
 
         Returns:

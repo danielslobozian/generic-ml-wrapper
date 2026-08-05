@@ -1,10 +1,10 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ListPersonas use case, driven by a fake source."""
+"""Tests for the ListPersonasUseCase use case, driven by a fake source."""
 
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
-from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
+from generic_ml_wrapper.application.usecase.list_personas import ListPersonasService
 
 
 class _FakePersonas(PersonaSourcePort):
@@ -26,4 +26,4 @@ class _FakePersonas(PersonaSourcePort):
 
 def test_lists_the_source_personas() -> None:
     personas = [Persona("plain", "Neutral.", "", "body")]
-    assert ListPersonasUseCase(_FakePersonas(personas)).execute() == personas
+    assert ListPersonasService(_FakePersonas(personas)).execute() == personas

@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 
 
-class SqliteSessionStore(SessionStorePort):
+class SqliteSessionStoreAdapter(SessionStorePort):
     """Persist and read sessions in the ledger."""
 
     def __init__(self, ledger: Ledger) -> None:

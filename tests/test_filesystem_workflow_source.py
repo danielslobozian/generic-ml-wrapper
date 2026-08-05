@@ -7,7 +7,7 @@ from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
-    FilesystemWorkflowSource,
+    FilesystemWorkflowSourceAdapter,
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import DraftMarker
@@ -20,7 +20,7 @@ from generic_ml_wrapper.application.port.outbound.persona_source import PersonaS
 
 
 def test_seed_copies_packaged_defaults(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path)
+    source = FilesystemWorkflowSourceAdapter(tmp_path)
     source.seed()
     assert (tmp_path / "create-workflow" / "workflow.md").is_file()
     assert (tmp_path / "_common" / "base.md").is_file()
@@ -29,12 +29,12 @@ def test_seed_copies_packaged_defaults(tmp_path: Path) -> None:
 def test_seed_never_overwrites_user_edits(tmp_path: Path) -> None:
     (tmp_path / "_common").mkdir(parents=True)
     (tmp_path / "_common" / "base.md").write_text("MINE", encoding="utf-8")
-    FilesystemWorkflowSource(tmp_path).seed()
+    FilesystemWorkflowSourceAdapter(tmp_path).seed()
     assert (tmp_path / "_common" / "base.md").read_text(encoding="utf-8") == "MINE"
 
 
 def test_find_and_create(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path)
+    source = FilesystemWorkflowSourceAdapter(tmp_path)
     assert source.find("doc-review") is None
     folder = source.create("doc-review")
     assert Path(folder) == tmp_path / "doc-review"
@@ -46,7 +46,7 @@ def test_find_and_create(tmp_path: Path) -> None:
 
 
 def test_create_draft_makes_a_sibling_folder_outside_workflows(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     draft = source.create_draft("create-workflow_001")
     assert Path(draft) == tmp_path / "drafts" / "create-workflow_001"  # a sibling of workflows/
     assert Path(draft).is_dir()
@@ -54,7 +54,7 @@ def test_create_draft_makes_a_sibling_folder_outside_workflows(tmp_path: Path) -
 
 
 def test_read_draft_marker_parses_a_finished_marker(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     draft = Path(source.create_draft("create-workflow_001"))
     (draft / "meta.json").write_text('{"name": "nightly-etl", "status": "finished"}', "utf-8")
     marker = source.read_draft_marker(str(draft))
@@ -62,7 +62,7 @@ def test_read_draft_marker_parses_a_finished_marker(tmp_path: Path) -> None:
 
 
 def test_read_draft_marker_tolerates_absent_or_malformed(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     draft = Path(source.create_draft("create-workflow_001"))
     assert source.read_draft_marker(str(draft)) == DraftMarker(None, finished=False)  # no file
     (draft / "meta.json").write_text("not json", encoding="utf-8")
@@ -75,7 +75,7 @@ def test_read_draft_marker_tolerates_absent_or_malformed(tmp_path: Path) -> None
 
 def test_deploy_draft_moves_the_draft_and_drops_the_marker(tmp_path: Path) -> None:
     workflows = tmp_path / "workflows"
-    source = FilesystemWorkflowSource(workflows)
+    source = FilesystemWorkflowSourceAdapter(workflows)
     draft = Path(source.create_draft("create-workflow_001"))
     (draft / "workflow.md").write_text("# nightly-etl", encoding="utf-8")
     (draft / "meta.json").write_text(
@@ -102,7 +102,7 @@ def _add_workflow(root: Path, name: str) -> None:
 
 
 def test_names_lists_runnable_workflows_sorted(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path)
+    source = FilesystemWorkflowSourceAdapter(tmp_path)
     assert source.names() == []
     _add_workflow(tmp_path, "release")
     _add_workflow(tmp_path, "doc-review")
@@ -110,7 +110,7 @@ def test_names_lists_runnable_workflows_sorted(tmp_path: Path) -> None:
 
 
 def test_names_hides_base_meta_and_folders_without_workflow_md(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path)
+    source = FilesystemWorkflowSourceAdapter(tmp_path)
     source.seed()  # brings in _common and create-workflow
     _add_workflow(tmp_path, "doc-review")
     (tmp_path / "half-made").mkdir()  # no workflow.md yet
@@ -118,7 +118,7 @@ def test_names_hides_base_meta_and_folders_without_workflow_md(tmp_path: Path) -
 
 
 def test_compile_joins_base_and_steps(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path)
+    source = FilesystemWorkflowSourceAdapter(tmp_path)
     source.seed()
     (tmp_path / "doc-review").mkdir()
     (tmp_path / "doc-review" / "workflow.md").write_text("# doc-review steps", encoding="utf-8")
@@ -147,7 +147,7 @@ def test_compile_includes_profile_and_rules_in_order(tmp_path: Path) -> None:
     )
     _add_workflow(workflows, "doc-review")
 
-    source = FilesystemWorkflowSource(workflows, profile, environments_root=environments)
+    source = FilesystemWorkflowSourceAdapter(workflows, profile, environments_root=environments)
     compiled = source.compile(CompileMode.WORKFLOW, "doc-review")
 
     assert "I work in French." in compiled
@@ -171,9 +171,9 @@ def test_compile_skips_draft_rules(tmp_path: Path) -> None:
         "---\nname: d\nstatus: draft\n---\n\n**Rule:** not yet.", encoding="utf-8"
     )
     _add_workflow(workflows, "doc-review")
-    compiled = FilesystemWorkflowSource(workflows, None, environments_root=environments).compile(
-        CompileMode.WORKFLOW, "doc-review"
-    )
+    compiled = FilesystemWorkflowSourceAdapter(
+        workflows, None, environments_root=environments
+    ).compile(CompileMode.WORKFLOW, "doc-review")
     assert "not yet" not in compiled
 
 
@@ -190,9 +190,9 @@ def test_default_mode_composes_profile_and_rules_not_the_workflow(tmp_path: Path
     (workflows / "_common").mkdir(parents=True)
     (workflows / "_common" / "base.md").write_text("How to run a workflow", encoding="utf-8")
 
-    compiled = FilesystemWorkflowSource(workflows, profile, environments_root=environments).compile(
-        CompileMode.DEFAULT
-    )
+    compiled = FilesystemWorkflowSourceAdapter(
+        workflows, profile, environments_root=environments
+    ).compile(CompileMode.DEFAULT)
 
     assert "I like short answers." in compiled  # me.user, on by default
     assert "ACME Corp." in compiled  # company, on by default
@@ -225,7 +225,7 @@ def test_active_role_scopes_rules_and_learned_into_the_context(tmp_path: Path) -
     (env_rules / "g.rule.md").write_text("**Rule:** lint with the house config.", "utf-8")
     _write_role_content(profile, "engineer")
 
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", profile, environments_root=environments, default_role=lambda: "engineer"
     ).compile(CompileMode.DEFAULT)
 
@@ -244,7 +244,7 @@ def test_inactive_role_content_is_not_composed(tmp_path: Path) -> None:
     _write_role_content(profile, "qa")  # content exists under roles/qa/ ...
 
     # ... but the active role is "default", so none of qa's scoped content is pulled in.
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", profile, default_role=lambda: "default"
     ).compile(CompileMode.DEFAULT)
 
@@ -259,7 +259,7 @@ def test_role_rules_skip_drafts_like_global_rules(tmp_path: Path) -> None:
     (role_rules / "draft.rule.md").write_text(
         "---\nname: d\nstatus: draft\n---\n\n**Rule:** not yet.", encoding="utf-8"
     )
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", profile, default_role=lambda: "engineer"
     ).compile(CompileMode.DEFAULT)
     assert "not yet" not in compiled  # a draft role rule is not injected
@@ -271,7 +271,7 @@ def test_rule_capture_directive_is_present_with_no_rules_yet(tmp_path: Path) -> 
     workflows = tmp_path / "workflows"
     rules = tmp_path / "rules"
     rules.mkdir()
-    compiled = FilesystemWorkflowSource(workflows, None, rules).compile(CompileMode.DEFAULT)
+    compiled = FilesystemWorkflowSourceAdapter(workflows, None, rules).compile(CompileMode.DEFAULT)
     assert "Rules — the user's demanded reflexes" in compiled
 
 
@@ -289,7 +289,7 @@ def test_rule_capture_directive_is_absent_when_rules_deactivated(tmp_path: Path)
         settings["rules.role"] = off
         return settings
 
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", None, environments_root=environments, startup=_off
     ).compile(CompileMode.DEFAULT)
     assert "Rules — the user's demanded reflexes" not in compiled
@@ -302,7 +302,9 @@ def test_learned_notebook_injects_the_capture_directive_and_notes(tmp_path: Path
     (profile / "me" / "learned.md").write_text(
         "## What follows you\n\n- Prefers tests first.\n", encoding="utf-8"
     )
-    compiled = FilesystemWorkflowSource(tmp_path / "wf", profile).compile(CompileMode.DEFAULT)
+    compiled = FilesystemWorkflowSourceAdapter(tmp_path / "wf", profile).compile(
+        CompileMode.DEFAULT
+    )
     assert "~/.gmlw/profile/me/learned.md" in compiled  # the directive names the notebook
     assert "as valuable as the positives" in compiled  # negatives-first-class directive
     assert "Prefers tests first." in compiled  # the user's own note
@@ -313,7 +315,7 @@ def test_learned_section_is_invisible_without_a_notebook(tmp_path: Path) -> None
     environments = tmp_path / "environments"
     (environments / "work").mkdir(parents=True)
     (environments / "work" / "co.md").write_text("ACME.", encoding="utf-8")
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", profile, environments_root=environments
     ).compile(CompileMode.DEFAULT)
     assert "learned.md" not in compiled  # no notebook -> no directive
@@ -328,7 +330,9 @@ def test_me_user_excludes_learned_which_me_learned_reads(tmp_path: Path) -> None
     (profile / "me" / "learned").mkdir()
     (profile / "me" / "learned" / "pref.md").write_text("LEARNED DIR FACT", encoding="utf-8")
 
-    compiled = FilesystemWorkflowSource(tmp_path / "wf", profile).compile(CompileMode.DEFAULT)
+    compiled = FilesystemWorkflowSourceAdapter(tmp_path / "wf", profile).compile(
+        CompileMode.DEFAULT
+    )
 
     assert "USER FACT" in compiled
     assert "LEARNED DIR FACT" in compiled  # me.learned reads the learned/ folder too
@@ -367,7 +371,7 @@ def _persona_on(mode: str) -> dict[str, config.SourceSetting]:
 
 def test_selected_persona_is_composed_with_the_floor_when_active(tmp_path: Path) -> None:
     personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
-    source = FilesystemWorkflowSource(
+    source = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", personas=personas, startup=_persona_on, companion=lambda: "butler"
     )
     compiled = source.compile(CompileMode.DEFAULT)
@@ -377,7 +381,7 @@ def test_selected_persona_is_composed_with_the_floor_when_active(tmp_path: Path)
 
 def test_persona_is_invisible_when_none_selected(tmp_path: Path) -> None:
     personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
-    source = FilesystemWorkflowSource(
+    source = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", personas=personas, startup=_persona_on, companion=lambda: None
     )
     compiled = source.compile(CompileMode.DEFAULT)
@@ -387,7 +391,7 @@ def test_persona_is_invisible_when_none_selected(tmp_path: Path) -> None:
 
 def test_unknown_persona_selection_is_invisible(tmp_path: Path) -> None:
     personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
-    source = FilesystemWorkflowSource(
+    source = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", personas=personas, startup=_persona_on, companion=lambda: "ghost"
     )
     # An unknown persona composes nothing; the session snapshot is always present, so the
@@ -397,7 +401,7 @@ def test_unknown_persona_selection_is_invisible(tmp_path: Path) -> None:
 
 def test_persona_off_by_default_even_when_selected(tmp_path: Path) -> None:
     personas = _FakePersonas({"butler": Persona("butler", "d", "g", "BUTLER TONE")})
-    source = FilesystemWorkflowSource(
+    source = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf", personas=personas, companion=lambda: "butler"
     )  # default matrix has persona activated = False
     assert "BUTLER TONE" not in source.compile(CompileMode.DEFAULT)
@@ -427,7 +431,7 @@ def test_typed_compression_applies_per_source_only_when_flagged(tmp_path: Path) 
         settings["company"] = config.SourceSetting(activated=True, compression=False)
         return settings
 
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf",
         profile,
         compressor=compressor,
@@ -450,7 +454,7 @@ def test_config_can_deactivate_a_source(tmp_path: Path) -> None:
         settings["company"] = config.SourceSetting(activated=False, compression=False)
         return settings
 
-    source = FilesystemWorkflowSource(tmp_path / "wf", profile, startup=startup)
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "wf", profile, startup=startup)
     assert "CO" not in source.compile(CompileMode.DEFAULT)
 
 
@@ -471,7 +475,7 @@ def test_compile_runs_interceptors_per_target(tmp_path: Path) -> None:
     _add_workflow(workflows, "doc-review")
     chain = InterceptorChain([("rules", _Marker("RULES")), ("context", _Marker("CTX"))])
 
-    compiled = FilesystemWorkflowSource(
+    compiled = FilesystemWorkflowSourceAdapter(
         workflows, None, interceptors=chain, environments_root=environments
     ).compile(CompileMode.WORKFLOW, "doc-review")
 
@@ -483,7 +487,7 @@ def test_compile_runs_interceptors_per_target(tmp_path: Path) -> None:
 
 def test_compiled_context_opens_with_the_session_snapshot(tmp_path: Path) -> None:
     """The snapshot leads, carrying the live selections and the job it was compiled for."""
-    source = FilesystemWorkflowSource(
+    source = FilesystemWorkflowSourceAdapter(
         tmp_path / "wf",
         default_environment=lambda: "work",
         default_role=lambda: "software-engineer",
@@ -507,7 +511,7 @@ def test_compiled_context_opens_with_the_session_snapshot(tmp_path: Path) -> Non
 
 def test_snapshot_renders_unset_selections_as_empty(tmp_path: Path) -> None:
     """An unwired source still emits the block, so the shape never varies."""
-    compiled = FilesystemWorkflowSource(tmp_path / "wf").compile(CompileMode.DEFAULT)
+    compiled = FilesystemWorkflowSourceAdapter(tmp_path / "wf").compile(CompileMode.DEFAULT)
     payload = json.loads(compiled.split("```json\n", 1)[1].split("\n```", 1)[0])
     assert payload["ai_persona"] == ""
     assert payload["job_name"] == ""
@@ -516,7 +520,7 @@ def test_snapshot_renders_unset_selections_as_empty(tmp_path: Path) -> None:
 
 # ── the label/description sidecar ──
 def test_deploying_records_the_label_and_description_beside_the_slug(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     draft = Path(source.create_draft("create-workflow_001"))
     (draft / "workflow.md").write_text("# steps", encoding="utf-8")
     source.deploy_draft(
@@ -534,7 +538,7 @@ def test_a_workflow_without_a_sidecar_reports_its_slug_as_its_label(tmp_path: Pa
     root = tmp_path / "workflows"
     (root / "legacy").mkdir(parents=True)
     (root / "legacy" / "workflow.md").write_text("# steps", encoding="utf-8")
-    assert FilesystemWorkflowSource(root).catalog() == [
+    assert FilesystemWorkflowSourceAdapter(root).catalog() == [
         Workflow(slug="legacy", label="legacy", description="")
     ]
 
@@ -544,13 +548,13 @@ def test_a_malformed_sidecar_degrades_to_the_slug(tmp_path: Path) -> None:
     (root / "broken").mkdir(parents=True)
     (root / "broken" / "workflow.md").write_text("# steps", encoding="utf-8")
     (root / "broken" / ".about.toml").write_text("not = [valid", encoding="utf-8")
-    assert FilesystemWorkflowSource(root).catalog() == [
+    assert FilesystemWorkflowSourceAdapter(root).catalog() == [
         Workflow(slug="broken", label="broken", description="")
     ]
 
 
 def test_the_marker_carries_the_label_and_description(tmp_path: Path) -> None:
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     draft = Path(source.create_draft("create-workflow_001"))
     (draft / "meta.json").write_text(
         '{"label": "Nightly ETL", "description": "Overnight.", "status": "finished"}',
@@ -564,7 +568,7 @@ def test_the_marker_carries_the_label_and_description(tmp_path: Path) -> None:
 
 def test_an_older_marker_with_only_a_name_still_parses(tmp_path: Path) -> None:
     # Interviews written before labels existed wrote a bare kebab-case name.
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     draft = Path(source.create_draft("create-workflow_001"))
     (draft / "meta.json").write_text('{"name": "nightly-etl", "status": "finished"}', "utf-8")
     marker = source.read_draft_marker(str(draft))
@@ -582,7 +586,7 @@ def test_find_returns_the_workflow_with_the_words_behind_its_slug(tmp_path: Path
         'label = "Nightly ETL"\ndescription = "Loads yesterday."\n', encoding="utf-8"
     )
 
-    found = FilesystemWorkflowSource(tmp_path).find("nightly-etl")
+    found = FilesystemWorkflowSourceAdapter(tmp_path).find("nightly-etl")
 
     assert found is not None
     assert (found.slug, found.label, found.description) == (
@@ -595,7 +599,7 @@ def test_find_returns_the_workflow_with_the_words_behind_its_slug(tmp_path: Path
 def test_a_folder_with_no_steps_file_is_not_a_workflow(tmp_path: Path) -> None:
     (tmp_path / "half-made").mkdir(parents=True)
 
-    assert FilesystemWorkflowSource(tmp_path).find("half-made") is None
+    assert FilesystemWorkflowSourceAdapter(tmp_path).find("half-made") is None
 
 
 def test_the_shared_base_and_the_meta_workflow_are_never_found(tmp_path: Path) -> None:
@@ -604,7 +608,7 @@ def test_the_shared_base_and_the_meta_workflow_are_never_found(tmp_path: Path) -
     Otherwise a caller could be handed one of them as if it were a workflow of the user's
     own — which is what let ``--workflow create-workflow`` be accepted before.
     """
-    source = FilesystemWorkflowSource(tmp_path)
+    source = FilesystemWorkflowSourceAdapter(tmp_path)
     source.seed()
 
     assert source.find("_common") is None

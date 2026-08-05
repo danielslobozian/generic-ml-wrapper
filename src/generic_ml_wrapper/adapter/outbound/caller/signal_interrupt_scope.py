@@ -23,7 +23,7 @@ def _ignore(_signum: int, _frame: object) -> None:
     """Absorb the interrupt: the client is handling it."""
 
 
-class SignalInterruptScope(InterruptScopePort):
+class SignalInterruptScopeAdapter(InterruptScopePort):
     """Hand the interrupt to the client by ignoring it here, and restore it afterwards."""
 
     @contextmanager

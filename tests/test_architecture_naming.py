@@ -12,6 +12,13 @@ type. A public module-level function is behaviour with no owner: it cannot be
 substituted, it accretes parameters instead of state, and it is invisible to every
 naming convention the project has.
 
+`test_every_port_and_its_implementation_is_named_for_its_role` — the four roles in the
+hexagon are visible in the class name or they are not visible at all. An inbound port is
+the ``UseCase`` interface a driver calls; the class implementing it is the ``Service``. An
+outbound port is the ``Port`` the application depends on; the class implementing it is the
+``Adapter``. This is the convention the wider ports-and-adapters practice settled on, and
+the sibling cache project already follows it.
+
 `test_one_concept_per_module` — a module defines one thing. It may define exactly one
 public class, or a family whose members all derive from a base declared in the same
 module (an error hierarchy), or several types when one of them is what the file is
@@ -26,6 +33,7 @@ from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 _RINGS = ("application/domain", "application/port")
@@ -63,10 +71,18 @@ def _is_family(classes: list[ast.ClassDef]) -> bool:
 
 
 def _names_the_module(classes: list[ast.ClassDef], stem: str) -> bool:
-    """Whether one class is what the file is named after, ignoring a role suffix."""
+    """Whether one class is what the file is named after, ignoring its role suffix.
+
+    The roles are ``Port`` and ``Adapter`` on the outbound side, and ``UseCase`` and
+    ``Service`` on the inbound one -- the interface a driver calls, and the class that
+    implements it.
+    """
     for node in classes:
         snake = _snake(node.name)
-        if snake == stem or snake.removesuffix("_port").removesuffix("_adapter") == stem:
+        stripped = snake
+        for suffix in ("_port", "_adapter", "_use_case", "_service"):
+            stripped = stripped.removesuffix(suffix)
+        if stem in (snake, stripped):
             return True
     return False
 
@@ -101,3 +117,67 @@ def test_one_concept_per_module() -> None:
             continue
         offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(c.name for c in classes)}")
     assert not offenders, "unrelated types sharing a module:\n" + "\n".join(offenders)
+
+
+def _abstract(node: ast.ClassDef) -> bool:
+    """Whether a class declares itself an interface rather than an implementation."""
+    return any(ast.unparse(base) == "ABC" for base in node.bases)
+
+
+def _implements_a_port(node: ast.ClassDef, siblings: dict[str, list[str]]) -> bool:
+    """Whether a class implements an outbound port, directly or through a local base."""
+    bases = [ast.unparse(base) for base in node.bases]
+    return any(base.endswith("Port") for base in bases) or any(
+        any(inherited.endswith("Port") for inherited in siblings.get(base, ())) for base in bases
+    )
+
+
+def _is_interface(node: ast.ClassDef, _siblings: dict[str, list[str]]) -> bool:
+    """Whether the class declares itself an interface rather than an implementation."""
+    return _abstract(node)
+
+
+def _implements_a_use_case(node: ast.ClassDef, _siblings: dict[str, list[str]]) -> bool:
+    """Whether the class implements an inbound port."""
+    return any(ast.unparse(base).endswith("UseCase") for base in node.bases)
+
+
+def _misnamed(
+    ring: str, wanted: str, qualifies: Callable[[ast.ClassDef, dict[str, list[str]]], bool]
+) -> list[str]:
+    """Every class in ``ring`` that ``qualifies`` for a role but does not carry its suffix."""
+    offenders: list[str] = []
+    for path in sorted((_SOURCE / ring).rglob("*.py")):
+        if path.name == "__init__.py":
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        siblings = {
+            node.name: [ast.unparse(base) for base in node.bases]
+            for node in tree.body
+            if isinstance(node, ast.ClassDef)
+        }
+        offenders += [
+            f"{path.relative_to(_SOURCE)}: {node.name} is not a {wanted}"
+            for node in _public_classes(tree)
+            if qualifies(node, siblings) and not node.name.endswith(wanted.lstrip("*"))
+        ]
+    return offenders
+
+
+def test_every_port_and_its_implementation_is_named_for_its_role() -> None:
+    """The four roles are legible from the class name alone.
+
+    Without this the direction of a dependency can only be learned by opening the file and
+    reading what it inherits -- which is exactly the knowledge a naming convention exists
+    to spare a reader. The check is on the *role*, never on the concept: whether a port is
+    about workflows or sessions is nobody's business but the author's.
+    """
+    offenders = (
+        _misnamed("application/port/inbound", "*UseCase", _is_interface)
+        + _misnamed("application/port/outbound", "*Port", _is_interface)
+        + _misnamed("application/usecase", "*Service", _implements_a_use_case)
+        + _misnamed("adapter/outbound", "*Adapter", _implements_a_port)
+    )
+    assert not offenders, "a port or its implementation is not named for its role:\n" + "\n".join(
+        offenders
+    )

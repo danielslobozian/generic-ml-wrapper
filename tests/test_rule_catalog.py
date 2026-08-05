@@ -7,16 +7,16 @@ from __future__ import annotations
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
-    FilesystemAxisCatalog,
+    FilesystemAxisCatalogAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_catalog import (
-    FilesystemRuleCatalog,
+    FilesystemRuleCatalogAdapter,
 )
 from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
 
 
-def _catalog(home: Path) -> FilesystemRuleCatalog:
-    return FilesystemRuleCatalog(home, FilesystemAxisCatalog(home))
+def _catalog(home: Path) -> FilesystemRuleCatalogAdapter:
+    return FilesystemRuleCatalogAdapter(home, FilesystemAxisCatalogAdapter(home))
 
 
 def _write_rule(folder: Path, slug: str, body: str) -> None:

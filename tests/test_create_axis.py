@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the CreateAxis use case (fake catalog + fake config writer)."""
+"""Tests for the CreateAxisUseCase use case (fake catalog + fake config writer)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from generic_ml_wrapper.application.port.inbound.create_axis import (
 )
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.config_writer import ConfigWriterPort
-from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
+from generic_ml_wrapper.application.usecase.create_axis import CreateAxisService
 
 _CONFIG = Path("/scratch/config.toml")
 _WHEN = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
@@ -55,8 +55,8 @@ class _FakeWriter(ConfigWriterPort):
         return ()
 
 
-def _use_case(catalog: _FakeCatalog, writer: _FakeWriter) -> CreateAxisUseCase:
-    return CreateAxisUseCase(
+def _use_case(catalog: _FakeCatalog, writer: _FakeWriter) -> CreateAxisService:
+    return CreateAxisService(
         catalog=catalog, writer=writer, config_file=lambda: _CONFIG, clock=lambda: _WHEN
     )
 

@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 _LOCKS_DIRNAME = "locks"
 
 
-class FilesystemSessionLock(SessionLockPort):
+class FilesystemSessionLockAdapter(SessionLockPort):
     """Session and job locks over ``<home>/locks/*.lock``, held by the operating system."""
 
     def __init__(self, home: Path) -> None:

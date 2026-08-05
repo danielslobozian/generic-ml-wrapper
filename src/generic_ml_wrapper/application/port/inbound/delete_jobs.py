@@ -40,7 +40,7 @@ class JobFootprint:
     removed: bool = True
 
 
-class DeleteJobs(ABC):
+class DeleteJobsUseCase(ABC):
     """Remove whole jobs: their sessions, their usage, and their files."""
 
     @abstractmethod

@@ -10,7 +10,7 @@ It must **not** be wired for a run that hands the terminal to a client: there, `
 is the client's own screen, so a line written here is painted over by the client's next
 redraw — visible long enough to alarm, never long enough to copy, and preserved nowhere.
 That failure is issue #59, and the reason
-:class:`~generic_ml_wrapper.adapter.outbound.diagnostics.rolling_file_diagnostics.RollingFileDiagnostics`
+:class:`~generic_ml_wrapper.adapter.outbound.diagnostics.rolling_file_diagnostics.RollingFileDiagnosticsAdapter`
 exists.
 """
 
@@ -25,7 +25,7 @@ from generic_ml_wrapper.adapter.outbound.diagnostics.scrub import scrub_record, 
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
 
-class StderrDiagnostics(DiagnosticsPort):
+class StderrDiagnosticsAdapter(DiagnosticsPort):
     """Write single-line diagnostics to ``stderr``."""
 
     def __init__(self, level: str | None = None, stream: IO[str] | None = None) -> None:

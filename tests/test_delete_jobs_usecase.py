@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the DeleteJobs use case, driven by in-memory doubles."""
+"""Tests for the DeleteJobsUseCase use case, driven by in-memory doubles."""
 
 import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
 from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
@@ -17,7 +17,7 @@ from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.delete_jobs import JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
-from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
+from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 
 
 def _localizer() -> Localizer:
@@ -40,15 +40,15 @@ class _Fixture:
         self.artifacts = RecordingArtifactPurge(self.trace)
         self.locks = FakeSessionLock()
 
-    def use_case(self) -> DeleteJobsUseCase:
-        return DeleteJobsUseCase(
+    def use_case(self) -> DeleteJobsService:
+        return DeleteJobsService(
             self.store,
             self.turns,
             self.usage,
             self.ledger,
             self.artifacts,
             self.locks,
-            NullDiagnostics(),
+            NullDiagnosticsAdapter(),
             _localizer(),
         )
 

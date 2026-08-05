@@ -12,7 +12,7 @@ from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProces
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.gateway import openai_responses
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
@@ -61,7 +61,7 @@ _UPSTREAM = "https://chatgpt.com"
 _UPSTREAM_PREFIX = "/backend-api/codex"
 
 
-class CodexCliCaller(CliCaller):
+class CodexCliCallerAdapter(CliCallerPort):
     """Launch codex for a run, routed through a per-turn metering relay.
 
     Codex has no status-line hook, so none is installed. It takes its operating

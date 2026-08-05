@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class CheckStoreContract(ABC):
+class CheckStoreContractUseCase(ABC):
     """Verify that the shipped migrations reach the schema this build writes through."""
 
     @abstractmethod

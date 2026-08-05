@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The Init use case: the ordered forced-setup interview that shapes every session."""
+"""The InitUseCase use case: the ordered forced-setup interview that shapes every session."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.axis_prompt import ENVIRONMENT_PROMPT, ROLE_PROMPT
-from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
+from generic_ml_wrapper.application.port.inbound.init import InitOutcome, InitUseCase
 from generic_ml_wrapper.application.port.outbound.layout_seeder import InitSelections
 
 if TYPE_CHECKING:
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
 
 
-class InitUseCase(Init):
+class InitService(InitUseCase):
     """Run the forced setup in order, then persist it.
 
     The order is deliberate — **language → name → role → environment → persona → client**:

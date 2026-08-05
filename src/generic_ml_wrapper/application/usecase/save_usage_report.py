@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The SaveUsageReport use case: build a job's report, serialise it, write it to a file."""
+"""The SaveUsageReportUseCase use case: build a job's report, serialise it, write it to a file."""
 
 from __future__ import annotations
 
@@ -8,19 +8,19 @@ import json
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
+from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
+    from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
     from generic_ml_wrapper.application.port.outbound.report_export import ReportExportPort
 
 
-class SaveUsageReportUseCase(SaveUsageReport):
+class SaveUsageReportService(SaveUsageReportUseCase):
     """Compose the usage report and hand its JSON to the export writer."""
 
-    def __init__(self, export: ExportUsage, exporter: ReportExportPort) -> None:
+    def __init__(self, export: ExportUsageUseCase, exporter: ReportExportPort) -> None:
         """Wire the use case to the report source and the file writer.
 
         Args:

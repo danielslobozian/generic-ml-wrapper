@@ -23,7 +23,7 @@ _CANDIDATES: dict[str, tuple[tuple[str, ...], ...]] = {
 }
 
 
-class SystemClipboard(ClipboardPort):
+class SystemClipboardAdapter(ClipboardPort):
     """Copy via ``pbcopy`` / ``clip`` / ``wl-copy`` / ``xclip`` / ``xsel`` when present."""
 
     def __init__(self, system: str | None = None) -> None:

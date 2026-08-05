@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListJobs use case: summarise each job's recorded sessions.
+"""The ListJobsUseCase use case: summarise each job's recorded sessions.
 
 The authoring job is left out. It is an ordinary job everywhere else -- deletable,
 metered, resumable through the authoring commands -- but its name is chosen by the
@@ -11,11 +11,11 @@ start. It is the only name this use case knows about, and the only one it hides.
 from __future__ import annotations
 
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
-from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
+from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobsUseCase
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
 
-class ListJobsUseCase(ListJobs):
+class ListJobsService(ListJobsUseCase):
     """Summarise each job that has recorded sessions."""
 
     def __init__(self, store: SessionStorePort) -> None:

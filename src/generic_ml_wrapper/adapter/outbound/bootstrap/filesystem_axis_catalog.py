@@ -24,7 +24,7 @@ _ROOTS = {
 }
 
 
-class FilesystemAxisCatalog(AxisCatalogPort):
+class FilesystemAxisCatalogAdapter(AxisCatalogPort):
     """Read and create the role/environment folders on disk.
 
     Creation mirrors the init seeder: the slug is the folder name, a role also gets an

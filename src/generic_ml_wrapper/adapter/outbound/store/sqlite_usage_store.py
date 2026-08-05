@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 
 
-class SqliteUsageStore(UsageStorePort):
+class SqliteUsageStoreAdapter(UsageStorePort):
     """Persist and read per-session cumulative cost (monotonic) in the ledger.
 
     Each session owns its own row, so two sessions of one job recording concurrently

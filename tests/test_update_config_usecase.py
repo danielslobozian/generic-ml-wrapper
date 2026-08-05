@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ConfigCommands use case (config list/get/set)."""
+"""Tests for the ConfigCommandsUseCase use case (config list/get/set)."""
 
 from pathlib import Path
 
@@ -8,16 +8,20 @@ import pytest
 
 from generic_ml_wrapper.adapter.outbound.config import settings_registry
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
-from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import TomlSettingsCatalog
-from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
-from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import (
+    TomlSettingsCatalogAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
+    TomlkitConfigWriterAdapter,
+)
+from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
 
 
-def _commands(config_file: Path) -> UpdateConfigUseCase:
-    return UpdateConfigUseCase(
-        writer=TomlkitConfigWriter(),
+def _commands(config_file: Path) -> UpdateConfigService:
+    return UpdateConfigService(
+        writer=TomlkitConfigWriterAdapter(),
         config_file=lambda: config_file,
-        settings=TomlSettingsCatalog(),
+        settings=TomlSettingsCatalogAdapter(),
     )
 
 

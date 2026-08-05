@@ -32,7 +32,7 @@ class ClientStatus:
     resume_hint: str = ""
 
 
-class ListClients(ABC):
+class ListClientsUseCase(ABC):
     """List the supported clients with their install status and version."""
 
     @abstractmethod

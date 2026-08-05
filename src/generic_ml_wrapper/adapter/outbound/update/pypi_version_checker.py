@@ -13,7 +13,7 @@ from generic_ml_wrapper.application.port.outbound.version_check import VersionCh
 _TIMEOUT_S = 2.0
 
 
-class PypiVersionChecker(VersionCheckPort):
+class PypiVersionCheckerAdapter(VersionCheckPort):
     """Read a package's latest version from ``pypi.org/pypi/<package>/json``.
 
     Every failure mode (network, timeout, an unreadable or unexpected response) is

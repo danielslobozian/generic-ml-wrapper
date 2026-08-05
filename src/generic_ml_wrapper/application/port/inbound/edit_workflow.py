@@ -38,7 +38,7 @@ class NoEditToResumeError(DomainError, ValueError):
     """Raised when a resume was asked for and the workflow has no reopenable session."""
 
 
-class EditWorkflow(ABC):
+class EditWorkflowUseCase(ABC):
     """Open an existing workflow for editing in an authoring session."""
 
     @abstractmethod

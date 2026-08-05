@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Load a class from a ``"module:Class"`` / ``"/path.py:Class"`` config spec.
 
-The generic spec loader that both the CliCaller override seam and the context
+The generic spec loader that both the CliCallerPort override seam and the context
 interceptor seam use to plug private code in via config without it living here. It sits
 with the composition root because naming a class in configuration and turning it into an
 object is what a composition root does; no ring inside the application may reach for it.

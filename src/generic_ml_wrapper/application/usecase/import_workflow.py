@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ImportWorkflow use case: install a shared workflow, displacing any it replaces.
+"""The ImportWorkflowUseCase use case: install a shared workflow, displacing any it replaces.
 
 Replacing is reversible on purpose, and the order is what makes it so. The archive is
 asked what it is *before* anything moves, so a file that is not a workflow is refused with
@@ -20,8 +20,8 @@ from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowNa
 from generic_ml_wrapper.application.port.inbound.import_workflow import (
     ArchiveUnreadableError,
     ImportOutcome,
-    ImportWorkflow,
     ImportWorkflowResult,
+    ImportWorkflowUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 
@@ -36,7 +36,7 @@ _STEPS = "workflow.md"
 _TIME_DIGITS = 6  # the HHMMSS half of an export stamp: <slug>-YYYYMMDD-HHMMSS
 
 
-class ImportWorkflowUseCase(ImportWorkflow):
+class ImportWorkflowService(ImportWorkflowUseCase):
     """Unpack an archive into the workflows root, backing up anything it displaces."""
 
     def __init__(

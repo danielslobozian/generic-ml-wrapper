@@ -16,15 +16,15 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_backup import (
-    FilesystemWorkflowBackup,
+    FilesystemWorkflowBackupAdapter,
 )
 from generic_ml_wrapper.application.domain.model.workflow_backup import WorkflowBackup
 
 _WHEN = datetime(2026, 7, 29, 15, 30, 12, tzinfo=UTC)
 
 
-def _backups(tmp_path: Path) -> FilesystemWorkflowBackup:
-    return FilesystemWorkflowBackup(tmp_path / "backups", lambda: _WHEN)
+def _backups(tmp_path: Path) -> FilesystemWorkflowBackupAdapter:
+    return FilesystemWorkflowBackupAdapter(tmp_path / "backups", lambda: _WHEN)
 
 
 def _a_workflow(tmp_path: Path, name: str = "nightly-etl", body: str = "the old one") -> Path:

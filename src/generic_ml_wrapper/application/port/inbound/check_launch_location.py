@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.launch_location import LaunchLocation
 
 
-class CheckLaunchLocation(ABC):
+class CheckLaunchLocationUseCase(ABC):
     """Report whether the folder a launch depends on is still there."""
 
     @abstractmethod

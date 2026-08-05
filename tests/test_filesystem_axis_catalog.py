@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the FilesystemAxisCatalog adapter (real filesystem under tmp_path)."""
+"""Tests for the FilesystemAxisCatalogAdapter adapter (real filesystem under tmp_path)."""
 
 from __future__ import annotations
 
@@ -9,15 +9,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
-    FilesystemAxisCatalog,
+    FilesystemAxisCatalogAdapter,
 )
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 
 _WHEN = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
 
 
-def _catalog(home: Path) -> FilesystemAxisCatalog:
-    return FilesystemAxisCatalog(home, clock=lambda: _WHEN)
+def _catalog(home: Path) -> FilesystemAxisCatalogAdapter:
+    return FilesystemAxisCatalogAdapter(home, clock=lambda: _WHEN)
 
 
 def test_create_environment_writes_folder_and_about(tmp_path: Path) -> None:

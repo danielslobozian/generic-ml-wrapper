@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 _MANIFEST = "plugin.toml"
 
 
-class FilesystemPluginSource(PluginSourcePort):
+class FilesystemPluginSourceAdapter(PluginSourcePort):
     """Discover plugins by their ``plugin.toml`` manifest and resolve id references.
 
     A plugin is a folder ``<root>/<id>/`` with a ``plugin.toml``::

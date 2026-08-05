@@ -20,7 +20,7 @@ from generic_ml_wrapper.application.domain.model.version_probe import VersionPro
 from generic_ml_wrapper.application.port.outbound.client_catalog import ClientCatalogPort
 
 
-class TomlClientCatalog(ClientCatalogPort):
+class TomlClientCatalogAdapter(ClientCatalogPort):
     """Reads the supported clients from the packaged catalogue file."""
 
     def supported(self) -> tuple[ClientInfo, ...]:

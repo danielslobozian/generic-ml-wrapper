@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The CheckForUpdate use case: a cached, rate-limited PyPI version check."""
+"""The CheckForUpdateUseCase use case: a cached, rate-limited PyPI version check."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
+from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdateUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,7 +36,7 @@ def _parse_version(value: str) -> tuple[int, ...] | None:
         return None
 
 
-class CheckForUpdateUseCase(CheckForUpdate):
+class CheckForUpdateService(CheckForUpdateUseCase):
     """Check PyPI for a newer release, reading/writing a small local cache first.
 
     Free of the wrapper's own metering -- this checks gmlw's own distribution, not a

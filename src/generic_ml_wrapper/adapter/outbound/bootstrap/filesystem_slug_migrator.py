@@ -17,7 +17,9 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
 from generic_ml_wrapper.adapter.outbound.bootstrap.file_creation_time import FileCreationTime
-from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
+    TomlkitConfigWriterAdapter,
+)
 from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
 from generic_ml_wrapper.application.port.outbound.slug_migrator import SlugMigratorPort
@@ -30,7 +32,7 @@ _ROLES = "profile/roles"
 _CONFIG = "config.toml"
 
 
-class FilesystemSlugMigrator(SlugMigratorPort):
+class FilesystemSlugMigratorAdapter(SlugMigratorPort):
     """Rename legacy role/environment folders under one ``~/.gmlw`` home to clean slugs."""
 
     def __init__(self, home: Path) -> None:
@@ -90,7 +92,7 @@ class FilesystemSlugMigrator(SlugMigratorPort):
         """Repoint the given ``[profile]`` keys in the home's config, preserving the rest."""
         config = self._home / _CONFIG
         if config.exists():
-            TomlkitConfigWriter().merge(config, entries)
+            TomlkitConfigWriterAdapter().merge(config, entries)
 
     @staticmethod
     def _created_iso(folder: Path) -> str:

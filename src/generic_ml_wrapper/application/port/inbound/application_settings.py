@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.companion_settings import CompanionSettings
 
 
-class ApplicationSettings(ABC):
+class ApplicationSettingsUseCase(ABC):
     """The questions a delivery adapter asks before and around a run.
 
     A CLI or a menu has to decide things before any command runs — whether setup is still

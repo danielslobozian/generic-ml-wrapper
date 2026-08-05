@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ExportUsage use case: assemble a job's usage report."""
+"""The ExportUsageUseCase use case: assemble a job's usage report."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.port.inbound.export_usage import (
-    ExportUsage,
+    ExportUsageUseCase,
     ModelTotal,
     TurnRow,
     UsageReport,
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 _UNKNOWN_MODEL = "(unknown)"
 
 
-class ExportUsageUseCase(ExportUsage):
+class ExportUsageService(ExportUsageUseCase):
     """Assemble a job's usage report from the per-turn store and the session-cost store."""
 
     def __init__(self, usage: UsageStorePort, turns: PerTurnMeteringPort) -> None:

@@ -58,7 +58,7 @@ _CREATE_VERSION_TABLE = (
 )
 
 
-class SqliteStoreMigration(StoreMigrationPort):
+class SqliteStoreMigrationAdapter(StoreMigrationPort):
     """Bring the ledger up to date by applying the numbered migration files in order."""
 
     def __init__(

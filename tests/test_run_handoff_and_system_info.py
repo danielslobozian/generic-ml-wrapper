@@ -14,9 +14,9 @@ import platform
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSystemInfo
+from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSystemInfoAdapter
 from generic_ml_wrapper.adapter.outbound.caller.environment_run_handoff import (
-    EnvironmentRunHandoff,
+    EnvironmentRunHandoffAdapter,
 )
 
 
@@ -26,7 +26,7 @@ def test_the_launch_announcement_is_read_back(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setenv("GMLW_SESSION", "wrapper_007")
     monkeypatch.setenv("GMLW_CLIENT", "claude")
 
-    handoff = EnvironmentRunHandoff().current()
+    handoff = EnvironmentRunHandoffAdapter().current()
 
     assert (handoff.job, handoff.session_id, handoff.client) == ("wrapper", "wrapper_007", "claude")
 
@@ -35,17 +35,17 @@ def test_a_client_started_by_hand_belongs_to_no_run(monkeypatch: pytest.MonkeyPa
     for name in ("GMLW_JOB", "GMLW_SESSION", "GMLW_CLIENT"):
         monkeypatch.delenv(name, raising=False)
 
-    handoff = EnvironmentRunHandoff().current()
+    handoff = EnvironmentRunHandoffAdapter().current()
 
     assert (handoff.job, handoff.session_id, handoff.client) == (None, None, None)
 
 
 def test_the_platform_is_reported_as_the_catalogue_spells_it() -> None:
-    assert OsSystemInfo().platform_name() == platform.system()
+    assert OsSystemInfoAdapter().platform_name() == platform.system()
 
 
 def test_the_account_name_is_reported() -> None:
-    assert OsSystemInfo().username() == getpass.getuser()
+    assert OsSystemInfoAdapter().username() == getpass.getuser()
 
 
 def test_a_host_that_will_not_name_the_account_is_not_a_crash(
@@ -61,4 +61,4 @@ def test_a_host_that_will_not_name_the_account_is_not_a_crash(
 
     monkeypatch.setattr(getpass, "getuser", _refuse)
 
-    assert OsSystemInfo().username() == ""
+    assert OsSystemInfoAdapter().username() == ""

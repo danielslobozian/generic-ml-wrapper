@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the HookRunner: phase matching, client scoping, order, best-effort."""
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
@@ -46,7 +46,7 @@ def test_runs_only_hooks_bound_to_the_phase_in_order() -> None:
             (HookPhase.POST_SESSION, None, _Recording(log, "post")),
             (HookPhase.PRE_LAUNCH, None, _Recording(log, "pre-b")),
         ],
-        NullDiagnostics(),
+        NullDiagnosticsAdapter(),
         _localizer(),
     )
     runner.run(HookPhase.PRE_LAUNCH, _context(HookPhase.PRE_LAUNCH))
@@ -61,7 +61,7 @@ def test_client_scope_filters_by_the_run_client() -> None:
             (HookPhase.PRE_LAUNCH, None, _Recording(log, "every-client")),
             (HookPhase.PRE_LAUNCH, "claude", _Recording(log, "claude-only")),
         ],
-        NullDiagnostics(),
+        NullDiagnosticsAdapter(),
         _localizer(),
     )
     runner.run(HookPhase.PRE_LAUNCH, _context(HookPhase.PRE_LAUNCH, client="claude"))
@@ -75,7 +75,7 @@ def test_a_failing_hook_is_isolated_and_the_rest_still_run() -> None:
             (HookPhase.POST_SESSION, None, _Boom()),
             (HookPhase.POST_SESSION, None, _Recording(log, "after-boom")),
         ],
-        NullDiagnostics(),
+        NullDiagnosticsAdapter(),
         _localizer(),
     )
     # best-effort: the raising hook must not propagate, and later hooks still run
@@ -84,7 +84,7 @@ def test_a_failing_hook_is_isolated_and_the_rest_still_run() -> None:
 
 
 def test_empty_runner_is_a_no_op() -> None:
-    HookRunner((), NullDiagnostics(), _localizer()).run(
+    HookRunner((), NullDiagnosticsAdapter(), _localizer()).run(
         HookPhase.PRE_LAUNCH, _context(HookPhase.PRE_LAUNCH)
     )  # does not raise
 

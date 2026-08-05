@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 _ENDONYMS = {"en": "English", "fr": "Français"}
 
 
-class TtyLanguageChooser(LanguageChooserPort):
+class TtyLanguageChooserAdapter(LanguageChooserPort):
     """Ask the user which language gmlw should speak, but only at a terminal.
 
     Delegates the prompt mechanics to :func:`choose_number`. Because a language must

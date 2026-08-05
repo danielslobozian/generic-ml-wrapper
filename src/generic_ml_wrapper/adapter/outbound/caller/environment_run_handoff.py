@@ -20,7 +20,7 @@ _SESSION = "GMLW_SESSION"
 _CLIENT = "GMLW_CLIENT"
 
 
-class EnvironmentRunHandoff(RunHandoffPort):
+class EnvironmentRunHandoffAdapter(RunHandoffPort):
     """Read the run the launching caller announced through the environment."""
 
     def current(self) -> RunHandoff:

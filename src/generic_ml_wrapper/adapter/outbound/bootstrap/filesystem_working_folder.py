@@ -10,7 +10,7 @@ from pathlib import Path
 from generic_ml_wrapper.application.port.outbound.working_folder import WorkingFolderPort
 
 
-class FilesystemWorkingFolder(WorkingFolderPort):
+class FilesystemWorkingFolderAdapter(WorkingFolderPort):
     """Ask the filesystem whether the folders a launch needs are still there."""
 
     def current_exists(self) -> bool:
