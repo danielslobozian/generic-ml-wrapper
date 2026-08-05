@@ -25,7 +25,8 @@ from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
-from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
+from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
 if TYPE_CHECKING:

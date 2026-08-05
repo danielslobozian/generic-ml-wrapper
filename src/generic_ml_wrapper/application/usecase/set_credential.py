@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-from generic_ml_wrapper.application.port.inbound.set_credential import (
-    SetCredentialCommand,
-    SetCredentialUseCase,
-)
+from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
+from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.secret_prompt import SecretPromptPort
 

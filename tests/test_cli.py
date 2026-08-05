@@ -18,6 +18,10 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
+from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
+    ArchiveUnreadableError,
+)
+from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
@@ -29,91 +33,72 @@ from generic_ml_wrapper.application.domain.model.launch_location import (
     LaunchLocationProblem,
 )
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
+from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
+from generic_ml_wrapper.application.domain.model.no_such_session_error import NoSuchSessionError
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
-from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
-from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.port.inbound.bootstrap import BootstrapUseCase
-from generic_ml_wrapper.application.port.inbound.check_client_ready import (
-    CheckClientReadyUseCase,
-    ClientReadiness,
+from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
+    ResumeNotSupportedError,
 )
+from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
+from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
+from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.domain.model.workflow_exists_error import WorkflowExistsError
+from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
+    WorkflowNotFoundError,
+)
+from generic_ml_wrapper.application.port.inbound.bootstrap import BootstrapUseCase
+from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.port.inbound.check_launch_location import (
     CheckLaunchLocationUseCase,
 )
+from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
-from generic_ml_wrapper.application.port.inbound.create_axis import (
-    AxisExistsError,
-    CreateAxisCommand,
-    CreateAxisResult,
-    CreateAxisUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase, JobFootprint
-from generic_ml_wrapper.application.port.inbound.delete_sessions import (
-    DeleteSessionsUseCase,
-    NoSuchJobError,
-    NoSuchSessionError,
-    SessionFootprint,
-)
-from generic_ml_wrapper.application.port.inbound.edit_workflow import (
-    EditWorkflowCommand,
-    EditWorkflowUseCase,
-    WorkflowNotFoundError,
-)
-from generic_ml_wrapper.application.port.inbound.export_usage import (
-    ExportUsageUseCase,
-    ModelTotal,
-    TurnRow,
-    UsageReport,
-)
+from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
+from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
+from generic_ml_wrapper.application.port.inbound.create_axis_result import CreateAxisResult
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
+from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
+from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
+from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.import_workflow import (
-    ArchiveUnreadableError,
-    ImportOutcome,
-    ImportWorkflowResult,
-    ImportWorkflowUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.init import InitOutcome, InitUseCase
-from generic_ml_wrapper.application.port.inbound.list_clients import (
-    ClientStatus,
-    ListClientsUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobsUseCase
-from generic_ml_wrapper.application.port.inbound.list_launch_clients import (
-    LaunchClient,
-    ListLaunchClientsUseCase,
-)
+from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
+from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.import_workflow_result import ImportWorkflowResult
+from generic_ml_wrapper.application.port.inbound.init import InitUseCase
+from generic_ml_wrapper.application.port.inbound.init_outcome import InitOutcome
+from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
+from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
+from generic_ml_wrapper.application.port.inbound.launch_client import LaunchClient
+from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
+from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPluginsUseCase
-from generic_ml_wrapper.application.port.inbound.list_sessions import (
-    ListSessionsUseCase,
-    SessionSummary,
-)
+from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import (
     ListWorkflowCatalogUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflowsUseCase
+from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
-from generic_ml_wrapper.application.port.inbound.new_workflow import (
-    NewWorkflowCommand,
-    NewWorkflowResult,
-    NewWorkflowUseCase,
-    WorkflowExistsError,
-    WorkflowOutcome,
-)
+from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
+from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
+from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
-from generic_ml_wrapper.application.port.inbound.set_credential import (
-    SetCredentialCommand,
-    SetCredentialUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.start_job import (
-    ResumeNotSupportedError,
-    StartJobCommand,
-    StartJobResult,
-    StartJobUseCase,
-    UnknownWorkflowError,
-)
+from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
+from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
+from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
+from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
+from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
+from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
+from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
+from generic_ml_wrapper.application.port.inbound.turn_row import TurnRow
+from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
+from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
 from generic_ml_wrapper.application.wiring import composition
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 from generic_ml_wrapper.application.wiring.paths import paths
@@ -554,10 +539,10 @@ def test_jobs_command_json_output(
 
 
 class _FakeListClients(ListClientsUseCase):
-    def __init__(self, statuses: list[ClientStatus]) -> None:
+    def __init__(self, statuses: list[ListedClient]) -> None:
         self._statuses = statuses
 
-    def execute(self) -> list[ClientStatus]:
+    def execute(self) -> list[ListedClient]:
         return self._statuses
 
 
@@ -565,8 +550,8 @@ def test_clients_command_prints_the_table(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     statuses = [
-        ClientStatus("claude", "Claude Code", True, "1.2.3", True, True),
-        ClientStatus(
+        ListedClient("claude", "Claude Code", True, "1.2.3", True, True),
+        ListedClient(
             "codex", "OpenAI Codex CLI", False, None, True, False, "client.resume_hint.codex"
         ),
     ]
@@ -585,7 +570,7 @@ def test_clients_command_prints_the_table(
 def test_clients_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    statuses = [ClientStatus("claude", "Claude Code", True, "1.2.3", True, True)]
+    statuses = [ListedClient("claude", "Claude Code", True, "1.2.3", True, True)]
     monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
     assert app.main(["clients", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)

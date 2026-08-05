@@ -4,7 +4,7 @@
 
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.inbound.export_usage import ModelTotal
+from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageService

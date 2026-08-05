@@ -6,10 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.check_client_ready import (
-    CheckClientReadyUseCase,
-    ClientReadiness,
-)
+from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReadyUseCase
+from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.client_catalog import ClientCatalogPort

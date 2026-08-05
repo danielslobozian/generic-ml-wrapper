@@ -18,12 +18,10 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.delete_sessions import (
-    DeleteSessionsUseCase,
-    NoSuchJobError,
-    NoSuchSessionError,
-    SessionFootprint,
-)
+from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
+from generic_ml_wrapper.application.domain.model.no_such_session_error import NoSuchSessionError
+from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
+from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort

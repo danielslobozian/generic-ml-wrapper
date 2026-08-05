@@ -32,7 +32,7 @@ from urllib.parse import urlsplit
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage as _anthropic_usage
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
-from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
+from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 

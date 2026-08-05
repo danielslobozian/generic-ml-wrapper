@@ -5,7 +5,7 @@
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
 )
-from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
+from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
 from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyService

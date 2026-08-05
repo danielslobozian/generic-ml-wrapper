@@ -11,12 +11,12 @@ from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
 from generic_ml_wrapper.application.domain.model.job_running_error import JobRunningError
+from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
-from generic_ml_wrapper.application.port.inbound.delete_jobs import JobFootprint
-from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
+from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 
 

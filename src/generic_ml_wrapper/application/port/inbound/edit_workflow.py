@@ -5,37 +5,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
-from generic_ml_wrapper.application.domain.model.domain_error import DomainError
-
-
-@dataclass(frozen=True)
-class EditWorkflowCommand:
-    """A request to edit an existing workflow.
-
-    Attributes:
-        name: The workflow to edit (lowercase letters, digits, dashes).
-        client: The client to run the authoring session on.
-        guided: Whether to add the guided-facilitation layer (a richer, costlier
-            authoring experience) on top of the core interview.
-        resume_latest: Reopen this workflow's most recent editing session instead of
-            starting a fresh one — an edit interrupted halfway is picked up where it
-            stopped rather than begun again.
-    """
-
-    name: str
-    client: str
-    guided: bool = False
-    resume_latest: bool = False
-
-
-class WorkflowNotFoundError(DomainError, ValueError):
-    """Raised when the workflow to edit does not exist."""
-
-
-class NoEditToResumeError(DomainError, ValueError):
-    """Raised when a resume was asked for and the workflow has no reopenable session."""
+from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
 
 
 class EditWorkflowUseCase(ABC):

@@ -26,11 +26,9 @@ from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJ
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
-from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowCommand
-from generic_ml_wrapper.application.port.outbound.cli_caller import (
-    CliCallerPort,
-    CliCallerProviderPort,
-)
+from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
+from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import (
     InterruptScopePort,
 )

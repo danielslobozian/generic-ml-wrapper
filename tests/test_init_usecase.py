@@ -11,12 +11,10 @@ from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
 from generic_ml_wrapper.application.port.outbound.client_setup import ClientSetupPort
+from generic_ml_wrapper.application.port.outbound.init_persist import InitPersist
+from generic_ml_wrapper.application.port.outbound.init_selections import InitSelections
 from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
-from generic_ml_wrapper.application.port.outbound.layout_seeder import (
-    InitPersist,
-    InitSelections,
-    LayoutSeederPort,
-)
+from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
 from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort

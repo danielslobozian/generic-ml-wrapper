@@ -11,7 +11,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
     FilesystemTranscriptStoreAdapter,
 )
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
+from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
 
 if TYPE_CHECKING:
     from pathlib import Path

@@ -11,10 +11,6 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.plugin import Plugin
 
 
-class PluginError(ValueError):
-    """Raised when a ``[callers]`` value names a plugin id that cannot be resolved."""
-
-
 class PluginSourcePort(ABC):
     """List installed plugins and resolve a caller reference (a plugin id or a spec)."""
 

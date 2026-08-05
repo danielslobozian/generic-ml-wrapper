@@ -12,7 +12,7 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
     FilesystemArtifactPurgeAdapter,
 )
-from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactCounts
+from generic_ml_wrapper.application.port.outbound.artifact_counts import ArtifactCounts
 
 if TYPE_CHECKING:
     from pathlib import Path

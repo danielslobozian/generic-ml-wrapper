@@ -13,11 +13,9 @@ from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
 )
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
-from generic_ml_wrapper.application.port.outbound.layout_seeder import (
-    InitPersist,
-    InitSelections,
-    LayoutSeederPort,
-)
+from generic_ml_wrapper.application.port.outbound.init_persist import InitPersist
+from generic_ml_wrapper.application.port.outbound.init_selections import InitSelections
+from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
 
 if TYPE_CHECKING:
     from collections.abc import Callable

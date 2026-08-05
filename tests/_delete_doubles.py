@@ -18,10 +18,8 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.job_running_error import JobRunningError
 from generic_ml_wrapper.application.domain.model.session_running_error import SessionRunningError
-from generic_ml_wrapper.application.port.outbound.artifact_purge import (
-    ArtifactCounts,
-    ArtifactPurgePort,
-)
+from generic_ml_wrapper.application.port.outbound.artifact_counts import ArtifactCounts
+from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
 from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
 

@@ -6,10 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_clients import (
-    ClientStatus,
-    ListClientsUseCase,
-)
+from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
+from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -42,15 +40,15 @@ class ListClientsService(ListClientsUseCase):
         self._default_client = default_client
         self._catalog = catalog
 
-    def execute(self) -> list[ClientStatus]:
+    def execute(self) -> list[ListedClient]:
         """Build one status per supported client (versions read only for installed ones)."""
         available = set(self._detector.available())
         default = self._default_client()
-        statuses: list[ClientStatus] = []
+        statuses: list[ListedClient] = []
         for info in self._catalog.supported():
             installed = info.name in available
             statuses.append(
-                ClientStatus(
+                ListedClient(
                     name=info.name,
                     display=info.display,
                     installed=installed,

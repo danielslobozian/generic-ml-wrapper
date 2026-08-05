@@ -9,7 +9,7 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import (
     FilesystemPluginSourceAdapter,
 )
-from generic_ml_wrapper.application.port.outbound.plugin_source import PluginError
+from generic_ml_wrapper.application.domain.model.plugin_error import PluginError
 
 
 def _install(root: Path, plugin_id: str, *, manifest: str) -> None:

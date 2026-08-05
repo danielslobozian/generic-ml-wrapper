@@ -6,14 +6,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
+from generic_ml_wrapper.application.domain.model.axis_label_error import AxisLabelError
 from generic_ml_wrapper.application.domain.model.slug import Slug
-from generic_ml_wrapper.application.port.inbound.create_axis import (
-    AxisExistsError,
-    AxisLabelError,
-    CreateAxisCommand,
-    CreateAxisResult,
-    CreateAxisUseCase,
-)
+from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
+from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
+from generic_ml_wrapper.application.port.inbound.create_axis_result import CreateAxisResult
 
 if TYPE_CHECKING:
     from collections.abc import Callable

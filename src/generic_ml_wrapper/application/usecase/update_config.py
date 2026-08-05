@@ -7,11 +7,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
-from generic_ml_wrapper.application.port.inbound.config_commands import (
-    ConfigCommandsUseCase,
-    SetOutcome,
-    SettingView,
-)
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
+from generic_ml_wrapper.application.port.inbound.set_outcome import SetOutcome
+from generic_ml_wrapper.application.port.inbound.setting_view import SettingView
 
 if TYPE_CHECKING:
     from collections.abc import Callable

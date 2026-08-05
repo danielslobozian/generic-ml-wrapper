@@ -24,8 +24,9 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase, JobFootprint
-from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
+from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
+from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort

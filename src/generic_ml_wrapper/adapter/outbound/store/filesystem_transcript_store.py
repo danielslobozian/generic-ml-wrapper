@@ -18,7 +18,8 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
+from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
 
 if TYPE_CHECKING:
     from pathlib import Path

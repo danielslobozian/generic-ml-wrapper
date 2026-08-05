@@ -6,10 +6,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_launch_clients import (
-    LaunchClient,
-    ListLaunchClientsUseCase,
-)
+from generic_ml_wrapper.application.port.inbound.launch_client import LaunchClient
+from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClientsUseCase
 
 if TYPE_CHECKING:
     from collections.abc import Callable

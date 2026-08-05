@@ -14,7 +14,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
 from generic_ml_wrapper.application.domain.model.credentials_unusable_error import (
     CredentialsUnusableError,
 )
-from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialCommand
+from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
 from generic_ml_wrapper.application.port.outbound.secret_prompt import SecretPromptPort
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
 

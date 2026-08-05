@@ -5,45 +5,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
-
-@dataclass(frozen=True)
-class SettingView:
-    """One setting's current value alongside its registry metadata.
-
-    Attributes:
-        key: The dotted key (e.g. ``profile.default_role``).
-        value: The current effective value (the default when unset).
-        default: The schema default.
-        type_name: A short type label (``str``/``bool``/``choice``/``str?``).
-        choices: The allowed values, or ``None`` when unconstrained.
-        description: A one-line description.
-    """
-
-    key: str
-    value: object
-    default: object
-    type_name: str
-    choices: tuple[str, ...] | None
-    description: str
-
-
-@dataclass(frozen=True)
-class SetOutcome:
-    """The result of a ``config set``.
-
-    Attributes:
-        key: The key that was set.
-        old: The value before the change (the effective value, default when it was unset).
-        new: The value after the change (``None`` when the key was cleared).
-        changed: Whether the write actually changed the stored value.
-    """
-
-    key: str
-    old: object
-    new: object
-    changed: bool
+from generic_ml_wrapper.application.port.inbound.set_outcome import SetOutcome
+from generic_ml_wrapper.application.port.inbound.setting_view import SettingView
 
 
 class ConfigCommandsUseCase(ABC):
