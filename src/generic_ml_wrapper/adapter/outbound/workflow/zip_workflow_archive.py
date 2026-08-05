@@ -33,7 +33,7 @@ _PORTABLE_DIR = "scripts"
 #                              working notes.
 
 
-class ZipWorkflowArchive(WorkflowArchivePort):
+class ZipWorkflowArchiveAdapter(WorkflowArchivePort):
     """Pack and unpack workflows as zip files under an export root."""
 
     def __init__(self, root: Path, clock: Callable[[], datetime]) -> None:
@@ -118,8 +118,8 @@ def _lands_at(name: str) -> tuple[str, ...]:
     ``extractall`` neutralises traversal by dropping ``..`` and ``.`` components and any
     leading separator, so ``../../workflow.md`` lands as ``workflow.md`` while
     ``sub/workflow.md`` stays nested. Reproduced here rather than guessed at, because the
-    difference decides whether :meth:`ZipWorkflowArchive.inspect` and
-    :meth:`ZipWorkflowArchive.unpack` agree: only a top-level ``workflow.md`` is portable,
+    difference decides whether :meth:`ZipWorkflowArchiveAdapter.inspect` and
+    :meth:`ZipWorkflowArchiveAdapter.unpack` agree: only a top-level ``workflow.md`` is portable,
     so only a top-level one means the archive really carries a workflow.
     """
     return tuple(part for part in name.replace("\\", "/").split("/") if part not in ("", ".", ".."))

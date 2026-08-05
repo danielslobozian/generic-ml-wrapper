@@ -14,7 +14,9 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
+    TomlClientCatalogAdapter,
+)
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
@@ -31,79 +33,85 @@ from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
+from generic_ml_wrapper.application.port.inbound.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
-    CheckClientReady,
+    CheckClientReadyUseCase,
     ClientReadiness,
 )
 from generic_ml_wrapper.application.port.inbound.check_launch_location import (
-    CheckLaunchLocation,
+    CheckLaunchLocationUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
-    CreateAxis,
     CreateAxisCommand,
     CreateAxisResult,
+    CreateAxisUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs, JobFootprint
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase, JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import (
-    DeleteSessions,
+    DeleteSessionsUseCase,
     NoSuchJobError,
     NoSuchSessionError,
     SessionFootprint,
 )
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
-    EditWorkflow,
     EditWorkflowCommand,
+    EditWorkflowUseCase,
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import (
-    ExportUsage,
+    ExportUsageUseCase,
     ModelTotal,
     TurnRow,
     UsageReport,
 )
-from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow import (
     ArchiveUnreadableError,
     ImportOutcome,
-    ImportWorkflow,
     ImportWorkflowResult,
+    ImportWorkflowUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.init import Init, InitOutcome
-from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
-from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobs
+from generic_ml_wrapper.application.port.inbound.init import InitOutcome, InitUseCase
+from generic_ml_wrapper.application.port.inbound.list_clients import (
+    ClientStatus,
+    ListClientsUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobsUseCase
 from generic_ml_wrapper.application.port.inbound.list_launch_clients import (
     LaunchClient,
-    ListLaunchClients,
+    ListLaunchClientsUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
-from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
-from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
+from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonasUseCase
+from generic_ml_wrapper.application.port.inbound.list_plugins import ListPluginsUseCase
+from generic_ml_wrapper.application.port.inbound.list_sessions import (
+    ListSessionsUseCase,
+    SessionSummary,
+)
 from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import (
-    ListWorkflowCatalog,
+    ListWorkflowCatalogUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
-from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
+from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflowsUseCase
+from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow import (
-    NewWorkflow,
     NewWorkflowCommand,
     NewWorkflowResult,
+    NewWorkflowUseCase,
     WorkflowExistsError,
     WorkflowOutcome,
 )
-from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
-from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
+from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential import (
-    SetCredential,
     SetCredentialCommand,
+    SetCredentialUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
-    StartJob,
     StartJobCommand,
     StartJobResult,
+    StartJobUseCase,
     UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.wiring import composition
@@ -111,7 +119,7 @@ from generic_ml_wrapper.application.wiring.localization import load_localizer
 from generic_ml_wrapper.application.wiring.paths import paths
 
 
-class _RecordingBootstrap(Bootstrap):
+class _RecordingBootstrap(BootstrapUseCase):
     def __init__(self, calls: list[str]) -> None:
         self._calls = calls
 
@@ -135,7 +143,7 @@ def _init_absent(*_: object, **__: object) -> str | None:
     return None  # the gate sees an un-initialised (or legacy) install
 
 
-class _FakeMigrate(MigrateLayout):
+class _FakeMigrate(MigrateLayoutUseCase):
     def __init__(self, report: MigrationReport | None = None) -> None:
         self._report = report if report is not None else MigrationReport(environment="work")
 
@@ -143,7 +151,7 @@ class _FakeMigrate(MigrateLayout):
         return self._report
 
 
-class _CheckClient(CheckClientReady):
+class _CheckClient(CheckClientReadyUseCase):
     def __init__(self, readiness: ClientReadiness | None = None) -> None:
         self._readiness = readiness
 
@@ -214,7 +222,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
 def test_bare_job_dispatches_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, StartJobCommand] = {}
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
@@ -267,7 +275,7 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     seen: list[str] = []
 
-    class _Init(Init):
+    class _Init(InitUseCase):
         def execute(self) -> InitOutcome:
             seen.append("init")
             return InitOutcome(
@@ -286,7 +294,7 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     assert seen == ["init"]
 
 
-class _FreshInit(Init):
+class _FreshInit(InitUseCase):
     def execute(self) -> InitOutcome:
         return InitOutcome(
             fresh=True,
@@ -356,7 +364,7 @@ def test_explicit_help_flag_still_shows_argparse(capsys: pytest.CaptureFixture[s
 def test_start_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, StartJobCommand] = {}
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=3, job=command.job, session_id=f"{command.job}_001")
@@ -371,7 +379,7 @@ def test_start_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> No
 def test_start_passes_the_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, StartJobCommand] = {}
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
@@ -385,7 +393,7 @@ def test_start_passes_the_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_start_reports_unknown_workflow_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJob):
+    class FailingUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             raise UnknownWorkflowError("unknown workflow: 'missing'")
 
@@ -408,7 +416,7 @@ def test_parser_parses_run() -> None:
 def test_run_launches_the_workflow_as_its_own_job(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, StartJobCommand] = {}
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
@@ -424,7 +432,7 @@ def test_run_launches_the_workflow_as_its_own_job(monkeypatch: pytest.MonkeyPatc
 def test_run_reports_unknown_workflow_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJob):
+    class FailingUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             raise UnknownWorkflowError("unknown workflow: 'missing'")
 
@@ -433,7 +441,7 @@ def test_run_reports_unknown_workflow_cleanly(
     assert "unknown workflow" in capsys.readouterr().out
 
 
-class _FakeWorkflows(ListWorkflows):
+class _FakeWorkflows(ListWorkflowsUseCase):
     def __init__(self, names: list[str]) -> None:
         self._names = names
 
@@ -469,7 +477,7 @@ def test_run_interactive_pick_echoes_the_fast_path(
 
     seen: dict[str, StartJobCommand] = {}
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
@@ -485,7 +493,7 @@ def test_run_interactive_pick_echoes_the_fast_path(
 def test_start_reports_resume_not_supported_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJob):
+    class FailingUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             raise ResumeNotSupportedError("session resume not supported on codex")
 
@@ -495,7 +503,7 @@ def test_start_reports_resume_not_supported_cleanly(
 
 
 def test_build_start_job_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_start_job(), StartJob)
+    assert isinstance(composition.build_start_job(), StartJobUseCase)
 
 
 def test_format_jobs_empty() -> None:
@@ -522,7 +530,7 @@ def test_format_jobs_renders_through_an_injected_localiser() -> None:
 def test_jobs_command_prints_the_summaries(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListJobs):
+    class FakeUseCase(ListJobsUseCase):
         def execute(self) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
@@ -536,7 +544,7 @@ def test_jobs_command_prints_the_summaries(
 def test_jobs_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListJobs):
+    class FakeUseCase(ListJobsUseCase):
         def execute(self) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
@@ -545,7 +553,7 @@ def test_jobs_command_json_output(
     assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3}]
 
 
-class _FakeListClients(ListClients):
+class _FakeListClients(ListClientsUseCase):
     def __init__(self, statuses: list[ClientStatus]) -> None:
         self._statuses = statuses
 
@@ -587,13 +595,13 @@ def test_clients_command_json_output(
 
 
 def test_build_list_clients_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_list_clients(), ListClients)
+    assert isinstance(composition.build_list_clients(), ListClientsUseCase)
 
 
 def test_jobs_command_json_empty_is_an_empty_array(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListJobs):
+    class FakeUseCase(ListJobsUseCase):
         def execute(self) -> list[JobSummary]:
             return []
 
@@ -603,7 +611,7 @@ def test_jobs_command_json_empty_is_an_empty_array(
 
 
 def test_build_list_jobs_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_list_jobs(), ListJobs)
+    assert isinstance(composition.build_list_jobs(), ListJobsUseCase)
 
 
 def test_format_sessions_empty() -> None:
@@ -642,7 +650,7 @@ def test_format_sessions_shows_folder_fallback_and_not_resumable() -> None:
 def test_sessions_command_prints_them(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListSessions):
+    class FakeUseCase(ListSessionsUseCase):
         def execute(self, job: str) -> list[SessionSummary]:
             return [SessionSummary("JOB-1_001", "claude")]
 
@@ -654,7 +662,7 @@ def test_sessions_command_prints_them(
 def test_sessions_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListSessions):
+    class FakeUseCase(ListSessionsUseCase):
         def execute(self, job: str) -> list[SessionSummary]:
             return [SessionSummary("JOB-1_001", "claude")]
 
@@ -674,7 +682,7 @@ def test_sessions_command_json_output(
 
 
 def test_build_list_sessions_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_list_sessions(), ListSessions)
+    assert isinstance(composition.build_list_sessions(), ListSessionsUseCase)
 
 
 def _report() -> UsageReport:
@@ -723,7 +731,7 @@ def test_format_usage_unmetered_timestamp_shows_dashes() -> None:
 def test_export_command_prints_the_report(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ExportUsage):
+    class FakeUseCase(ExportUsageUseCase):
         def execute(self, job: str) -> UsageReport:
             return _report()
 
@@ -737,7 +745,7 @@ def test_export_command_prints_the_report(
 def test_export_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ExportUsage):
+    class FakeUseCase(ExportUsageUseCase):
         def execute(self, job: str) -> UsageReport:
             return _report()
 
@@ -753,7 +761,7 @@ def test_export_command_json_output(
 
 
 def test_build_export_usage_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_export_usage(), ExportUsage)
+    assert isinstance(composition.build_export_usage(), ExportUsageUseCase)
 
 
 def test_statusline_command_reads_stdin_and_prints(
@@ -761,7 +769,7 @@ def test_statusline_command_reads_stdin_and_prints(
 ) -> None:
     seen: dict[str, str | None] = {}
 
-    class FakeUseCase(RenderStatusline):
+    class FakeUseCase(RenderStatuslineUseCase):
         def execute(self, payload_json: str) -> str:
             seen["payload"] = payload_json
             return "Opus 4.8  ·  $0.43"
@@ -780,7 +788,7 @@ def test_statusline_command_reads_stdin_and_prints(
 
 
 def test_build_render_statusline_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_render_statusline(), RenderStatusline)
+    assert isinstance(composition.build_render_statusline(), RenderStatuslineUseCase)
 
 
 def test_statusline_renders_the_cursor_plan_block_end_to_end(
@@ -798,7 +806,7 @@ def test_main_self_initializes_on_a_real_command(monkeypatch: pytest.MonkeyPatch
     calls: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
-    class _Jobs(ListJobs):
+    class _Jobs(ListJobsUseCase):
         def execute(self) -> list[JobSummary]:
             return []
 
@@ -811,7 +819,7 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     calls: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
-    class _Status(RenderStatusline):
+    class _Status(RenderStatuslineUseCase):
         def execute(self, payload_json: str) -> str:
             return ""
 
@@ -824,7 +832,7 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     assert calls == []
 
 
-class _FakeInit(Init):
+class _FakeInit(InitUseCase):
     def __init__(self, outcome: InitOutcome, calls: list[str]) -> None:
         self._outcome = outcome
         self._calls = calls
@@ -856,7 +864,7 @@ def _fresh_outcome(
 
 
 def _stub_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
-    class _Jobs(ListJobs):
+    class _Jobs(ListJobsUseCase):
         def execute(self) -> list[JobSummary]:
             return []
 
@@ -959,7 +967,7 @@ def test_init_on_legacy_reports_the_merge_and_any_overwrites(
 
 
 def test_build_init_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_init(), Init)
+    assert isinstance(composition.build_init(), InitUseCase)
 
 
 def test_init_announces_the_chosen_persona(
@@ -1020,7 +1028,7 @@ def test_init_command_runs_migration_after_init(
 
 
 def test_build_migrate_layout_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_migrate_layout(), MigrateLayout)
+    assert isinstance(composition.build_migrate_layout(), MigrateLayoutUseCase)
 
 
 def test_start_does_not_print_the_greeting_to_stderr(
@@ -1028,7 +1036,7 @@ def test_start_does_not_print_the_greeting_to_stderr(
 ) -> None:
     # The host greeting is now injected into the session context (rendered in-band by the
     # client), not printed to the launch-time stderr that the client immediately clears.
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
@@ -1038,7 +1046,7 @@ def test_start_does_not_print_the_greeting_to_stderr(
 
 
 def test_build_render_greeting_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_render_greeting(), RenderGreeting)
+    assert isinstance(composition.build_render_greeting(), RenderGreetingUseCase)
 
 
 def _not_ready(client: str, installed: tuple[str, ...] = ()) -> ClientReadiness:
@@ -1047,7 +1055,7 @@ def _not_ready(client: str, installed: tuple[str, ...] = ()) -> ClientReadiness:
     The install commands are resolved by the use case, not by whoever renders them, so a
     fake that omitted them would let the guidance print ``None`` and the test still pass.
     """
-    catalogue = TomlClientCatalog().supported()
+    catalogue = TomlClientCatalogAdapter().supported()
     system = platform.system()
     return ClientReadiness(
         client=client,
@@ -1064,7 +1072,7 @@ def test_start_aborts_with_guidance_when_client_missing(
 ) -> None:
     launched: list[str] = []
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             launched.append(command.job)
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
@@ -1098,7 +1106,9 @@ def test_start_lists_all_when_no_client_installed(
     monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
     assert app.main(["start", "JOB-1"]) == 2
     err = capsys.readouterr().err
-    for info in TomlClientCatalog().supported():  # every supported client's install is offered
+    for (
+        info
+    ) in TomlClientCatalogAdapter().supported():  # every supported client's install is offered
         assert info.install_for(platform.system()) in err
 
 
@@ -1113,13 +1123,13 @@ def test_workflow_new_aborts_when_client_missing(
 
 
 def test_build_check_client_ready_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_check_client_ready(), CheckClientReady)
+    assert isinstance(composition.build_check_client_ready(), CheckClientReadyUseCase)
 
 
 def test_start_aborts_cleanly_when_the_cwd_is_deleted(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class _CurrentGone(CheckLaunchLocation):
+    class _CurrentGone(CheckLaunchLocationUseCase):
         def execute(self, session_folder: str | None = None) -> LaunchLocation:
             return LaunchLocation(LaunchLocationProblem.CURRENT_GONE)
 
@@ -1134,7 +1144,7 @@ def test_creds_set_reads_stdin_and_stores_without_echoing(
 ) -> None:
     seen: dict[str, SetCredentialCommand] = {}
 
-    class FakeUseCase(SetCredential):
+    class FakeUseCase(SetCredentialUseCase):
         def execute(self, command: SetCredentialCommand) -> None:
             seen["command"] = command
 
@@ -1151,7 +1161,7 @@ def test_creds_set_reads_stdin_and_stores_without_echoing(
 
 
 def test_build_set_credential_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_set_credential(), SetCredential)
+    assert isinstance(composition.build_set_credential(), SetCredentialUseCase)
 
 
 def test_incomplete_subcommand_prints_its_help(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1172,7 +1182,7 @@ def test_incomplete_persona_and_plugins_print_help(capsys: pytest.CaptureFixture
 def test_complete_subcommand_does_not_print_help(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class _Workflows(ListWorkflows):
+    class _Workflows(ListWorkflowsUseCase):
         def execute(self) -> list[str]:
             return []
 
@@ -1181,8 +1191,8 @@ def test_complete_subcommand_does_not_print_help(
     assert "usage: gmlw workflow" not in capsys.readouterr().out  # it ran, not helped
 
 
-def _deploying_use_case(seen: dict[str, NewWorkflowCommand]) -> NewWorkflow:
-    class FakeUseCase(NewWorkflow):
+def _deploying_use_case(seen: dict[str, NewWorkflowCommand]) -> NewWorkflowUseCase:
+    class FakeUseCase(NewWorkflowUseCase):
         def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
             seen["command"] = command
             return NewWorkflowResult(
@@ -1215,7 +1225,7 @@ def test_workflow_new_without_a_name_is_allowed(monkeypatch: pytest.MonkeyPatch)
 def test_workflow_new_reports_a_seed_name_collision(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(NewWorkflow):
+    class FailingUseCase(NewWorkflowUseCase):
         def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
             raise WorkflowExistsError("workflow already exists: 'doc-review'")
 
@@ -1229,7 +1239,7 @@ def test_workflow_new_reports_a_seed_name_collision(
 def test_workflow_new_reports_an_incomplete_draft(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class IncompleteUseCase(NewWorkflow):
+    class IncompleteUseCase(NewWorkflowUseCase):
         def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
             return NewWorkflowResult(
                 exit_code=0,
@@ -1273,7 +1283,7 @@ def test_workflow_new_guided_and_quick_are_mutually_exclusive() -> None:
 
 
 def test_build_new_workflow_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_new_workflow(), NewWorkflow)
+    assert isinstance(composition.build_new_workflow(), NewWorkflowUseCase)
 
 
 def test_format_workflows_empty() -> None:
@@ -1298,7 +1308,7 @@ def test_format_workflows_lists_each() -> None:
 def test_workflow_list_prints_the_names(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListWorkflowCatalog):
+    class FakeUseCase(ListWorkflowCatalogUseCase):
         def execute(self) -> list[Workflow]:
             return [Workflow("doc-review", "Doc review", "Reviews a document.")]
 
@@ -1313,7 +1323,7 @@ def test_workflow_list_prints_the_names(
 def test_workflow_list_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListWorkflowCatalog):
+    class FakeUseCase(ListWorkflowCatalogUseCase):
         def execute(self) -> list[Workflow]:
             return [Workflow("doc-review", "Doc review", "Reviews a document.")]
 
@@ -1325,7 +1335,7 @@ def test_workflow_list_json_output(
 
 
 def test_build_list_workflows_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_list_workflows(), ListWorkflows)
+    assert isinstance(composition.build_list_workflows(), ListWorkflowsUseCase)
 
 
 def test_format_personas_lists_name_and_description() -> None:
@@ -1340,7 +1350,7 @@ def test_format_personas_lists_name_and_description() -> None:
 def test_persona_list_prints_the_personas(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListPersonas):
+    class FakeUseCase(ListPersonasUseCase):
         def execute(self) -> list[Persona]:
             return [Persona("butler", "A Jeeves.", "g", "b")]
 
@@ -1354,7 +1364,7 @@ def test_persona_list_prints_the_personas(
 def test_persona_list_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListPersonas):
+    class FakeUseCase(ListPersonasUseCase):
         def execute(self) -> list[Persona]:
             return [Persona("butler", "A Jeeves.", "g", "b")]
 
@@ -1364,13 +1374,13 @@ def test_persona_list_json_output(
 
 
 def test_build_list_personas_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_list_personas(), ListPersonas)
+    assert isinstance(composition.build_list_personas(), ListPersonasUseCase)
 
 
 def test_plugins_list_prints_the_plugins(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListPlugins):
+    class FakeUseCase(ListPluginsUseCase):
         def execute(self) -> list[Plugin]:
             return [Plugin("cursor-mitm", "Cursor via MITM proxy")]
 
@@ -1384,7 +1394,7 @@ def test_plugins_list_prints_the_plugins(
 def test_plugins_list_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListPlugins):
+    class FakeUseCase(ListPluginsUseCase):
         def execute(self) -> list[Plugin]:
             return [Plugin("cursor-mitm", "MITM")]
 
@@ -1396,7 +1406,7 @@ def test_plugins_list_json_output(
 def test_plugins_list_empty_hint(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(ListPlugins):
+    class FakeUseCase(ListPluginsUseCase):
         def execute(self) -> list[Plugin]:
             return []
 
@@ -1406,10 +1416,10 @@ def test_plugins_list_empty_hint(
 
 
 def test_build_list_plugins_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_list_plugins(), ListPlugins)
+    assert isinstance(composition.build_list_plugins(), ListPluginsUseCase)
 
 
-class _NoBootstrap(Bootstrap):
+class _NoBootstrap(BootstrapUseCase):
     def execute(self) -> None:
         """Skip real ~/.gmlw seeding in a CLI validation test."""
 
@@ -1433,7 +1443,7 @@ def test_sessions_rejects_an_unsafe_job_id(
 def test_start_aborts_on_unreadable_settings(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJob):
+    class FailingUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             raise ClientSettingsUnusableError("/x/.claude/settings.json")
 
@@ -1524,13 +1534,13 @@ def test_bare_config_shows_its_help(
 
 
 def test_build_config_commands_is_wired() -> None:
-    assert isinstance(composition.build_config_commands(), ConfigCommands)
+    assert isinstance(composition.build_config_commands(), ConfigCommandsUseCase)
 
 
 def test_exit_receipt_prints_cost_and_next_steps(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
 
@@ -1545,7 +1555,7 @@ def test_exit_receipt_prints_cost_and_next_steps(
 def test_exit_receipt_tip_is_shown_once_then_suppressed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
 
@@ -1566,7 +1576,7 @@ def test_exit_receipt_tip_suppressed_when_hints_disabled(
     (paths.home).mkdir(parents=True, exist_ok=True)
     (paths.home / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
 
-    class FakeUseCase(StartJob):
+    class FakeUseCase(StartJobUseCase):
         def execute(self, command: StartJobCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
 
@@ -1578,7 +1588,7 @@ def test_exit_receipt_tip_suppressed_when_hints_disabled(
 def test_workflow_edit_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: dict[str, EditWorkflowCommand] = {}
 
-    class FakeUseCase(EditWorkflow):
+    class FakeUseCase(EditWorkflowUseCase):
         def execute(self, command: EditWorkflowCommand) -> int:
             seen["command"] = command
             return 0
@@ -1591,7 +1601,7 @@ def test_workflow_edit_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatc
 def test_workflow_edit_reports_a_missing_workflow(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(EditWorkflow):
+    class FailingUseCase(EditWorkflowUseCase):
         def execute(self, command: EditWorkflowCommand) -> int:
             raise WorkflowNotFoundError("unknown workflow: 'missing'")
 
@@ -1601,10 +1611,10 @@ def test_workflow_edit_reports_a_missing_workflow(
 
 
 def test_build_edit_workflow_is_wired() -> None:
-    assert isinstance(composition.build_edit_workflow(), EditWorkflow)
+    assert isinstance(composition.build_edit_workflow(), EditWorkflowUseCase)
 
 
-class _FakeCreateAxis(CreateAxis):
+class _FakeCreateAxis(CreateAxisUseCase):
     def __init__(self, error: Exception | None = None) -> None:
         self.seen: CreateAxisCommand | None = None
         self._error = error
@@ -1656,7 +1666,7 @@ def test_environment_new_reports_a_collision_and_exits_2(
 
 
 def test_build_create_axis_is_wired() -> None:
-    assert isinstance(composition.build_create_axis(), CreateAxis)
+    assert isinstance(composition.build_create_axis(), CreateAxisUseCase)
 
 
 def test_preflight_resume_cwd_passes_when_the_folder_has_no_stored_cwd() -> None:
@@ -1722,7 +1732,7 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
 # --------------------------------------------------------------------------- #
 
 
-class _FakeDeleteJobs(DeleteJobs):
+class _FakeDeleteJobs(DeleteJobsUseCase):
     """Records what it was asked to preview and delete; deletes nothing."""
 
     def __init__(
@@ -1750,7 +1760,7 @@ class _FakeDeleteJobs(DeleteJobs):
         return self._outcome if self._outcome is not None else self._footprints
 
 
-class _FakeDeleteSessions(DeleteSessions):
+class _FakeDeleteSessions(DeleteSessionsUseCase):
     """Records what it was asked to preview and delete; deletes nothing."""
 
     def __init__(
@@ -1910,7 +1920,7 @@ def test_repeated_ids_are_asked_for_once(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_an_invalid_job_id_never_reaches_the_use_case(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    def _unreachable() -> DeleteJobs:
+    def _unreachable() -> DeleteJobsUseCase:
         raise AssertionError("a bad id must be refused at the boundary")
 
     monkeypatch.setattr(app, "build_delete_jobs", _unreachable)
@@ -1980,8 +1990,8 @@ def test_format_sessions_marks_the_empty_one() -> None:
 
 
 def test_build_delete_use_cases_are_wired() -> None:
-    assert isinstance(composition.build_delete_jobs(), DeleteJobs)
-    assert isinstance(composition.build_delete_sessions(), DeleteSessions)
+    assert isinstance(composition.build_delete_jobs(), DeleteJobsUseCase)
+    assert isinstance(composition.build_delete_sessions(), DeleteSessionsUseCase)
 
 
 # --------------------------------------------------------------------------- #
@@ -2146,7 +2156,7 @@ def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatc
         def run(self) -> tui.MenuChoice | None:
             return None
 
-    class _Jobs(ListJobs):
+    class _Jobs(ListJobsUseCase):
         def execute(self) -> list[JobSummary]:
             return [JobSummary(job="beta", session_count=1)]
 
@@ -2187,7 +2197,7 @@ def _built_archiver(monkeypatch: pytest.MonkeyPatch) -> tui.Archiver:
 def test_the_injected_archiver_exports_and_reports_where(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    class _Export(ExportWorkflow):
+    class _Export(ExportWorkflowUseCase):
         def execute(self, name: str) -> str:
             return str(tmp_path / f"{name}.zip")
 
@@ -2199,7 +2209,7 @@ def test_the_injected_archiver_exports_and_reports_where(
 def test_an_export_failure_is_reported_rather_than_raised(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _Export(ExportWorkflow):
+    class _Export(ExportWorkflowUseCase):
         def execute(self, name: str) -> str:
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
 
@@ -2210,8 +2220,8 @@ def test_an_export_failure_is_reported_rather_than_raised(
     assert "gone" in message
 
 
-def _import_returning(result: ImportWorkflowResult) -> type[ImportWorkflow]:
-    class _Import(ImportWorkflow):
+def _import_returning(result: ImportWorkflowResult) -> type[ImportWorkflowUseCase]:
+    class _Import(ImportWorkflowUseCase):
         def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
             return result
 
@@ -2251,7 +2261,7 @@ def test_a_replacement_names_the_backup_it_kept(monkeypatch: pytest.MonkeyPatch)
 def test_an_unreadable_archive_is_reported_rather_than_raised(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _Import(ImportWorkflow):
+    class _Import(ImportWorkflowUseCase):
         def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
             raise ArchiveUnreadableError("error.archive.unreadable", archive=archive)
 
@@ -2350,7 +2360,7 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
         def run(self) -> tui.MenuChoice | None:
             return None
 
-    class _Launch(ListLaunchClients):
+    class _Launch(ListLaunchClientsUseCase):
         def execute(self) -> list[LaunchClient]:
             return [LaunchClient("claude", "Claude Code", is_default=True)]
 
@@ -2371,12 +2381,12 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
 
 
 def test_build_list_launch_clients_is_wired() -> None:
-    assert isinstance(composition.build_list_launch_clients(), ListLaunchClients)
+    assert isinstance(composition.build_list_launch_clients(), ListLaunchClientsUseCase)
 
 
 def _client(name: str) -> ClientInfo:
     """The packaged catalogue entry for *name* — these tests assume it exists."""
-    info = TomlClientCatalog().by_name(name)
+    info = TomlClientCatalogAdapter().by_name(name)
     assert info is not None
     return info
 

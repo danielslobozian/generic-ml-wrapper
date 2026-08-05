@@ -7,7 +7,7 @@ metering relay's threads -- read and write without a shared, thread-bound connec
 transactions give crash-consistency for free (no temp-file dance).
 
 The schema is not defined here. It is the ordered lineage of migration files applied by
-:class:`~generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration.SqliteStoreMigration`,
+:class:`~generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration.SqliteStoreMigrationAdapter`,
 and the ledger's part is only to make sure that has run before it hands out a connection
 anything reads or writes through. That call is idempotent and happens once per ledger, so
 a database is brought up to date by using it, not by a caller remembering to.
@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
-    SqliteStoreMigration,
+    SqliteStoreMigrationAdapter,
 )
 
 if TYPE_CHECKING:
@@ -41,7 +41,7 @@ class Ledger:
             diagnostics: Where migration progress is reported, or ``None`` for silence.
         """
         self._path = path
-        self._migration = SqliteStoreMigration(self._open, path.parent, diagnostics)
+        self._migration = SqliteStoreMigrationAdapter(self._open, path.parent, diagnostics)
         self._migrated = False
 
     @contextmanager

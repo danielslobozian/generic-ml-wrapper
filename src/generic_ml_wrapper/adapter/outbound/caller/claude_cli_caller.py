@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``ClaudeCliCaller``: launch Claude Code, install the status line, meter the run."""
+"""``ClaudeCliCallerAdapter``: launch Claude Code, install the status line, meter the run."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProces
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import StatusLineSnapshot
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.domain.model.run import RunContext
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
@@ -31,7 +31,7 @@ _STATUSLINE: dict[str, object] = {
 }
 
 
-class ClaudeCliCaller(CliCaller):
+class ClaudeCliCallerAdapter(CliCallerPort):
     """Launch Claude Code for a run, metered via the status line and a local relay.
 
     ``start_metering`` points Claude Code's ``statusLine`` at ``gmlw statusline`` and

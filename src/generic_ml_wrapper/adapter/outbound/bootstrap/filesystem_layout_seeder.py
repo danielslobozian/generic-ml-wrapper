@@ -8,7 +8,9 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
-from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
+    TomlkitConfigWriterAdapter,
+)
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
@@ -27,7 +29,7 @@ if TYPE_CHECKING:
 _DIRS = ("profile/me", "templates")
 _ENVIRONMENTS = "environments"
 # Rules are a projection of the user, so they live on the two axes that describe one: the
-# environment (the place) and the role (the craft). Init seeds an empty rules/ drop-zone in
+# environment (the place) and the role (the craft). InitUseCase seeds an empty rules/ drop-zone in
 # each of the chosen folders. There is no global tier and no per-workflow tier.
 _ROLES = "profile/roles"
 _CONFIG = "config.toml"
@@ -125,7 +127,7 @@ _CONFIG_TEMPLATE = """\
 # gmlw configuration. Every setting is optional; delete this file to fall back to
 # the built-in defaults. Uncomment and edit what you need.
 
-# Init marker. `gmlw init` writes this once; while it is absent, gmlw funnels you
+# InitUseCase marker. `gmlw init` writes this once; while it is absent, gmlw funnels you
 # through the forced first-run setup before any command runs.
 __INIT_MARKER__
 
@@ -173,14 +175,14 @@ __CLIENT_DEFAULT__
 # a target. Compile-time targets: "profile" | "rules" | "workflow" | "context". Wire
 # targets (metered clients only): "request" (outbound body) | "response" (captured
 # reply, observe-only). A target may have many; one spec may appear under several.
-# The built-in MessageSizeLogger logs each message's size — put it on request and
+# The built-in MessageSizeLoggerAdapter logs each message's size — put it on request and
 # response to trace sizes in and out:
 # [[interceptors]]
 # target = "request"
-# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
+# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
 # [[interceptors]]
 # target = "response"
-# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
+# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
 
 # Hooks (0..N, ordered), each an action (HookPort) run at a lifecycle seam bracketing the
 # client run — not a content transform (that is an interceptor) but a side effect. Phases:
@@ -189,13 +191,13 @@ __CLIENT_DEFAULT__
 # "post-session" (after the client exits, with its exit code — for cleanup, notification,
 # archival). Each spec is a "module:Class" / "/path.py:Class" or a plugin id; an optional
 # client scopes the hook to one client. Best-effort: a failing hook never breaks a launch.
-# The built-in SessionLogger appends a line at each seam — a template for your own hooks:
+# The built-in SessionLoggerAdapter appends a line at each seam — a template for your own hooks:
 # [[hooks]]
 # phase = "pre-launch"
-# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
 # [[hooks]]
 # phase = "post-session"
-# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
 # client = "claude"   # optional; omit to run for every client
 
 # Context packaging. On every run gmlw composes an operating context from a fixed set of
@@ -272,7 +274,7 @@ def _render_config(  # noqa: PLR0913  (one keyword per config placeholder; all o
     )
 
 
-class FilesystemLayoutSeeder(LayoutSeederPort):
+class FilesystemLayoutSeederAdapter(LayoutSeederPort):
     """Create the ``~/.gmlw`` profile/rules directories and seed a default config."""
 
     def __init__(self, home: Path, *, clock: Callable[[], datetime] | None = None) -> None:
@@ -376,7 +378,7 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
         """Merge every captured answer into an existing config, preserving the rest.
 
         A legacy config already carries the user's settings and comments. The shared
-        :class:`TomlkitConfigWriter` does a round-trip edit: each captured value is set
+        :class:`TomlkitConfigWriterAdapter` does a round-trip edit: each captured value is set
         into its table (created if missing) while every other key, comment, and the file's
         formatting are kept exactly. The persona and client are written only when one was
         chosen (``None`` values are dropped here, never passed as a clear), so a decline
@@ -402,4 +404,4 @@ class FilesystemLayoutSeeder(LayoutSeederPort):
             ("client", "default", selections.client),
         )
         entries = [(table, key, value) for table, key, value in settings if value is not None]
-        return TomlkitConfigWriter().merge(config, entries)
+        return TomlkitConfigWriterAdapter().merge(config, entries)

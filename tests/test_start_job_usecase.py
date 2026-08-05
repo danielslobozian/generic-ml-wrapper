@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the StartJob use case, driven by fakes for its outbound ports."""
+"""Tests for the StartJobUseCase use case, driven by fakes for its outbound ports."""
 
 import os
 from collections.abc import Generator
@@ -10,12 +10,12 @@ from pathlib import Path
 import pytest
 from _delete_doubles import FakeSessionLock
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
-    FilesystemWorkflowSource,
+    FilesystemWorkflowSourceAdapter,
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
@@ -30,14 +30,17 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobCommand,
     UnknownWorkflowError,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.cli_caller import (
+    CliCallerPort,
+    CliCallerProviderPort,
+)
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
-from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.application.usecase.start_job import StartJobService
 
 # A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
 # the quotes stay inside the token there. See ``ClientArguments`` for why.
@@ -133,7 +136,7 @@ class FakeWorkflows(WorkflowSourcePort):
         return f"CONTEXT<{name}>"
 
 
-class RecordingCaller(CliCaller):
+class RecordingCaller(CliCallerPort):
     def __init__(self, run: RunContext, log: list[str], *, can_resume: bool = True) -> None:
         super().__init__(run)
         self._log = log
@@ -164,13 +167,13 @@ class FakeCredentials(CredentialsStorePort):
         raise NotImplementedError
 
 
-class FakeProvider(CliCallerProvider):
+class FakeProvider(CliCallerProviderPort):
     def __init__(self, log: list[str] | None = None, *, can_resume: bool = True) -> None:
         self.log = log if log is not None else []
         self.run: RunContext | None = None
         self._can_resume = can_resume
 
-    def for_run(self, run: RunContext) -> CliCaller:
+    def for_run(self, run: RunContext) -> CliCallerPort:
         self.run = run
         return RecordingCaller(run, self.log, can_resume=self._can_resume)
 
@@ -195,8 +198,8 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
     diagnostics: Diagnostics | None = None,
-) -> StartJobUseCase:
-    return StartJobUseCase(
+) -> StartJobService:
+    return StartJobService(
         store=store,
         workflows=workflows or FakeWorkflows(),
         callers=provider,
@@ -204,13 +207,13 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
         launch=LaunchSequence(
-            hooks or HookRunner((), NullDiagnostics(), _localizer()),
-            NullDiagnostics(),
+            hooks or HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            NullDiagnosticsAdapter(),
             _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),
         ),
-        diagnostics=diagnostics or NullDiagnostics(),
+        diagnostics=diagnostics or NullDiagnosticsAdapter(),
         posix=os.name != "nt",
         localizer=_localizer(),
         greeting=lambda: greeting,
@@ -302,7 +305,7 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
             (HookPhase.PRE_LAUNCH, None, RecordingHook(shared)),
             (HookPhase.POST_SESSION, None, RecordingHook(shared)),
         ],
-        NullDiagnostics(),
+        NullDiagnosticsAdapter(),
         _localizer(),
     )
     provider = FakeProvider(log=shared)
@@ -463,7 +466,7 @@ def test_the_meta_workflow_cannot_be_run_as_a_workflow(tmp_path: Path) -> None:
     that the same way it is hidden from the listing — so the run is refused, and authoring
     stays reachable only through the command built for it.
     """
-    source = FilesystemWorkflowSource(tmp_path / "workflows")
+    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
     source.seed()
 
     with pytest.raises(UnknownWorkflowError):

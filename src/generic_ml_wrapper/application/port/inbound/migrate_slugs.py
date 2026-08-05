@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     )
 
 
-class MigrateSlugs(ABC):
+class MigrateSlugsUseCase(ABC):
     """Rename legacy raw-named role/environment folders to clean slugs, once."""
 
     @abstractmethod

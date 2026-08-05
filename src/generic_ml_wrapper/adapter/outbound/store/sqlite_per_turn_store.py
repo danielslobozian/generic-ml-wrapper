@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 
 
-class SqlitePerTurnStore(PerTurnMeteringPort):
+class SqlitePerTurnStoreAdapter(PerTurnMeteringPort):
     """Append and read metered turns, keyed by job, in the ledger."""
 
     def __init__(self, ledger: Ledger) -> None:

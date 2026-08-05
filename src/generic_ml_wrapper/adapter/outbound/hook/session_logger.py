@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 _LOG = "sessions.log"
 
 
-class SessionLogger(HookPort):
+class SessionLoggerAdapter(HookPort):
     """Append one line to ``~/.gmlw/sessions.log`` at each seam; the simplest hook.
 
     A reference hook and the simplest example of the lifecycle-hook contract: at

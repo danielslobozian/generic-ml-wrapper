@@ -36,7 +36,7 @@ class ClientInfo:
             Claude and cursor-agent are told the id we named, Codex learns the one it minted
             mid-run, and all three end up resumable; Vibe keeps no durable session, so it
             does not. Whether a *particular* session can be resumed is the caller's call
-            (``CliCaller.can_resume``), which for Codex is answered per session.
+            (``CliCallerPort.can_resume``), which for Codex is answered per session.
         resume_hint: Catalogue key for the caveat on ``resumable``, or ``""`` when the yes
             is unconditional. A key, not a sentence, for the same reason as ``login_hint``.
         version_probes: Ordered first-party sources for the latest version.

@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     )
 
 
-class CacheBackedContextCompressor(ContextCompressorPort):
+class CacheBackedContextCompressorAdapter(ContextCompressorPort):
     """Compress a source through the generic-ml-cache record/replay cache.
 
     The prompt is chosen per source — a key-level override, else the source's kind

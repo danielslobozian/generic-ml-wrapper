@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.draft import Draft
 
 
-class ListDrafts(ABC):
+class ListDraftsUseCase(ABC):
     """List the authoring drafts still on disk."""
 
     @abstractmethod

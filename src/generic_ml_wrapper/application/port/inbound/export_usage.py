@@ -83,7 +83,7 @@ class UsageReport:
     total_usd: float = 0.0
 
 
-class ExportUsage(ABC):
+class ExportUsageUseCase(ABC):
     """Report the usage recorded for a job."""
 
     @abstractmethod

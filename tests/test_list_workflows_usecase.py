@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ListWorkflows use case, driven by a fake source."""
+"""Tests for the ListWorkflowsUseCase use case, driven by a fake source."""
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
+from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsService
 
 
 class FakeWorkflows(WorkflowSourcePort):
@@ -53,8 +53,8 @@ class FakeWorkflows(WorkflowSourcePort):
 
 
 def test_lists_the_source_names() -> None:
-    assert ListWorkflowsUseCase(FakeWorkflows(["a", "b"])).execute() == ["a", "b"]
+    assert ListWorkflowsService(FakeWorkflows(["a", "b"])).execute() == ["a", "b"]
 
 
 def test_no_workflows_yields_empty_list() -> None:
-    assert ListWorkflowsUseCase(FakeWorkflows([])).execute() == []
+    assert ListWorkflowsService(FakeWorkflows([])).execute() == []

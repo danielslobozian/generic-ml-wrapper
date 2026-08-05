@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The CheckLaunchLocation use case: refuse a launch into a folder that is gone."""
+"""The CheckLaunchLocationUseCase use case: refuse a launch into a folder that is gone."""
 
 from __future__ import annotations
 
@@ -10,13 +10,15 @@ from generic_ml_wrapper.application.domain.model.launch_location import (
     LaunchLocation,
     LaunchLocationProblem,
 )
-from generic_ml_wrapper.application.port.inbound.check_launch_location import CheckLaunchLocation
+from generic_ml_wrapper.application.port.inbound.check_launch_location import (
+    CheckLaunchLocationUseCase,
+)
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.working_folder import WorkingFolderPort
 
 
-class CheckLaunchLocationUseCase(CheckLaunchLocation):
+class CheckLaunchLocationService(CheckLaunchLocationUseCase):
     """Decide whether a run can start where it was asked to."""
 
     def __init__(self, folders: WorkingFolderPort) -> None:

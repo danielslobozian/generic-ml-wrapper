@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class FilesystemReportExporter(ReportExportPort):
+class FilesystemReportExporterAdapter(ReportExportPort):
     """Write each export to ``<root>/<job>-<timestamp>.json``, creating the root as needed."""
 
     def __init__(self, root: Path, clock: Callable[[], datetime]) -> None:

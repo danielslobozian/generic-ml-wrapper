@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
-class TtyPersonaChooser(PersonaChooserPort):
+class TtyPersonaChooserAdapter(PersonaChooserPort):
     """Offer a persona at an interactive terminal; decline when there is none.
 
     The prompt is written to stderr and read from stdin; an empty line (or no terminal)

@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class RenderFarewell(ABC):
+class RenderFarewellUseCase(ABC):
     """Render the goodbye, when there is a companion to say it."""
 
     @abstractmethod

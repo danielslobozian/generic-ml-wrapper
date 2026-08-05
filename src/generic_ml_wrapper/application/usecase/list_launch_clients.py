@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListLaunchClients use case: the catalog, PATH detection, and the default."""
+"""The ListLaunchClientsUseCase use case: the catalog, PATH detection, and the default."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.port.inbound.list_launch_clients import (
     LaunchClient,
-    ListLaunchClients,
+    ListLaunchClientsUseCase,
 )
 
 if TYPE_CHECKING:
@@ -18,16 +18,16 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
 
 
-class ListLaunchClientsUseCase(ListLaunchClients):
+class ListLaunchClientsService(ListLaunchClientsUseCase):
     """Compose PATH detection, the ``[callers]`` overrides, and the configured default.
 
     The version-reading sibling of this is
-    :class:`~generic_ml_wrapper.application.usecase.list_clients.ListClientsUseCase`, which
+    :class:`~generic_ml_wrapper.application.usecase.list_clients.ListClientsService`, which
     answers "what do I have installed, and is it current" for the Clients view. This one
     answers "what can I launch on", which is a cheaper question and a different one.
 
     ``[callers]`` is not a decoration on the catalog -- it is a source of clients in its own
-    right. ``DefaultCliCallerProvider`` looks an override up **by name before** it considers
+    right. ``DefaultCliCallerProviderAdapter`` looks an override up **by name before** it considers
     any built-in, so an entry like ``cursor-mitm = "…:CursorMitmCaller"`` makes
     ``cursor-mitm`` as real a client as ``claude``, with no catalog entry and no binary gmlw
     knows about. A chooser built from the catalog alone would be the one place in gmlw where

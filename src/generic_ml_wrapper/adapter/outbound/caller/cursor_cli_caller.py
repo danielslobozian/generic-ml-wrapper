@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``CursorCliCaller``: launch cursor-agent and install its status line (no metering)."""
+"""``CursorCliCallerAdapter``: launch cursor-agent and install its status line (no metering)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProces
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import StatusLineSnapshot
 from generic_ml_wrapper.application.domain.model.run import RunContext
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 
 BINARY = "cursor-agent"
 _CONFIG = Path.home() / ".cursor" / "cli-config.json"
@@ -24,7 +24,7 @@ _STATUSLINE: dict[str, object] = {
 }
 
 
-class CursorCliCaller(CliCaller):
+class CursorCliCallerAdapter(CliCallerPort):
     """Launch cursor-agent for a run, with the wrapper's status line, without metering.
 
     cursor-agent hosts a command-backed status line (``~/.cursor/cli-config.json``),

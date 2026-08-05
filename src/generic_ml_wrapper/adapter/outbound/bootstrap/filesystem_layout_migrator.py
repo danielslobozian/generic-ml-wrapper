@@ -17,7 +17,7 @@ _OLD_COMPANY = ("profile", "company")
 _ENVIRONMENTS = "environments"
 
 
-class FilesystemLayoutMigrator(LayoutMigratorPort):
+class FilesystemLayoutMigratorAdapter(LayoutMigratorPort):
     """Move the old ``~/.gmlw/profile/company`` context into ``environments/<env>``."""
 
     def __init__(self, home: Path) -> None:

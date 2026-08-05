@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``LocalGitWorkspaceInspector``: read the folder and git state from the cwd."""
+"""``LocalGitWorkspaceInspectorAdapter``: read the folder and git state from the cwd."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInsp
 _GIT_TIMEOUT_SECONDS = 2
 
 
-class LocalGitWorkspaceInspector(WorkspaceInspectorPort):
+class LocalGitWorkspaceInspectorAdapter(WorkspaceInspectorPort):
     """Inspect the working directory and, when it is a git repository, git state.
 
     The status-line command runs in the client's working directory, so the folder

@@ -4,9 +4,9 @@ import sys
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
-from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
-from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
+from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStoreAdapter
+from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStoreAdapter
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
@@ -23,9 +23,9 @@ home.mkdir(parents=True, exist_ok=True)
 )
 
 ledger = Ledger(home / "ledger.db")
-sessions = SqliteSessionStore(ledger, kind="work")
-turns = SqlitePerTurnStore(ledger)
-costs = SqliteUsageStore(ledger)
+sessions = SqliteSessionStoreAdapter(ledger, kind="work")
+turns = SqlitePerTurnStoreAdapter(ledger)
+costs = SqliteUsageStoreAdapter(ledger)
 
 JOB = "REFACTOR-42"
 # A fixed base epoch so the rendered HH:MM:SS is deterministic across renders.

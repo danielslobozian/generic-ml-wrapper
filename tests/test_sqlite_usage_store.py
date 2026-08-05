@@ -7,8 +7,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
-from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
+from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStoreAdapter
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 
@@ -16,8 +16,8 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-def _store(tmp_path: Path) -> SqliteUsageStore:
-    return SqliteUsageStore(Ledger(tmp_path / "ledger.db"))
+def _store(tmp_path: Path) -> SqliteUsageStoreAdapter:
+    return SqliteUsageStoreAdapter(Ledger(tmp_path / "ledger.db"))
 
 
 def _seed(tmp_path: Path, job: str, *sessions: str) -> None:
@@ -27,7 +27,7 @@ def _seed(tmp_path: Path, job: str, *sessions: str) -> None:
     never recorded -- in a real run the session is persisted before the client that
     produces either is launched.
     """
-    store = SqliteSessionStore(Ledger(tmp_path / "ledger.db"))
+    store = SqliteSessionStoreAdapter(Ledger(tmp_path / "ledger.db"))
     for session in sessions:
         store.record(Session(session, job, "claude", None))
 

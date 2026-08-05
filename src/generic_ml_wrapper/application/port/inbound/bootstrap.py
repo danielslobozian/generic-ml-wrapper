@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class Bootstrap(ABC):
+class BootstrapUseCase(ABC):
     """Ensure the wrapper's runtime layout exists, creating only what is missing."""
 
     @abstractmethod

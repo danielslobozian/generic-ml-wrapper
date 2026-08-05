@@ -56,7 +56,7 @@ class ResumeNotSupportedError(DomainError, ValueError):
     """Raised when resuming is requested for a client that cannot resume (e.g. codex)."""
 
 
-class StartJob(ABC):
+class StartJobUseCase(ABC):
     """Start or resume a session on a job and hand over to the client."""
 
     @abstractmethod

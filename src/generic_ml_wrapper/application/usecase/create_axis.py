@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The CreateAxis use case: create a role/environment folder from a typed label."""
+"""The CreateAxisUseCase use case: create a role/environment folder from a typed label."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from generic_ml_wrapper.application.domain.model.slug import Slug
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
     AxisLabelError,
-    CreateAxis,
     CreateAxisCommand,
     CreateAxisResult,
+    CreateAxisUseCase,
 )
 
 if TYPE_CHECKING:
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.config_writer import ConfigWriterPort
 
 
-class CreateAxisUseCase(CreateAxis):
+class CreateAxisService(CreateAxisUseCase):
     """Create a role/environment slug-folder, optionally making it the default.
 
     The slug is derived from the label (``slugify``), so the user types a human name and

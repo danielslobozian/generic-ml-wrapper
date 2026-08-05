@@ -8,7 +8,7 @@ import io
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap import tty_axis_chooser, tty_prompt
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooserAdapter
 from generic_ml_wrapper.application.domain.model.axis_prompt import ENVIRONMENT_PROMPT
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
@@ -33,8 +33,8 @@ def _wire(monkeypatch: pytest.MonkeyPatch, *, stdin: str, tty: bool = True) -> i
     return err
 
 
-def _chooser() -> TtyAxisChooser:
-    return TtyAxisChooser(load_localizer("en"))
+def _chooser() -> TtyAxisChooserAdapter:
+    return TtyAxisChooserAdapter(load_localizer("en"))
 
 
 def test_picking_a_menu_example_returns_its_canonical_slug(monkeypatch: pytest.MonkeyPatch) -> None:

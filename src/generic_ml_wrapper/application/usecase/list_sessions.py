@@ -1,16 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListSessions use case: summarise a job's recorded sessions."""
+"""The ListSessionsUseCase use case: summarise a job's recorded sessions."""
 
 from __future__ import annotations
 
-from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
+from generic_ml_wrapper.application.port.inbound.list_sessions import (
+    ListSessionsUseCase,
+    SessionSummary,
+)
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
 
-class ListSessionsUseCase(ListSessions):
+class ListSessionsService(ListSessionsUseCase):
     """Summarise the sessions recorded for a job, with what each one used."""
 
     def __init__(

@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class SaveUsageReport(ABC):
+class SaveUsageReportUseCase(ABC):
     """Save a job's recorded usage as a file, returning where it was written."""
 
     @abstractmethod

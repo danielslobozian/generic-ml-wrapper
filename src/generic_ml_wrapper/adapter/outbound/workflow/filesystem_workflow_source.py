@@ -47,7 +47,7 @@ _FINISHED = "finished"
 _GUIDE = "guided.md"
 
 
-class FilesystemWorkflowSource(WorkflowSourcePort):
+class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
     """Read workflows from ``<root>/<name>/workflow.md``; seed packaged defaults.
 
     ``compile`` composes a run's operating context from several locations — the

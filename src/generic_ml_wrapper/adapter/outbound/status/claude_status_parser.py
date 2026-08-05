@@ -23,7 +23,7 @@ def _dig(payload: object, *keys: str) -> object:
     return current
 
 
-class ClaudeStatusParser(ClientStatusParserPort):
+class ClaudeStatusParserAdapter(ClientStatusParserPort):
     """Read model, context fill, and session cost from Claude Code's payload."""
 
     def __init__(self, clock: Callable[[], float] = time.time) -> None:

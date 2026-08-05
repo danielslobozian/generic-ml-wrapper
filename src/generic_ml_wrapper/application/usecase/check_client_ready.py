@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The CheckClientReady use case: is the resolved client launchable?"""
+"""The CheckClientReadyUseCase use case: is the resolved client launchable?"""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
-    CheckClientReady,
+    CheckClientReadyUseCase,
     ClientReadiness,
 )
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 
 
-class CheckClientReadyUseCase(CheckClientReady):
+class CheckClientReadyService(CheckClientReadyUseCase):
     """Resolve readiness from the caller overrides and the installed clients.
 
     A client with a ``[callers]`` override is trusted as ready — the override is

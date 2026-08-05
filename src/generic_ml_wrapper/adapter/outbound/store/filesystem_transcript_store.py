@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 
-class FilesystemTranscriptStore(TranscriptPort):
+class FilesystemTranscriptStoreAdapter(TranscriptPort):
     """Persist each call's in/out/usage trio under a per-session folder."""
 
     def __init__(self, root: Path) -> None:

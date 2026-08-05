@@ -49,7 +49,7 @@ class NoSuchSessionError(DomainError, ValueError):
     """Raised when the named session is not recorded for its job."""
 
 
-class DeleteSessions(ABC):
+class DeleteSessionsUseCase(ABC):
     """Remove recorded sessions from a job, with their usage and their files."""
 
     @abstractmethod

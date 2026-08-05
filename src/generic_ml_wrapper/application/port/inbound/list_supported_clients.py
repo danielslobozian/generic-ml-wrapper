@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 
 
-class ListSupportedClients(ABC):
+class ListSupportedClientsUseCase(ABC):
     """The supported clients and their setup facts, whether installed or not.
 
     Distinct from listing what is *available*: this is the catalogue itself, used to name

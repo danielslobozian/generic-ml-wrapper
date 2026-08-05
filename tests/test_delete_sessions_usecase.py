@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the DeleteSessions use case, driven by in-memory doubles.
+"""Tests for the DeleteSessionsUseCase use case, driven by in-memory doubles.
 
 The point of interest is not that a delete deletes -- it is *when* it refuses to. A
 batch is all-or-nothing, so a typo in the third id must leave the first two alone.
@@ -10,7 +10,7 @@ import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
 from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
@@ -24,7 +24,7 @@ from generic_ml_wrapper.application.port.inbound.delete_sessions import (
     NoSuchSessionError,
     SessionFootprint,
 )
-from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsUseCase
+from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
 
 
 def _localizer() -> Localizer:
@@ -46,15 +46,15 @@ class _Fixture:
         self.artifacts = RecordingArtifactPurge(self.trace)
         self.locks = FakeSessionLock()
 
-    def use_case(self) -> DeleteSessionsUseCase:
-        return DeleteSessionsUseCase(
+    def use_case(self) -> DeleteSessionsService:
+        return DeleteSessionsService(
             self.store,
             self.turns,
             self.usage,
             self.ledger,
             self.artifacts,
             self.locks,
-            NullDiagnostics(),
+            NullDiagnosticsAdapter(),
             _localizer(),
         )
 

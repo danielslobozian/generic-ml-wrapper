@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ConfigCommands use case: list/get/set settings, validated against the registry."""
+"""The ConfigCommandsUseCase use case: list/get/set settings, validated against the registry."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
 from generic_ml_wrapper.application.port.inbound.config_commands import (
-    ConfigCommands,
+    ConfigCommandsUseCase,
     SetOutcome,
     SettingView,
 )
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.settings_catalog import SettingsCatalogPort
 
 
-class UpdateConfigUseCase(ConfigCommands):
+class UpdateConfigService(ConfigCommandsUseCase):
     """Render and mutate the settable scalar settings.
 
     Reads the schema and the current values through :class:`SettingsCatalogPort`. Writes

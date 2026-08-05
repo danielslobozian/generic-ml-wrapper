@@ -9,7 +9,7 @@ from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 
-class MessageSizeLogger(InterceptorPort):
+class MessageSizeLoggerAdapter(InterceptorPort):
     """Log the size of every intercepted message; a non-transforming observer.
 
     A reference interceptor and the simplest example of the plugin contract: it logs

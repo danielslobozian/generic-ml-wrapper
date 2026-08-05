@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The DeleteSessions use case: remove sessions, their usage, and their files.
+"""The DeleteSessionsUseCase use case: remove sessions, their usage, and their files.
 
 The session is the finer of the two removal grains. It is deliberately surgical -- it
 touches only the rows and files keyed to the sessions named, and leaves the job row and
@@ -19,7 +19,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.port.inbound.delete_sessions import (
-    DeleteSessions,
+    DeleteSessionsUseCase,
     NoSuchJobError,
     NoSuchSessionError,
     SessionFootprint,
@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
-class DeleteSessionsUseCase(DeleteSessions):
+class DeleteSessionsService(DeleteSessionsUseCase):
     """Measure and remove a job's sessions."""
 
     def __init__(  # noqa: PLR0913, PLR0917  (the read ports it measures with, plus both purges and the lock)

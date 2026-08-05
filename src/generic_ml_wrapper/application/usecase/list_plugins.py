@@ -1,19 +1,19 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListPlugins use case: report the installed plugins."""
+"""The ListPluginsUseCase use case: report the installed plugins."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
+from generic_ml_wrapper.application.port.inbound.list_plugins import ListPluginsUseCase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.plugin import Plugin
     from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
 
 
-class ListPluginsUseCase(ListPlugins):
+class ListPluginsService(ListPluginsUseCase):
     """Return the installed plugins from the plugin source."""
 
     def __init__(self, plugins: PluginSourcePort) -> None:

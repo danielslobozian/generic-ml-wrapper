@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The DeleteJobs use case: remove whole jobs and everything recorded under them.
+"""The DeleteJobsUseCase use case: remove whole jobs and everything recorded under them.
 
 The coarser of the two removal grains. It is not the fold of
-:class:`~generic_ml_wrapper.application.usecase.delete_sessions.DeleteSessionsUseCase`
+:class:`~generic_ml_wrapper.application.usecase.delete_sessions.DeleteSessionsService`
 over the job's sessions but a superset of it: it sweeps every row keyed to the job and
 both of its folders outright, so anything the job left behind that no *recorded* session
 still claims goes with it. Removing a job one session at a time would leave exactly that
@@ -24,7 +24,7 @@ from collections.abc import Sequence
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs, JobFootprint
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase, JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
@@ -38,7 +38,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
-class DeleteJobsUseCase(DeleteJobs):
+class DeleteJobsService(DeleteJobsUseCase):
     """Measure and remove whole jobs."""
 
     def __init__(  # noqa: PLR0913, PLR0917  (the read ports it measures with, plus both purges and the lock)

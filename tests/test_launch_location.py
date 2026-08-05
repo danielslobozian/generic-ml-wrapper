@@ -12,7 +12,7 @@ from __future__ import annotations
 from generic_ml_wrapper.application.domain.model.launch_location import LaunchLocationProblem
 from generic_ml_wrapper.application.port.outbound.working_folder import WorkingFolderPort
 from generic_ml_wrapper.application.usecase.check_launch_location import (
-    CheckLaunchLocationUseCase,
+    CheckLaunchLocationService,
 )
 
 
@@ -31,12 +31,12 @@ class _Folders(WorkingFolderPort):
 
 
 def test_a_run_in_a_live_directory_may_proceed() -> None:
-    assert CheckLaunchLocationUseCase(_Folders()).execute().usable
+    assert CheckLaunchLocationService(_Folders()).execute().usable
 
 
 def test_a_deleted_working_directory_stops_the_run() -> None:
     """A client launched from a deleted directory dies naming nothing the user can act on."""
-    verdict = CheckLaunchLocationUseCase(_Folders(current=False)).execute()
+    verdict = CheckLaunchLocationService(_Folders(current=False)).execute()
 
     assert not verdict.usable
     assert verdict.problem is LaunchLocationProblem.CURRENT_GONE
@@ -45,7 +45,7 @@ def test_a_deleted_working_directory_stops_the_run() -> None:
 def test_a_session_folder_that_is_gone_stops_a_resume_and_is_named() -> None:
     folders = _Folders(present=set())
 
-    verdict = CheckLaunchLocationUseCase(folders).execute("/gone/project")
+    verdict = CheckLaunchLocationService(folders).execute("/gone/project")
 
     assert verdict.problem is LaunchLocationProblem.SESSION_FOLDER_GONE
     assert verdict.folder == "/gone/project"  # named, so the guidance can say which
@@ -54,13 +54,13 @@ def test_a_session_folder_that_is_gone_stops_a_resume_and_is_named() -> None:
 def test_a_session_folder_that_is_there_may_proceed() -> None:
     folders = _Folders(present={"/work/project"})
 
-    assert CheckLaunchLocationUseCase(folders).execute("/work/project").usable
+    assert CheckLaunchLocationService(folders).execute("/work/project").usable
 
 
 def test_the_current_directory_is_checked_even_when_resuming() -> None:
     """A session recorded before folders existed resumes in the current directory."""
     folders = _Folders(current=False, present={"/work/project"})
 
-    verdict = CheckLaunchLocationUseCase(folders).execute("/work/project")
+    verdict = CheckLaunchLocationService(folders).execute("/work/project")
 
     assert verdict.problem is LaunchLocationProblem.CURRENT_GONE

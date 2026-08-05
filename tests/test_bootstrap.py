@@ -1,12 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the layout seeder and the Bootstrap use case."""
+"""Tests for the layout seeder and the BootstrapUseCase use case."""
 
 import tomllib
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
-    FilesystemLayoutSeeder,
+    FilesystemLayoutSeederAdapter,
 )
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.port.outbound.layout_seeder import (
@@ -14,11 +14,11 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import (
     InitSelections,
     LayoutSeederPort,
 )
-from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
+from generic_ml_wrapper.application.usecase.bootstrap import BootstrapService
 
 
 def test_seeder_creates_the_layout_and_config(tmp_path: Path) -> None:
-    FilesystemLayoutSeeder(tmp_path).ensure()
+    FilesystemLayoutSeederAdapter(tmp_path).ensure()
     assert (tmp_path / "profile" / "me").is_dir()
     assert not (tmp_path / "profile" / "company").exists()  # retired; env folders replace it
     assert (tmp_path / "templates").is_dir()
@@ -42,7 +42,7 @@ def test_seeder_creates_the_layout_and_config(tmp_path: Path) -> None:
 
 
 def test_seeder_bakes_in_the_chosen_default_client(tmp_path: Path) -> None:
-    FilesystemLayoutSeeder(tmp_path).ensure(default_client="cursor")
+    FilesystemLayoutSeederAdapter(tmp_path).ensure(default_client="cursor")
     config = tmp_path / "config.toml"
     # The chosen default is an ACTIVE setting; everything else stays commented off.
     assert tomllib.loads(config.read_text(encoding="utf-8")) == {
@@ -58,7 +58,7 @@ def test_seeder_bakes_in_the_chosen_default_client(tmp_path: Path) -> None:
 
 
 def test_seeder_seeds_the_learned_notebook(tmp_path: Path) -> None:
-    FilesystemLayoutSeeder(tmp_path).ensure()
+    FilesystemLayoutSeederAdapter(tmp_path).ensure()
     notebook = tmp_path / "profile" / "me" / "learned.md"
     assert notebook.is_file()
     text = notebook.read_text(encoding="utf-8")
@@ -67,7 +67,7 @@ def test_seeder_seeds_the_learned_notebook(tmp_path: Path) -> None:
 
 
 def test_seeder_seeds_the_rule_template(tmp_path: Path) -> None:
-    FilesystemLayoutSeeder(tmp_path).ensure()
+    FilesystemLayoutSeederAdapter(tmp_path).ensure()
     template = tmp_path / "templates" / "rule.template.md"
     assert template.is_file()
     text = template.read_text(encoding="utf-8")
@@ -82,7 +82,7 @@ def test_seeder_never_overwrites_an_edited_rule_template(tmp_path: Path) -> None
     (tmp_path / "templates").mkdir(parents=True)
     template = tmp_path / "templates" / "rule.template.md"
     template.write_text("MY FORMAT", encoding="utf-8")
-    FilesystemLayoutSeeder(tmp_path).ensure()
+    FilesystemLayoutSeederAdapter(tmp_path).ensure()
     assert template.read_text(encoding="utf-8") == "MY FORMAT"
 
 
@@ -90,12 +90,12 @@ def test_seeder_never_overwrites_an_edited_notebook(tmp_path: Path) -> None:
     (tmp_path / "profile" / "me").mkdir(parents=True)
     notebook = tmp_path / "profile" / "me" / "learned.md"
     notebook.write_text("MY NOTES", encoding="utf-8")
-    FilesystemLayoutSeeder(tmp_path).ensure()
+    FilesystemLayoutSeederAdapter(tmp_path).ensure()
     assert notebook.read_text(encoding="utf-8") == "MY NOTES"
 
 
 def test_seeder_bakes_in_the_chosen_persona(tmp_path: Path) -> None:
-    FilesystemLayoutSeeder(tmp_path).ensure(persona="butler")
+    FilesystemLayoutSeederAdapter(tmp_path).ensure(persona="butler")
     config = tmp_path / "config.toml"
     parsed = tomllib.loads(config.read_text(encoding="utf-8"))
     assert parsed["companion"] == {"persona": "butler"}  # active; everything else commented
@@ -107,14 +107,14 @@ def test_seeder_is_idempotent_and_preserves_an_edited_config(tmp_path: Path) -> 
     (tmp_path / "rules").mkdir()
     config.write_text('[client]\ndefault = "cursor"\n', encoding="utf-8")
 
-    FilesystemLayoutSeeder(tmp_path).ensure()  # must not overwrite
+    FilesystemLayoutSeederAdapter(tmp_path).ensure()  # must not overwrite
 
     assert 'default = "cursor"' in config.read_text(encoding="utf-8")
     assert (tmp_path / "profile" / "me").is_dir()  # still fills in what was missing
 
 
 def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> None:
-    persisted = FilesystemLayoutSeeder(tmp_path).initialize(
+    persisted = FilesystemLayoutSeederAdapter(tmp_path).initialize(
         InitSelections(
             version="0.4.0",
             language="fr",
@@ -157,7 +157,7 @@ def test_initialize_merges_every_answer_into_a_legacy_config(tmp_path: Path) -> 
     )
     config.write_text(legacy, encoding="utf-8")
 
-    persisted = FilesystemLayoutSeeder(tmp_path).initialize(
+    persisted = FilesystemLayoutSeederAdapter(tmp_path).initialize(
         InitSelections(
             version="0.4.0",
             language="fr",
@@ -194,7 +194,7 @@ def test_initialize_does_not_clear_settings_when_persona_or_client_declined(
     config = tmp_path / "config.toml"
     config.write_text('[companion]\npersona = "mentor"\n[client]\ndefault = "cursor"\n', "utf-8")
 
-    persisted = FilesystemLayoutSeeder(tmp_path).initialize(
+    persisted = FilesystemLayoutSeederAdapter(tmp_path).initialize(
         InitSelections(
             version="0.4.0",
             language="en",
@@ -223,5 +223,5 @@ def test_use_case_delegates_to_the_seeder() -> None:
             calls.append("initialize")
             return InitPersist(fresh=True)
 
-    BootstrapUseCase(FakeSeeder()).execute()
+    BootstrapService(FakeSeeder()).execute()
     assert calls == ["ensure:None:None"]

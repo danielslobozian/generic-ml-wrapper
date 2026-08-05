@@ -6,14 +6,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
+from generic_ml_wrapper.application.port.inbound.list_rules import ListRulesUseCase
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
     from generic_ml_wrapper.application.port.outbound.rule_catalog import RuleCatalogPort
 
 
-class ListRulesUseCase(ListRules):
+class ListRulesService(ListRulesUseCase):
     """Read the rule catalogue for the Rules browser."""
 
     def __init__(self, catalog: RuleCatalogPort) -> None:

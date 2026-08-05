@@ -106,7 +106,7 @@ under several targets.
 **Wire targets** (metered clients only): `request` (outbound body) \| `response`
 (captured reply, observe-only).
 
-The built-in `MessageSizeLogger` logs each message's size — bind it to `request` and
+The built-in `MessageSizeLoggerAdapter` logs each message's size — bind it to `request` and
 `response` to trace sizes in and out.
 
 Default: no interceptors.
@@ -117,11 +117,11 @@ Default: no interceptors.
 ```toml
 [[interceptors]]
 target = "request"
-spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
+spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
 
 [[interceptors]]
 target = "response"
-spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
+spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
 ```
 
 ## `[[hooks]]`
@@ -144,7 +144,7 @@ session. For cleanup, notification, archival, or roll-up.
 
 Hooks are **best-effort**: a failing hook is logged and skipped, never breaking a launch
 or its teardown. A `spec` may be a plugin id (resolved through `~/.gmlw/plugins/<id>/`,
-the same as a `[callers]` reference) or a direct spec. The built-in `SessionLogger`
+the same as a `[callers]` reference) or a direct spec. The built-in `SessionLoggerAdapter`
 appends a line to `~/.gmlw/sessions.log` at each seam — a template to copy for your own.
 
 Default: no hooks.
@@ -155,11 +155,11 @@ Default: no hooks.
 ```toml
 [[hooks]]
 phase = "pre-launch"
-spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
 
 [[hooks]]
 phase = "post-session"
-spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
+spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
 client = "claude"   # optional; omit to run for every client
 ```
 

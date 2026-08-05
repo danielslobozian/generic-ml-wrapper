@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The RenderStatusline use case: parse a client payload, record usage, render."""
+"""The RenderStatuslineUseCase use case: parse a client payload, record usage, render."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
-from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffPort
 from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
@@ -25,7 +25,7 @@ from generic_ml_wrapper.application.port.outbound.usage_store import UsageStoreP
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 
 
-class RenderStatuslineUseCase(RenderStatusline):
+class RenderStatuslineService(RenderStatuslineUseCase):
     """Parse the client's status payload, record its session cost, and render a line."""
 
     def __init__(  # noqa: PLR0913, PLR0917  (its outbound ports, plus the pair that reports a refused write)

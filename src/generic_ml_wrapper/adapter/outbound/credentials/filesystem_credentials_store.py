@@ -18,7 +18,7 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 _OWNER_READ_WRITE = 0o600
 
 
-class FilesystemCredentialsStore(CredentialsStorePort):
+class FilesystemCredentialsStoreAdapter(CredentialsStorePort):
     """Persist per-workflow credentials as ``[workflow]`` tables in one TOML file.
 
     The file is written with owner-only permissions and is never committed; it lives

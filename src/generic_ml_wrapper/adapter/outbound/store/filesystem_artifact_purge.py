@@ -5,7 +5,7 @@
 Two roots, mirroring the two writers::
 
     <contexts>/<job>/<session>.context.md          context_file.write
-    <transcripts>/<job>/<session>/call_NNN.*       FilesystemTranscriptStore.record
+    <transcripts>/<job>/<session>/call_NNN.*       FilesystemTranscriptStoreAdapter.record
 
 The transcript root is configurable (``[transcript] root``), so it is injected rather
 than read from ``paths`` -- deleting from the default root while the user records into
@@ -35,7 +35,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class FilesystemArtifactPurge(ArtifactPurgePort):
+class FilesystemArtifactPurgeAdapter(ArtifactPurgePort):
     """Count and remove a session's or a job's files under the two artifact roots."""
 
     def __init__(self, contexts_root: Path, transcripts_root: Path) -> None:

@@ -17,7 +17,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import SqliteStoreMigration
+from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
+    SqliteStoreMigrationAdapter,
+)
 from generic_ml_wrapper.application.domain.model.migration_failed_error import (
     MigrationFailedError,
 )
@@ -224,7 +226,7 @@ def test_a_failing_file_rolls_back_and_leaves_the_last_good_version(tmp_path: Pa
         "CREATE TABLE gone (b TEXT);\nSELECT this_is_not_valid_sql(;", encoding="utf-8"
     )
     db = tmp_path / "ledger.db"
-    migration = SqliteStoreMigration(_connect_to(db), tmp_path, migrations_dir=lineage)
+    migration = SqliteStoreMigrationAdapter(_connect_to(db), tmp_path, migrations_dir=lineage)
 
     with pytest.raises(MigrationFailedError) as caught:
         migration.migrate_to_current()
@@ -246,7 +248,7 @@ def test_a_gap_in_the_lineage_fails_loud(tmp_path: Path) -> None:
     (lineage / "0001.only.sql").write_text("CREATE TABLE a (x TEXT);", encoding="utf-8")
     (lineage / "0003.later.sql").write_text("CREATE TABLE c (z TEXT);", encoding="utf-8")
     db = tmp_path / "ledger.db"
-    migration = SqliteStoreMigration(_connect_to(db), tmp_path, migrations_dir=lineage)
+    migration = SqliteStoreMigrationAdapter(_connect_to(db), tmp_path, migrations_dir=lineage)
 
     with pytest.raises(MigrationFailedError) as caught:
         migration.migrate_to_current()
@@ -256,13 +258,13 @@ def test_a_gap_in_the_lineage_fails_loud(tmp_path: Path) -> None:
 
 
 def test_the_runner_is_a_store_migration_port(tmp_path: Path) -> None:
-    migration = SqliteStoreMigration(_connect_to(tmp_path / "ledger.db"), tmp_path)
+    migration = SqliteStoreMigrationAdapter(_connect_to(tmp_path / "ledger.db"), tmp_path)
     assert isinstance(migration, StoreMigrationPort)
 
 
 def test_the_shipped_lineage_reaches_the_version_this_build_requires(tmp_path: Path) -> None:
     # The handshake that fails a build whose code and files disagree.
-    migration = SqliteStoreMigration(_connect_to(tmp_path / "ledger.db"), tmp_path)
+    migration = SqliteStoreMigrationAdapter(_connect_to(tmp_path / "ledger.db"), tmp_path)
     assert migration.implemented_version() == CURRENT_SCHEMA_VERSION
 
 
@@ -336,7 +338,7 @@ def test_orphaned_rows_are_discarded_and_the_count_reported(tmp_path: Path) -> N
     connection.close()
     diagnostics = _RecordingDiagnostics()
 
-    SqliteStoreMigration(_connect_to(db), tmp_path, diagnostics).migrate_to_current()
+    SqliteStoreMigrationAdapter(_connect_to(db), tmp_path, diagnostics).migrate_to_current()
 
     surviving = sqlite3.connect(db)
     try:
@@ -358,7 +360,7 @@ def test_a_clean_database_reports_no_discards(tmp_path: Path) -> None:
     _write_v1(db)
     diagnostics = _RecordingDiagnostics()
 
-    SqliteStoreMigration(_connect_to(db), tmp_path, diagnostics).migrate_to_current()
+    SqliteStoreMigrationAdapter(_connect_to(db), tmp_path, diagnostics).migrate_to_current()
 
     assert not [
         context

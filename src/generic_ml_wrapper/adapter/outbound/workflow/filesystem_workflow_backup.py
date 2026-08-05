@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 _STAMP = "%Y%m%d-%H%M%S"
 
 
-class FilesystemWorkflowBackup(WorkflowBackupPort):
+class FilesystemWorkflowBackupAdapter(WorkflowBackupPort):
     """Displace workflows into a timestamped folder under the backups root."""
 
     def __init__(self, root: Path, clock: Callable[[], datetime]) -> None:

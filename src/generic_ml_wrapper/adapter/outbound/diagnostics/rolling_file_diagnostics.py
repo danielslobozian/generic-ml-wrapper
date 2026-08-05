@@ -38,7 +38,7 @@ DEFAULT_BACKUP_COUNT = 5
 _TIMESTAMP = "%Y-%m-%d %H:%M:%S"
 
 
-class RollingFileDiagnostics(DiagnosticsPort):
+class RollingFileDiagnosticsAdapter(DiagnosticsPort):
     """Write diagnostics as rotating text lines under a log file."""
 
     def __init__(

@@ -33,7 +33,7 @@ class SessionSummary:
     cost_usd: float = 0.0
 
 
-class ListSessions(ABC):
+class ListSessionsUseCase(ABC):
     """List the sessions recorded for a job."""
 
     @abstractmethod

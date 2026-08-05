@@ -114,7 +114,7 @@ def extract(probe: VersionProbe, body: str) -> str | None:
     return parse_version(raw)
 
 
-class HttpClientVersions(ClientVersionPort):
+class HttpClientVersionsAdapter(ClientVersionPort):
     """Read installed versions from the local binary and latest ones over HTTP."""
 
     def installed(self, info: ClientInfo) -> str | None:

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the NewWorkflow use case, driven by fakes."""
+"""Tests for the NewWorkflowUseCase use case, driven by fakes."""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import pytest
 from _delete_doubles import FakeSessionLock
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
@@ -25,13 +25,16 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
     WorkflowNameError,
     WorkflowOutcome,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.cli_caller import (
+    CliCallerPort,
+    CliCallerProviderPort,
+)
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
-from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowService
 
 _UNFINISHED = DraftMarker(None, finished=False)
 
@@ -124,17 +127,17 @@ class FakeStore(SessionStorePort):
         return None
 
 
-class CapturingProvider(CliCallerProvider):
+class CapturingProvider(CliCallerProviderPort):
     def __init__(self, *, can_resume: bool = True) -> None:
         self.run: RunContext | None = None
         self._can_resume = can_resume
 
-    def for_run(self, run: RunContext) -> CliCaller:
+    def for_run(self, run: RunContext) -> CliCallerPort:
         self.run = run
         return _NoopCaller(run, can_resume=self._can_resume)
 
 
-class _NoopCaller(CliCaller):
+class _NoopCaller(CliCallerPort):
     def __init__(self, run: RunContext, *, can_resume: bool = True) -> None:
         super().__init__(run)
         self._can_resume = can_resume
@@ -148,15 +151,15 @@ class _NoopCaller(CliCaller):
 
 def _use_case(
     workflows: FakeWorkflows, store: FakeStore, provider: CapturingProvider
-) -> NewWorkflowUseCase:
-    return NewWorkflowUseCase(
+) -> NewWorkflowService:
+    return NewWorkflowService(
         workflows,
         store,
         provider,
         uuid_factory=lambda: "fixed-uuid",
         launch=LaunchSequence(
-            HookRunner((), NullDiagnostics(), _localizer()),
-            NullDiagnostics(),
+            HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            NullDiagnosticsAdapter(),
             _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),

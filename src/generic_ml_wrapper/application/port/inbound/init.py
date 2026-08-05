@@ -42,7 +42,7 @@ class InitOutcome:
     overwrites: tuple[str, ...] = ()
 
 
-class Init(ABC):
+class InitUseCase(ABC):
     """Run the forced first-run setup: language → name → role → environment → persona → client."""
 
     @abstractmethod

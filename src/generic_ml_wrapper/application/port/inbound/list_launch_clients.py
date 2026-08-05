@@ -33,7 +33,7 @@ class LaunchClient:
     custom: bool = False
 
 
-class ListLaunchClients(ABC):
+class ListLaunchClientsUseCase(ABC):
     """List the clients a launch can be pointed at, and say which one is the default.
 
     "Can be pointed at" is the whole contract, and it has two halves. A built-in client

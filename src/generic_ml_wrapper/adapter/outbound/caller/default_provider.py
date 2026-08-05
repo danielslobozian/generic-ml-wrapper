@@ -1,20 +1,23 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``DefaultCliCallerProvider``: config overrides first, then built-in callers."""
+"""``DefaultCliCallerProviderAdapter``: config overrides first, then built-in callers."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCaller
-from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCaller
-from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCallerAdapter
+from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCallerAdapter
+from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCallerAdapter
 from generic_ml_wrapper.adapter.outbound.caller.loader import load_caller_class
-from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCallerAdapter
 from generic_ml_wrapper.application.domain.model.unsupported_client_error import (
     UnsupportedClientError,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.cli_caller import (
+    CliCallerPort,
+    CliCallerProviderPort,
+)
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
@@ -25,7 +28,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 
-class DefaultCliCallerProvider(CliCallerProvider):
+class DefaultCliCallerProviderAdapter(CliCallerProviderPort):
     """Resolve a run's caller: a config override if present, else the built-in one."""
 
     def __init__(  # noqa: PLR0913  (one collaborator per concern, all keyword-only)
@@ -59,7 +62,7 @@ class DefaultCliCallerProvider(CliCallerProvider):
         self._plugins = plugins
         self._sessions = sessions
 
-    def for_run(self, run: RunContext) -> CliCaller:
+    def for_run(self, run: RunContext) -> CliCallerPort:
         """Return the caller for the run's client.
 
         Args:
@@ -80,13 +83,13 @@ class DefaultCliCallerProvider(CliCallerProvider):
                 spec = self._plugins.resolve_caller(spec)
             return load_caller_class(spec)(run)
         if run.client == "claude":
-            return ClaudeCliCaller(run, self._metering, self._interceptors, self._transcript)
+            return ClaudeCliCallerAdapter(run, self._metering, self._interceptors, self._transcript)
         if run.client == "cursor":
-            return CursorCliCaller(run)
+            return CursorCliCallerAdapter(run)
         if run.client == "codex":
-            return CodexCliCaller(
+            return CodexCliCallerAdapter(
                 run, self._metering, self._interceptors, self._transcript, self._sessions
             )
         if run.client == "vibe":
-            return VibeCliCaller(run, self._metering, self._interceptors, self._transcript)
+            return VibeCliCallerAdapter(run, self._metering, self._interceptors, self._transcript)
         raise UnsupportedClientError(run.client)

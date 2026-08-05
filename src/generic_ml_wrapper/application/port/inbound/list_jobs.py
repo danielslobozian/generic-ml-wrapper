@@ -21,7 +21,7 @@ class JobSummary:
     session_count: int
 
 
-class ListJobs(ABC):
+class ListJobsUseCase(ABC):
     """List the jobs that have recorded sessions."""
 
     @abstractmethod

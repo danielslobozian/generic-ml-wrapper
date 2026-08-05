@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_backup import (
-    FilesystemWorkflowBackup,
+    FilesystemWorkflowBackupAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
-    FilesystemWorkflowSource,
+    FilesystemWorkflowSourceAdapter,
 )
 from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
@@ -27,8 +27,8 @@ from generic_ml_wrapper.application.port.inbound.import_workflow import (
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 from generic_ml_wrapper.application.port.outbound.workflow_archive import WorkflowArchivePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
-from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService
+from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowService
 
 _WHEN = datetime(2026, 7, 29, 15, 30, 12, tzinfo=UTC)
 
@@ -114,7 +114,7 @@ class FakeArchive(WorkflowArchivePort):
 # ── export ──
 def test_exporting_packs_the_workflows_own_folder(tmp_path: Path) -> None:
     archive = FakeArchive()
-    written = ExportWorkflowUseCase(FakeWorkflows(tmp_path, {"nightly-etl"}), archive).execute(
+    written = ExportWorkflowService(FakeWorkflows(tmp_path, {"nightly-etl"}), archive).execute(
         "nightly-etl"
     )
     assert archive.packed == (tmp_path / "nightly-etl", "nightly-etl")
@@ -125,13 +125,13 @@ def test_exporting_packs_the_workflows_own_folder(tmp_path: Path) -> None:
 
 def test_exporting_an_unknown_workflow_is_refused(tmp_path: Path) -> None:
     with pytest.raises(WorkflowNotFoundError):
-        ExportWorkflowUseCase(FakeWorkflows(tmp_path), FakeArchive()).execute("ghost")
+        ExportWorkflowService(FakeWorkflows(tmp_path), FakeArchive()).execute("ghost")
 
 
 @pytest.mark.parametrize("name", ["_common", "create-workflow", "Bad Name"])
 def test_exporting_a_reserved_or_invalid_name_is_refused(tmp_path: Path, name: str) -> None:
     with pytest.raises(WorkflowNameError):
-        ExportWorkflowUseCase(FakeWorkflows(tmp_path, {name}), FakeArchive()).execute(name)
+        ExportWorkflowService(FakeWorkflows(tmp_path, {name}), FakeArchive()).execute(name)
 
 
 # ── import ──
@@ -139,17 +139,17 @@ def _use_case(
     tmp_path: Path,
     existing: set[str] | None = None,
     archive: FakeArchive | None = None,
-) -> ImportWorkflowUseCase:
+) -> ImportWorkflowService:
     """The use case over a real backup adapter, so the collaboration is the real one.
 
     Where the backup lands and what it is called are the adapter's own behaviour and are
     asserted against it directly, in ``test_filesystem_workflow_backup``; what is asserted
     here is the ordering the use case owns.
     """
-    return ImportWorkflowUseCase(
+    return ImportWorkflowService(
         FakeWorkflows(tmp_path / "workflows", existing),
         archive or FakeArchive(),
-        FilesystemWorkflowBackup(tmp_path / "backups", lambda: _WHEN),
+        FilesystemWorkflowBackupAdapter(tmp_path / "backups", lambda: _WHEN),
     )
 
 
@@ -258,7 +258,7 @@ def test_exporting_an_unknown_workflow_writes_nothing_at_all(tmp_path: Path) -> 
     `gmlw workflow export ghost` printed "unknown workflow" and created two directories.
     """
     root = tmp_path / "workflows"
-    use_case = ExportWorkflowUseCase(FilesystemWorkflowSource(root), FakeArchive())
+    use_case = ExportWorkflowService(FilesystemWorkflowSourceAdapter(root), FakeArchive())
 
     with pytest.raises(WorkflowNotFoundError):
         use_case.execute("ghost")
@@ -268,7 +268,7 @@ def test_exporting_an_unknown_workflow_writes_nothing_at_all(tmp_path: Path) -> 
 
 def test_exporting_a_reserved_name_writes_nothing_at_all(tmp_path: Path) -> None:
     root = tmp_path / "workflows"
-    use_case = ExportWorkflowUseCase(FilesystemWorkflowSource(root), FakeArchive())
+    use_case = ExportWorkflowService(FilesystemWorkflowSourceAdapter(root), FakeArchive())
 
     with pytest.raises(WorkflowNameError):
         use_case.execute("create-workflow")
@@ -278,10 +278,10 @@ def test_exporting_a_reserved_name_writes_nothing_at_all(tmp_path: Path) -> None
 
 def test_importing_an_unusable_archive_writes_nothing_at_all(tmp_path: Path) -> None:
     root = tmp_path / "workflows"
-    use_case = ImportWorkflowUseCase(
-        FilesystemWorkflowSource(root),
+    use_case = ImportWorkflowService(
+        FilesystemWorkflowSourceAdapter(root),
         FakeArchive(ArchiveStatus.INCOMPLETE),
-        FilesystemWorkflowBackup(tmp_path / "backups", lambda: _WHEN),
+        FilesystemWorkflowBackupAdapter(tmp_path / "backups", lambda: _WHEN),
     )
 
     with pytest.raises(ArchiveUnreadableError):

@@ -1,19 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ApplicationSettings use case: answer the delivery layer's questions about config."""
+"""The ApplicationSettingsUseCase use case: answer the delivery layer's questions about config."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.application_settings import ApplicationSettings
+from generic_ml_wrapper.application.port.inbound.application_settings import (
+    ApplicationSettingsUseCase,
+)
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.companion_settings import CompanionSettings
     from generic_ml_wrapper.application.port.outbound.runtime_config import RuntimeConfigPort
 
 
-class ReadApplicationSettingsUseCase(ApplicationSettings):
+class ReadApplicationSettingsService(ApplicationSettingsUseCase):
     """Answer from the configured runtime settings, without exposing where they live."""
 
     def __init__(self, config: RuntimeConfigPort) -> None:

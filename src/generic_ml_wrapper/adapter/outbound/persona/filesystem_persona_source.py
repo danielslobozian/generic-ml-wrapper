@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 _FLOOR = "_floor.md"
 
 
-class FilesystemPersonaSource(PersonaSourcePort):
+class FilesystemPersonaSourceAdapter(PersonaSourcePort):
     """Read personas from ``<root>/<name>.md``; seed the packaged defaults, missing-only.
 
     Reads lazily seed the packaged personas first, so the five defaults (and the

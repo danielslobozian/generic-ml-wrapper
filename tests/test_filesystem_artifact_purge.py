@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
-    FilesystemArtifactPurge,
+    FilesystemArtifactPurgeAdapter,
 )
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactCounts
 
@@ -28,7 +28,7 @@ _NOT_AS_ROOT = pytest.mark.skipif(
 )
 
 
-def _seed(tmp_path: Path) -> FilesystemArtifactPurge:
+def _seed(tmp_path: Path) -> FilesystemArtifactPurgeAdapter:
     """Two jobs, each with two sessions; only ``alpha`` recorded transcripts."""
     contexts, transcripts = tmp_path / "contexts", tmp_path / "transcripts"
     for job in ("alpha", "beta"):
@@ -40,7 +40,7 @@ def _seed(tmp_path: Path) -> FilesystemArtifactPurge:
         folder.mkdir(parents=True)
         for name in ("call_001.in.json", "call_001.out.sse", "call_001.usage.json"):
             (folder / name).write_text("{}", encoding="utf-8")
-    return FilesystemArtifactPurge(contexts, transcripts)
+    return FilesystemArtifactPurgeAdapter(contexts, transcripts)
 
 
 def test_session_counts_cover_both_roots(tmp_path: Path) -> None:
@@ -126,7 +126,7 @@ def test_purging_what_is_not_there_is_a_no_op(tmp_path: Path) -> None:
 
 def test_roots_that_do_not_exist_are_handled(tmp_path: Path) -> None:
     """Transcripts off since install: neither root has ever been created."""
-    purge = FilesystemArtifactPurge(tmp_path / "nope", tmp_path / "also-nope")
+    purge = FilesystemArtifactPurgeAdapter(tmp_path / "nope", tmp_path / "also-nope")
 
     assert purge.counts_for_job("alpha") == ArtifactCounts(contexts=0, transcript_calls=0)
     purge.purge_job("alpha")

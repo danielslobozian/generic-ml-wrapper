@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class TomlkitConfigWriter(ConfigWriterPort):
+class TomlkitConfigWriterAdapter(ConfigWriterPort):
     """Merge settings into ``config.toml`` with tomlkit, keeping comments and formatting.
 
     tomlkit reads and rewrites TOML while preserving the user's keys, comments, and layout

@@ -1,18 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The SetCredential use case: store a workflow credential."""
+"""The SetCredentialUseCase use case: store a workflow credential."""
 
 from __future__ import annotations
 
 from generic_ml_wrapper.application.port.inbound.set_credential import (
-    SetCredential,
     SetCredentialCommand,
+    SetCredentialUseCase,
 )
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.secret_prompt import SecretPromptPort
 
 
-class SetCredentialUseCase(SetCredential):
+class SetCredentialService(SetCredentialUseCase):
     """Store a workflow credential, asking for it when the caller did not supply it."""
 
     def __init__(self, store: CredentialsStorePort, prompt: SecretPromptPort) -> None:

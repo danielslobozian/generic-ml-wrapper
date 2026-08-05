@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The StartJob use case: resolve a session, record it, run the client."""
+"""The StartJobUseCase use case: resolve a session, record it, run the client."""
 
 from __future__ import annotations
 
@@ -17,26 +17,26 @@ from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
-    StartJob,
     StartJobCommand,
     StartJobResult,
+    StartJobUseCase,
     UnknownWorkflowError,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 
 
-class StartJobUseCase(StartJob):
+class StartJobService(StartJobUseCase):
     """Resolve a session (new or resumed), optionally attach a workflow, run it."""
 
     def __init__(  # noqa: PLR0913, PLR0917  (a use case binding its full set of outbound ports)
         self,
         store: SessionStorePort,
         workflows: WorkflowSourcePort,
-        callers: CliCallerProvider,
+        callers: CliCallerProviderPort,
         uuid_factory: Callable[[], str],
         cwd_factory: Callable[[], str],
         credentials: CredentialsStorePort,

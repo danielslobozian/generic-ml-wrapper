@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ExportWorkflow use case: pack a workflow for sharing."""
+"""The ExportWorkflowUseCase use case: pack a workflow for sharing."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.port.inbound.edit_workflow import WorkflowNotFoundError
-from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 
 if TYPE_CHECKING:
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 _RESERVED = frozenset({"create-workflow", "_common"})
 
 
-class ExportWorkflowUseCase(ExportWorkflow):
+class ExportWorkflowService(ExportWorkflowUseCase):
     """Pack a workflow folder into an archive through the archive port."""
 
     def __init__(self, workflows: WorkflowSourcePort, archive: WorkflowArchivePort) -> None:

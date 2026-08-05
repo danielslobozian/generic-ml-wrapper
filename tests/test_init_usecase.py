@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the Init use case: the ordered forced-setup interview."""
+"""Tests for the InitUseCase use case: the ordered forced-setup interview."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from generic_ml_wrapper.application.port.outbound.layout_seeder import (
 from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
-from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.init import InitService
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _PERSONAS = [Persona("plain", "Neutral.", "", "b"), Persona("butler", "A Jeeves.", "", "b")]
@@ -138,13 +138,13 @@ def _use_case(  # noqa: PLR0913  (mirrors the wired ports; all defaulted)
     seeder: _RecordingSeeder | None = None,
     default_name: str = "ada",
 ) -> tuple[
-    InitUseCase, _RecordingSeeder, _FakeClientSetup, _RecordingTextPrompt, _RecordingAxisChooser
+    InitService, _RecordingSeeder, _FakeClientSetup, _RecordingTextPrompt, _RecordingAxisChooser
 ]:
     seeder = seeder or _RecordingSeeder()
     client_setup = _FakeClientSetup(client_choice)
     text = text_prompt or _RecordingTextPrompt()
     axis = _RecordingAxisChooser()
-    use_case = InitUseCase(
+    use_case = InitService(
         detector=_FakeDetector([] if found is None else found),
         seeder=seeder,
         language_chooser=_FakeLanguageChooser(language),

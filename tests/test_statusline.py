@@ -1,16 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for status parsing, rendering, and the RenderStatusline use case."""
+"""Tests for status parsing, rendering, and the RenderStatuslineUseCase use case."""
 
 import json
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
-from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
+from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import (
+    ClaudeStatusParserAdapter,
+)
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
 from generic_ml_wrapper.application.domain.model.run_handoff import RunHandoff
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
@@ -24,7 +26,7 @@ from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffP
 from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
-from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineService
 
 _NOW = 1_000_000.0
 _CLAUDE_PAYLOAD: dict[str, object] = {
@@ -102,7 +104,7 @@ def _status(**overrides: object) -> ClientStatus:
 
 # ── parser ──
 def test_claude_parser_reads_the_fields() -> None:
-    status = ClaudeStatusParser(clock=_clock).parse(_CLAUDE_PAYLOAD)
+    status = ClaudeStatusParserAdapter(clock=_clock).parse(_CLAUDE_PAYLOAD)
     assert status.model == "Opus 4.8"
     assert status.context_pct == 34
     assert status.context_window_size == 200000
@@ -113,12 +115,14 @@ def test_claude_parser_reads_the_fields() -> None:
 
 def test_claude_parser_reads_partial_quota() -> None:
     # No resets_at → the window renders as percentage only (reset marker omitted).
-    status = ClaudeStatusParser().parse({"rate_limits": {"five_hour": {"used_percentage": 80}}})
+    status = ClaudeStatusParserAdapter().parse(
+        {"rate_limits": {"five_hour": {"used_percentage": 80}}}
+    )
     assert status.extras == ("quota 5h 80%",)
 
 
 def test_claude_parser_reset_durations() -> None:
-    parser = ClaudeStatusParser(clock=_clock)
+    parser = ClaudeStatusParserAdapter(clock=_clock)
 
     def extras_at(delta: float) -> tuple[str, ...]:
         payload: dict[str, object] = {
@@ -134,7 +138,7 @@ def test_claude_parser_reset_durations() -> None:
 
 
 def test_claude_parser_tolerates_missing_fields() -> None:
-    parsed = ClaudeStatusParser().parse({})
+    parsed = ClaudeStatusParserAdapter().parse({})
     assert parsed == _status()
     assert parsed.extras == ()
 
@@ -232,7 +236,7 @@ class _FixedParsers(StatusParsersPort):
     """One parser whatever the client: which parser is chosen is asserted elsewhere."""
 
     def for_client(self, client: str | None) -> ClientStatusParserPort:
-        return ClaudeStatusParser(clock=_clock)
+        return ClaudeStatusParserAdapter(clock=_clock)
 
 
 class _FakeHandoff(RunHandoffPort):
@@ -252,14 +256,14 @@ def _use_case(  # noqa: PLR0913, PLR0917  (its ports, plus the run and the clock
     now: float = 0.0,
     job: str | None = None,
     session: str | None = None,
-) -> RenderStatuslineUseCase:
-    return RenderStatuslineUseCase(
+) -> RenderStatuslineService:
+    return RenderStatuslineService(
         _FixedParsers(),
         _FakeHandoff(job, session),
         usage,
         FakeWorkspaceInspector(workspace),
         turns or FakePerTurnStore(),
-        NullDiagnostics(),
+        NullDiagnosticsAdapter(),
         _localizer(),
         clock=lambda: now,
     )

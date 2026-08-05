@@ -17,10 +17,12 @@ from typing import TYPE_CHECKING
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
-from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
-from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurgeAdapter
+from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import (
+    SqlitePerTurnStoreAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
+from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStoreAdapter
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
@@ -32,9 +34,9 @@ if TYPE_CHECKING:
 def _seed(tmp_path: Path) -> Ledger:
     """Two jobs with two sessions each, every table populated for all four."""
     ledger = Ledger(tmp_path / "ledger.db")
-    sessions = SqliteSessionStore(ledger)
-    turns = SqlitePerTurnStore(ledger)
-    usage = SqliteUsageStore(ledger)
+    sessions = SqliteSessionStoreAdapter(ledger)
+    turns = SqlitePerTurnStoreAdapter(ledger)
+    usage = SqliteUsageStoreAdapter(ledger)
     for job in ("alpha", "beta"):
         for index in (1, 2):
             session_id = f"{job}_00{index}"
@@ -53,7 +55,7 @@ def _rows(ledger: Ledger, table: str, column: str) -> list[str]:
 def test_purging_a_session_clears_its_rows_in_every_table(tmp_path: Path) -> None:
     ledger = _seed(tmp_path)
 
-    SqliteLedgerPurge(ledger).purge_session("alpha", "alpha_001")
+    SqliteLedgerPurgeAdapter(ledger).purge_session("alpha", "alpha_001")
 
     assert "alpha_001" not in _rows(ledger, "sessions", "session_id")
     assert "alpha_001" not in _rows(ledger, "turns", "session_id")
@@ -63,7 +65,7 @@ def test_purging_a_session_clears_its_rows_in_every_table(tmp_path: Path) -> Non
 def test_purging_a_session_leaves_its_siblings_and_its_job(tmp_path: Path) -> None:
     ledger = _seed(tmp_path)
 
-    SqliteLedgerPurge(ledger).purge_session("alpha", "alpha_001")
+    SqliteLedgerPurgeAdapter(ledger).purge_session("alpha", "alpha_001")
 
     assert _rows(ledger, "sessions", "session_id") == ["alpha_002", "beta_001", "beta_002"]
     assert _rows(ledger, "turns", "session_id").count("alpha_002") == 2
@@ -73,7 +75,7 @@ def test_purging_a_session_leaves_its_siblings_and_its_job(tmp_path: Path) -> No
 def test_purging_a_job_clears_every_table_including_the_job_row(tmp_path: Path) -> None:
     ledger = _seed(tmp_path)
 
-    SqliteLedgerPurge(ledger).purge_job("alpha")
+    SqliteLedgerPurgeAdapter(ledger).purge_job("alpha")
 
     assert _rows(ledger, "jobs", "job") == ["beta"]
     assert _rows(ledger, "sessions", "session_id") == ["beta_001", "beta_002"]
@@ -83,7 +85,7 @@ def test_purging_a_job_clears_every_table_including_the_job_row(tmp_path: Path) 
 
 def test_purging_an_unknown_job_or_session_is_a_no_op(tmp_path: Path) -> None:
     ledger = _seed(tmp_path)
-    purge = SqliteLedgerPurge(ledger)
+    purge = SqliteLedgerPurgeAdapter(ledger)
 
     purge.purge_job("gamma")
     purge.purge_session("alpha", "alpha_999")
@@ -100,7 +102,7 @@ def test_a_session_named_under_the_wrong_job_is_not_purged(tmp_path: Path) -> No
     """
     ledger = _seed(tmp_path)
 
-    SqliteLedgerPurge(ledger).purge_session("beta", "alpha_001")
+    SqliteLedgerPurgeAdapter(ledger).purge_session("beta", "alpha_001")
 
     assert "alpha_001" in _rows(ledger, "sessions", "session_id")
     assert _rows(ledger, "turns", "session_id").count("alpha_001") == 2
@@ -122,26 +124,26 @@ def test_a_turn_cannot_name_a_session_that_does_not_exist(tmp_path: Path) -> Non
     ledger = _seed(tmp_path)
 
     with pytest.raises(sqlite3.IntegrityError):
-        SqlitePerTurnStore(ledger).record("alpha", TurnUsage("alpha_404", 1, 1, 0.0, None))
+        SqlitePerTurnStoreAdapter(ledger).record("alpha", TurnUsage("alpha_404", 1, 1, 0.0, None))
 
 
 def test_the_database_is_left_usable_after_a_purge(tmp_path: Path) -> None:
     ledger = _seed(tmp_path)
 
-    SqliteLedgerPurge(ledger).purge_job("alpha")
-    SqliteSessionStore(ledger).record(Session("alpha_003", "alpha", "claude", "u-3"))
+    SqliteLedgerPurgeAdapter(ledger).purge_job("alpha")
+    SqliteSessionStoreAdapter(ledger).record(Session("alpha_003", "alpha", "claude", "u-3"))
 
     # Set, not sequence: a purge frees rowids and SQLite hands them straight back, so the
     # re-created job's session sorts among the survivors rather than after them.
     assert set(_rows(ledger, "sessions", "session_id")) == {"beta_001", "beta_002", "alpha_003"}
-    assert SqliteSessionStore(ledger).ids_for_job("alpha") == ["alpha_003"]
+    assert SqliteSessionStoreAdapter(ledger).ids_for_job("alpha") == ["alpha_003"]
 
 
 def test_purging_does_not_leave_a_transaction_open(tmp_path: Path) -> None:
     """A connection opened afterwards must not find the tables locked."""
     ledger = _seed(tmp_path)
 
-    SqliteLedgerPurge(ledger).purge_job("alpha")
+    SqliteLedgerPurgeAdapter(ledger).purge_job("alpha")
 
     connection = sqlite3.connect(tmp_path / "ledger.db", timeout=1.0)
     try:

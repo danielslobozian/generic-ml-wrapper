@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ExportUsage use case, driven by fake usage stores."""
+"""Tests for the ExportUsageUseCase use case, driven by fake usage stores."""
 
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.export_usage import ModelTotal
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
-from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.usecase.export_usage import ExportUsageService
 
 
 class FakeUsageStore(UsageStorePort):
@@ -33,7 +33,7 @@ class FakeTurnStore(PerTurnMeteringPort):
 
 
 def test_empty_report() -> None:
-    report = ExportUsageUseCase(FakeUsageStore({}), FakeTurnStore()).execute("JOB-1")
+    report = ExportUsageService(FakeUsageStore({}), FakeTurnStore()).execute("JOB-1")
     assert report.job == "JOB-1"
     assert report.turns == ()
     assert report.models == ()
@@ -44,7 +44,7 @@ def test_empty_report() -> None:
 
 def test_costs_become_sorted_session_cost_rows() -> None:
     store = FakeUsageStore({"JOB-1_002": 0.09, "JOB-1_001": 0.43})
-    report = ExportUsageUseCase(store, FakeTurnStore()).execute("JOB-1")
+    report = ExportUsageService(store, FakeTurnStore()).execute("JOB-1")
     assert report.session_costs == (SessionCost("JOB-1_001", 0.43), SessionCost("JOB-1_002", 0.09))
     assert report.total_usd == 0.52
 
@@ -71,7 +71,7 @@ def test_turns_are_chronological_with_totals_by_model() -> None:
             ),
         ]
     )
-    report = ExportUsageUseCase(FakeUsageStore({"JOB-1_001": 0.5}), turns).execute("JOB-1")
+    report = ExportUsageService(FakeUsageStore({"JOB-1_001": 0.5}), turns).execute("JOB-1")
 
     assert [turn.turn_id for turn in report.turns] == ["t1", "t2", "t3"]  # chronological
     assert report.models == (

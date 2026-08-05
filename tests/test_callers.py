@@ -9,32 +9,37 @@ from typing import cast
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
+    TomlClientCatalogAdapter,
+)
 from generic_ml_wrapper.adapter.outbound.caller import (
     claude_cli_caller,
     cursor_cli_caller,
     vibe_cli_caller,
 )
 from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
-from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import BINARY, ClaudeCliCaller
-from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCaller
-from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import (
+    BINARY,
+    ClaudeCliCallerAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCallerAdapter
+from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCallerAdapter
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
-    DefaultCliCallerProvider,
+    DefaultCliCallerProviderAdapter,
     UnsupportedClientError,
 )
-from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCallerAdapter
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
 
-class _BareCaller(CliCaller):
+class _BareCaller(CliCallerPort):
     def start_client(self) -> int:
         return 0
 
@@ -50,16 +55,16 @@ class _FakeMetering(PerTurnMeteringPort):
 _METERING = _FakeMetering()
 
 
-def _claude(run: RunContext) -> ClaudeCliCaller:
-    return ClaudeCliCaller(run, _METERING)
+def _claude(run: RunContext) -> ClaudeCliCallerAdapter:
+    return ClaudeCliCallerAdapter(run, _METERING)
 
 
-def _codex(run: RunContext) -> CodexCliCaller:
-    return CodexCliCaller(run, _METERING)
+def _codex(run: RunContext) -> CodexCliCallerAdapter:
+    return CodexCliCallerAdapter(run, _METERING)
 
 
-def _vibe(run: RunContext) -> VibeCliCaller:
-    return VibeCliCaller(run, _METERING)
+def _vibe(run: RunContext) -> VibeCliCallerAdapter:
+    return VibeCliCallerAdapter(run, _METERING)
 
 
 def _run(  # noqa: PLR0913
@@ -217,7 +222,7 @@ def test_metering_is_skipped_when_statusline_undeliverable(
     def _cannot_deliver(_self: object) -> bool:
         return False
 
-    monkeypatch.setattr(ClaudeCliCaller, "can_deliver_statusline", _cannot_deliver)
+    monkeypatch.setattr(ClaudeCliCallerAdapter, "can_deliver_statusline", _cannot_deliver)
 
     caller = _claude(_run(resume=False, uuid=None))
     caller.start_metering()
@@ -253,27 +258,27 @@ def test_claude_metering_routes_through_the_relay(
 
 
 def test_provider_returns_claude_caller() -> None:
-    provider = DefaultCliCallerProvider(metering=_FakeMetering())
-    assert isinstance(provider.for_run(_run(resume=False, uuid=None)), ClaudeCliCaller)
+    provider = DefaultCliCallerProviderAdapter(metering=_FakeMetering())
+    assert isinstance(provider.for_run(_run(resume=False, uuid=None)), ClaudeCliCallerAdapter)
 
 
 def test_provider_rejects_unknown_client() -> None:
     run = RunContext("JOB-1", "JOB-1_001", "gemini", None, False)
     with pytest.raises(UnsupportedClientError):
-        DefaultCliCallerProvider(metering=_FakeMetering()).for_run(run)
+        DefaultCliCallerProviderAdapter(metering=_FakeMetering()).for_run(run)
 
 
 def test_provider_uses_a_config_override() -> None:
     # An override target is an external caller constructed with just the run.
-    spec = "generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller:CursorCliCaller"
-    provider = DefaultCliCallerProvider({"gemini": spec}, metering=_FakeMetering())
+    spec = "generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller:CursorCliCallerAdapter"
+    provider = DefaultCliCallerProviderAdapter({"gemini": spec}, metering=_FakeMetering())
     run = RunContext("JOB-1", "JOB-1_001", "gemini", None, False)
-    assert isinstance(provider.for_run(run), CursorCliCaller)
+    assert isinstance(provider.for_run(run), CursorCliCallerAdapter)
 
 
 def test_provider_resolves_a_plugin_id_override() -> None:
     # A bare override value is a plugin id, resolved to a loadable spec by the source.
-    spec = "generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller:CursorCliCaller"
+    spec = "generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller:CursorCliCallerAdapter"
 
     class _Plugins(PluginSourcePort):
         def available(self) -> list[Plugin]:
@@ -285,11 +290,11 @@ def test_provider_resolves_a_plugin_id_override() -> None:
         def resolve_hook(self, reference: str) -> str:
             return reference
 
-    provider = DefaultCliCallerProvider(
+    provider = DefaultCliCallerProviderAdapter(
         {"gemini": "my-cursor"}, metering=_FakeMetering(), plugins=_Plugins()
     )
     run = RunContext("JOB-1", "JOB-1_001", "gemini", None, False)
-    assert isinstance(provider.for_run(run), CursorCliCaller)
+    assert isinstance(provider.for_run(run), CursorCliCallerAdapter)
 
 
 # ── cursor-agent (light) ──
@@ -302,13 +307,13 @@ def _cursor_run(
 
 
 def test_cursor_command_resumes_by_session_name() -> None:
-    caller = CursorCliCaller(_cursor_run(resume=False))
+    caller = CursorCliCallerAdapter(_cursor_run(resume=False))
     assert caller.command() == ["cursor-agent", "--resume", "JOB-1_001"]
     assert caller.command("go") == ["cursor-agent", "--resume", "JOB-1_001", "go"]
 
 
 def test_cursor_delivers_statusline_but_does_not_meter() -> None:
-    caller = CursorCliCaller(_cursor_run(resume=False))
+    caller = CursorCliCallerAdapter(_cursor_run(resume=False))
     assert caller.can_deliver_statusline() is True
     assert caller.can_meter_per_call() is False
 
@@ -320,7 +325,7 @@ def test_cursor_metering_installs_and_restores_status_line(
     config.write_text('{"statusLine": "MINE", "network": {}}', encoding="utf-8")
     monkeypatch.setattr(cursor_cli_caller, "_CONFIG", config)
 
-    caller = CursorCliCaller(_cursor_run(resume=False))
+    caller = CursorCliCallerAdapter(_cursor_run(resume=False))
     caller.start_metering()
     installed = json.loads(config.read_text(encoding="utf-8"))
     assert installed["statusLine"]["command"] == "gmlw statusline"
@@ -342,15 +347,17 @@ def test_cursor_injects_context_via_a_read_this_file_opening(
         return 0
 
     monkeypatch.setattr(ChildProcess, "run", fake_run)
-    assert CursorCliCaller(_cursor_run(resume=False, context="MY CONTEXT")).start_client() == 0
+    assert (
+        CursorCliCallerAdapter(_cursor_run(resume=False, context="MY CONTEXT")).start_client() == 0
+    )
     assert seen["context"] == "MY CONTEXT"
     assert seen["client"] == "cursor"
 
 
 def test_provider_returns_cursor_caller() -> None:
-    provider = DefaultCliCallerProvider(metering=_FakeMetering())
+    provider = DefaultCliCallerProviderAdapter(metering=_FakeMetering())
     run = RunContext("JOB-1", "JOB-1_001", "cursor", None, False)
-    assert isinstance(provider.for_run(run), CursorCliCaller)
+    assert isinstance(provider.for_run(run), CursorCliCallerAdapter)
 
 
 # ── codex ──
@@ -377,7 +384,7 @@ def test_each_caller_declares_its_own_resumability() -> None:
     # arriving through [callers] or a plugin is never assumed incapable *or* capable.
     assert _BareCaller(_run(resume=False, uuid=None)).can_resume() is False
     assert _claude(_run(resume=False, uuid=None)).can_resume() is True
-    assert CursorCliCaller(_cursor_run(resume=False)).can_resume() is True
+    assert CursorCliCallerAdapter(_cursor_run(resume=False)).can_resume() is True
     assert _vibe(_vibe_run()).can_resume() is False
     # Codex answers per session rather than per client: not until it has learned its id.
     assert _codex(_codex_run()).can_resume() is False
@@ -386,7 +393,7 @@ def test_each_caller_declares_its_own_resumability() -> None:
 def test_a_caller_outside_the_catalog_can_still_declare_itself_resumable() -> None:
     # The cursor-mitm case. Its client name is absent from the built-in catalog, which
     # used to settle the question on the adapter's behalf and always answered "no".
-    class _PluginCaller(CliCaller):
+    class _PluginCaller(CliCallerPort):
         def can_resume(self) -> bool:
             return True
 
@@ -394,7 +401,7 @@ def test_a_caller_outside_the_catalog_can_still_declare_itself_resumable() -> No
             return 0
 
     run = RunContext("JOB-1", "JOB-1_001", "cursor-mitm", None, False)
-    assert TomlClientCatalog().by_name("cursor-mitm") is None, "precondition: not a built-in"
+    assert TomlClientCatalogAdapter().by_name("cursor-mitm") is None, "precondition: not a built-in"
     assert _PluginCaller(run).can_resume() is True
 
 
@@ -416,9 +423,9 @@ def test_codex_metering_points_provider_at_the_relay() -> None:
 
 
 def test_provider_returns_codex_caller() -> None:
-    provider = DefaultCliCallerProvider(metering=_FakeMetering())
+    provider = DefaultCliCallerProviderAdapter(metering=_FakeMetering())
     run = RunContext("JOB-1", "JOB-1_001", "codex", None, False)
-    assert type(provider.for_run(run)) is CodexCliCaller
+    assert type(provider.for_run(run)) is CodexCliCallerAdapter
 
 
 # ── vibe (Mistral CLI) ──
@@ -523,9 +530,9 @@ def test_vibe_metering_falls_back_to_unmetered_without_a_config(
 
 
 def test_provider_returns_vibe_caller() -> None:
-    provider = DefaultCliCallerProvider(metering=_FakeMetering())
+    provider = DefaultCliCallerProviderAdapter(metering=_FakeMetering())
     run = RunContext("JOB-1", "JOB-1_001", "vibe", None, False)
-    assert type(provider.for_run(run)) is VibeCliCaller
+    assert type(provider.for_run(run)) is VibeCliCallerAdapter
 
 
 # ── codex: learning its session id, and resuming by it ──
@@ -622,7 +629,7 @@ def test_the_learned_session_id_is_bound_to_the_session_and_registered_with_code
 ) -> None:
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
     sessions = _RecordingSessions()
-    caller = CodexCliCaller(_codex_run(), _METERING, None, None, sessions)
+    caller = CodexCliCallerAdapter(_codex_run(), _METERING, None, None, sessions)
     caller._bind_session_id("019f-abc")
 
     assert sessions.bound == [("JOB-1", "JOB-1_001", "019f-abc")]
@@ -642,7 +649,7 @@ def test_a_failed_binding_does_not_register_a_name_with_codex(
         def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
             raise RuntimeError("the ledger is locked")
 
-    caller = CodexCliCaller(_codex_run(), _METERING, None, None, _Broken())
+    caller = CodexCliCallerAdapter(_codex_run(), _METERING, None, None, _Broken())
     caller._bind_session_id("019f-abc")  # must not raise: it runs mid-turn
     assert not (tmp_path / "session_index.jsonl").exists()
 
@@ -651,7 +658,7 @@ def test_a_caller_with_no_session_store_still_runs(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
-    CodexCliCaller(_codex_run(), _METERING)._bind_session_id("019f-abc")
+    CodexCliCallerAdapter(_codex_run(), _METERING)._bind_session_id("019f-abc")
     assert not (tmp_path / "session_index.jsonl").exists()
 
 
@@ -675,7 +682,7 @@ def test_passthrough_args_land_before_the_prompt_on_every_client() -> None:
 
 def test_cursor_also_carries_the_passthrough_args() -> None:
     run = replace(_cursor_run(resume=False), client_args=("--yolo",))
-    argv = CursorCliCaller(run).command("GO")
+    argv = CursorCliCallerAdapter(run).command("GO")
     assert argv[-2:] == ["--yolo", "GO"]
 
 

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
-class TtyGuidedChooser(GuidedChooserPort):
+class TtyGuidedChooserAdapter(GuidedChooserPort):
     """Ask, at authoring start, whether to use the guided experience or the quick one.
 
     Presented on every interactive ``workflow new`` / ``edit`` when neither ``--guided``

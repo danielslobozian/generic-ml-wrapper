@@ -20,7 +20,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
-from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import SqliteStoreMigration
+from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
+    SqliteStoreMigrationAdapter,
+)
 from generic_ml_wrapper.application.domain.model.store_contract_outdated_error import (
     StoreContractOutdatedError,
 )
@@ -29,7 +31,7 @@ from generic_ml_wrapper.application.port.outbound.store_migration import (
     StoreMigrationPort,
 )
 from generic_ml_wrapper.application.usecase.check_store_contract import (
-    CheckStoreContractUseCase,
+    CheckStoreContractService,
 )
 
 if TYPE_CHECKING:
@@ -55,7 +57,7 @@ def test_a_lineage_that_cannot_reach_the_required_version_stops_the_command(
     monkeypatch.setattr(
         app,
         "build_check_store_contract",
-        lambda: CheckStoreContractUseCase(_Lineage(CURRENT_SCHEMA_VERSION - 1)),
+        lambda: CheckStoreContractService(_Lineage(CURRENT_SCHEMA_VERSION - 1)),
     )
 
     exit_code = app.main(["jobs"])
@@ -80,7 +82,7 @@ def test_an_empty_lineage_reaches_no_version(tmp_path: Path) -> None:
     # and holds nothing, so it can build no version at all.
     empty = tmp_path / "migrations"
     empty.mkdir()
-    migration = SqliteStoreMigration(
+    migration = SqliteStoreMigrationAdapter(
         lambda: sqlite3.connect(tmp_path / "ledger.db"), tmp_path, migrations_dir=empty
     )
 

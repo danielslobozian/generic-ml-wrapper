@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 
 
-class SqliteLedgerPurge(LedgerPurgePort):
+class SqliteLedgerPurgeAdapter(LedgerPurgePort):
     """Remove recorded rows from the ledger, one transaction per purge."""
 
     def __init__(self, ledger: Ledger) -> None:

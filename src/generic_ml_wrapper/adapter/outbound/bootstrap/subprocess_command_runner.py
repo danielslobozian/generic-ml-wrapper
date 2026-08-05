@@ -9,7 +9,7 @@ import subprocess
 from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
 
 
-class SubprocessCommandRunner(CommandRunnerPort):
+class SubprocessCommandRunnerAdapter(CommandRunnerPort):
     """Run an install/update command via the shell, streaming it to the user's terminal.
 
     The commands are the vendor install one-liners from the trusted client catalog

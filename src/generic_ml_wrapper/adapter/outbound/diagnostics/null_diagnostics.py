@@ -7,7 +7,7 @@ from __future__ import annotations
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
 
-class NullDiagnostics(DiagnosticsPort):
+class NullDiagnosticsAdapter(DiagnosticsPort):
     """Drop every diagnostic.
 
     Quiet is a *wiring* decision, not a condition each call site tests: wire this and

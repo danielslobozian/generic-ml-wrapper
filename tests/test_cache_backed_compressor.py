@@ -12,7 +12,7 @@ from generic_ml_cache_core.application.domain.model.execution.artifact import Ar
 
 from generic_ml_wrapper.adapter.outbound.compress import cache_backed_compressor
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
-    CacheBackedContextCompressor,
+    CacheBackedContextCompressorAdapter,
     _stdout,
 )
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
@@ -50,7 +50,7 @@ def test_stdout_is_none_when_no_stdout_artifact() -> None:
 
 def test_verbatim_when_no_prompt_resolves(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "compress", lambda: _settings({}))
-    result = CacheBackedContextCompressor().compress("CTX", source_key="company", kind=None)
+    result = CacheBackedContextCompressorAdapter().compress("CTX", source_key="company", kind=None)
     assert result == "CTX"  # no key, no kind -> left verbatim
 
 
@@ -62,14 +62,14 @@ def test_compresses_using_the_kind_prompt(monkeypatch: pytest.MonkeyPatch, tmp_p
     def _compress(*_a: object) -> MlExecution:
         return _execution(stdout=b"SMALL")
 
-    monkeypatch.setattr(CacheBackedContextCompressor, "_compress", _compress)
-    compressor = CacheBackedContextCompressor()
+    monkeypatch.setattr(CacheBackedContextCompressorAdapter, "_compress", _compress)
+    compressor = CacheBackedContextCompressorAdapter()
     assert compressor.compress("BIG", source_key="me.user", kind="human-touch") == "SMALL"
 
 
 def test_unreadable_prompt_leaves_text_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "compress", lambda: _settings({"rules": "/no/such.md"}))
-    result = CacheBackedContextCompressor().compress("CTX", source_key="rules", kind="rules")
+    result = CacheBackedContextCompressorAdapter().compress("CTX", source_key="rules", kind="rules")
     assert result == "CTX"
 
 
@@ -83,13 +83,13 @@ def test_compression_failure_leaves_text_unchanged(
     def _boom(*_args: object) -> object:
         raise RuntimeError("cache exploded")
 
-    monkeypatch.setattr(CacheBackedContextCompressor, "_compress", _boom)
-    result = CacheBackedContextCompressor().compress("CTX", source_key="rules", kind="rules")
+    monkeypatch.setattr(CacheBackedContextCompressorAdapter, "_compress", _boom)
+    result = CacheBackedContextCompressorAdapter().compress("CTX", source_key="rules", kind="rules")
     assert result == "CTX"
 
 
 def test_module_exposes_the_compressor() -> None:
     assert issubclass(
-        cache_backed_compressor.CacheBackedContextCompressor,
+        cache_backed_compressor.CacheBackedContextCompressorAdapter,
         cache_backed_compressor.ContextCompressorPort,
     )

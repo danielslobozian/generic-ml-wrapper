@@ -13,13 +13,15 @@ import signal
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.caller.signal_interrupt_scope import SignalInterruptScope
+from generic_ml_wrapper.adapter.outbound.caller.signal_interrupt_scope import (
+    SignalInterruptScopeAdapter,
+)
 
 
 def test_the_interrupt_is_absorbed_inside_the_scope() -> None:
     before = signal.getsignal(signal.SIGINT)
 
-    with SignalInterruptScope().client_owns_interrupts():
+    with SignalInterruptScopeAdapter().client_owns_interrupts():
         installed = signal.getsignal(signal.SIGINT)
         assert installed is not before
         assert callable(installed)
@@ -37,7 +39,7 @@ def test_only_the_interrupt_is_taken() -> None:
     """
     before_term = signal.getsignal(signal.SIGTERM)
 
-    with SignalInterruptScope().client_owns_interrupts():
+    with SignalInterruptScopeAdapter().client_owns_interrupts():
         assert signal.getsignal(signal.SIGTERM) is before_term
 
     assert signal.getsignal(signal.SIGTERM) is before_term
@@ -49,7 +51,7 @@ def test_the_previous_handler_is_restored_even_when_the_block_raises() -> None:
 
     with (
         pytest.raises(RuntimeError, match=message),
-        SignalInterruptScope().client_owns_interrupts(),
+        SignalInterruptScopeAdapter().client_owns_interrupts(),
     ):
         raise RuntimeError(message)
 

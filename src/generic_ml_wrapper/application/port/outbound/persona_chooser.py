@@ -22,7 +22,7 @@ class PersonaChooserPort(ABC):
         Args:
             personas: The selectable personas to offer.
             i18n: The localiser for the prompt text; ``None`` uses the chooser's own
-                (its construction-time one). Init passes the language chosen at step one
+                (its construction-time one). InitUseCase passes the language chosen at step one
                 so the prompt speaks it, not the ``$LANG`` seed.
 
         Returns:

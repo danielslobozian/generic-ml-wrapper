@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
 
 
-class MigrateLayout(ABC):
+class MigrateLayoutUseCase(ABC):
     """Migrate the old ``profile/company`` layout into the active environment, if present."""
 
     @abstractmethod

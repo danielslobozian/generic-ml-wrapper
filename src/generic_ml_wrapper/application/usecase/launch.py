@@ -2,17 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 """Run a resolved caller with its lifecycle hooks — the shared launch sequence.
 
-Both ``StartJob`` and ``NewWorkflow`` end the same way: a caller is resolved for the run,
-metering is set up, the client runs (blocking) until it exits, and metering is torn down.
+Both ``StartJobUseCase`` and ``NewWorkflowUseCase`` end the same way: a caller is
+resolved for the run, metering is set up, the client runs (blocking) until it exits, and
+metering is torn down.
 This centralises that sequence and brackets it with the two lifecycle hook seams —
 ``pre-launch`` before the client starts and ``post-session`` after it exits — so the
 ordering, the exit-code capture, and the never-break-the-run guarantees live in one place.
 
-It is also where a session is *marked as running*. This is the only place that knows a
+It is also where a session is *marked as running*: the only place that knows a
 client is live and for how long, so the locks that stop a running session -- or its job --
 being deleted from another terminal are taken here and released when the client exits.
 
-It sits in the application ring, not the domain: it drives the ``CliCaller`` outbound port,
+It sits in the application ring, not the domain: it drives the ``CliCallerPort`` outbound port,
 which the domain may not import.
 """
 
@@ -26,7 +27,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
     from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
-    from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+    from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
     from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
     from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
     from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
@@ -58,7 +59,7 @@ class LaunchSequence:
         self._locks = locks
         self._interrupts = interrupts
 
-    def run(self, caller: CliCaller, run: RunContext) -> int:
+    def run(self, caller: CliCallerPort, run: RunContext) -> int:
         """Run the client through its lifecycle: pre-launch hooks, metering, post-session hooks.
 
         ``pre-launch`` hooks run after the caller is resolved and before metering starts, so
@@ -89,7 +90,7 @@ class LaunchSequence:
         ):
             return self._bracketed(caller, run)
 
-    def _bracketed(self, caller: CliCaller, run: RunContext) -> int:
+    def _bracketed(self, caller: CliCallerPort, run: RunContext) -> int:
         """The lifecycle itself: pre-launch hooks, metering, the client, teardown, post-session."""
         self._hooks.run(
             HookPhase.PRE_LAUNCH, self._context(run, HookPhase.PRE_LAUNCH, exit_code=None)

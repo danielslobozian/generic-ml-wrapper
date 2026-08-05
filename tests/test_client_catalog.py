@@ -6,18 +6,20 @@ from __future__ import annotations
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import TomlClientCatalog
+from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
+    TomlClientCatalogAdapter,
+)
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 
 
 def _client(name: str) -> ClientInfo:
-    info = TomlClientCatalog().by_name(name)
+    info = TomlClientCatalogAdapter().by_name(name)
     assert info is not None, f"{name} must be in the packaged catalogue"
     return info
 
 
 def test_every_client_carries_the_setup_data() -> None:
-    for info in TomlClientCatalog().supported():
+    for info in TomlClientCatalogAdapter().supported():
         assert info.install_unix
         assert info.install_windows
         assert info.login
@@ -30,7 +32,7 @@ def test_every_client_carries_the_setup_data() -> None:
 
 
 def test_the_catalogue_lists_the_supported_clients_in_order() -> None:
-    assert [info.name for info in TomlClientCatalog().supported()] == [
+    assert [info.name for info in TomlClientCatalogAdapter().supported()] == [
         "claude",
         "cursor",
         "codex",
@@ -39,7 +41,7 @@ def test_the_catalogue_lists_the_supported_clients_in_order() -> None:
 
 
 def test_an_unsupported_name_has_no_entry() -> None:
-    assert TomlClientCatalog().by_name("nope") is None
+    assert TomlClientCatalogAdapter().by_name("nope") is None
 
 
 @pytest.mark.parametrize(
@@ -65,7 +67,7 @@ def test_only_vibe_needs_a_prerequisite_and_it_is_uv() -> None:
     assert uv is not None
     assert uv.binary == "uv"
     assert uv.install_for("Windows") != uv.install_for("Linux")
-    others = [info for info in TomlClientCatalog().supported() if info.name != "vibe"]
+    others = [info for info in TomlClientCatalogAdapter().supported() if info.name != "vibe"]
     assert all(info.prereq is None for info in others)
 
 
@@ -77,7 +79,7 @@ def test_resumable_flag_excludes_only_vibe() -> None:
     assert _client("cursor").resumable is True
     assert _client("codex").resumable is True
     assert _client("vibe").resumable is False
-    resumable = {info.name for info in TomlClientCatalog().supported() if info.resumable}
+    resumable = {info.name for info in TomlClientCatalogAdapter().supported() if info.resumable}
     assert resumable == {"claude", "cursor", "codex"}
 
 
@@ -86,5 +88,5 @@ def test_only_codex_qualifies_its_resumable_yes() -> None:
     # a caveat -- a catalogue key, like login_hint, because the catalogue is data and data
     # does not know which language it will be read in.
     assert _client("codex").resume_hint == "client.resume_hint.codex"
-    hinted = {info.name for info in TomlClientCatalog().supported() if info.resume_hint}
+    hinted = {info.name for info in TomlClientCatalogAdapter().supported() if info.resume_hint}
     assert hinted == {"codex"}  # everyone else's answer needs no footnote

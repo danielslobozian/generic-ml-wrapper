@@ -19,7 +19,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
 
-class TtyTextPrompt(TextPromptPort):
+class TtyTextPromptAdapter(TextPromptPort):
     """Ask one free-text question at an interactive terminal; else return the default."""
 
     def __init__(self, i18n: Localizer) -> None:

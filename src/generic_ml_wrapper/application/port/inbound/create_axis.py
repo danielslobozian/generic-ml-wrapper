@@ -56,7 +56,7 @@ class AxisExistsError(DomainError, ValueError):
     """Raised when a folder for the derived slug already exists."""
 
 
-class CreateAxis(ABC):
+class CreateAxisUseCase(ABC):
     """Create a new role or environment slug-folder from a typed label."""
 
     @abstractmethod

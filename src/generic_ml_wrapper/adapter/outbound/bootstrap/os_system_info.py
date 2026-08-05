@@ -10,7 +10,7 @@ import platform
 from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 
 
-class OsSystemInfo(SystemInfoPort):
+class OsSystemInfoAdapter(SystemInfoPort):
     """Answer from the host: the account name, and the platform's name."""
 
     def username(self) -> str:

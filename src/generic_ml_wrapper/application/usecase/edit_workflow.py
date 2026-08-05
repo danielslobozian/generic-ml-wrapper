@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The EditWorkflow use case: open an existing workflow in an authoring session."""
+"""The EditWorkflowUseCase use case: open an existing workflow in an authoring session."""
 
 from __future__ import annotations
 
@@ -15,13 +15,13 @@ from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.edit_workflow import (
-    EditWorkflow,
     EditWorkflowCommand,
+    EditWorkflowUseCase,
     NoEditToResumeError,
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
@@ -32,14 +32,14 @@ _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
 
 
-class EditWorkflowUseCase(EditWorkflow):
+class EditWorkflowService(EditWorkflowUseCase):
     """Open an existing workflow's folder and run the authoring session against it."""
 
     def __init__(
         self,
         workflows: WorkflowSourcePort,
         store: SessionStorePort,
-        callers: CliCallerProvider,
+        callers: CliCallerProviderPort,
         uuid_factory: Callable[[], str],
         launch: LaunchSequence,
     ) -> None:
@@ -78,7 +78,7 @@ class EditWorkflowUseCase(EditWorkflow):
             raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
             raise WorkflowNameError("error.workflow.reserved_name", name=name)
-        # No seeding here, for the reason `ExportWorkflowUseCase` gives: everything it
+        # No seeding here, for the reason `ExportWorkflowService` gives: everything it
         # installs is already rejected as reserved above.
         if self._workflows.find(name) is None:
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)

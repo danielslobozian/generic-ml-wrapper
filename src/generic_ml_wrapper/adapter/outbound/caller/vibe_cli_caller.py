@@ -15,7 +15,7 @@ from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProces
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.gateway import openai_chat
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
@@ -29,7 +29,7 @@ BINARY = "vibe"
 _VIBE_CONFIG = Path.home() / ".vibe" / "config.toml"
 
 
-class VibeCliCaller(CliCaller):
+class VibeCliCallerAdapter(CliCallerPort):
     """Launch vibe (Mistral's CLI) for a run, routed through a per-turn metering relay.
 
     vibe mints its own UUID session id and exposes no way to set one at launch, so

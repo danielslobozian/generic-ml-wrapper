@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.setting_row import SettingRow
 
 
-class TomlSettingsCatalog(SettingsCatalogPort):
+class TomlSettingsCatalogAdapter(SettingsCatalogPort):
     """Reads the settable surface from the typed registry and the user's ``config.toml``.
 
     The registry is the single declaration of every scalar key — its type, default,

@@ -6,14 +6,16 @@ from collections.abc import Iterator
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import StderrDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
+    StderrDiagnosticsAdapter,
+)
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.wiring.diagnostics_log import Log, active, set_active
 
 
 @pytest.fixture(autouse=True)
 def _restore_sink() -> Iterator[None]:
-    previous = set_active(StderrDiagnostics(level="warning"))
+    previous = set_active(StderrDiagnosticsAdapter(level="warning"))
     yield
     set_active(previous)
 
@@ -46,7 +48,7 @@ def test_messages_below_threshold_are_dropped(capsys: pytest.CaptureFixture[str]
 
 
 def test_a_lower_threshold_lets_debug_through(capsys: pytest.CaptureFixture[str]) -> None:
-    set_active(StderrDiagnostics(level="debug"))
+    set_active(StderrDiagnosticsAdapter(level="debug"))
     Log().debug("now visible")
     assert "gmlw DEBUG now visible" in capsys.readouterr().err
 

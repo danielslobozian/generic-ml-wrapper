@@ -1,29 +1,29 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for loading an external CliCaller from a spec."""
+"""Tests for loading an external CliCallerPort from a spec."""
 
 from pathlib import Path
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCallerAdapter
 from generic_ml_wrapper.adapter.outbound.caller.loader import load_caller_class
 from generic_ml_wrapper.application.domain.model.caller_unavailable_error import (
     CallerUnavailableError,
 )
 
-_CLAUDE_SPEC = "generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller:ClaudeCliCaller"
+_CLAUDE_SPEC = "generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller:ClaudeCliCallerAdapter"
 
 
 def test_loads_a_class_from_a_module_spec() -> None:
-    assert load_caller_class(_CLAUDE_SPEC) is ClaudeCliCaller
+    assert load_caller_class(_CLAUDE_SPEC) is ClaudeCliCallerAdapter
 
 
 def test_loads_a_class_from_a_file_spec(tmp_path: Path) -> None:
     module = tmp_path / "my_caller.py"
     module.write_text(
-        "from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller\n"
-        "class MyCaller(CliCaller):\n"
+        "from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort\n"
+        "class MyCaller(CliCallerPort):\n"
         "    def start_client(self) -> int:\n"
         "        return 0\n",
         encoding="utf-8",

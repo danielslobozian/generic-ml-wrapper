@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the LocalGitWorkspaceInspector against real directories and git repos."""
+"""Tests for the LocalGitWorkspaceInspectorAdapter against real directories and git repos."""
 
 import subprocess
 from pathlib import Path
@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
-    LocalGitWorkspaceInspector,
+    LocalGitWorkspaceInspectorAdapter,
 )
 
 
@@ -25,7 +25,7 @@ def test_outside_a_repo_reports_only_the_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    workspace = LocalGitWorkspaceInspector().inspect()
+    workspace = LocalGitWorkspaceInspectorAdapter().inspect()
     assert workspace.branch is None
     assert workspace.repo is None
     assert workspace.short_sha is None
@@ -42,7 +42,7 @@ def test_folder_abbreviates_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         return tmp_path
 
     monkeypatch.setattr(Path, "home", staticmethod(_home))
-    assert LocalGitWorkspaceInspector().inspect().folder == "~/proj"
+    assert LocalGitWorkspaceInspectorAdapter().inspect().folder == "~/proj"
 
 
 def test_inside_a_clean_repo_reports_git_state(
@@ -55,7 +55,7 @@ def test_inside_a_clean_repo_reports_git_state(
     _git(tmp_path, "commit", "-m", "init")
     monkeypatch.chdir(tmp_path)
 
-    workspace = LocalGitWorkspaceInspector().inspect()
+    workspace = LocalGitWorkspaceInspectorAdapter().inspect()
     assert workspace.repo == tmp_path.name
     assert workspace.branch == "work"
     assert workspace.short_sha is not None
@@ -74,4 +74,4 @@ def test_inside_a_dirty_repo_counts_changes(
     (tmp_path / "untracked.txt").write_text("new", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
-    assert LocalGitWorkspaceInspector().inspect().dirty == 2
+    assert LocalGitWorkspaceInspectorAdapter().inspect().dirty == 2

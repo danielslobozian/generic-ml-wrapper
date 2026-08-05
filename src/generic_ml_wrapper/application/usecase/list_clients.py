@@ -1,12 +1,15 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListClients use case: the supported clients with their install status and version."""
+"""The ListClientsUseCase use case: the supported clients with their install status and version."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
+from generic_ml_wrapper.application.port.inbound.list_clients import (
+    ClientStatus,
+    ListClientsUseCase,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -16,7 +19,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
 
 
-class ListClientsUseCase(ListClients):
+class ListClientsService(ListClientsUseCase):
     """Compose the client catalog with PATH detection, versions, and the default setting."""
 
     def __init__(
