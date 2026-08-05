@@ -5,55 +5,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.domain_error import DomainError
+from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
+from generic_ml_wrapper.application.port.inbound.create_axis_result import CreateAxisResult
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
-
-
-@dataclass(frozen=True)
-class CreateAxisCommand:
-    """A request to create a new role or environment.
-
-    Attributes:
-        kind: Which axis to create (role or environment).
-        label: The human name the user typed; the slug is derived from it.
-        description: An optional fuller line saved to the folder's ``.about.toml``.
-        make_default: Also point ``profile.default_<kind>`` at the new slug.
-    """
-
-    kind: AxisKind
-    label: str
-    description: str = ""
-    make_default: bool = False
-
-
-@dataclass(frozen=True)
-class CreateAxisResult:
-    """The outcome of creating an axis.
-
-    Attributes:
-        kind: The axis that was created.
-        slug: The kebab-case id derived from the label (the folder name + config value).
-        label: The human name the folder recorded.
-        made_default: Whether ``profile.default_<kind>`` was pointed at the new slug.
-    """
-
-    kind: AxisKind
-    slug: str
-    label: str
-    made_default: bool
-
-
-class AxisLabelError(DomainError, ValueError):
-    """Raised when a label is empty or slugifies to nothing usable."""
-
-
-class AxisExistsError(DomainError, ValueError):
-    """Raised when a folder for the derived slug already exists."""
+    pass
 
 
 class CreateAxisUseCase(ABC):

@@ -85,18 +85,3 @@ class CliCallerPort(ABC):
 
     def end_metering(self) -> None:  # noqa: B027  (optional hook; default no-op by design)
         """Tear down metering after the client exits. Default: do nothing."""
-
-
-class CliCallerProviderPort(ABC):
-    """Resolve the caller to use for a given run."""
-
-    @abstractmethod
-    def for_run(self, run: RunContext) -> CliCallerPort:
-        """Return the caller instance for a run.
-
-        Args:
-            run: The run to launch.
-
-        Returns:
-            A caller bound to the run.
-        """

@@ -22,8 +22,13 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
+    ArchiveUnreadableError,
+)
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
+from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_label_error import AxisLabelError
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
 )
@@ -43,58 +48,45 @@ from generic_ml_wrapper.application.domain.model.launch_location import (
     LaunchLocationProblem,
 )
 from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
+from generic_ml_wrapper.application.domain.model.no_edit_to_resume_error import NoEditToResumeError
+from generic_ml_wrapper.application.domain.model.no_such_draft_error import NoSuchDraftError
+from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
+from generic_ml_wrapper.application.domain.model.no_such_session_error import NoSuchSessionError
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
+    ResumeNotSupportedError,
+)
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
+from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.domain.model.workflow_exists_error import WorkflowExistsError
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
-from generic_ml_wrapper.application.port.inbound.config_commands import (
-    ConfigCommandsUseCase,
-    SetOutcome,
-    SettingView,
-)
-from generic_ml_wrapper.application.port.inbound.create_axis import (
-    AxisExistsError,
-    AxisLabelError,
-    CreateAxisCommand,
-)
-from generic_ml_wrapper.application.port.inbound.delete_jobs import JobFootprint
-from generic_ml_wrapper.application.port.inbound.delete_sessions import (
-    NoSuchJobError,
-    NoSuchSessionError,
-    SessionFootprint,
-)
-from generic_ml_wrapper.application.port.inbound.edit_workflow import (
-    EditWorkflowCommand,
-    NoEditToResumeError,
+from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
+from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
     WorkflowNotFoundError,
 )
-from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
-from generic_ml_wrapper.application.port.inbound.import_workflow import (
-    ArchiveUnreadableError,
-    ImportOutcome,
-)
-from generic_ml_wrapper.application.port.inbound.init import InitOutcome
-from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
-from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
-from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
-from generic_ml_wrapper.application.port.inbound.new_workflow import (
-    NewWorkflowCommand,
-    NewWorkflowResult,
-    NoSuchDraftError,
-    WorkflowExistsError,
-    WorkflowNameError,
-    WorkflowOutcome,
-)
-from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialCommand
-from generic_ml_wrapper.application.port.inbound.start_job import (
-    ResumeNotSupportedError,
-    StartJobCommand,
-    StartJobResult,
-    UnknownWorkflowError,
-)
+from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
+from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
+from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
+from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
+from generic_ml_wrapper.application.port.inbound.init_outcome import InitOutcome
+from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
+from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
+from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
+from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
+from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
+from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
+from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
+from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
+from generic_ml_wrapper.application.port.inbound.set_outcome import SetOutcome
+from generic_ml_wrapper.application.port.inbound.setting_view import SettingView
+from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
+from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
+from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
+from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_application_settings,
@@ -854,14 +846,14 @@ def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> 
     return "\n".join(lines)
 
 
-def _client_version_label(status: ClientStatus, loc: i18n.Localizer) -> str:
+def _client_version_label(status: ListedClient, loc: i18n.Localizer) -> str:
     """Render a client's version cell — shared by the CLI table and the TUI Clients view."""
     if not status.installed:
         return loc.t("clients.not_installed")
     return status.version or loc.t("clients.version_unknown")
 
 
-def format_clients(statuses: list[ClientStatus], loc: i18n.Localizer | None = None) -> str:
+def format_clients(statuses: list[ListedClient], loc: i18n.Localizer | None = None) -> str:
     """Render the supported clients as human-readable lines: version, resume, default.
 
     Args:

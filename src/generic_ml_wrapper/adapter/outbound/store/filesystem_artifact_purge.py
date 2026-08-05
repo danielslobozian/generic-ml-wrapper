@@ -26,10 +26,8 @@ from __future__ import annotations
 import shutil
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.outbound.artifact_purge import (
-    ArtifactCounts,
-    ArtifactPurgePort,
-)
+from generic_ml_wrapper.application.port.outbound.artifact_counts import ArtifactCounts
+from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 
 if TYPE_CHECKING:
     from pathlib import Path

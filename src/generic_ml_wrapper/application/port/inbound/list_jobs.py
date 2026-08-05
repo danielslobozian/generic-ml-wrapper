@@ -5,20 +5,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 
-
-@dataclass(frozen=True)
-class JobSummary:
-    """A one-line summary of a job's recorded activity.
-
-    Attributes:
-        job: The job identifier.
-        session_count: How many sessions have been recorded for the job.
-    """
-
-    job: str
-    session_count: int
+from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
 
 
 class ListJobsUseCase(ABC):

@@ -10,18 +10,18 @@ from dataclasses import replace
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
+from generic_ml_wrapper.application.domain.model.no_edit_to_resume_error import NoEditToResumeError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
-from generic_ml_wrapper.application.port.inbound.edit_workflow import (
-    EditWorkflowCommand,
-    EditWorkflowUseCase,
-    NoEditToResumeError,
+from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
+from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
     WorkflowNotFoundError,
 )
-from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProviderPort
+from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
+from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
+from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence

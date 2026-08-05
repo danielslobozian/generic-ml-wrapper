@@ -11,7 +11,8 @@ start. It is the only name this use case knows about, and the only one it hides.
 from __future__ import annotations
 
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
-from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary, ListJobsUseCase
+from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
+from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
 

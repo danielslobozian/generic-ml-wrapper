@@ -16,15 +16,17 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
     FilesystemWorkflowSourceAdapter,
 )
 from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
+from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
+    ArchiveUnreadableError,
+)
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.port.inbound.edit_workflow import WorkflowNotFoundError
-from generic_ml_wrapper.application.port.inbound.import_workflow import (
-    ArchiveUnreadableError,
-    ImportOutcome,
+from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
+from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
+    WorkflowNotFoundError,
 )
-from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
+from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
 from generic_ml_wrapper.application.port.outbound.workflow_archive import WorkflowArchivePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService

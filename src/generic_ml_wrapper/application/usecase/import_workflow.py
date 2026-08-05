@@ -15,15 +15,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
+from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
+    ArchiveUnreadableError,
+)
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.port.inbound.import_workflow import (
-    ArchiveUnreadableError,
-    ImportOutcome,
-    ImportWorkflowResult,
-    ImportWorkflowUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
+from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
+from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
+from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.import_workflow_result import ImportWorkflowResult
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.workflow_backup import WorkflowBackup

@@ -181,3 +181,49 @@ def test_every_port_and_its_implementation_is_named_for_its_role() -> None:
     assert not offenders, "a port or its implementation is not named for its role:\n" + "\n".join(
         offenders
     )
+
+
+def test_a_port_declares_one_thing(  # the tightened form of one-concept-per-module
+) -> None:
+    """A port file holds the port, and nothing else.
+
+    The looser gate above lets a module hold several types when one of them names the
+    file — which was written for the ports, and which the ports then used to keep their
+    commands, results and errors beside them. A transport type is a model: it has its own
+    name, so it gets its own file, and a reader looking for it does not have to know which
+    port happened to need it first.
+
+    Errors are not here at all. They live in the domain with the rest of them, so there is
+    one place to look rather than two.
+    """
+    offenders: list[str] = []
+    for ring in ("application/port/inbound", "application/port/outbound"):
+        for path in sorted((_SOURCE / ring).rglob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            classes = _public_classes(ast.parse(path.read_text(encoding="utf-8")))
+            if len(classes) > 1:
+                offenders.append(
+                    f"{path.relative_to(_SOURCE)}: {', '.join(c.name for c in classes)}"
+                )
+    assert not offenders, "a port file holds more than one type:\n" + "\n".join(offenders)
+
+
+def test_no_error_is_declared_in_a_port() -> None:
+    """Exceptions belong to the domain, wherever they are raised.
+
+    Two homes for one kind of thing is how a reader ends up grepping. The domain already
+    holds every other error the application can raise, each carrying the catalogue key
+    that lets it reach a person in their own language.
+    """
+    offenders: list[str] = []
+    for ring in ("application/port/inbound", "application/port/outbound"):
+        for path in sorted((_SOURCE / ring).rglob("*.py")):
+            if path.name == "__init__.py":
+                continue
+            for node in _public_classes(ast.parse(path.read_text(encoding="utf-8"))):
+                if any("Error" in ast.unparse(base) for base in node.bases):
+                    offenders.append(f"{path.relative_to(_SOURCE)}: {node.name}")
+    assert not offenders, "an exception declared in a port rather than the domain:\n" + "\n".join(
+        offenders
+    )

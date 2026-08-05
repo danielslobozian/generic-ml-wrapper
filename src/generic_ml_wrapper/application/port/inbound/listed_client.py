@@ -1,0 +1,31 @@
+# SPDX-FileCopyrightText: 2026 Daniel Slobozian
+# SPDX-License-Identifier: Apache-2.0
+"""The status of one supported client."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class ListedClient:
+    """The status of one supported client.
+
+    Attributes:
+        name: The gmlw client id (e.g. ``claude``).
+        display: The human-readable name (e.g. ``Claude Code``).
+        installed: Whether the client's binary is on ``PATH``.
+        version: The installed on-disk version, or ``None`` when absent or unreadable.
+        resumable: Whether a session on this client can be resumed.
+        is_default: Whether this is the configured default client.
+        resume_hint: The catalogue key for the caveat on ``resumable`` (Codex resumes only
+            once the id it minted is bound), or ``""`` when the answer needs no footnote.
+    """
+
+    name: str
+    display: str
+    installed: bool
+    version: str | None
+    resumable: bool
+    is_default: bool
+    resume_hint: str = ""

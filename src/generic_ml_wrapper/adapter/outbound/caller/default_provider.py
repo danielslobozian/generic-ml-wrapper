@@ -14,10 +14,8 @@ from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCa
 from generic_ml_wrapper.application.domain.model.unsupported_client_error import (
     UnsupportedClientError,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import (
-    CliCallerPort,
-    CliCallerProviderPort,
-)
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
+from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext

@@ -8,10 +8,8 @@ import tomllib
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
-from generic_ml_wrapper.application.port.outbound.plugin_source import (
-    PluginError,
-    PluginSourcePort,
-)
+from generic_ml_wrapper.application.domain.model.plugin_error import PluginError
+from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
 
 if TYPE_CHECKING:
     from pathlib import Path

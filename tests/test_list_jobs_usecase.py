@@ -3,7 +3,7 @@
 """Tests for the ListJobsUseCase use case, driven by a fake store."""
 
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
+from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
 

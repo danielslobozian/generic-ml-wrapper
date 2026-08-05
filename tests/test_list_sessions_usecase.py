@@ -7,7 +7,7 @@ from _conformance import InMemoryPerTurnStore, InMemoryUsageStore
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
+from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsService
 

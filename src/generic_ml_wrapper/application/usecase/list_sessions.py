@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-from generic_ml_wrapper.application.port.inbound.list_sessions import (
-    ListSessionsUseCase,
-    SessionSummary,
-)
+from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessionsUseCase
+from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort

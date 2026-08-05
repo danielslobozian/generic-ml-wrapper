@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.port.inbound.edit_workflow import WorkflowNotFoundError
+from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
+from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
+    WorkflowNotFoundError,
+)
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.workflow_archive import WorkflowArchivePort

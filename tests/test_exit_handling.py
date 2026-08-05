@@ -10,7 +10,7 @@ import pytest
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
 from generic_ml_wrapper.adapter.outbound.config.toml_config_reader import CompanionSettings
-from generic_ml_wrapper.application.port.inbound.start_job import StartJobResult
+from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
 
 
 def test_keyboard_interrupt_exits_130_without_a_traceback(

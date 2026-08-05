@@ -14,16 +14,14 @@ from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import Nul
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
 )
+from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
+from generic_ml_wrapper.application.domain.model.no_such_session_error import NoSuchSessionError
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.session_running_error import SessionRunningError
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.localizer import Localizer
-from generic_ml_wrapper.application.port.inbound.delete_sessions import (
-    NoSuchJobError,
-    NoSuchSessionError,
-    SessionFootprint,
-)
+from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
 
 

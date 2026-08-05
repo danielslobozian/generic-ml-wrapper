@@ -23,7 +23,8 @@ from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostic
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
-from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
+from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
 from generic_ml_wrapper.application.wiring.diagnostics_log import set_active
 
 _SSE = (

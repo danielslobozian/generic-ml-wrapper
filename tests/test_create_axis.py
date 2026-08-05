@@ -10,13 +10,11 @@ from pathlib import Path
 
 import pytest
 
+from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
 from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
+from generic_ml_wrapper.application.domain.model.axis_label_error import AxisLabelError
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
-from generic_ml_wrapper.application.port.inbound.create_axis import (
-    AxisExistsError,
-    AxisLabelError,
-    CreateAxisCommand,
-)
+from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.config_writer import ConfigWriterPort
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisService
