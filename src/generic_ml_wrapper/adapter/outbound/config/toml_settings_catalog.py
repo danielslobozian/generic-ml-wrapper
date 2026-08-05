@@ -10,6 +10,7 @@ from generic_ml_wrapper.adapter.outbound.config import settings_registry, toml_c
 from generic_ml_wrapper.application.port.outbound.settings_catalog import SettingsCatalogPort
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
     from generic_ml_wrapper.application.domain.model.setting_row import SettingRow
@@ -25,13 +26,22 @@ class TomlSettingsCatalogAdapter(SettingsCatalogPort):
     modules and a path.
     """
 
+    def __init__(self, config_file: Callable[[], Path]) -> None:
+        """Bind the catalogue to the config file it reads current values from.
+
+        Args:
+            config_file: Resolves the config file's location, asked at each read so a
+                redirected config root is seen rather than remembered.
+        """
+        self._config_file = config_file
+
     def rows(self) -> list[SettingRow]:
         """Return every registered setting's metadata, in declaration order."""
         return settings_registry.registry_rows()
 
-    def current_values(self, path: Path) -> dict[str, object]:
+    def current_values(self) -> dict[str, object]:
         """Return the current effective value of every registered scalar setting."""
-        return toml_config_reader.current_values(path)
+        return toml_config_reader.current_values(self._config_file())
 
     def is_table(self, key: str) -> bool:
         """Whether ``key`` addresses a table of entries rather than a single scalar."""

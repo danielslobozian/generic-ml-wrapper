@@ -37,7 +37,7 @@ def _a_workflow(tmp_path: Path, name: str = "nightly-etl", body: str = "the old 
 def test_displacing_moves_the_folder_and_says_where(tmp_path: Path) -> None:
     folder = _a_workflow(tmp_path)
 
-    backup = _backups(tmp_path).displace("nightly-etl", folder)
+    backup = _backups(tmp_path).displace("nightly-etl", str(folder))
 
     assert backup is not None
     assert not folder.exists()  # left free for the replacement
@@ -49,13 +49,13 @@ def test_displacing_moves_the_folder_and_says_where(tmp_path: Path) -> None:
 
 def test_displacing_an_empty_folder_reports_nothing_was_there(tmp_path: Path) -> None:
     """So a caller can ask without first looking at the disk to find out whether to."""
-    assert _backups(tmp_path).displace("ghost", tmp_path / "workflows" / "ghost") is None
+    assert _backups(tmp_path).displace("ghost", str(tmp_path / "workflows" / "ghost")) is None
 
 
 def test_the_backup_lives_outside_the_workflows_folder(tmp_path: Path) -> None:
     # A folder under `workflows` with a workflow.md lists as runnable, so keeping backups
     # out makes "a backup is never a workflow" structural rather than a filter.
-    backup = _backups(tmp_path).displace("nightly-etl", _a_workflow(tmp_path))
+    backup = _backups(tmp_path).displace("nightly-etl", str(_a_workflow(tmp_path)))
 
     assert backup is not None
     assert (tmp_path / "workflows") not in Path(backup.location).parents
@@ -70,8 +70,8 @@ def test_a_second_backup_in_the_same_second_does_not_land_inside_the_first(
     user replacing twice in a row is most likely to want back.
     """
     backups = _backups(tmp_path)
-    first = backups.displace("nightly-etl", _a_workflow(tmp_path, body="the first"))
-    second = backups.displace("nightly-etl", _a_workflow(tmp_path, body="the second"))
+    first = backups.displace("nightly-etl", str(_a_workflow(tmp_path, body="the first")))
+    second = backups.displace("nightly-etl", str(_a_workflow(tmp_path, body="the second")))
 
     assert first is not None
     assert second is not None
@@ -85,10 +85,10 @@ def test_a_second_backup_in_the_same_second_does_not_land_inside_the_first(
 def test_restoring_puts_the_workflow_back(tmp_path: Path) -> None:
     folder = _a_workflow(tmp_path)
     backups = _backups(tmp_path)
-    backup = backups.displace("nightly-etl", folder)
+    backup = backups.displace("nightly-etl", str(folder))
     assert backup is not None
 
-    backups.restore(backup, folder)
+    backups.restore(backup, str(folder))
 
     assert (folder / "workflow.md").read_text(encoding="utf-8") == "the old one"
     assert not Path(backup.location).exists()
@@ -98,12 +98,12 @@ def test_restoring_discards_whatever_replaced_it(tmp_path: Path) -> None:
     """A half-written replacement is not something to merge the original back into."""
     folder = _a_workflow(tmp_path)
     backups = _backups(tmp_path)
-    backup = backups.displace("nightly-etl", folder)
+    backup = backups.displace("nightly-etl", str(folder))
     assert backup is not None
     folder.mkdir(parents=True)
     (folder / "half-written").write_text("junk", encoding="utf-8")
 
-    backups.restore(backup, folder)
+    backups.restore(backup, str(folder))
 
     assert (folder / "workflow.md").read_text(encoding="utf-8") == "the old one"
     assert not (folder / "half-written").exists()
@@ -113,10 +113,10 @@ def test_restoring_into_a_folder_that_was_never_recreated_works(tmp_path: Path) 
     """The ordinary case: unpacking failed before it made anything."""
     folder = _a_workflow(tmp_path)
     backups = _backups(tmp_path)
-    backup = backups.displace("nightly-etl", folder)
+    backup = backups.displace("nightly-etl", str(folder))
     assert backup is not None
 
-    backups.restore(backup, folder)
+    backups.restore(backup, str(folder))
 
     assert (folder / "workflow.md").is_file()
 

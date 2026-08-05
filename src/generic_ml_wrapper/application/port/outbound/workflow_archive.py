@@ -5,12 +5,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class WorkflowArchivePort(ABC):
@@ -25,10 +21,15 @@ class WorkflowArchivePort(ABC):
     question belongs here because the answer depends on what a shared workflow consists
     of, which is this port's own definition — and because asking it costs nothing while
     finding out afterwards costs the workflow being replaced.
+
+    Locations cross this line as text. What a location *means* — which separator is
+    local, whether a leading ``~`` is the user's home, when a folder is created — is the
+    implementation's own business, and a caller that held a filesystem type would be
+    holding an answer to those questions before this port had given one.
     """
 
     @abstractmethod
-    def inspect(self, archive: Path) -> ArchiveStatus:
+    def inspect(self, archive: str) -> ArchiveStatus:
         """Report whether the archive can be imported, without unpacking it.
 
         Read-only, and it writes nothing anywhere: a caller may ask before it has
@@ -44,7 +45,7 @@ class WorkflowArchivePort(ABC):
         """
 
     @abstractmethod
-    def pack(self, folder: Path, slug: str) -> Path:
+    def pack(self, folder: str, slug: str) -> str:
         """Write a workflow folder's portable contents to an archive.
 
         Args:
@@ -52,11 +53,11 @@ class WorkflowArchivePort(ABC):
             slug: The workflow's id, used to name the archive.
 
         Returns:
-            The path to the written archive.
+            Where the archive was written.
         """
 
     @abstractmethod
-    def unpack(self, archive: Path, destination: Path) -> None:
+    def unpack(self, archive: str, destination: str) -> None:
         """Extract an archive's portable contents into a destination folder.
 
         Only the portable files are taken; anything else the archive happens to carry

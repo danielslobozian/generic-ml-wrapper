@@ -1626,8 +1626,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             job=job, empty=False, summary=summary, model_rows=model_rows, session_rows=session_rows
         )
 
-    def _save_usage(job: str) -> str:  # writes the full JSON report; returns the file path
-        return str(build_save_usage_report().execute(JobId(job)))
+    def _save_usage(job: str) -> str:  # writes the full JSON report; returns where it went
+        return build_save_usage_report().execute(JobId(job))
 
     def _clients() -> list[ClientRow]:  # runs on a worker thread: version reads are subprocesses
         return [

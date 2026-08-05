@@ -8,8 +8,6 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from generic_ml_wrapper.application.domain.model.setting_row import SettingRow
 
 
@@ -19,7 +17,8 @@ class SettingsCatalogPort(ABC):
     Two things the ``config`` commands need and the application ring may not fetch for
     itself: the *schema* — which keys exist, what they accept, what they default to — and
     the *current effective values*, which depend on a file on disk. Both arrive through
-    this port, so a use case never reads a config module or a path directly.
+    this port, so a use case never reads a config module or a path directly — including
+    the question of *which* file, which is this implementation's to answer.
 
     Reading is deliberately tolerant: a malformed or ill-typed file falls back to defaults
     rather than raising, because a broken config must not make the tool that edits it
@@ -31,11 +30,10 @@ class SettingsCatalogPort(ABC):
         """Return every registered setting's metadata, in declaration order."""
 
     @abstractmethod
-    def current_values(self, path: Path) -> dict[str, object]:
+    def current_values(self) -> dict[str, object]:
         """Return the current effective value of every registered scalar setting.
 
-        Args:
-            path: The config file to read; absent or malformed yields defaults.
+        An absent or malformed config yields defaults rather than raising.
 
         Returns:
             A ``dotted.key -> value`` map covering exactly the keys :meth:`rows` reports.

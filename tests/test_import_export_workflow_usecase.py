@@ -86,31 +86,32 @@ class FakeArchive(WorkflowArchivePort):
     """
 
     def __init__(self, status: ArchiveStatus | None = None, *, unpack_fails: bool = False) -> None:
-        self.packed: tuple[Path, str] | None = None
-        self.unpacked: tuple[Path, Path] | None = None
-        self.inspected: list[Path] = []
+        self.packed: tuple[str, str] | None = None
+        self.unpacked: tuple[str, str] | None = None
+        self.inspected: list[str] = []
         self._status = status
         self._unpack_fails = unpack_fails
 
-    def inspect(self, archive: Path) -> ArchiveStatus:
+    def inspect(self, archive: str) -> ArchiveStatus:
         self.inspected.append(archive)
         if self._status is not None:
             return self._status
-        return ArchiveStatus.COMPLETE if archive.is_file() else ArchiveStatus.MISSING
+        return ArchiveStatus.COMPLETE if Path(archive).is_file() else ArchiveStatus.MISSING
 
-    def pack(self, folder: Path, slug: str) -> Path:
+    def pack(self, folder: str, slug: str) -> str:
         self.packed = (folder, slug)
-        return Path(f"/exports/{slug}.zip")
+        return str(Path(f"/exports/{slug}.zip"))
 
-    def unpack(self, archive: Path, destination: Path) -> None:
+    def unpack(self, archive: str, destination: str) -> None:
         self.unpacked = (archive, destination)
+        target = Path(destination)
         if self._unpack_fails:
-            destination.mkdir(parents=True, exist_ok=True)
-            (destination / "half-written").write_text("junk", encoding="utf-8")
+            target.mkdir(parents=True, exist_ok=True)
+            (target / "half-written").write_text("junk", encoding="utf-8")
             message = "the disk filled up"
             raise OSError(message)
-        destination.mkdir(parents=True, exist_ok=True)
-        (destination / "workflow.md").write_text("# steps", encoding="utf-8")
+        target.mkdir(parents=True, exist_ok=True)
+        (target / "workflow.md").write_text("# steps", encoding="utf-8")
 
 
 # ── export ──
@@ -119,7 +120,7 @@ def test_exporting_packs_the_workflows_own_folder(tmp_path: Path) -> None:
     written = ExportWorkflowService(FakeWorkflows(tmp_path, {"nightly-etl"}), archive).execute(
         "nightly-etl"
     )
-    assert archive.packed == (tmp_path / "nightly-etl", "nightly-etl")
+    assert archive.packed == (str(tmp_path / "nightly-etl"), "nightly-etl")
     # Through Path, so the separator is the platform's -- the claim is that the archive's
     # own path comes back, not that it is spelled with a slash.
     assert written == str(Path("/exports/nightly-etl.zip"))

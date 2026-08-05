@@ -17,6 +17,7 @@ and the older copy that much harder to find.
 from __future__ import annotations
 
 import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.workflow_backup import WorkflowBackup
@@ -25,7 +26,6 @@ from generic_ml_wrapper.application.port.outbound.workflow_backup import Workflo
 if TYPE_CHECKING:
     from collections.abc import Callable
     from datetime import datetime
-    from pathlib import Path
 
 _STAMP = "%Y%m%d-%H%M%S"
 
@@ -44,20 +44,22 @@ class FilesystemWorkflowBackupAdapter(WorkflowBackupPort):
         self._root = root
         self._clock = clock
 
-    def displace(self, name: str, folder: Path) -> WorkflowBackup | None:
+    def displace(self, name: str, folder: str) -> WorkflowBackup | None:
         """Move the folder's contents into a fresh backup, or report there were none."""
-        if not folder.exists():
+        occupied = Path(folder)
+        if not occupied.exists():
             return None
         destination = self._free_path(name)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(folder), str(destination))
+        shutil.move(str(occupied), str(destination))
         return WorkflowBackup(name, str(destination))
 
-    def restore(self, backup: WorkflowBackup, folder: Path) -> None:
+    def restore(self, backup: WorkflowBackup, folder: str) -> None:
         """Put the displaced workflow back, discarding whatever replaced it."""
-        shutil.rmtree(folder, ignore_errors=True)
-        folder.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(backup.location, str(folder))
+        target = Path(folder)
+        shutil.rmtree(target, ignore_errors=True)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(backup.location, str(target))
 
     def _free_path(self, name: str) -> Path:
         """The backup folder to use: the timestamp, or the first suffix nobody has taken.

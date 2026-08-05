@@ -12,6 +12,18 @@ the application does, never *how* it reaches the world. A filesystem, database, 
 subprocess or operating-system import there is a technology decision made in the one
 place that must outlive every technology.
 
+`test_no_use_case_reaches_the_filesystem` and `test_no_use_case_holds_a_location` — a use
+case orchestrates: it receives a request, calls ports in an order, and decides what that
+order means. Reaching a file itself is a use case doing an adapter's work, and it takes two
+checks to say so, because there are two ways in. One imports path handling and builds a
+location; the other is handed one and keeps it. An import-based check alone misses the
+second entirely — which is how the update check came to read and write its own cache file
+while importing nothing at all.
+
+A location arriving as a *request parameter* is data, not a reach: the user said "import
+this file", and passing that through to a port is exactly the use case's job. What it may
+not do is hold one as state.
+
 `test_no_adapter_defines_an_exception` — an exception that leaves an adapter is part of a
 contract, and a contract belongs to the application. An adapter-owned type forces every
 caller to know which adapter is installed, and it cannot carry a catalogue key, so it
@@ -55,6 +67,22 @@ _REACHES_OUT = frozenset(
 )
 
 _CORE = ("application/domain", "application/port")
+
+#: Where orchestration lives: the ring that drives ports and decides what their answers mean.
+_USE_CASES = ("application/usecase",)
+
+#: The filesystem, specifically. A use case reaches the world *through* ports, and the
+#: modules here are the ones that would let it reach the disk without one. Narrower than
+#: :data:`_REACHES_OUT` on purpose: this gate is the filesystem rule, and widening it to
+#: every technology is a separate decision with a separate set of failures to fix.
+_TOUCHES_FILES = frozenset({"pathlib", "shutil", "os", "tempfile", "glob"})
+
+#: Type names that denote a filesystem location. A use case that declares one as a
+#: constructor parameter or keeps one as state is holding storage configuration, whoever
+#: handed it over -- and it does so without importing anything, so the import check above
+#: cannot see it. Matched by name because the annotation is all there is to go on: these
+#: modules are usually imported under ``TYPE_CHECKING``, where no import runs at all.
+_LOCATION_TYPES = frozenset({"Path", "PurePath", "PurePosixPath", "PureWindowsPath"})
 
 #: The delivery surface: everything a person or another program talks to us through.
 _INBOUND = ("adapter/inbound",)
@@ -145,6 +173,72 @@ def test_the_core_reaches_nothing_outside_itself() -> None:
         if reached:
             offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(reached)}")
     assert not offenders, "the core reaches outside itself:\n" + "\n".join(offenders)
+
+
+def test_no_use_case_reaches_the_filesystem() -> None:
+    """A use case drives ports; it does not open, create, or walk anything itself."""
+    offenders: list[str] = []
+    for path in _modules(*_USE_CASES):
+        reached = sorted(
+            _imported_roots(ast.parse(path.read_text(encoding="utf-8"))) & _TOUCHES_FILES
+        )
+        if reached:
+            offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(reached)}")
+    assert not offenders, "a use case reached the filesystem instead of a port:\n" + "\n".join(
+        offenders
+    )
+
+
+def _location_annotations(node: ast.AST) -> list[str]:
+    """Every filesystem-location type named anywhere inside an annotation.
+
+    Nested rather than top-level, because the hiding place is a wrapper:
+    ``Callable[[], Path]`` is a held location with one more step to reach it, and a check
+    that only read the outermost name would have called it a callable and moved on.
+    """
+    found: list[str] = []
+    for inner in ast.walk(node):
+        if isinstance(inner, ast.Name) and inner.id in _LOCATION_TYPES:
+            found.append(inner.id)
+        elif isinstance(inner, ast.Attribute) and inner.attr in _LOCATION_TYPES:
+            found.append(inner.attr)
+    return found
+
+
+def test_no_use_case_holds_a_location() -> None:
+    """No use case is *given* a filesystem location to keep, either.
+
+    Where something is stored is the adapter's to know. A use case handed a location has
+    been handed storage configuration it cannot verify and has no use for -- and unlike
+    the import above, it leaves no import behind to find it by.
+
+    Only what the class is constructed with is checked. A location arriving as a request
+    parameter is the user's input, not the use case's state.
+    """
+    offenders: list[str] = []
+    for path in _modules(*_USE_CASES):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for klass in (node for node in tree.body if isinstance(node, ast.ClassDef)):
+            for member in klass.body:
+                if not isinstance(member, ast.FunctionDef) or member.name != "__init__":
+                    continue
+                arguments = member.args
+                declared = (
+                    *arguments.posonlyargs,
+                    *arguments.args,
+                    *arguments.kwonlyargs,
+                )
+                named = [
+                    (argument.arg, _location_annotations(argument.annotation))
+                    for argument in declared
+                    if argument.annotation is not None
+                ]
+                held = [f"{arg}: {', '.join(types)}" for arg, types in named if types]
+                if held:
+                    offenders.append(
+                        f"{path.relative_to(_SOURCE)}: {klass.name}({'; '.join(held)})"
+                    )
+    assert not offenders, "a use case was handed a location to hold:\n" + "\n".join(offenders)
 
 
 def _imported_modules(tree: ast.Module) -> set[str]:

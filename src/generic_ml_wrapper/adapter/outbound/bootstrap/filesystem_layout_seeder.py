@@ -402,4 +402,4 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
             ("client", "default", selections.client),
         )
         entries = [(table, key, value) for table, key, value in settings if value is not None]
-        return TomlkitConfigWriterAdapter().merge(config, entries)
+        return TomlkitConfigWriterAdapter(lambda: config).merge(entries)

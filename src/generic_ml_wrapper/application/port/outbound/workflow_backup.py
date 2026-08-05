@@ -12,6 +12,10 @@ without relocating the decision, and the use case would still be writing filesys
 one layer further down. What the use case knows is "displace this" and "put it back"; what
 a backup is called, where it lives, and how a name is kept from colliding with an earlier
 one are the implementation's own business.
+
+Folders cross this line as text, matching ``WorkflowBackup.location``, which has always
+carried its answer that way for the same reason: the application says *which* folder, and
+the implementation knows what a folder is.
 """
 
 from __future__ import annotations
@@ -20,8 +24,6 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pathlib import Path
-
     from generic_ml_wrapper.application.domain.model.workflow_backup import WorkflowBackup
 
 
@@ -29,7 +31,7 @@ class WorkflowBackupPort(ABC):
     """Move an installed workflow out of the way, reversibly."""
 
     @abstractmethod
-    def displace(self, name: str, folder: Path) -> WorkflowBackup | None:
+    def displace(self, name: str, folder: str) -> WorkflowBackup | None:
         """Move whatever occupies the folder out of it, and report where it went.
 
         ``None`` when the folder was not occupied, so a caller can ask "displace this"
@@ -56,7 +58,7 @@ class WorkflowBackupPort(ABC):
         """
 
     @abstractmethod
-    def restore(self, backup: WorkflowBackup, folder: Path) -> None:
+    def restore(self, backup: WorkflowBackup, folder: str) -> None:
         """Put a displaced workflow back in its folder.
 
         Called when whatever was meant to replace it did not arrive. Anything left in the

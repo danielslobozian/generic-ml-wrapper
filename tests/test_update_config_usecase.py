@@ -19,9 +19,8 @@ from generic_ml_wrapper.application.usecase.update_config import UpdateConfigSer
 
 def _commands(config_file: Path) -> UpdateConfigService:
     return UpdateConfigService(
-        writer=TomlkitConfigWriterAdapter(),
-        config_file=lambda: config_file,
-        settings=TomlSettingsCatalogAdapter(),
+        writer=TomlkitConfigWriterAdapter(lambda: config_file),
+        settings=TomlSettingsCatalogAdapter(lambda: config_file),
     )
 
 

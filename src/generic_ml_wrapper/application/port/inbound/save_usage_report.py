@@ -5,22 +5,18 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 class SaveUsageReportUseCase(ABC):
     """Save a job's recorded usage as a file, returning where it was written."""
 
     @abstractmethod
-    def execute(self, job: str) -> Path:
+    def execute(self, job: str) -> str:
         """Build the job's report, serialise it, and write it to a file.
 
         Args:
             job: The job identifier.
 
         Returns:
-            The path of the file written.
+            Where the file was written, as text for the caller to show.
         """

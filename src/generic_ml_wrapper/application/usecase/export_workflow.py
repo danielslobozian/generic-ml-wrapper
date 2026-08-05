@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
@@ -48,4 +47,4 @@ class ExportWorkflowService(ExportWorkflowUseCase):
         # answer below -- it only wrote to the user's home on the way to a refusal.
         if self._workflows.find(name) is None:
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
-        return str(self._archive.pack(Path(self._workflows.folder(name)), name))
+        return self._archive.pack(self._workflows.folder(name), name)
