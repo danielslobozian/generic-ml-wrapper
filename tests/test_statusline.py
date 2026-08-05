@@ -264,7 +264,6 @@ def _use_case(  # noqa: PLR0913, PLR0917  (its ports, plus the run and the clock
         FakeWorkspaceInspector(workspace),
         turns or FakePerTurnStore(),
         NullDiagnosticsAdapter(),
-        _localizer(),
         clock=lambda: now,
     )
 

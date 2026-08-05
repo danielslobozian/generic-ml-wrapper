@@ -31,7 +31,6 @@ from generic_ml_wrapper.application.port.outbound.usage_store import UsageStoreP
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class DeleteSessionsService(DeleteSessionsUseCase):
@@ -46,7 +45,6 @@ class DeleteSessionsService(DeleteSessionsUseCase):
         artifacts: ArtifactPurgePort,
         locks: SessionLockPort,
         diagnostics: DiagnosticsPort,
-        localizer: LocalizerPort,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -61,7 +59,6 @@ class DeleteSessionsService(DeleteSessionsUseCase):
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
             diagnostics: Where a session whose files would not go is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
             locks: Claims each session, so none is removed while its client runs.
         """
         self._store = store
@@ -71,7 +68,6 @@ class DeleteSessionsService(DeleteSessionsUseCase):
         self._artifacts = artifacts
         self._locks = locks
         self._diagnostics = diagnostics
-        self._localizer = localizer
 
     def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
         """Report what deleting these sessions would remove, without removing it."""
@@ -115,7 +111,7 @@ class DeleteSessionsService(DeleteSessionsUseCase):
                 self._artifacts.purge_session(job, session)
             except OSError as error:
                 self._diagnostics.warning(
-                    self._localizer.t("log.session_not_deleted", session=session, error=error),
+                    f"session '{session}' was not deleted: its files could not be removed: {error}",
                     key="log.session_not_deleted",
                 )
                 return replace(footprint, removed=False)

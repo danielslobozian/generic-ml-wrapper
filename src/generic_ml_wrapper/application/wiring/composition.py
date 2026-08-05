@@ -470,7 +470,7 @@ def _hook_runner() -> HookRunner:
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]
-    return HookRunner(loaded, log.active(), build_localizer())
+    return HookRunner(loaded, log.active())
 
 
 def _launch_sequence() -> LaunchSequence:
@@ -482,7 +482,6 @@ def _launch_sequence() -> LaunchSequence:
     return LaunchSequence(
         _hook_runner(),
         log.active(),
-        build_localizer(),
         _session_locks(),
         SignalInterruptScopeAdapter(),
     )
@@ -512,7 +511,6 @@ def build_start_job() -> StartJobUseCase:
         credentials=FilesystemCredentialsStoreAdapter(paths.credentials),
         launch=_launch_sequence(),
         diagnostics=log.active(),
-        localizer=build_localizer(),
         posix=os.name != "nt",
         greeting=_persona_greeting,
         capability_card=_capability_card,
@@ -567,7 +565,6 @@ def build_delete_sessions() -> DeleteSessionsUseCase:
         artifacts=_artifact_purge(),
         locks=_session_locks(),
         diagnostics=log.active(),
-        localizer=build_localizer(),
     )
 
 
@@ -588,7 +585,6 @@ def build_delete_jobs() -> DeleteJobsUseCase:
         artifacts=_artifact_purge(),
         locks=_session_locks(),
         diagnostics=log.active(),
-        localizer=build_localizer(),
     )
 
 
@@ -903,7 +899,6 @@ def build_render_statusline() -> RenderStatuslineUseCase:
         workspace=LocalGitWorkspaceInspectorAdapter(),
         turns=SqlitePerTurnStoreAdapter(_ledger()),
         diagnostics=log.active(),
-        localizer=build_localizer(),
     )
 
 

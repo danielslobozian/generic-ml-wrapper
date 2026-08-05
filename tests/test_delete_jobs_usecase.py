@@ -49,7 +49,6 @@ class _Fixture:
             self.artifacts,
             self.locks,
             NullDiagnosticsAdapter(),
-            _localizer(),
         )
 
 

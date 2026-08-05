@@ -33,7 +33,6 @@ from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
 from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 if TYPE_CHECKING:
@@ -179,7 +178,8 @@ class MeteringRelay:
             server.serve_forever()
         except Exception as error:  # noqa: BLE001  (a daemon thread's last chance to speak)
             log.error(
-                i18n.t("log.gateway_stopped", error=error),
+                f"the metering relay stopped serving ({error}); "
+                "this session's turns are no longer being recorded",
                 exc=error,
                 key="log.gateway_stopped",
             )
@@ -349,7 +349,7 @@ class _RelayServer(ThreadingHTTPServer):
         displayed.
         """
         log.error(
-            i18n.t("log.gateway_handler_crashed", client=client_address),
+            f"relay handler thread crashed (client {client_address})",
             exc=sys.exc_info()[1],
             key="log.gateway_handler_crashed",
         )
@@ -363,7 +363,7 @@ class _Handler(BaseHTTPRequestHandler):
         self._proxy()
 
     def log_message(self, format: str, *args: object) -> None:  # noqa: A002  (stdlib signature)
-        log.debug(i18n.t("log.gateway", message=(format % args if args else format)))
+        log.debug(f"gateway {format % args if args else format}")
 
     def _proxy(self) -> None:
         """Proxy one request, with an error boundary around the whole exchange.
@@ -382,7 +382,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._exchange()
         except Exception as error:  # noqa: BLE001  (the boundary: nothing may escape)
             log.error(
-                i18n.t("log.gateway_request_failed", method=self.command, path=self.path),
+                f"relay request failed ({self.command} {self.path}); returned 502 to the client",
                 exc=error,
                 key="log.gateway_request_failed",
             )
@@ -471,7 +471,8 @@ class _Handler(BaseHTTPRequestHandler):
                 relay.record(request, captured, started_at)
         except Exception as error:  # noqa: BLE001  (metering must never break a turn)
             log.warning(
-                i18n.t("log.gateway_record_failed", path=upstream_path, error=error),
+                f"could not record the turn for {upstream_path} ({error}); "
+                "the turn itself was unaffected",
                 key="log.gateway_record_failed",
             )
 
@@ -507,7 +508,7 @@ def _drain(chunks: Iterable[bytes]) -> Iterable[bytes]:
             return
         except (OSError, http.client.HTTPException) as error:
             log.warning(
-                i18n.t("log.gateway_stream_interrupted", error=error),
+                f"upstream stream ended early ({error}); keeping what was captured",
                 key="log.gateway_stream_interrupted",
             )
             return

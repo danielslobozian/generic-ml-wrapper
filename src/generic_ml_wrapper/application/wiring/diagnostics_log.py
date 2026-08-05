@@ -9,8 +9,8 @@ call site::
 
     from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
-    log.warning(i18n.t("log.relay_failed", error=error), client="claude")
-    log.bind(job, session).error(i18n.t("log.gateway_crashed"), exc=error)
+    log.warning(f"metering relay failed to start ({error})", client="claude")
+    log.bind(job, session).error("relay handler thread crashed", exc=error)
 
 The active sink is a
 :class:`~generic_ml_wrapper.application.port.outbound.diagnostics.DiagnosticsPort`,

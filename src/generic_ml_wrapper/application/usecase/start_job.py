@@ -23,7 +23,6 @@ from generic_ml_wrapper.application.port.inbound.start_job_result import StartJo
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
@@ -42,7 +41,6 @@ class StartJobService(StartJobUseCase):
         credentials: CredentialsStorePort,
         launch: LaunchSequence,
         diagnostics: DiagnosticsPort,
-        localizer: LocalizerPort,
         posix: bool,
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],
@@ -60,7 +58,6 @@ class StartJobService(StartJobUseCase):
             credentials: Resolves a workflow's credentials to export at launch.
             launch: The bracketed launch sequence (hooks, metering, the client).
             diagnostics: Where a dropped argument string is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
             posix: Whether launch arguments split by POSIX rules (false on Windows).
             greeting: Renders the host greeting, or ``None`` when the companion is off —
                 injected into a new session's context so the client greets in-band.
@@ -80,7 +77,6 @@ class StartJobService(StartJobUseCase):
         self._credentials = credentials
         self._launch = launch
         self._diagnostics = diagnostics
-        self._localizer = localizer
         self._posix = posix
         self._greeting = greeting
         self._capability_card = capability_card
@@ -147,9 +143,8 @@ class StartJobService(StartJobUseCase):
         arguments = ClientArguments.parse(text, posix=self._posix)
         if arguments.unparseable:
             self._diagnostics.warning(
-                self._localizer.t(
-                    "log.client_args_unparseable", args=text, error=arguments.unparseable
-                ),
+                f"could not parse the client arguments {text!r} "
+                f"({arguments.unparseable}); launching without them",
                 key="log.client_args_unparseable",
             )
         return run if not arguments.tokens else replace(run, client_args=arguments.tokens)

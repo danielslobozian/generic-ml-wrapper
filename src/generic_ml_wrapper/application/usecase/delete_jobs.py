@@ -36,7 +36,6 @@ from generic_ml_wrapper.application.port.outbound.usage_store import UsageStoreP
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class DeleteJobsService(DeleteJobsUseCase):
@@ -51,7 +50,6 @@ class DeleteJobsService(DeleteJobsUseCase):
         artifacts: ArtifactPurgePort,
         locks: SessionLockPort,
         diagnostics: DiagnosticsPort,
-        localizer: LocalizerPort,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -62,7 +60,6 @@ class DeleteJobsService(DeleteJobsUseCase):
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
             diagnostics: Where a job whose files would not go is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
             locks: Claims each job, so none is removed while a session of it runs.
         """
         self._store = store
@@ -72,7 +69,6 @@ class DeleteJobsService(DeleteJobsUseCase):
         self._artifacts = artifacts
         self._locks = locks
         self._diagnostics = diagnostics
-        self._localizer = localizer
 
     def preview(self, jobs: Sequence[str]) -> list[JobFootprint]:
         """Report what deleting these jobs would remove, without removing it."""
@@ -111,7 +107,7 @@ class DeleteJobsService(DeleteJobsUseCase):
                 self._artifacts.purge_job(job)
             except OSError as error:
                 self._diagnostics.warning(
-                    self._localizer.t("log.job_not_deleted", job=job, error=error),
+                    f"job '{job}' was not deleted: its files could not be removed: {error}",
                     key="log.job_not_deleted",
                 )
                 return replace(footprint, removed=False)

@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
     from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
     from generic_ml_wrapper.application.port.outbound.hook import HookPort
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 
 
 class HookRunner:
@@ -34,7 +33,6 @@ class HookRunner:
         self,
         hooks: Sequence[tuple[HookPhase, str | None, HookPort]],
         diagnostics: DiagnosticsPort,
-        localizer: LocalizerPort,
     ) -> None:
         """Bind the runner to its ordered hooks and the collaborators that report failures.
 
@@ -42,11 +40,9 @@ class HookRunner:
             hooks: The ``(phase, client, hook)`` entries, in invocation order. A
                 ``client`` of ``None`` means the hook runs for every client.
             diagnostics: Where a failing hook is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
         """
         self._hooks = tuple(hooks)
         self._diagnostics = diagnostics
-        self._localizer = localizer
 
     def run(self, phase: HookPhase, context: HookContext) -> None:
         """Run every hook bound to ``phase`` whose client scope matches, in order.
@@ -62,6 +58,6 @@ class HookRunner:
                 hook.run(context)
             except Exception as error:  # noqa: BLE001  a hook must never break the run
                 self._diagnostics.warning(
-                    self._localizer.t("log.hook_failed", phase=phase, error=error),
+                    f"{phase} hook failed: {error}",
                     key="log.hook_failed",
                 )

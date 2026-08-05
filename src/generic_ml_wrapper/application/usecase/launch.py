@@ -29,7 +29,6 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
     from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
     from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
     from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
     from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 
@@ -41,7 +40,6 @@ class LaunchSequence:
         self,
         hooks: HookRunner,
         diagnostics: DiagnosticsPort,
-        localizer: LocalizerPort,
         locks: SessionLockPort,
         interrupts: InterruptScopePort,
     ) -> None:
@@ -50,13 +48,11 @@ class LaunchSequence:
         Args:
             hooks: The lifecycle hook runner (a no-op when nothing is configured).
             diagnostics: Where a failed metering teardown is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
             locks: Marks the session and its job as running for as long as the client is.
             interrupts: Hands the interrupt to the client while it holds the terminal.
         """
         self._hooks = hooks
         self._diagnostics = diagnostics
-        self._localizer = localizer
         self._locks = locks
         self._interrupts = interrupts
 
@@ -106,7 +102,7 @@ class LaunchSequence:
                 caller.end_metering()
             except Exception as error:  # noqa: BLE001  teardown must never crash the run
                 self._diagnostics.warning(
-                    self._localizer.t("log.metering_teardown_failed", error=error),
+                    f"metering teardown failed: {error}",
                     key="log.metering_teardown_failed",
                 )
             self._hooks.run(

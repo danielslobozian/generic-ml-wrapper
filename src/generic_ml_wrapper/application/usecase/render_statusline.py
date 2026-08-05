@@ -12,7 +12,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
     from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-    from generic_ml_wrapper.application.port.outbound.localizer import LocalizerPort
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
@@ -35,7 +34,6 @@ class RenderStatuslineService(RenderStatuslineUseCase):
         workspace: WorkspaceInspectorPort,
         turns: PerTurnMeteringPort,
         diagnostics: DiagnosticsPort,
-        localizer: LocalizerPort,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """Wire the use case to its outbound ports.
@@ -47,7 +45,6 @@ class RenderStatuslineService(RenderStatuslineUseCase):
             workspace: The inspector for the client-agnostic environment facts.
             turns: The per-turn store, read for the job's cumulative usage footer.
             diagnostics: Where a cost the store refused is reported.
-            localizer: Renders that report in the language the wrapper is speaking.
             clock: Returns the current epoch seconds, for the session/job ages;
                 injectable so tests are deterministic.
         """
@@ -57,7 +54,6 @@ class RenderStatuslineService(RenderStatuslineUseCase):
         self._workspace = workspace
         self._turns = turns
         self._diagnostics = diagnostics
-        self._localizer = localizer
         self._clock = clock
 
     def execute(self, payload_json: str) -> str:
@@ -98,7 +94,7 @@ class RenderStatuslineService(RenderStatuslineUseCase):
             self._usage.record_session_cost(job, cost)
         except Exception as error:  # noqa: BLE001  a refused write must not blank the line
             self._diagnostics.warning(
-                self._localizer.t("log.session_cost_not_recorded", error=error),
+                f"session cost not recorded: {error}",
                 key="log.session_cost_not_recorded",
             )
 

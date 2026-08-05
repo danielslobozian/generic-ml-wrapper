@@ -8,8 +8,8 @@ application owns and an adapter implements is what a port already means.
 Call sites pass a rendered message plus free-form keyword context that the sink formats
 alongside it::
 
-    diag.warning(loc.t("log.relay_failed", error=error), client="claude", key="relay")
-    diag.error(loc.t("log.gateway_crashed"), exc=error, session=session_id)
+    diag.warning(f"metering relay failed to start ({error})", client="claude", key="relay")
+    diag.error("relay handler thread crashed", exc=error, session=session_id)
 
 **The message is already localised when it arrives.** Resolving a catalogue key is the
 caller's job, not the sink's: a sink that resolved keys would have to know about i18n, and

@@ -154,9 +154,8 @@ def _use_case(
         provider,
         uuid_factory=lambda: "fixed-uuid",
         launch=LaunchSequence(
-            HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            HookRunner((), NullDiagnosticsAdapter()),
             NullDiagnosticsAdapter(),
-            _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),
         ),

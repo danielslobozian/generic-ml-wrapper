@@ -64,9 +64,8 @@ def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -
         callers=_NoLaunchProvider(),
         uuid_factory=lambda: "u",
         launch=LaunchSequence(
-            HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            HookRunner((), NullDiagnosticsAdapter()),
             NullDiagnosticsAdapter(),
-            _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),
         ),

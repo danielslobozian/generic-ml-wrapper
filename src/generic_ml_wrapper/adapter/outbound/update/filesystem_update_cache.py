@@ -63,6 +63,6 @@ class FilesystemUpdateCacheAdapter(UpdateCachePort):
             )
         except OSError as error:
             self._diagnostics.debug(
-                self._localizer.t("log.update_cache_not_recorded", error=error),
+                f"could not record the update check as of now: {error}",
                 key="log.update_cache_not_recorded",
             )

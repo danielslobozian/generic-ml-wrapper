@@ -1416,7 +1416,7 @@ def _statusline() -> int:
         payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
         line = build_render_statusline().execute(payload)
     except Exception as error:  # noqa: BLE001  degrade to an empty line, never error at the client
-        log.warning(i18n.t("log.status_render_failed", error=error))
+        log.warning(f"status line render failed: {error}")
         print()
         return 0
     print(line)
@@ -2016,7 +2016,7 @@ def _print_exit_receipt(result: StartJobResult) -> None:
             file=sys.stderr,
         )
     except Exception as error:  # noqa: BLE001  the receipt must never break a clean exit
-        log.debug(i18n.t("log.receipt_failed", error=error))
+        log.debug(f"exit receipt usage read failed: {error}")
     print(loc.t("receipt.resume", job=result.job), file=sys.stderr)
     print(loc.t("receipt.report", job=result.job), file=sys.stderr)
     latest = build_check_for_update().execute()

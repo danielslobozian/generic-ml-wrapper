@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import build_application_settings
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.paths import paths
@@ -45,7 +44,7 @@ def _mark_seen(hint_id: str) -> None:
         with (paths.state / "hints-seen").open("a", encoding="utf-8") as handle:
             handle.write(f"{hint_id}\n")
     except OSError as error:
-        log.debug(i18n.t("log.hint_not_recorded", hint=hint_id, error=error))
+        log.debug(f"could not record hint {hint_id} as seen: {error}")
 
 
 def next_hint(loc: LocalizerPort) -> str | None:

@@ -49,7 +49,6 @@ def test_runs_only_hooks_bound_to_the_phase_in_order() -> None:
             (HookPhase.PRE_LAUNCH, None, _Recording(log, "pre-b")),
         ],
         NullDiagnosticsAdapter(),
-        _localizer(),
     )
     runner.run(HookPhase.PRE_LAUNCH, _context(HookPhase.PRE_LAUNCH))
     assert log == ["pre-a", "pre-b"]  # post-session hook did not run; order preserved
@@ -64,7 +63,6 @@ def test_client_scope_filters_by_the_run_client() -> None:
             (HookPhase.PRE_LAUNCH, "claude", _Recording(log, "claude-only")),
         ],
         NullDiagnosticsAdapter(),
-        _localizer(),
     )
     runner.run(HookPhase.PRE_LAUNCH, _context(HookPhase.PRE_LAUNCH, client="claude"))
     assert log == ["every-client", "claude-only"]  # the cursor-scoped hook is skipped
@@ -78,7 +76,6 @@ def test_a_failing_hook_is_isolated_and_the_rest_still_run() -> None:
             (HookPhase.POST_SESSION, None, _Recording(log, "after-boom")),
         ],
         NullDiagnosticsAdapter(),
-        _localizer(),
     )
     # best-effort: the raising hook must not propagate, and later hooks still run
     runner.run(HookPhase.POST_SESSION, _context(HookPhase.POST_SESSION, exit_code=0))
@@ -86,7 +83,7 @@ def test_a_failing_hook_is_isolated_and_the_rest_still_run() -> None:
 
 
 def test_empty_runner_is_a_no_op() -> None:
-    HookRunner((), NullDiagnosticsAdapter(), _localizer()).run(
+    HookRunner((), NullDiagnosticsAdapter()).run(
         HookPhase.PRE_LAUNCH, _context(HookPhase.PRE_LAUNCH)
     )  # does not raise
 

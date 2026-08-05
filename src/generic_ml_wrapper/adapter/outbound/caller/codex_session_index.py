@@ -30,7 +30,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 if TYPE_CHECKING:
@@ -104,7 +103,8 @@ def register(name: str, uuid: str, *, root: Path | None = None) -> bool:
         temporary.replace(index)
     except OSError as error:
         log.warning(
-            i18n.t("log.codex_index_failed", name=name, error=error),
+            f"could not register session name {name} with codex ({error}); "
+            "resume by name unavailable for it",
             key="log.codex_index_failed",
         )
         return False

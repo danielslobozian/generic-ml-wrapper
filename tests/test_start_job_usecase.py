@@ -207,15 +207,13 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
         launch=LaunchSequence(
-            hooks or HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            hooks or HookRunner((), NullDiagnosticsAdapter()),
             NullDiagnosticsAdapter(),
-            _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),
         ),
         diagnostics=diagnostics or NullDiagnosticsAdapter(),
         posix=os.name != "nt",
-        localizer=_localizer(),
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
         # configured per client; a client with no entry has no arguments
@@ -306,7 +304,6 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
             (HookPhase.POST_SESSION, None, RecordingHook(shared)),
         ],
         NullDiagnosticsAdapter(),
-        _localizer(),
     )
     provider = FakeProvider(log=shared)
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, hooks=hooks).execute(
