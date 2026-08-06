@@ -109,6 +109,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_export_workflow,
     build_guided_chooser,
     build_import_workflow,
+    build_list_authoring_modes,
     build_list_available_languages,
     build_list_clients,
     build_list_drafts,
@@ -2451,7 +2452,8 @@ def _resolve_guided(args: argparse.Namespace) -> bool:
         return True
     if args.quick:
         return False
-    return build_guided_chooser().choose() is AuthoringMode.GUIDED  # None (no TTY) → lean
+    modes = build_list_authoring_modes().execute()
+    return build_guided_chooser().choose(modes) is AuthoringMode.GUIDED  # None (no TTY) → lean
 
 
 def _persona(args: argparse.Namespace) -> int:
