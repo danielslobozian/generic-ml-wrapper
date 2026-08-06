@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import getpass
 import os
 import sqlite3
 import uuid
@@ -12,15 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_axis_chooser import TtyAxisChooserAdapter
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooserAdapter
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_language_chooser import (
-    TtyLanguageChooserAdapter,
-)
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_persona_chooser import (
-    TtyPersonaChooserAdapter,
-)
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_text_prompt import TtyTextPromptAdapter
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalogAdapter,
@@ -48,14 +39,9 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSyste
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import (
     PathClientDetectorAdapter,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner import (
-    SubprocessCommandRunnerAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboardAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetupAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_secret_prompt import TtySecretPromptAdapter
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     DefaultCliCallerProviderAdapter,
@@ -163,7 +149,6 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkfl
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.init import InitUseCase
 from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
     ListAuthoringModesUseCase,
 )
@@ -189,13 +174,15 @@ from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkf
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.save_init_answers import (
+    SaveInitAnswersUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
@@ -222,7 +209,6 @@ from generic_ml_wrapper.application.usecase.export_usage import ExportUsageServi
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowService
-from generic_ml_wrapper.application.usecase.init import InitService
 from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuthoringModesService
@@ -251,13 +237,13 @@ from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowServi
 from generic_ml_wrapper.application.usecase.read_application_settings import (
     ReadApplicationSettingsService,
 )
+from generic_ml_wrapper.application.usecase.save_init_answers import SaveInitAnswersService
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
 from generic_ml_wrapper.application.usecase.start_job import StartJobService
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
 from generic_ml_wrapper.application.wiring.localization import (
-    SUPPORTED_LANGUAGES,
     MessageSource,
     active,
     load_localizer,
@@ -662,13 +648,13 @@ def build_workflow_chooser() -> TtyWorkflowChooser:
     return TtyWorkflowChooser(build_localizer())
 
 
-def build_guided_chooser() -> GuidedChooserPort:
+def build_guided_chooser() -> TtyGuidedChooser:
     """Build the guided-vs-quick authoring chooser for ``workflow new`` / ``edit``.
 
     Returns:
         A terminal chooser that asks whether to author with the guided experience.
     """
-    return TtyGuidedChooserAdapter(build_localizer())
+    return TtyGuidedChooser(build_localizer())
 
 
 def build_set_credential() -> SetCredentialUseCase:
@@ -809,38 +795,52 @@ def build_migrate_slugs() -> MigrateSlugsUseCase:
     return MigrateSlugsService(FilesystemSlugMigratorAdapter(paths.home))
 
 
-def build_init() -> InitUseCase:
-    """Build the InitUseCase use case wired to the ordered-setup ports and step defaults.
+def build_save_init_answers() -> SaveInitAnswersUseCase:
+    """Build the SaveInitAnswersUseCase use case wired to the seeder.
 
-    The seed localiser (for the language step and as every chooser's fallback) resolves
-    from ``[language] code`` if a prior run set it, else ``$LANG``; the use case rebuilds
-    it in the chosen language once step one completes.
+    All that is left of the old init use case. The interview itself is the terminal's:
+    it asks the queries what is on offer, converses, and hands the answers back here.
 
     Returns:
-        A ready-to-run InitUseCase that runs the forced setup and persists it.
+        A ready-to-run SaveInitAnswersUseCase.
     """
-    seed_language = resolve_language(config.language() or os.environ.get("LANG"))
-    seed_i18n = load_localizer(seed_language)
-    return InitService(
-        detector=PathClientDetectorAdapter(),
+    return SaveInitAnswersService(
         seeder=FilesystemLayoutSeederAdapter(paths.home),
-        language_chooser=TtyLanguageChooserAdapter(seed_i18n),
-        text_prompt=TtyTextPromptAdapter(seed_i18n),
-        axis_chooser=TtyAxisChooserAdapter(seed_i18n),
-        personas=build_persona_source(),
-        persona_chooser=TtyPersonaChooserAdapter(seed_i18n),
-        client_setup=TtyClientSetupAdapter(
-            seed_i18n,
-            version=HttpClientVersionsAdapter(),
-            runner=SubprocessCommandRunnerAdapter(),
-            clipboard=SystemClipboardAdapter(),
-        ),
-        localizer_factory=load_localizer,
-        languages=list(SUPPORTED_LANGUAGES),
-        default_language=seed_language,
-        default_name=getpass.getuser(),
+        detector=PathClientDetectorAdapter(),
         version=__version__,
     )
+
+
+def seed_localizer() -> MessageSource:
+    """The catalogue the language question itself is asked in.
+
+    Resolves from ``[language] code`` if a prior run set it, else ``$LANG``. The language
+    menu offers each language under its own name, so this only affects the words around
+    it -- and the terminal rebuilds the catalogue in the chosen language straight after.
+
+    Returns:
+        A message source for the seeded language.
+    """
+    return load_localizer(resolve_language(config.language() or os.environ.get("LANG")))
+
+
+def default_user_name() -> str:
+    """The account name, used when the user gives none.
+
+    Asked here rather than in the terminal: reading the operating system is acquiring,
+    and an inbound adapter parses its own channel and nothing else.
+    """
+    return OsSystemInfoAdapter().username()
+
+
+def platform_name() -> str:
+    """The OS name, so an install command is the right one for this machine."""
+    return OsSystemInfoAdapter().platform_name()
+
+
+def seed_language() -> str:
+    """The language code the interview starts in (before the user chooses)."""
+    return resolve_language(config.language() or os.environ.get("LANG"))
 
 
 def build_localizer() -> MessageSource:

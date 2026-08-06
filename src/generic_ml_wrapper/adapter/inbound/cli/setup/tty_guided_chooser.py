@@ -8,13 +8,12 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
-from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 
 
-class TtyGuidedChooserAdapter(GuidedChooserPort):
+class TtyGuidedChooser:
     """Ask, at authoring start, whether to use the guided experience or the quick one.
 
     Presented on every interactive ``workflow new`` / ``edit`` when neither ``--guided``

@@ -7,7 +7,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
-from generic_ml_wrapper.application.port.outbound.language_chooser import LanguageChooserPort
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 _ENDONYMS = {"en": "English", "fr": "Français"}
 
 
-class TtyLanguageChooserAdapter(LanguageChooserPort):
+class TtyLanguageChooser:
     """Ask the user which language gmlw should speak, but only at a terminal.
 
     Delegates the prompt mechanics to :func:`choose_number`. Because a language must

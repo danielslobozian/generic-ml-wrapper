@@ -7,14 +7,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
-from generic_ml_wrapper.application.port.outbound.persona_chooser import PersonaChooserPort
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
     from generic_ml_wrapper.application.domain.model.persona import Persona
 
 
-class TtyPersonaChooserAdapter(PersonaChooserPort):
+class TtyPersonaChooser:
     """Offer a persona at an interactive terminal; decline when there is none.
 
     The prompt is written to stderr and read from stdin; an empty line (or no terminal)

@@ -18,7 +18,6 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number, emit
 from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.slug import Slug
-from generic_ml_wrapper.application.port.outbound.axis_chooser import AxisChooserPort
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
@@ -27,7 +26,7 @@ if TYPE_CHECKING:
 _TYPE_YOUR_OWN = "\x00type-your-own"
 
 
-class TtyAxisChooserAdapter(AxisChooserPort):
+class TtyAxisChooser:
     """Guide the role/environment choice at an interactive terminal."""
 
     def __init__(self, i18n: MessageSource) -> None:

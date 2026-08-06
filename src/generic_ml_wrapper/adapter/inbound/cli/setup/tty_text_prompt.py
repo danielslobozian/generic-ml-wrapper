@@ -13,13 +13,11 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.outbound.text_prompt import TextPromptPort
-
 if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 
 
-class TtyTextPromptAdapter(TextPromptPort):
+class TtyTextPrompt:
     """Ask one free-text question at an interactive terminal; else return the default."""
 
     def __init__(self, i18n: MessageSource) -> None:

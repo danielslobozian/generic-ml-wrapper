@@ -6,10 +6,10 @@ import io
 
 import pytest
 
+from generic_ml_wrapper.adapter.inbound.cli.setup import tty_prompt
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_language_chooser import (
-    TtyLanguageChooserAdapter,
+    TtyLanguageChooser,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")
@@ -34,12 +34,12 @@ def _wire(monkeypatch: pytest.MonkeyPatch, *, stdin: str, tty: bool = True) -> i
 def test_resolves_to_default_when_not_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="2\n", tty=False)
     # Never blocks, never returns None: a language must resolve for the rest of init.
-    assert TtyLanguageChooserAdapter(_I18N).choose(_LANGS, "fr") == "fr"
+    assert TtyLanguageChooser(_I18N).choose(_LANGS, "fr") == "fr"
 
 
 def test_a_number_selects_that_language(monkeypatch: pytest.MonkeyPatch) -> None:
     err = _wire(monkeypatch, stdin="2\n")
-    assert TtyLanguageChooserAdapter(_I18N).choose(_LANGS, "en") == "fr"
+    assert TtyLanguageChooser(_I18N).choose(_LANGS, "en") == "fr"
     prompt = err.getvalue()
     assert "1) English" in prompt  # endonyms, not raw codes
     assert "2) Français" in prompt
@@ -47,18 +47,16 @@ def test_a_number_selects_that_language(monkeypatch: pytest.MonkeyPatch) -> None
 
 def test_empty_line_takes_the_default_language(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="\n")
-    assert TtyLanguageChooserAdapter(_I18N).choose(_LANGS, "fr") == "fr"
+    assert TtyLanguageChooser(_I18N).choose(_LANGS, "fr") == "fr"
 
 
 def test_default_absent_from_the_list_falls_back_to_the_first(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _wire(monkeypatch, stdin="\n")
-    assert (
-        TtyLanguageChooserAdapter(_I18N).choose(_LANGS, "de") == "en"
-    )  # unknown default -> index 0
+    assert TtyLanguageChooser(_I18N).choose(_LANGS, "de") == "en"  # unknown default -> index 0
 
 
 def test_end_of_input_resolves_to_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="")  # EOF
-    assert TtyLanguageChooserAdapter(_I18N).choose(_LANGS, "en") == "en"
+    assert TtyLanguageChooser(_I18N).choose(_LANGS, "en") == "en"

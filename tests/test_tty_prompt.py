@@ -6,8 +6,8 @@ import io
 
 import pytest
 
+from generic_ml_wrapper.adapter.inbound.cli.setup import tty_prompt
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
-from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 _I18N = load_localizer("en")

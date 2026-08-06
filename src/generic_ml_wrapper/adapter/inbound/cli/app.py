@@ -22,6 +22,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.adapter.inbound.cli.setup.interview import run_interview
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
 )
@@ -108,7 +109,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_export_workflow,
     build_guided_chooser,
     build_import_workflow,
-    build_init,
+    build_list_available_languages,
     build_list_clients,
     build_list_drafts,
     build_list_jobs,
@@ -124,10 +125,16 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_layout,
     build_migrate_slugs,
     build_new_workflow,
+    build_save_init_answers,
     build_save_usage_report,
     build_set_credential,
     build_start_job,
     build_workflow_chooser,
+    default_user_name,
+    load_localizer,
+    platform_name,
+    seed_language,
+    seed_localizer,
 )
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.diagnostics_log import (
@@ -993,7 +1000,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     if args.command not in (None, "statusline", "help"):
         needs_init = build_application_settings().setup_needed()
         if needs_init and args.command != "init":
-            _announce_init(build_init().execute())
+            _run_init()
         elif not needs_init:
             build_bootstrap().execute()
         # Wrap the old profile/company layout into the active environment. Runs after init
@@ -1139,9 +1146,31 @@ def _run_init() -> int:
 
     Shared by the ``init`` command, the first-run funnel, and the TUI's Config → Setup verb.
     Re-running on an initialised install merges the answers into the existing config (never
-    wipes). Returns ``0``.
+    wipes).
+
+    The interview happens here, in the terminal. The application is asked what is on offer
+    — which languages ship, which personas exist, which clients are installed — and is
+    told what was chosen. It is never asked for a label.
+
+    Returns:
+        ``0`` normally; ``2`` when no client is installed, having written nothing. A
+        client is a prerequisite, not an answer: without one there is nothing to
+        configure, and persisting half a setup would only make the next run stranger.
     """
-    _announce_init(build_init().execute())
+    answers = run_interview(
+        languages=build_list_available_languages().execute(),
+        default_language=seed_language(),
+        default_name=default_user_name(),
+        personas=build_list_personas().execute(),
+        clients=build_list_clients().execute(),
+        supported=build_list_supported_clients().execute(),
+        system=platform_name(),
+        localizer_for=load_localizer,
+        seed=seed_localizer(),
+    )
+    if answers is None:  # no client installed, or the last question declined
+        return 2
+    _announce_init(build_save_init_answers().execute(answers))
     _announce_migration(build_migrate_layout().execute())
     _announce_slug_migration(build_migrate_slugs().execute())
     print(i18n.t("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
