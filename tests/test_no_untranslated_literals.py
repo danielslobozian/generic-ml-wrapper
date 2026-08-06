@@ -8,13 +8,15 @@ that followed, because nothing failed when they did. Key parity
 with *each other* — it cannot see a string that never reached the catalogue at all.
 This closes that half:
 
-1. **No literal at a message call site.** ``print``, ``log.*``, argparse help/metavar,
-   and Textual key bindings must resolve their text through ``i18n.t``.
+1. **No literal at a message call site.** ``print``, argparse help/metavar, and Textual
+   key bindings must resolve their text through ``i18n.t``. Diagnostics are excluded on
+   purpose: logs are written for whoever debugs the problem, in one language, and
+   carry a ``key=`` rather than a translation.
 2. **Every key used exists.** A ``t("...")`` call naming a key no catalogue defines
    renders as the raw key to the user — silent, and invisible to parity. The same check
    covers a :class:`DomainError` subclass raised with a
    literal catalogue key (0.9.1): the key is exactly as checkable as a ``t()`` call, since
-   :meth:`DomainError.localized` is just ``loc.t(self.catalogue_key, **self.params)``.
+   whoever catches the error renders it as ``t(error.catalogue_key, **error.params)``.
 3. **Every setting is described.** A new registry field must arrive with its
    ``setting.<key>`` entry, since its description is a key resolved at render time.
 
@@ -105,10 +107,11 @@ def _message_arguments(call: ast.Call) -> Sequence[ast.AST]:
     name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
     if name == "print":
         return list(call.args)
-    if name in {"debug", "info", "warning", "error"} and isinstance(func, ast.Attribute):
-        base = func.value
-        is_logger = getattr(base, "id", "") == "log" or getattr(base, "attr", "") == "log"
-        return call.args[:1] if is_logger else []
+    # Diagnostics are deliberately absent. A log line is read by whoever is fixing the
+    # problem, not by the person who chose the language -- a French traceback in a bug
+    # report is unusable by the team receiving it, and the operator's locale is not the
+    # user's. Log messages are English literals by design; the `key=` passed alongside is
+    # what keeps them greppable across versions.
     if name in PARSER_CALLS:
         return [kw.value for kw in call.keywords if kw.arg in MESSAGE_KEYWORDS]
     if name == "Binding":

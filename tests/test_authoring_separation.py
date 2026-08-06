@@ -13,6 +13,7 @@ from pathlib import Path
 
 from _delete_doubles import FakeSessionLock
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -25,7 +26,6 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
@@ -64,9 +64,8 @@ def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -
         callers=_NoLaunchProvider(),
         uuid_factory=lambda: "u",
         launch=LaunchSequence(
-            HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            HookRunner((), NullDiagnosticsAdapter()),
             NullDiagnosticsAdapter(),
-            _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),
         ),
@@ -97,6 +96,6 @@ def test_the_listing_hides_nothing_else(tmp_path: Path) -> None:
     assert [summary.job for summary in ListJobsService(store).execute()] == ["PROJ-482"]
 
 
-def _localizer() -> Localizer:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")

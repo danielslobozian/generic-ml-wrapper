@@ -8,8 +8,6 @@ import io
 import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli import app
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
-from generic_ml_wrapper.adapter.outbound.config.toml_config_reader import CompanionSettings
 from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
 
 
@@ -37,18 +35,9 @@ def test_unexpected_error_exits_1_with_a_friendly_message(
     assert "kaboom" in err
 
 
-def test_farewell_is_none_without_a_companion(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        toml_config_reader, "companion", lambda: CompanionSettings(persona=None, name=None)
-    )
-    assert app._farewell() is None
-
-
-def test_farewell_greets_the_configured_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        toml_config_reader, "companion", lambda: CompanionSettings(persona="butler", name="Ada")
-    )
-    assert app._farewell() == "Bye, Ada."
+def test_farewell_is_the_same_line_for_everyone() -> None:
+    """No companion check: a goodbye is a label, and everyone gets it."""
+    assert app._farewell() == "Bye."
 
 
 def _noop_signal(*_args: object) -> None:
@@ -93,7 +82,7 @@ def test_statusline_degrades_to_an_empty_line_on_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-    monkeypatch.setattr(app, "build_render_statusline", _boom_statusline_builder)
+    monkeypatch.setattr(app, "build_compose_statusline", _boom_statusline_builder)
     assert app._statusline() == 0
     out = capsys.readouterr().out
     assert out == "\n"  # one empty line, never a traceback

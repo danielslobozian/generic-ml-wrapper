@@ -28,6 +28,10 @@ from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
 )
+from generic_ml_wrapper.application.domain.model.companion_settings import (
+    CompanionSettings,
+)
+from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
 from generic_ml_wrapper.application.domain.model.launch_location import (
     LaunchLocation,
     LaunchLocationProblem,
@@ -53,6 +57,7 @@ from generic_ml_wrapper.application.port.inbound.check_launch_location import (
     CheckLaunchLocationUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
+from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
@@ -66,7 +71,6 @@ from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWo
 from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow_result import ImportWorkflowResult
-from generic_ml_wrapper.application.port.inbound.init import InitUseCase
 from generic_ml_wrapper.application.port.inbound.init_outcome import InitOutcome
 from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
 from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
@@ -87,8 +91,9 @@ from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
 from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
-from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
-from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.port.inbound.save_init_answers import (
+    SaveInitAnswersUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
 from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
@@ -122,6 +127,34 @@ def _config_absent(*_: object, **__: object) -> bool:
 
 def _init_done(*_: object, **__: object) -> str | None:
     return "0.4.0"  # the gate sees an initialised install
+
+
+def _stub_interview(answers: InitAnswers | None) -> Callable[..., InitAnswers | None]:
+    """A stand-in interview that answers the same way every time."""
+
+    def _run(**_kwargs: object) -> InitAnswers | None:
+        return answers
+
+    return _run
+
+
+def _refusing_interview() -> Callable[..., InitAnswers | None]:
+    """An interview that must never be reached."""
+
+    def _run(**_kwargs: object) -> InitAnswers | None:
+        pytest.fail("init must not run")
+
+    return _run
+
+
+_ANSWERS = InitAnswers(
+    language="en",
+    name="Dan",
+    role=AxisSelection("default", "Default", "Default"),
+    environment=AxisSelection("work", "Work", "Work"),
+    persona=None,
+    client="claude",
+)
 
 
 def _init_absent(*_: object, **__: object) -> str | None:
@@ -260,8 +293,8 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     seen: list[str] = []
 
-    class _Init(InitUseCase):
-        def execute(self) -> InitOutcome:
+    class _Init(SaveInitAnswersUseCase):
+        def execute(self, answers: object = None) -> InitOutcome:
             seen.append("init")
             return InitOutcome(
                 fresh=True,
@@ -274,13 +307,14 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
                 found=["claude"],
             )
 
-    monkeypatch.setattr(app, "build_init", lambda: _Init())
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _Init())
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     assert app.main([]) == 0
     assert seen == ["init"]
 
 
-class _FreshInit(InitUseCase):
-    def execute(self) -> InitOutcome:
+class _FreshInit(SaveInitAnswersUseCase):
+    def execute(self, answers: object = None) -> InitOutcome:
         return InitOutcome(
             fresh=True,
             language="en",
@@ -302,21 +336,26 @@ def test_bare_gmlw_on_a_tty_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> N
     assert called == ["tui"]
 
 
-def test_bare_gmlw_fresh_install_runs_init_not_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    # First run must win over the menu redirect: init runs, _tui is never reached.
+def test_bare_gmlw_fresh_install_runs_init_then_opens_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Setup wins over the menu, and the menu opens behind it: someone who has just answered
+    # the interview has earned something to look at, and it proves the setup works.
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FreshInit())
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     tui_called: list[str] = []
-    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui"))  # must not be called
+    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui") or 0)
     assert app.main([]) == 0
-    assert tui_called == []
+    assert tui_called == ["tui"]
 
 
 def test_init_prints_the_reinit_hint(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The end of init tells the user how to re-run setup from the menu.
-    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FreshInit())
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     assert app.main(["init"]) == 0
     err = capsys.readouterr().err
     assert "Config > Setup" in err  # names the specific menu chain
@@ -754,7 +793,7 @@ def test_statusline_command_reads_stdin_and_prints(
 ) -> None:
     seen: dict[str, str | None] = {}
 
-    class FakeUseCase(RenderStatuslineUseCase):
+    class FakeUseCase(ComposeStatuslineUseCase):
         def execute(self, payload_json: str) -> str:
             seen["payload"] = payload_json
             return "Opus 4.8  ·  $0.43"
@@ -762,7 +801,7 @@ def test_statusline_command_reads_stdin_and_prints(
     def _build_statusline(*_: object) -> FakeUseCase:
         return FakeUseCase()
 
-    monkeypatch.setattr(app, "build_render_statusline", _build_statusline)
+    monkeypatch.setattr(app, "build_compose_statusline", _build_statusline)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"cost": {"total_cost_usd": 0.43}}'))
 
     assert app.main(["statusline"]) == 0
@@ -772,8 +811,8 @@ def test_statusline_command_reads_stdin_and_prints(
     assert "$0.43" in capsys.readouterr().out
 
 
-def test_build_render_statusline_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_render_statusline(), RenderStatuslineUseCase)
+def test_build_compose_statusline_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_compose_statusline(), ComposeStatuslineUseCase)
 
 
 def test_statusline_renders_the_cursor_plan_block_end_to_end(
@@ -804,25 +843,25 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
     calls: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
-    class _Status(RenderStatuslineUseCase):
+    class _Status(ComposeStatuslineUseCase):
         def execute(self, payload_json: str) -> str:
             return ""
 
     def _build_status(*_: object) -> _Status:
         return _Status()
 
-    monkeypatch.setattr(app, "build_render_statusline", _build_status)
+    monkeypatch.setattr(app, "build_compose_statusline", _build_status)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO(""))
     assert app.main(["statusline"]) == 0
     assert calls == []
 
 
-class _FakeInit(InitUseCase):
+class _FakeInit(SaveInitAnswersUseCase):
     def __init__(self, outcome: InitOutcome, calls: list[str]) -> None:
         self._outcome = outcome
         self._calls = calls
 
-    def execute(self) -> InitOutcome:
+    def execute(self, answers: object = None) -> InitOutcome:
         self._calls.append("init")
         return self._outcome
 
@@ -863,7 +902,8 @@ def test_gate_forces_init_when_uninitialised(
     ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     assert ran == ["init"]  # forced init ran before the requested command
@@ -880,7 +920,8 @@ def test_init_announcement_speaks_the_chosen_language_not_the_os_locale(
     # chose English in init. The closing narration must speak the CHOSEN language, not $LANG.
     monkeypatch.setattr(app, "build_localizer", lambda: load_localizer("fr"))  # $LANG=fr seed
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), []))  # chose en
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))  # chose en
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     err = capsys.readouterr().err
@@ -895,7 +936,7 @@ def test_gate_skips_init_when_initialised(
     boot: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_done)
-    monkeypatch.setattr(app, "build_init", lambda: pytest.fail("init must not run"))
+    monkeypatch.setattr(app, "run_interview", _refusing_interview())
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     assert boot == ["init"]  # only bootstrap ran
@@ -906,7 +947,8 @@ def test_init_command_runs_the_use_case(
 ) -> None:
     ran: list[str] = []
     monkeypatch.setattr(toml_config_reader, "init_version", _init_done)  # even when already done
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     assert app.main(["init"]) == 0
     assert ran == ["init"]
 
@@ -920,22 +962,24 @@ def test_init_command_on_a_fresh_install_never_bootstraps_first(
     ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)  # fresh
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     assert app.main(["init"]) == 0
     assert ran == ["init"]  # init ran exactly once
     assert boot == []  # bootstrap never ran
 
 
-def test_init_announces_no_client_found(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_setup_stops_and_writes_nothing_when_no_client_is_installed(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # A client is a prerequisite, not an answer. The interview declines, and nothing is
+    # persisted -- half a setup would only make the next run stranger.
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
+    monkeypatch.setattr(app, "run_interview", _stub_interview(None))
     monkeypatch.setattr(
-        app, "build_init", lambda: _FakeInit(_fresh_outcome(client=None, found=[]), [])
+        app, "build_save_init_answers", lambda: pytest.fail("nothing may be written")
     )
-    _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
-    assert "no supported client found on your PATH" in capsys.readouterr().err
+    assert app._run_init() == 2
 
 
 def test_init_on_legacy_reports_the_merge_and_any_overwrites(
@@ -943,7 +987,8 @@ def test_init_on_legacy_reports_the_merge_and_any_overwrites(
 ) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     outcome = _fresh_outcome(fresh=False, overwrites=("client.default: cursor → claude",))
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(outcome, []))
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(outcome, []))
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     err = capsys.readouterr().err
@@ -951,15 +996,18 @@ def test_init_on_legacy_reports_the_merge_and_any_overwrites(
     assert "client.default: cursor → claude" in err  # the replaced value is surfaced
 
 
-def test_build_init_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_init(), InitUseCase)
+def test_build_save_init_answers_wires_a_real_use_case() -> None:
+    assert isinstance(composition.build_save_init_answers(), SaveInitAnswersUseCase)
 
 
 def test_init_announces_the_chosen_persona(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(persona="butler"), []))
+    monkeypatch.setattr(
+        app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(persona="butler"), [])
+    )
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     _stub_jobs(monkeypatch)
     assert app.main(["jobs"]) == 0
     assert "persona 'butler' selected" in capsys.readouterr().err
@@ -1003,7 +1051,8 @@ def test_init_command_runs_migration_after_init(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_init", lambda: _FakeInit(_fresh_outcome(), []))
+    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
+    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
     report = MigrationReport(environment="work", moved=["co.md"])
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
     assert app.main(["init"]) == 0
@@ -1030,8 +1079,9 @@ def test_start_does_not_print_the_greeting_to_stderr(
     assert "# Greeting" not in capsys.readouterr().err  # no greeting on stderr anymore
 
 
-def test_build_render_greeting_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_render_greeting(), RenderGreetingUseCase)
+def test_persona_greeting_is_none_without_a_companion(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(composition.config, "companion", lambda: CompanionSettings(None, None))
+    assert composition._persona_greeting() is None
 
 
 def _not_ready(client: str, installed: tuple[str, ...] = ()) -> ClientReadiness:

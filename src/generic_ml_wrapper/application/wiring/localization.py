@@ -11,26 +11,26 @@ so a lookup before startup still resolves.
 This is a composition-root concern, and it lives here rather than in a shared folder so
 that the fact is visible: **nothing in the application ring may use it.** A use case or a
 domain service that needs prose is handed a
-:class:`~generic_ml_wrapper.application.domain.service.localizer.Localizer`; only code
+:class:`~generic_ml_wrapper.adapter.inbound.cli.setup.message_source.MessageSource`; only code
 outside the ring may ask the process what language it is speaking.
 """
 
 from __future__ import annotations
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     DEFAULT_LANGUAGE,
     SUPPORTED_LANGUAGES,
     JsonCatalogLocalizerFactory,
 )
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 
-__all__ = ["DEFAULT_LANGUAGE", "SUPPORTED_LANGUAGES", "Localizer", "active", "set_active", "t"]
+__all__ = ["DEFAULT_LANGUAGE", "SUPPORTED_LANGUAGES", "MessageSource", "active", "set_active", "t"]
 
 _factory = JsonCatalogLocalizerFactory()
 
 # The process-global active localiser: the language the whole app speaks. Seeded to English
 # so every ``active()``/``t()`` lookup resolves even before startup calls ``set_active``.
-_active: Localizer = _factory.load(DEFAULT_LANGUAGE)
+_active: MessageSource = _factory.load(DEFAULT_LANGUAGE)
 
 
 def resolve_language(env_lang: str | None, default: str = DEFAULT_LANGUAGE) -> str:
@@ -38,12 +38,12 @@ def resolve_language(env_lang: str | None, default: str = DEFAULT_LANGUAGE) -> s
     return _factory.resolve_language(env_lang, default)
 
 
-def load_localizer(lang: str) -> Localizer:
+def load_localizer(lang: str) -> MessageSource:
     """Build a localiser for ``lang``, merged over the English base."""
     return _factory.load(lang)
 
 
-def set_active(localizer: Localizer) -> None:
+def set_active(localizer: MessageSource) -> None:
     """Set the process-global active localiser (called once at startup).
 
     Args:
@@ -53,7 +53,7 @@ def set_active(localizer: Localizer) -> None:
     _active = localizer
 
 
-def active() -> Localizer:
+def active() -> MessageSource:
     """Return the process-global active localiser (English until ``set_active`` runs)."""
     return _active
 
@@ -62,7 +62,7 @@ def t(key: str, /, **params: object) -> str:
     """Shorthand for ``active().t(key, **params)`` — the app-wide localise call.
 
     ``key`` is positional-only so a template may use a ``{key}`` field (see
-    :meth:`Localizer.t`).
+    :meth:`MessageSource.t`).
 
     Args:
         key: The dotted catalogue key.

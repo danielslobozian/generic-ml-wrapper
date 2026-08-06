@@ -13,15 +13,14 @@ from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_firs
 from generic_ml_wrapper.adapter.outbound.gateway import openai_responses
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
-    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 BINARY = "codex"
 # Codex's status-line items, chosen to mirror gmlw's own first line block for block
@@ -138,7 +137,7 @@ class CodexCliCallerAdapter(CliCallerPort):
         try:
             relay.start()
         except OSError as error:
-            log.warning(i18n.t("log.codex_relay_failed", error=error))
+            log.warning(f"metering relay failed to start ({error}); launching codex unmetered")
             return
         self._relay = relay
 
@@ -159,7 +158,8 @@ class CodexCliCallerAdapter(CliCallerPort):
             self._sessions.bind_uuid(self.run.job, self.run.session_id, uuid)
         except Exception as error:  # noqa: BLE001  (bookkeeping must never break a turn)
             log.warning(
-                i18n.t("log.session_bind_failed", session=self.run.session_id, error=error),
+                f"could not record the client session id for {self.run.session_id} "
+                f"({error}); it will not be resumable",
                 key="log.session_bind_failed",
             )
             return

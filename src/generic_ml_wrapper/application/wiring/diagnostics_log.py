@@ -9,8 +9,8 @@ call site::
 
     from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
-    log.warning(i18n.t("log.relay_failed", error=error), client="claude")
-    log.bind(job, session).error(i18n.t("log.gateway_crashed"), exc=error)
+    log.warning(f"metering relay failed to start ({error})", client="claude")
+    log.bind(job, session).error("relay handler thread crashed", exc=error)
 
 The active sink is a
 :class:`~generic_ml_wrapper.application.port.outbound.diagnostics.DiagnosticsPort`,
@@ -24,7 +24,7 @@ composition root installs a real sink as its first act; nothing logs before that
 It lives with the composition root because that is what it is: one destination chosen
 once per process. **Nothing in the application ring may use it** — a use case or a domain
 service that needs to report something is handed a
-:class:`~generic_ml_wrapper.application.domain.service.diagnostics.Diagnostics`.
+:class:`~generic_ml_wrapper.application.port.outbound.diagnostics.DiagnosticsPort`.
 
 The message handed to a sink is **already localised**: resolving a catalogue key is the
 caller's job (``i18n.t(...)``), so a sink stays a dumb destination.
@@ -34,10 +34,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
 
-class _NoDiagnostics(Diagnostics):
+class _NoDiagnostics(DiagnosticsPort):
     """The pre-wiring default: drop everything, quietly.
 
     Not a fallback anyone should rely on — it exists so that importing this module has
@@ -58,10 +58,10 @@ class _NoDiagnostics(Diagnostics):
         """Discard an error-level diagnostic."""
 
 
-_active: Diagnostics = _NoDiagnostics()
+_active: DiagnosticsPort = _NoDiagnostics()
 
 
-def set_active(sink: Diagnostics) -> Diagnostics:
+def set_active(sink: DiagnosticsPort) -> DiagnosticsPort:
     """Install *sink* as the process-wide diagnostics destination.
 
     Args:
@@ -77,7 +77,7 @@ def set_active(sink: Diagnostics) -> Diagnostics:
     return previous
 
 
-def active() -> Diagnostics:
+def active() -> DiagnosticsPort:
     """Return the sink currently installed."""
     return _active
 

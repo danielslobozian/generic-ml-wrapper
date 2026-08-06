@@ -16,14 +16,13 @@ from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_firs
 from generic_ml_wrapper.adapter.outbound.gateway import openai_chat
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
-    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 BINARY = "vibe"
 _VIBE_CONFIG = Path.home() / ".vibe" / "config.toml"
@@ -76,11 +75,11 @@ class VibeCliCallerAdapter(CliCallerPort):
         try:
             source_text = _VIBE_CONFIG.read_text(encoding="utf-8")
         except OSError as error:
-            log.warning(i18n.t("log.vibe_config_unreadable", config=_VIBE_CONFIG, error=error))
+            log.warning(f"cannot read {_VIBE_CONFIG} ({error}); launching vibe unmetered")
             return
         upstream = vibe_config.active_upstream(source_text)
         if upstream is None:
-            log.warning(i18n.t("log.vibe_no_upstream"))
+            log.warning("could not resolve vibe's active-model upstream; launching unmetered")
             return
         relay = MeteringRelay(
             job=self.run.job,
@@ -96,7 +95,7 @@ class VibeCliCallerAdapter(CliCallerPort):
         try:
             relay.start()
         except OSError as error:
-            log.warning(i18n.t("log.vibe_relay_failed", error=error))
+            log.warning(f"metering relay failed to start ({error}); launching vibe unmetered")
             return
         self._relay = relay
         home = Path(tempfile.mkdtemp(prefix="gmlw-vibe-"))

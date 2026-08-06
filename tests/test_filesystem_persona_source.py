@@ -29,7 +29,7 @@ def test_get_returns_a_persona_with_its_greeting_and_body(tmp_path: Path) -> Non
     persona = FilesystemPersonaSourceAdapter(tmp_path / "personas").get("butler")
     assert persona is not None
     assert persona.name == "butler"
-    assert "{daypart}" in persona.greeting  # greeting template preserved
+    assert "Greet the user" in persona.greeting  # an instruction, not a template to fill
     assert "Identity" in persona.body
 
 

@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import getpass
 import os
 import sqlite3
 import uuid
@@ -12,6 +11,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalogAdapter,
 )
@@ -38,25 +39,10 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSyste
 from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import (
     PathClientDetectorAdapter,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner import (
-    SubprocessCommandRunnerAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboardAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooserAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetupAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooserAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import (
-    TtyLanguageChooserAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import (
-    TtyPersonaChooserAdapter,
-)
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_secret_prompt import TtySecretPromptAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPromptAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
     DefaultCliCallerProviderAdapter,
 )
@@ -88,6 +74,9 @@ from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
     StderrDiagnosticsAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.diagnostics.tee_diagnostics import TeeDiagnosticsAdapter
+from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
+    JsonCatalogLanguageCatalogAdapter,
+)
 from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
     FilesystemPersonaSourceAdapter,
 )
@@ -137,8 +126,7 @@ from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import (
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspectorAdapter,
 )
-from generic_ml_wrapper.application.domain.service.hook import HookPhase
-from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.port.inbound.application_settings import (
     ApplicationSettingsUseCase,
 )
@@ -151,15 +139,23 @@ from generic_ml_wrapper.application.port.inbound.check_launch_location import (
 from generic_ml_wrapper.application.port.inbound.check_store_contract import (
     CheckStoreContractUseCase,
 )
+from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
+from generic_ml_wrapper.application.port.inbound.describe_build import DescribeBuildUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.init import InitUseCase
+from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
+    ListAuthoringModesUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_available_languages import (
+    ListAvailableLanguagesUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_axis_examples import ListAxisExamplesUseCase
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
@@ -178,17 +174,15 @@ from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkf
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.render_farewell import RenderFarewellUseCase
-from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreetingUseCase
-from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatuslineUseCase
-from generic_ml_wrapper.application.port.inbound.render_version import RenderVersionUseCase
+from generic_ml_wrapper.application.port.inbound.save_init_answers import (
+    SaveInitAnswersUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-from generic_ml_wrapper.application.port.outbound.guided_chooser import GuidedChooserPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
@@ -205,16 +199,23 @@ from generic_ml_wrapper.application.usecase.check_launch_location import (
 from generic_ml_wrapper.application.usecase.check_store_contract import (
     CheckStoreContractService,
 )
+from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisService
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
+from generic_ml_wrapper.application.usecase.describe_build import DescribeBuildService
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowService
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageService
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowService
-from generic_ml_wrapper.application.usecase.init import InitService
+from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
+from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuthoringModesService
+from generic_ml_wrapper.application.usecase.list_available_languages import (
+    ListAvailableLanguagesService,
+)
+from generic_ml_wrapper.application.usecase.list_axis_examples import ListAxisExamplesService
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsService
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
@@ -236,18 +237,14 @@ from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowServi
 from generic_ml_wrapper.application.usecase.read_application_settings import (
     ReadApplicationSettingsService,
 )
-from generic_ml_wrapper.application.usecase.render_farewell import RenderFarewellService
-from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingService
-from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineService
-from generic_ml_wrapper.application.usecase.render_version import RenderVersionService
+from generic_ml_wrapper.application.usecase.save_init_answers import SaveInitAnswersService
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
 from generic_ml_wrapper.application.usecase.start_job import StartJobService
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
 from generic_ml_wrapper.application.wiring.localization import (
-    SUPPORTED_LANGUAGES,
-    Localizer,
+    MessageSource,
     active,
     load_localizer,
     resolve_language,
@@ -399,19 +396,20 @@ def build_list_plugins() -> ListPluginsUseCase:
     return ListPluginsService(build_plugin_source())
 
 
-def build_render_greeting() -> RenderGreetingUseCase:
-    """Build the RenderGreetingUseCase use case wired to the persona source and live facts.
+def _persona_greeting() -> str | None:
+    """The selected persona's greeting instruction, or ``None`` when there is none.
 
-    Returns:
-        A ready-to-run RenderGreetingUseCase (free, local; no metering).
+    The line is the persona's own text, handed to the client unchanged. gmlw composes
+    nothing: it does not know the hour in the user's words, and it has no business
+    writing prose in a language it picked.
     """
-    return RenderGreetingService(
-        personas=build_persona_source(),
-        companion=config.companion,
-        workspace=LocalGitWorkspaceInspectorAdapter(),
-        clock=lambda: datetime.now().astimezone(),
-        username=getpass.getuser,
-    )
+    settings = config.companion()
+    if settings.persona is None:
+        return None
+    persona = build_persona_source().get(settings.persona)
+    if persona is None or not persona.greeting.strip():
+        return None
+    return persona.greeting
 
 
 def build_check_for_update() -> CheckForUpdateUseCase:
@@ -426,9 +424,7 @@ def build_check_for_update() -> CheckForUpdateUseCase:
         package="generic-ml-wrapper",
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
-        cache=FilesystemUpdateCacheAdapter(
-            paths.state / "update-check.json", log.active(), build_localizer()
-        ),
+        cache=FilesystemUpdateCacheAdapter(paths.state / "update-check.json", log.active()),
     )
 
 
@@ -473,7 +469,7 @@ def _hook_runner() -> HookRunner:
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]
-    return HookRunner(loaded, log.active(), build_localizer())
+    return HookRunner(loaded, log.active())
 
 
 def _launch_sequence() -> LaunchSequence:
@@ -485,7 +481,6 @@ def _launch_sequence() -> LaunchSequence:
     return LaunchSequence(
         _hook_runner(),
         log.active(),
-        build_localizer(),
         _session_locks(),
         SignalInterruptScopeAdapter(),
     )
@@ -515,9 +510,8 @@ def build_start_job() -> StartJobUseCase:
         credentials=FilesystemCredentialsStoreAdapter(paths.credentials),
         launch=_launch_sequence(),
         diagnostics=log.active(),
-        localizer=build_localizer(),
         posix=os.name != "nt",
-        greeting=lambda: build_render_greeting().execute(),
+        greeting=_persona_greeting,
         capability_card=_capability_card,
         client_args=config.client_args_for,
     )
@@ -570,7 +564,6 @@ def build_delete_sessions() -> DeleteSessionsUseCase:
         artifacts=_artifact_purge(),
         locks=_session_locks(),
         diagnostics=log.active(),
-        localizer=build_localizer(),
     )
 
 
@@ -591,7 +584,6 @@ def build_delete_jobs() -> DeleteJobsUseCase:
         artifacts=_artifact_purge(),
         locks=_session_locks(),
         diagnostics=log.active(),
-        localizer=build_localizer(),
     )
 
 
@@ -656,13 +648,13 @@ def build_workflow_chooser() -> TtyWorkflowChooser:
     return TtyWorkflowChooser(build_localizer())
 
 
-def build_guided_chooser() -> GuidedChooserPort:
+def build_guided_chooser() -> TtyGuidedChooser:
     """Build the guided-vs-quick authoring chooser for ``workflow new`` / ``edit``.
 
     Returns:
         A terminal chooser that asks whether to author with the guided experience.
     """
-    return TtyGuidedChooserAdapter(build_localizer())
+    return TtyGuidedChooser(build_localizer())
 
 
 def build_set_credential() -> SetCredentialUseCase:
@@ -686,26 +678,13 @@ def build_check_store_contract() -> CheckStoreContractUseCase:
     return CheckStoreContractService(migration=build_store_migration())
 
 
-def build_render_version() -> RenderVersionUseCase:
-    """Build the RenderVersionUseCase use case wired to the build stamp.
+def build_describe_build() -> DescribeBuildUseCase:
+    """Build the DescribeBuildUseCase use case wired to the build stamp.
 
     Returns:
-        A ready-to-run RenderVersionUseCase.
+        A ready-to-run DescribeBuildUseCase.
     """
-    return RenderVersionService(build_info=ModuleBuildInfoAdapter())
-
-
-def build_render_farewell() -> RenderFarewellUseCase:
-    """Build the RenderFarewellUseCase use case wired to the companion settings.
-
-    Returns:
-        A ready-to-run RenderFarewellUseCase.
-    """
-    return RenderFarewellService(
-        settings=build_application_settings(),
-        system=OsSystemInfoAdapter(),
-        localizer=build_localizer(),
-    )
+    return DescribeBuildService(build_info=ModuleBuildInfoAdapter())
 
 
 def build_check_launch_location() -> CheckLaunchLocationUseCase:
@@ -816,41 +795,55 @@ def build_migrate_slugs() -> MigrateSlugsUseCase:
     return MigrateSlugsService(FilesystemSlugMigratorAdapter(paths.home))
 
 
-def build_init() -> InitUseCase:
-    """Build the InitUseCase use case wired to the ordered-setup ports and step defaults.
+def build_save_init_answers() -> SaveInitAnswersUseCase:
+    """Build the SaveInitAnswersUseCase use case wired to the seeder.
 
-    The seed localiser (for the language step and as every chooser's fallback) resolves
-    from ``[language] code`` if a prior run set it, else ``$LANG``; the use case rebuilds
-    it in the chosen language once step one completes.
+    All that is left of the old init use case. The interview itself is the terminal's:
+    it asks the queries what is on offer, converses, and hands the answers back here.
 
     Returns:
-        A ready-to-run InitUseCase that runs the forced setup and persists it.
+        A ready-to-run SaveInitAnswersUseCase.
     """
-    seed_language = resolve_language(config.language() or os.environ.get("LANG"))
-    seed_i18n = load_localizer(seed_language)
-    return InitService(
-        detector=PathClientDetectorAdapter(),
+    return SaveInitAnswersService(
         seeder=FilesystemLayoutSeederAdapter(paths.home),
-        language_chooser=TtyLanguageChooserAdapter(seed_i18n),
-        text_prompt=TtyTextPromptAdapter(seed_i18n),
-        axis_chooser=TtyAxisChooserAdapter(seed_i18n),
-        personas=build_persona_source(),
-        persona_chooser=TtyPersonaChooserAdapter(seed_i18n),
-        client_setup=TtyClientSetupAdapter(
-            seed_i18n,
-            version=HttpClientVersionsAdapter(),
-            runner=SubprocessCommandRunnerAdapter(),
-            clipboard=SystemClipboardAdapter(),
-        ),
-        localizer_factory=load_localizer,
-        languages=list(SUPPORTED_LANGUAGES),
-        default_language=seed_language,
-        default_name=getpass.getuser(),
+        detector=PathClientDetectorAdapter(),
         version=__version__,
     )
 
 
-def build_localizer() -> Localizer:
+def seed_localizer() -> MessageSource:
+    """The catalogue the language question itself is asked in.
+
+    Resolves from ``[language] code`` if a prior run set it, else ``$LANG``. The language
+    menu offers each language under its own name, so this only affects the words around
+    it -- and the terminal rebuilds the catalogue in the chosen language straight after.
+
+    Returns:
+        A message source for the seeded language.
+    """
+    return load_localizer(resolve_language(config.language() or os.environ.get("LANG")))
+
+
+def default_user_name() -> str:
+    """The account name, used when the user gives none.
+
+    Asked here rather than in the terminal: reading the operating system is acquiring,
+    and an inbound adapter parses its own channel and nothing else.
+    """
+    return OsSystemInfoAdapter().username()
+
+
+def platform_name() -> str:
+    """The OS name, so an install command is the right one for this machine."""
+    return OsSystemInfoAdapter().platform_name()
+
+
+def seed_language() -> str:
+    """The language code the interview starts in (before the user chooses)."""
+    return resolve_language(config.language() or os.environ.get("LANG"))
+
+
+def build_localizer() -> MessageSource:
     """Build the localiser for the language the wrapper speaks to the user.
 
     Prefers the init-chosen ``[language] code``; falls back to ``$LANG`` (English when
@@ -902,24 +895,23 @@ def build_save_usage_report() -> SaveUsageReportUseCase:
     )
 
 
-def build_render_statusline() -> RenderStatuslineUseCase:
-    """Build the RenderStatuslineUseCase use case.
+def build_compose_statusline() -> ComposeStatuslineUseCase:
+    """Build the ComposeStatuslineUseCase use case.
 
     It takes no client: the status line is invoked by a client the wrapper launched, and
     that launch already announced which one it was. The use case reads that announcement
     and resolves its own parser, so nothing upstream has to know either.
 
     Returns:
-        A ready-to-run RenderStatuslineUseCase.
+        A ready-to-run ComposeStatuslineUseCase.
     """
-    return RenderStatuslineService(
+    return ComposeStatuslineService(
         parsers=CataloguedStatusParsersAdapter(paths.cursor_plan),
         handoff=EnvironmentRunHandoffAdapter(),
         usage=SqliteUsageStoreAdapter(_ledger()),
         workspace=LocalGitWorkspaceInspectorAdapter(),
         turns=SqlitePerTurnStoreAdapter(_ledger()),
         diagnostics=log.active(),
-        localizer=build_localizer(),
     )
 
 
@@ -1015,3 +1007,30 @@ def build_diagnostics(
     if not sinks:
         return NullDiagnosticsAdapter()
     return sinks[0] if len(sinks) == 1 else TeeDiagnosticsAdapter(*sinks)
+
+
+def build_list_available_languages() -> ListAvailableLanguagesUseCase:
+    """Build the ListAvailableLanguagesUseCase use case over the packaged catalogues.
+
+    Returns:
+        A ready-to-ask ListAvailableLanguagesUseCase.
+    """
+    return ListAvailableLanguagesService(JsonCatalogLanguageCatalogAdapter())
+
+
+def build_list_authoring_modes() -> ListAuthoringModesUseCase:
+    """Build the ListAuthoringModesUseCase use case.
+
+    Returns:
+        A ready-to-ask ListAuthoringModesUseCase.
+    """
+    return ListAuthoringModesService()
+
+
+def build_list_axis_examples() -> ListAxisExamplesUseCase:
+    """Build the ListAxisExamplesUseCase use case over the offered role/environment examples.
+
+    Returns:
+        A ready-to-ask ListAxisExamplesUseCase.
+    """
+    return ListAxisExamplesService()

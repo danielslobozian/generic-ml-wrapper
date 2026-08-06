@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from _delete_doubles import FakeSessionLock
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -19,6 +20,8 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
+from generic_ml_wrapper.application.domain.model.hook_context import HookContext
+from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
     ResumeNotSupportedError,
 )
@@ -26,13 +29,12 @@ from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
-from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
+from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
@@ -176,7 +178,7 @@ class FakeProvider(CliCallerProviderPort):
         return RecordingCaller(run, self.log, can_resume=self._can_resume)
 
 
-class RecordingHook(Hook):
+class RecordingHook(HookPort):
     """A hook that appends ``<phase>:<client>:<exit>`` to a shared log when it runs."""
 
     def __init__(self, log: list[str]) -> None:
@@ -195,7 +197,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
     greeting: str | None = None,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
-    diagnostics: Diagnostics | None = None,
+    diagnostics: DiagnosticsPort | None = None,
 ) -> StartJobService:
     return StartJobService(
         store=store,
@@ -205,15 +207,13 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
         launch=LaunchSequence(
-            hooks or HookRunner((), NullDiagnosticsAdapter(), _localizer()),
+            hooks or HookRunner((), NullDiagnosticsAdapter()),
             NullDiagnosticsAdapter(),
-            _localizer(),
             FakeSessionLock(),
             _NoInterrupts(),
         ),
         diagnostics=diagnostics or NullDiagnosticsAdapter(),
         posix=os.name != "nt",
-        localizer=_localizer(),
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
         # configured per client; a client with no entry has no arguments
@@ -304,7 +304,6 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
             (HookPhase.POST_SESSION, None, RecordingHook(shared)),
         ],
         NullDiagnosticsAdapter(),
-        _localizer(),
     )
     provider = FakeProvider(log=shared)
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, hooks=hooks).execute(
@@ -594,7 +593,7 @@ def test_the_recorded_flag_matches_what_the_resume_gate_will_ask() -> None:
         assert store.recorded[0].resumable is declared
 
 
-class _Recording(Diagnostics):
+class _Recording(DiagnosticsPort):
     """A sink that keeps what it was handed, so a test can assert the drop was reported."""
 
     def __init__(self) -> None:
@@ -636,6 +635,6 @@ def test_unparseable_configured_args_are_dropped_but_reported(
     assert capsys.readouterr().err == "", "and not by dumping a traceback on the client's screen"
 
 
-def _localizer() -> Localizer:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")

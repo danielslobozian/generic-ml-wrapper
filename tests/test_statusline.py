@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for status parsing, rendering, and the RenderStatuslineUseCase use case."""
+"""Tests for status parsing, rendering, and the ComposeStatuslineUseCase use case."""
 
 import json
 
 import pytest
 
+from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
 from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
     JsonCatalogLocalizerFactory,
@@ -18,7 +19,6 @@ from generic_ml_wrapper.application.domain.model.run_handoff import RunHandoff
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
-from generic_ml_wrapper.application.domain.service.localizer import Localizer
 from generic_ml_wrapper.application.domain.service.statusline_renderer import StatuslineRenderer
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
@@ -26,7 +26,7 @@ from generic_ml_wrapper.application.port.outbound.run_handoff import RunHandoffP
 from generic_ml_wrapper.application.port.outbound.status_parsers import StatusParsersPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
-from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineService
+from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
 
 _NOW = 1_000_000.0
 _CLAUDE_PAYLOAD: dict[str, object] = {
@@ -52,7 +52,7 @@ _NO_WORKSPACE = Workspace(folder=None, repo=None, branch=None, short_sha=None, d
 _REPO = Workspace(folder="~/dev/app", repo="app", branch="main", short_sha="abc1234", dirty=3)
 
 
-def _localizer() -> Localizer:
+def _localizer() -> MessageSource:
     """The real English catalogue: these tests assert behaviour, not translations."""
     return JsonCatalogLocalizerFactory().load("en")
 
@@ -256,15 +256,14 @@ def _use_case(  # noqa: PLR0913, PLR0917  (its ports, plus the run and the clock
     now: float = 0.0,
     job: str | None = None,
     session: str | None = None,
-) -> RenderStatuslineService:
-    return RenderStatuslineService(
+) -> ComposeStatuslineService:
+    return ComposeStatuslineService(
         _FixedParsers(),
         _FakeHandoff(job, session),
         usage,
         FakeWorkspaceInspector(workspace),
         turns or FakePerTurnStore(),
         NullDiagnosticsAdapter(),
-        _localizer(),
         clock=lambda: now,
     )
 

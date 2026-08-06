@@ -22,6 +22,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.adapter.inbound.cli.setup.interview import run_interview
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
 )
@@ -96,17 +97,19 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_check_for_update,
     build_check_launch_location,
     build_check_store_contract,
+    build_compose_statusline,
     build_config_commands,
     build_create_axis,
     build_delete_jobs,
     build_delete_sessions,
+    build_describe_build,
     build_diagnostics,
     build_edit_workflow,
     build_export_usage,
     build_export_workflow,
     build_guided_chooser,
     build_import_workflow,
-    build_init,
+    build_list_available_languages,
     build_list_clients,
     build_list_drafts,
     build_list_jobs,
@@ -122,13 +125,16 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_layout,
     build_migrate_slugs,
     build_new_workflow,
-    build_render_farewell,
-    build_render_statusline,
-    build_render_version,
+    build_save_init_answers,
     build_save_usage_report,
     build_set_credential,
     build_start_job,
     build_workflow_chooser,
+    default_user_name,
+    load_localizer,
+    platform_name,
+    seed_language,
+    seed_localizer,
 )
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.diagnostics_log import (
@@ -144,6 +150,7 @@ if TYPE_CHECKING:
     # Type-only: the tui adapter is imported lazily inside `_tui` (see the note there), so
     # the post-menu handler can be typed without pulling Textual in at CLI startup.
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice
+    from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 
 
 class LocalizedHelpFormatter(argparse.RawDescriptionHelpFormatter):
@@ -289,7 +296,7 @@ def _as_json(payload: object) -> str:
 
 def _version_string() -> str:
     """Return the line ``--version`` prints."""
-    return build_render_version().execute()
+    return build_describe_build().execute()
 
 
 def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative parser wiring)
@@ -523,7 +530,7 @@ def _add_help_parser(sub: _SubParsers) -> None:
     )
 
 
-def format_jobs(summaries: list[JobSummary], loc: i18n.Localizer | None = None) -> str:
+def format_jobs(summaries: list[JobSummary], loc: i18n.MessageSource | None = None) -> str:
     """Render the job summaries as human-readable lines.
 
     Args:
@@ -546,7 +553,7 @@ def format_jobs(summaries: list[JobSummary], loc: i18n.Localizer | None = None) 
 
 
 def format_sessions(
-    job: str, sessions: list[SessionSummary], loc: i18n.Localizer | None = None
+    job: str, sessions: list[SessionSummary], loc: i18n.MessageSource | None = None
 ) -> str:
     """Render a job's sessions as human-readable lines.
 
@@ -582,7 +589,7 @@ def format_sessions(
     return "\n".join(lines)
 
 
-def format_session_usage(session: SessionSummary, loc: i18n.Localizer | None = None) -> str:
+def format_session_usage(session: SessionSummary, loc: i18n.MessageSource | None = None) -> str:
     """Render one session's usage — or the word for "nothing happened here".
 
     A session with no turns is named rather than shown as ``0 turn(s) $0.00``: it is the
@@ -602,7 +609,9 @@ def format_session_usage(session: SessionSummary, loc: i18n.Localizer | None = N
     return loc.t("sessions.usage", turns=session.turn_count, cost=f"{session.cost_usd:.2f}")
 
 
-def format_job_footprints(footprints: list[JobFootprint], loc: i18n.Localizer | None = None) -> str:
+def format_job_footprints(
+    footprints: list[JobFootprint], loc: i18n.MessageSource | None = None
+) -> str:
     """Render what deleting these jobs would remove.
 
     Shown before the confirmation, so "delete them?" is answered against the actual
@@ -634,13 +643,13 @@ def format_job_footprints(footprints: list[JobFootprint], loc: i18n.Localizer | 
     return "\n".join(lines)
 
 
-def _kept_marker(removed: bool, loc: i18n.Localizer) -> str:
+def _kept_marker(removed: bool, loc: i18n.MessageSource) -> str:
     """The tail a row carries when it did not go. Empty on a preview, where all go."""
     return "" if removed else loc.t("delete.row.kept")
 
 
 def format_session_footprints(
-    job: str, footprints: list[SessionFootprint], loc: i18n.Localizer | None = None
+    job: str, footprints: list[SessionFootprint], loc: i18n.MessageSource | None = None
 ) -> str:
     """Render what deleting these sessions would remove.
 
@@ -670,7 +679,7 @@ def format_session_footprints(
     return "\n".join(lines)
 
 
-def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
+def format_usage(report: UsageReport, loc: i18n.MessageSource | None = None) -> str:
     """Render a job's usage report: per-turn rows, totals by model, cost, and totals.
 
     Args:
@@ -740,13 +749,15 @@ def _clock(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).astimezone().strftime("%H:%M:%S")
 
 
-def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.Localizer) -> str:
+def _tokens(
+    input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.MessageSource
+) -> str:
     """Render a token triple as ``  <in>(+<cache> cache)+<out> tok`` for the report."""
     cache = loc.t("usage.cache", cache=cache_tokens) if cache_tokens else ""
     return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
 
 
-def format_drafts(drafts: list[Draft], loc: i18n.Localizer | None = None) -> str:
+def format_drafts(drafts: list[Draft], loc: i18n.MessageSource | None = None) -> str:
     """Render the unfinished authoring drafts as human-readable lines.
 
     Args:
@@ -772,7 +783,7 @@ def format_drafts(drafts: list[Draft], loc: i18n.Localizer | None = None) -> str
     return "\n".join(lines)
 
 
-def format_workflows(workflows: list[Workflow], loc: i18n.Localizer | None = None) -> str:
+def format_workflows(workflows: list[Workflow], loc: i18n.MessageSource | None = None) -> str:
     """Render the runnable workflows as human-readable lines.
 
     Shows the slug the user types beside the label its author gave it. A workflow
@@ -802,7 +813,7 @@ def format_workflows(workflows: list[Workflow], loc: i18n.Localizer | None = Non
     return "\n".join(lines)
 
 
-def format_personas(personas: list[Persona], loc: i18n.Localizer | None = None) -> str:
+def format_personas(personas: list[Persona], loc: i18n.MessageSource | None = None) -> str:
     """Render the selectable personas as human-readable lines.
 
     Args:
@@ -824,7 +835,7 @@ def format_personas(personas: list[Persona], loc: i18n.Localizer | None = None) 
     return "\n".join(lines)
 
 
-def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> str:
+def format_plugins(plugins: list[Plugin], loc: i18n.MessageSource | None = None) -> str:
     """Render the installed plugins as human-readable lines.
 
     Args:
@@ -846,14 +857,14 @@ def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> 
     return "\n".join(lines)
 
 
-def _client_version_label(status: ListedClient, loc: i18n.Localizer) -> str:
+def _client_version_label(status: ListedClient, loc: i18n.MessageSource) -> str:
     """Render a client's version cell — shared by the CLI table and the TUI Clients view."""
     if not status.installed:
         return loc.t("clients.not_installed")
     return status.version or loc.t("clients.version_unknown")
 
 
-def format_clients(statuses: list[ListedClient], loc: i18n.Localizer | None = None) -> str:
+def format_clients(statuses: list[ListedClient], loc: i18n.MessageSource | None = None) -> str:
     """Render the supported clients as human-readable lines: version, resume, default.
 
     Args:
@@ -913,6 +924,19 @@ def _check_store_contract() -> None:
     build_check_store_contract().execute()
 
 
+def _login_line(info: ClientInfo, loc: i18n.MessageSource) -> str:
+    """The login command, with its localised note when it has one.
+
+    The command itself is never translated -- it is something the user types. Only the
+    note beside it is prose, so only the note goes through the catalogue. Rendered here
+    rather than on :class:`ClientInfo`: the type carries the command and the key, and
+    turning a key into a sentence needs a language, which the domain does not have.
+    """
+    if not info.login_hint:
+        return info.login
+    return f"{info.login}   ({loc.t(info.login_hint)})"
+
+
 def _render_error(error: Exception) -> str:
     """Render a caught error in the active language.
 
@@ -921,7 +945,7 @@ def _render_error(error: Exception) -> str:
     back to the generic, unlocalised shell rather than pretending to translate it.
     """
     if isinstance(error, DomainError):
-        return error.localized(i18n.active())
+        return i18n.t(error.catalogue_key, **error.params)
     return i18n.t("error.generic", error=error)
 
 
@@ -976,7 +1000,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     if args.command not in (None, "statusline", "help"):
         needs_init = build_application_settings().setup_needed()
         if needs_init and args.command != "init":
-            _announce_init(build_init().execute())
+            _run_init()
         elif not needs_init:
             build_bootstrap().execute()
         # Wrap the old profile/company layout into the active environment. Runs after init
@@ -1122,9 +1146,31 @@ def _run_init() -> int:
 
     Shared by the ``init`` command, the first-run funnel, and the TUI's Config → Setup verb.
     Re-running on an initialised install merges the answers into the existing config (never
-    wipes). Returns ``0``.
+    wipes).
+
+    The interview happens here, in the terminal. The application is asked what is on offer
+    — which languages ship, which personas exist, which clients are installed — and is
+    told what was chosen. It is never asked for a label.
+
+    Returns:
+        ``0`` normally; ``2`` when no client is installed, having written nothing. A
+        client is a prerequisite, not an answer: without one there is nothing to
+        configure, and persisting half a setup would only make the next run stranger.
     """
-    _announce_init(build_init().execute())
+    answers = run_interview(
+        languages=build_list_available_languages().execute(),
+        default_language=seed_language(),
+        default_name=default_user_name(),
+        personas=build_list_personas().execute(),
+        clients=build_list_clients().execute(),
+        supported=build_list_supported_clients().execute(),
+        system=platform_name(),
+        localizer_for=load_localizer,
+        seed=seed_localizer(),
+    )
+    if answers is None:  # no client installed, or the last question declined
+        return 2
+    _announce_init(build_save_init_answers().execute(answers))
     _announce_migration(build_migrate_layout().execute())
     _announce_slug_migration(build_migrate_slugs().execute())
     print(i18n.t("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
@@ -1135,12 +1181,16 @@ def _index() -> int:
     """Bare ``gmlw``: run the forced setup on a fresh install, else open the interactive menu.
 
     First run wins over everything — a brand-new user is funnelled through init before any
-    menu. Once initialised, bare ``gmlw`` becomes the front door: on a terminal it opens the
-    ``gmlw tui`` menu; off a terminal ``_tui`` falls back to the plain capability index, so a
-    piped/scripted ``gmlw`` never blocks on a menu.
+    menu, and the menu then opens behind it: someone who has just answered six questions has
+    earned something to look at, and it proves the setup works. Once initialised, bare
+    ``gmlw`` becomes the front door: on a terminal it opens the ``gmlw tui`` menu; off a
+    terminal ``_tui`` falls back to the plain capability index, so a piped/scripted ``gmlw``
+    never blocks on a menu.
     """
     if build_application_settings().setup_needed():  # first run — setup wins over the menu
-        return _run_init()
+        exit_code = _run_init()
+        if exit_code != 0:
+            return exit_code
     return _tui()
 
 
@@ -1315,7 +1365,9 @@ def _client(raw: str | None) -> str:
     return build_application_settings().resolve_client(raw)
 
 
-def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | None = None) -> str:
+def format_client_guidance(
+    readiness: ClientReadiness, loc: i18n.MessageSource | None = None
+) -> str:
     """Render install/login guidance for a client that cannot launch.
 
     Args:
@@ -1331,7 +1383,7 @@ def format_client_guidance(readiness: ClientReadiness, loc: i18n.Localizer | Non
         lines = [
             loc.t("client.guidance.missing", client=repr(readiness.client), display=info.display),
             loc.t("client.guidance.install", command=readiness.install_command),
-            loc.t("client.guidance.login", login=info.login_for(loc)),
+            loc.t("client.guidance.login", login=_login_line(info, loc)),
         ]
         others = [name for name in readiness.installed if name != readiness.client]
         if others:
@@ -1395,18 +1447,22 @@ def _statusline() -> int:
     # renders this output in place of its own status, so a traceback would land on screen.
     try:
         payload = "" if sys.stdin.isatty() else sys.stdin.read(_MAX_STATUSLINE_BYTES)
-        line = build_render_statusline().execute(payload)
+        line = build_compose_statusline().execute(payload)
     except Exception as error:  # noqa: BLE001  degrade to an empty line, never error at the client
-        log.warning(i18n.t("log.status_render_failed", error=error))
+        log.warning(f"status line render failed: {error}")
         print()
         return 0
     print(line)
     return 0
 
 
-def _farewell() -> str | None:
-    """Return the parting line, or ``None`` when the companion is off."""
-    return build_render_farewell().execute()
+def _farewell() -> str:
+    """Return the parting line, in the language the wrapper is speaking.
+
+    A label, so the terminal renders it. There is no use case behind a goodbye: nothing
+    is decided, nothing is read, and nothing is persisted.
+    """
+    return i18n.t("farewell")
 
 
 def _tui() -> int:
@@ -1891,9 +1947,7 @@ def _start(args: argparse.Namespace) -> int:
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:
         print(_render_error(error))
         return 2
-    farewell = _farewell()
-    if farewell:
-        print(farewell, file=sys.stderr)
+    print(_farewell(), file=sys.stderr)
     _print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
     return result.exit_code
 
@@ -1940,9 +1994,7 @@ def _run_workflow(workflow: str, client: str, client_args: str | None = None) ->
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:
         print(_render_error(error))
         return 2
-    farewell = _farewell()
-    if farewell:
-        print(farewell, file=sys.stderr)
+    print(_farewell(), file=sys.stderr)
     _print_exit_receipt(result)
     return result.exit_code
 
@@ -1997,7 +2049,7 @@ def _print_exit_receipt(result: StartJobResult) -> None:
             file=sys.stderr,
         )
     except Exception as error:  # noqa: BLE001  the receipt must never break a clean exit
-        log.debug(i18n.t("log.receipt_failed", error=error))
+        log.debug(f"exit receipt usage read failed: {error}")
     print(loc.t("receipt.resume", job=result.job), file=sys.stderr)
     print(loc.t("receipt.report", job=result.job), file=sys.stderr)
     latest = build_check_for_update().execute()
@@ -2050,7 +2102,7 @@ def _creds(args: argparse.Namespace) -> int:
     return 0
 
 
-def _setting_value(value: object, loc: i18n.Localizer) -> str:
+def _setting_value(value: object, loc: i18n.MessageSource) -> str:
     """Render a setting value for display: ``(unset)`` for None, lower-case for bools."""
     if value is None:
         return loc.t("config.unset")
@@ -2059,7 +2111,7 @@ def _setting_value(value: object, loc: i18n.Localizer) -> str:
     return str(value)
 
 
-def format_setting_list(views: list[SettingView], loc: i18n.Localizer | None = None) -> str:
+def format_setting_list(views: list[SettingView], loc: i18n.MessageSource | None = None) -> str:
     """Render every setting with its current value and description (aligned).
 
     Args:
@@ -2080,7 +2132,7 @@ def format_setting_list(views: list[SettingView], loc: i18n.Localizer | None = N
     return "\n".join(lines)
 
 
-def format_setting(view: SettingView, loc: i18n.Localizer | None = None) -> str:
+def format_setting(view: SettingView, loc: i18n.MessageSource | None = None) -> str:
     """Render a single setting: value, description, default and any allowed values.
 
     Args:
@@ -2137,7 +2189,7 @@ def _config_set(commands: ConfigCommandsUseCase, key: str, value: str) -> int:
     return 0
 
 
-def _format_set_outcome(outcome: SetOutcome, loc: i18n.Localizer | None = None) -> str:
+def _format_set_outcome(outcome: SetOutcome, loc: i18n.MessageSource | None = None) -> str:
     """Render the localised summary of a ``config set`` — never silent about the change."""
     loc = loc or i18n.active()
     if not outcome.changed:

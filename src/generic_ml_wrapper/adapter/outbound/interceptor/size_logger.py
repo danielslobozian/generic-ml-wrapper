@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.diagnostics_log import log
 
 
@@ -29,5 +28,5 @@ class MessageSizeLoggerAdapter(InterceptorPort):
         Returns:
             The input text, unchanged.
         """
-        log.info(i18n.t("log.interceptor_size", target=target, chars=len(text)))
+        log.info(f"[interceptor] {target}: {len(text)} chars")
         return text

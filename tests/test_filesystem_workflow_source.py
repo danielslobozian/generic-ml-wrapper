@@ -13,10 +13,10 @@ from generic_ml_wrapper.application.domain.model.context_source import CompileMo
 from generic_ml_wrapper.application.domain.model.draft import DraftMarker
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
+from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 
 def test_seed_copies_packaged_defaults(tmp_path: Path) -> None:

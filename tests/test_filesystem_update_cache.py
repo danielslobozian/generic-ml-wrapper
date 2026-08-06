@@ -8,14 +8,11 @@ import json
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
-)
 from generic_ml_wrapper.adapter.outbound.update.filesystem_update_cache import (
     FilesystemUpdateCacheAdapter,
 )
 from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
-from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -23,7 +20,7 @@ if TYPE_CHECKING:
 _WHEN = datetime(2026, 7, 30, 12, 0, 0)
 
 
-class _RecordingDiagnostics(Diagnostics):
+class _RecordingDiagnostics(DiagnosticsPort):
     def __init__(self) -> None:
         self.keys: list[str] = []
 
@@ -41,13 +38,9 @@ class _RecordingDiagnostics(Diagnostics):
 
 
 def _cache(
-    cache_file: Path, diagnostics: Diagnostics | None = None
+    cache_file: Path, diagnostics: DiagnosticsPort | None = None
 ) -> FilesystemUpdateCacheAdapter:
-    return FilesystemUpdateCacheAdapter(
-        cache_file,
-        diagnostics or _RecordingDiagnostics(),
-        JsonCatalogLocalizerFactory().load("en"),
-    )
+    return FilesystemUpdateCacheAdapter(cache_file, diagnostics or _RecordingDiagnostics())
 
 
 def test_records_a_check_and_reads_it_back(tmp_path: Path) -> None:
