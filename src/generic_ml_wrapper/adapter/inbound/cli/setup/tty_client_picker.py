@@ -15,6 +15,7 @@ terminal that can see what they installed.
 
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number, emit
@@ -54,12 +55,16 @@ def choose_client(clients: list[ListedClient], loc: MessageSource) -> str | None
 def report_no_client(supported: tuple[ClientInfo, ...], system: str, loc: MessageSource) -> None:
     """Tell the user nothing is installed, and how to install something.
 
+    Printed unconditionally, unlike the prompts: this is why the run is ending, not
+    narration around a question. ``emit`` stays silent without a terminal, which is right
+    for a prompt nobody is watching and wrong for the reason a scripted run just stopped.
+
     Args:
         supported: Every client gmlw supports, in canonical order.
         system: The OS name, so each command is the right one for this machine.
         loc: Renders the message.
     """
-    emit(loc.t("init.client.none_installed"))
+    print(loc.t("init.client.none_installed"), file=sys.stderr)
     for info in supported:
-        emit(f"  {info.display}: {info.install_for(system)}")
-    emit(loc.t("init.client.install_then_relaunch"))
+        print(f"  {info.display}: {info.install_for(system)}", file=sys.stderr)
+    print(loc.t("init.client.install_then_relaunch"), file=sys.stderr)

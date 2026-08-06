@@ -30,10 +30,18 @@ class TtyGuidedChooser:
         """
         self._i18n = i18n
 
-    def choose(self, i18n: MessageSource | None = None) -> AuthoringMode | None:
-        """Offer the choice and return the chosen mode, or ``None``.
+    def choose(
+        self, modes: list[AuthoringMode], i18n: MessageSource | None = None
+    ) -> AuthoringMode | None:
+        """Offer the modes and return the chosen one, or ``None``.
+
+        Which modes exist is the application's answer, not this widget's -- it used to
+        name GUIDED and QUICK itself, which is knowledge a terminal has no business
+        holding and no way to keep current. Each mode's label comes from its own code, so
+        a third one needs a catalogue entry and nothing else.
 
         Args:
+            modes: The offered modes, in the order they should be presented.
             i18n: The localiser for the prompt; ``None`` uses the construction-time one.
 
         Returns:
@@ -44,10 +52,10 @@ class TtyGuidedChooser:
         picked = choose_number(
             loc.t("guided.header"),
             [
-                Choice(value=AuthoringMode.GUIDED.value, label=loc.t("guided.choice_guided")),
-                Choice(value=AuthoringMode.QUICK.value, label=loc.t("guided.choice_quick")),
+                Choice(value=mode.value, label=loc.t(f"guided.choice_{mode.value}"))
+                for mode in modes
             ],
             loc,
-            default=0,  # Enter → the guided experience
+            default=0,  # Enter → the first offered mode
         )
         return AuthoringMode(picked) if picked is not None else None

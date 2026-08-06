@@ -11,6 +11,8 @@ from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyG
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
+_MODES = [AuthoringMode.GUIDED, AuthoringMode.QUICK]
+
 _I18N = load_localizer("en")
 
 
@@ -29,19 +31,19 @@ def _wire(monkeypatch: pytest.MonkeyPatch, *, stdin: str, tty: bool = True) -> i
 
 def test_declines_when_not_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="1\n", tty=False)
-    assert TtyGuidedChooser(_I18N).choose() is None  # caller falls back to lean
+    assert TtyGuidedChooser(_I18N).choose(_MODES) is None  # caller falls back to lean
 
 
 def test_enter_picks_the_guided_experience(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="\n")  # empty line takes the default (index 0)
-    assert TtyGuidedChooser(_I18N).choose() == AuthoringMode.GUIDED
+    assert TtyGuidedChooser(_I18N).choose(_MODES) == AuthoringMode.GUIDED
 
 
 def test_picks_quick_when_chosen(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="2\n")
-    assert TtyGuidedChooser(_I18N).choose() == AuthoringMode.QUICK
+    assert TtyGuidedChooser(_I18N).choose(_MODES) == AuthoringMode.QUICK
 
 
 def test_picks_guided_when_chosen(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="1\n")
-    assert TtyGuidedChooser(_I18N).choose() == AuthoringMode.GUIDED
+    assert TtyGuidedChooser(_I18N).choose(_MODES) == AuthoringMode.GUIDED
