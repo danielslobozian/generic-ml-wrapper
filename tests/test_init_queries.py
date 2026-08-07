@@ -9,13 +9,15 @@ offer here". Each returns codes and domain values -- never a label, never a sent
 from __future__ import annotations
 
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
-from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
 from generic_ml_wrapper.application.port.outbound.language_catalog import LanguageCatalogPort
 from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuthoringModesService
 from generic_ml_wrapper.application.usecase.list_available_languages import (
     ListAvailableLanguagesService,
 )
-from generic_ml_wrapper.application.usecase.list_axis_examples import ListAxisExamplesService
+from generic_ml_wrapper.application.wiring.composition import (
+    build_list_environment_examples,
+    build_list_role_examples,
+)
 
 
 class _Catalog(LanguageCatalogPort):
@@ -45,17 +47,16 @@ def test_authoring_modes_are_the_whole_set_not_one_of_them() -> None:
 
 
 def test_role_and_environment_offer_different_examples() -> None:
-    examples = ListAxisExamplesService()
-    roles = [example.slug for example in examples.execute(AxisKind.ROLE)]
-    environments = [example.slug for example in examples.execute(AxisKind.ENVIRONMENT)]
+    roles = [role.code for role in build_list_role_examples().execute()]
+    environments = [env.code for env in build_list_environment_examples().execute()]
     assert "software-engineer" in roles
     assert "work" in environments
     assert not set(roles) & set(environments)
 
 
-def test_axis_examples_carry_keys_not_prose() -> None:
-    # An example knows the slug it resolves to and the keys its words live under. The
+def test_offered_examples_carry_keys_not_prose() -> None:
+    # An offered role knows the code it resolves to and the keys its words live under. The
     # words themselves are the terminal's, in whichever language it is speaking.
-    for example in ListAxisExamplesService().execute(AxisKind.ROLE):
-        assert example.label_key.startswith("init.")
-        assert example.description_key.startswith("init.")
+    for role in build_list_role_examples().execute():
+        assert role.label.startswith("init.")
+        assert role.description.startswith("init.")

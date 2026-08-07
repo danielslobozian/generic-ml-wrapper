@@ -333,7 +333,7 @@ already have, or type a new name — either way you get a *fresh session*, which
 List, Export, and Import; **Config** covers listing/getting/setting a value, the
 **Clients** switcher (selecting a row also sets it as the default — the
 `gmlw config set client.default` path), and re-running **Setup**; **Rules** browses the
-environment and role rule axes.
+environment and role rule sources.
 
 **Every launch ends with a client step** — Job → New, Workflow → Run, Create, and Edit all
 ask which client to run on before starting, the menu's equivalent of `--client`. It opens

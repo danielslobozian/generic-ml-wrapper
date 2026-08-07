@@ -3,7 +3,7 @@
 """The session snapshot: the small block of facts every session opens knowing.
 
 The rest of the context is *content* — who the user is, the place's constraints, a
-workflow's steps. This is the frame around it: which of each axis is in play right now.
+workflow's steps. This is the frame around it: which role and environment are in play.
 At the moment a session starts there is exactly one environment, one role, one persona
 and one job, so the frame is a flat set of scalars rather than anything to resolve.
 
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 _HEADER = """\
 ## This session
 
-The facts this session opened with. One of each axis is active at a time; if the user
+The facts this session opened with. One role and one environment are active at a time; if
 asks which environment, role, persona or job they are in, this is the answer.
 """
 

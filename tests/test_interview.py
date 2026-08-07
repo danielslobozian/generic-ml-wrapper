@@ -19,6 +19,10 @@ from generic_ml_wrapper.adapter.inbound.cli.setup.interview import run_interview
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
 from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
+from generic_ml_wrapper.application.wiring.composition import (
+    build_list_environment_examples,
+    build_list_role_examples,
+)
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 
 if TYPE_CHECKING:
@@ -65,6 +69,8 @@ def _run(clients: list[ListedClient]) -> InitAnswers | None:
         clients=clients,
         supported=_supported(),
         system="Linux",
+        role_examples=build_list_role_examples(),
+        environment_examples=build_list_environment_examples(),
         localizer_for=_localizer_for,
         seed=_EN,
     )
@@ -90,8 +96,8 @@ def test_a_full_run_comes_back_as_codes(monkeypatch: pytest.MonkeyPatch) -> None
     assert answers is not None
     assert answers.language == "en"
     assert answers.client == "claude"
-    assert answers.role.slug == interview_module.DEFAULT_ROLE
-    assert answers.environment.slug == interview_module.DEFAULT_ENVIRONMENT
+    assert answers.role.code == interview_module.DEFAULT_ROLE
+    assert answers.environment.code == interview_module.DEFAULT_ENVIRONMENT
 
 
 def test_a_lone_installed_client_is_taken_without_asking(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -123,6 +129,8 @@ def test_the_language_question_is_asked_before_anything_else(
         clients=[_client("claude", installed=True)],
         supported=_supported(),
         system="Linux",
+        role_examples=build_list_role_examples(),
+        environment_examples=build_list_environment_examples(),
         localizer_for=_record,
         seed=_EN,
     )

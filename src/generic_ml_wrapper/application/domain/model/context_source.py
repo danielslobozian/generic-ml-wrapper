@@ -73,7 +73,7 @@ PERSONA = ContextSource("persona", None)
 ME_USER = ContextSource("me.user", CompressorKind.HUMAN_TOUCH)
 ME_LEARNED = ContextSource("me.learned", CompressorKind.HUMAN_TOUCH)
 COMPANY = ContextSource("company", None)
-# Rules are a projection of the user, so they sit on the two axes that describe one: the
+# Rules are a projection of the user, so they sit on the two things that describe one: the
 # environment (the place — its processes and standards) and the role (the craft). Each is
 # separately activatable; there is no global tier and no per-workflow tier.
 RULES_ENVIRONMENT = ContextSource("rules.environment", CompressorKind.RULES)
@@ -87,12 +87,12 @@ STEPS = ContextSource("steps", CompressorKind.TECHNICAL, activatable=False)
 # The identity/facts family, composed together (ahead of rules) in every mode.
 PROFILE_FAMILY: tuple[ContextSource, ...] = (PERSONA, ME_USER, ME_LEARNED, COMPANY)
 
-# The rule axes, in composed order: the role's preferences first, then the environment's
+# The rule sources, in composed order: the role's preferences first, then the environment's
 # constraints, which outrank them on conflict and so sit closest to the model.
-RULE_AXES: tuple[ContextSource, ...] = (RULES_ROLE, RULES_ENVIRONMENT)
+RULE_SOURCES: tuple[ContextSource, ...] = (RULES_ROLE, RULES_ENVIRONMENT)
 
 # The cross-cutting sources every mode considers, in composed order.
-CROSS_CUTTING: tuple[ContextSource, ...] = (*PROFILE_FAMILY, *RULE_AXES)
+CROSS_CUTTING: tuple[ContextSource, ...] = (*PROFILE_FAMILY, *RULE_SOURCES)
 
 # Every source, in composed order (used to seed defaults and iterate config).
 ALL_SOURCES: tuple[ContextSource, ...] = (*CROSS_CUTTING, BASE, STEPS)

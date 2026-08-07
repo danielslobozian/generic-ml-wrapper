@@ -7,7 +7,7 @@ to (at most) the `[client] default` chosen from the clients found on your `PATH`
 Every section is optional. Uncomment and edit only what you need. Delete the file
 entirely to fall back to the built-in defaults.
 
-For the concepts behind the sections below (the four context axes, rules) see
+For the concepts behind the sections below (the four context sources, rules) see
 [CONCEPTS.md](CONCEPTS.md). Related guides: [WORKFLOWS.md](WORKFLOWS.md),
 [CLIENTS.md](CLIENTS.md), [DESIGN.md](DESIGN.md), and the [security model](../SECURITY.md).
 
@@ -401,6 +401,6 @@ check = false
 
 ## See also
 
-- [CONCEPTS.md](CONCEPTS.md) — the four context axes and rules these keys configure.
+- [CONCEPTS.md](CONCEPTS.md) — the four context sources and rules these keys configure.
 - [WORKFLOWS.md](WORKFLOWS.md) · [CLIENTS.md](CLIENTS.md) · [DESIGN.md](DESIGN.md)
 - [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md)

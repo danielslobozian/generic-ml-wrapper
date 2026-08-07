@@ -13,8 +13,8 @@ from pathlib import Path
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_workflow_chooser import TtyWorkflowChooser
-from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
-    FilesystemAxisCatalogAdapter,
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_environment_repository import (
+    FilesystemEnvironmentRepositoryAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator import (
     FilesystemLayoutMigratorAdapter,
@@ -22,8 +22,11 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator im
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeederAdapter,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_catalog import (
-    FilesystemRuleCatalogAdapter,
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_role_repository import (
+    FilesystemRoleRepositoryAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_store import (
+    FilesystemRuleStore,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_slug_migrator import (
     FilesystemSlugMigratorAdapter,
@@ -33,6 +36,12 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_working_folder imp
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import (
     HttpClientVersionsAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.bootstrap.json_environment_examples_repository import (
+    JsonEnvironmentExamplesRepositoryAdapter,
+)
+from generic_ml_wrapper.adapter.outbound.bootstrap.json_role_examples_repository import (
+    JsonRoleExamplesRepositoryAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.module_build_info import ModuleBuildInfoAdapter
 from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSystemInfoAdapter
@@ -127,6 +136,8 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
     LocalGitWorkspaceInspectorAdapter,
 )
 from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
+from generic_ml_wrapper.application.port.inbound.add_environment import AddEnvironmentUseCase
+from generic_ml_wrapper.application.port.inbound.add_role import AddRoleUseCase
 from generic_ml_wrapper.application.port.inbound.application_settings import (
     ApplicationSettingsUseCase,
 )
@@ -141,7 +152,6 @@ from generic_ml_wrapper.application.port.inbound.check_store_contract import (
 )
 from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
-from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
 from generic_ml_wrapper.application.port.inbound.describe_build import DescribeBuildUseCase
@@ -155,13 +165,20 @@ from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
 from generic_ml_wrapper.application.port.inbound.list_available_languages import (
     ListAvailableLanguagesUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.list_axis_examples import ListAxisExamplesUseCase
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_drafts import ListDraftsUseCase
+from generic_ml_wrapper.application.port.inbound.list_environment_examples import (
+    ListEnvironmentExamplesUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_environments import ListEnvironmentsUseCase
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPluginsUseCase
+from generic_ml_wrapper.application.port.inbound.list_role_examples import (
+    ListRoleExamplesUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.list_roles import ListRolesUseCase
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.port.inbound.list_supported_clients import (
@@ -179,9 +196,12 @@ from generic_ml_wrapper.application.port.inbound.save_init_answers import (
 )
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
+from generic_ml_wrapper.application.port.inbound.set_default_environment import (
+    SetDefaultEnvironmentUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.set_default_role import SetDefaultRoleUseCase
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
-from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
@@ -190,6 +210,8 @@ from generic_ml_wrapper.application.port.outbound.store_migration import (
     StoreMigrationPort,
 )
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+from generic_ml_wrapper.application.usecase.add_environment import AddEnvironmentService
+from generic_ml_wrapper.application.usecase.add_role import AddRoleService
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapService
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyService
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateService
@@ -200,7 +222,6 @@ from generic_ml_wrapper.application.usecase.check_store_contract import (
     CheckStoreContractService,
 )
 from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
-from generic_ml_wrapper.application.usecase.create_axis import CreateAxisService
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
 from generic_ml_wrapper.application.usecase.describe_build import DescribeBuildService
@@ -215,13 +236,18 @@ from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuth
 from generic_ml_wrapper.application.usecase.list_available_languages import (
     ListAvailableLanguagesService,
 )
-from generic_ml_wrapper.application.usecase.list_axis_examples import ListAxisExamplesService
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsService
+from generic_ml_wrapper.application.usecase.list_environment_examples import (
+    ListEnvironmentExamplesService,
+)
+from generic_ml_wrapper.application.usecase.list_environments import ListEnvironmentsService
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
 from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsService
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasService
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsService
+from generic_ml_wrapper.application.usecase.list_role_examples import ListRoleExamplesService
+from generic_ml_wrapper.application.usecase.list_roles import ListRolesService
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesService
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsService
 from generic_ml_wrapper.application.usecase.list_supported_clients import (
@@ -240,6 +266,10 @@ from generic_ml_wrapper.application.usecase.read_application_settings import (
 from generic_ml_wrapper.application.usecase.save_init_answers import SaveInitAnswersService
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
+from generic_ml_wrapper.application.usecase.set_default_environment import (
+    SetDefaultEnvironmentService,
+)
+from generic_ml_wrapper.application.usecase.set_default_role import SetDefaultRoleService
 from generic_ml_wrapper.application.usecase.start_job import StartJobService
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
@@ -735,38 +765,90 @@ def build_list_supported_clients() -> ListSupportedClientsUseCase:
     return ListSupportedClientsService(TomlClientCatalogAdapter())
 
 
-def build_create_axis() -> CreateAxisUseCase:
-    """Build the CreateAxisUseCase use case wired to the filesystem catalog and config writer.
+def build_role_repository() -> FilesystemRoleRepositoryAdapter:
+    """Build the role repository over ``~/.gmlw/profile/roles``.
 
     Returns:
-        A ready-to-run CreateAxisUseCase, creating folders under ``~/.gmlw`` and, when asked,
-        pointing ``profile.default_<kind>`` at the new slug in ``config.toml``.
+        A ready-to-use repository, reading each role folder with the rules inside it.
     """
-    return CreateAxisService(
-        catalog=FilesystemAxisCatalogAdapter(paths.home),
-        writer=TomlkitConfigWriterAdapter(config.config_path),
-        clock=lambda: datetime.now(UTC).astimezone(),
+    return FilesystemRoleRepositoryAdapter(
+        paths.home, FilesystemRuleStore(), clock=lambda: datetime.now(UTC).astimezone()
     )
 
 
-def build_axis_catalog() -> AxisCatalogPort:
-    """Build the role/environment catalog reader over ``~/.gmlw``.
+def build_environment_repository() -> FilesystemEnvironmentRepositoryAdapter:
+    """Build the environment repository over ``~/.gmlw/environments``.
 
     Returns:
-        A ready-to-use :class:`AxisCatalogPort` for listing the axis slug-folders.
+        A ready-to-use repository, reading each environment folder with the rules inside it.
     """
-    return FilesystemAxisCatalogAdapter(paths.home)
+    return FilesystemEnvironmentRepositoryAdapter(
+        paths.home, FilesystemRuleStore(), clock=lambda: datetime.now(UTC).astimezone()
+    )
+
+
+def build_add_role() -> AddRoleUseCase:
+    """Build the AddRoleUseCase use case wired to the role repository.
+
+    Returns:
+        A ready-to-run AddRoleUseCase, creating a folder under ``~/.gmlw/profile/roles``.
+    """
+    return AddRoleService(build_role_repository())
+
+
+def build_add_environment() -> AddEnvironmentUseCase:
+    """Build the AddEnvironmentUseCase use case wired to the environment repository.
+
+    Returns:
+        A ready-to-run AddEnvironmentUseCase, creating a folder under ``~/.gmlw/environments``.
+    """
+    return AddEnvironmentService(build_environment_repository())
+
+
+def build_set_default_role() -> SetDefaultRoleUseCase:
+    """Build the SetDefaultRoleUseCase use case wired to the config writer.
+
+    Returns:
+        A ready-to-run SetDefaultRoleUseCase, pointing ``profile.default_role`` at a code.
+    """
+    return SetDefaultRoleService(TomlkitConfigWriterAdapter(config.config_path))
+
+
+def build_set_default_environment() -> SetDefaultEnvironmentUseCase:
+    """Build the SetDefaultEnvironmentUseCase use case wired to the config writer.
+
+    Returns:
+        A ready-to-run SetDefaultEnvironmentUseCase, pointing ``profile.default_environment``
+        at a code.
+    """
+    return SetDefaultEnvironmentService(TomlkitConfigWriterAdapter(config.config_path))
+
+
+def build_list_roles() -> ListRolesUseCase:
+    """Build the ListRolesUseCase use case over the user's role folders.
+
+    Returns:
+        A ready-to-run ListRolesUseCase, listing every stored role.
+    """
+    return ListRolesService(build_role_repository())
+
+
+def build_list_environments() -> ListEnvironmentsUseCase:
+    """Build the ListEnvironmentsUseCase use case over the user's environment folders.
+
+    Returns:
+        A ready-to-run ListEnvironmentsUseCase, listing every stored environment.
+    """
+    return ListEnvironmentsService(build_environment_repository())
 
 
 def build_list_rules() -> ListRulesUseCase:
     """Build the ListRulesUseCase use case for the TUI's Rules browser.
 
     Returns:
-        A ready-to-run ListRulesUseCase over the environment and role rule folders.
+        A ready-to-run ListRulesUseCase over the environment and role folders.
     """
-    return ListRulesService(
-        catalog=FilesystemRuleCatalogAdapter(paths.home, FilesystemAxisCatalogAdapter(paths.home))
-    )
+    return ListRulesService(build_environment_repository(), build_role_repository())
 
 
 def build_migrate_layout() -> MigrateLayoutUseCase:
@@ -1027,10 +1109,19 @@ def build_list_authoring_modes() -> ListAuthoringModesUseCase:
     return ListAuthoringModesService()
 
 
-def build_list_axis_examples() -> ListAxisExamplesUseCase:
-    """Build the ListAxisExamplesUseCase use case over the offered role/environment examples.
+def build_list_role_examples() -> ListRoleExamplesUseCase:
+    """Build the ListRoleExamplesUseCase use case over the packaged role examples.
 
     Returns:
-        A ready-to-ask ListAxisExamplesUseCase.
+        A ready-to-ask ListRoleExamplesUseCase.
     """
-    return ListAxisExamplesService()
+    return ListRoleExamplesService(JsonRoleExamplesRepositoryAdapter())
+
+
+def build_list_environment_examples() -> ListEnvironmentExamplesUseCase:
+    """Build the ListEnvironmentExamplesUseCase use case over the packaged environment examples.
+
+    Returns:
+        A ready-to-ask ListEnvironmentExamplesUseCase.
+    """
+    return ListEnvironmentExamplesService(JsonEnvironmentExamplesRepositoryAdapter())

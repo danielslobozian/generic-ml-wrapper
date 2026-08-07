@@ -16,18 +16,17 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_axis_chooser import TtyAxisChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_client_picker import (
     choose_client,
     report_no_client,
 )
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_environment_chooser import (
+    TtyEnvironmentChooser,
+)
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_persona_chooser import TtyPersonaChooser
+from generic_ml_wrapper.adapter.inbound.cli.setup.tty_role_chooser import TtyRoleChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_text_prompt import TtyTextPrompt
-from generic_ml_wrapper.application.domain.model.axis_prompt import (
-    ENVIRONMENT_PROMPT,
-    ROLE_PROMPT,
-)
 from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
 
 if TYPE_CHECKING:
@@ -36,6 +35,12 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
     from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
     from generic_ml_wrapper.application.domain.model.persona import Persona
+    from generic_ml_wrapper.application.port.inbound.list_environment_examples import (
+        ListEnvironmentExamplesUseCase,
+    )
+    from generic_ml_wrapper.application.port.inbound.list_role_examples import (
+        ListRoleExamplesUseCase,
+    )
     from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
 
 DEFAULT_ROLE = "default"
@@ -51,6 +56,8 @@ def run_interview(  # noqa: PLR0913  (one per question, plus what the no-client 
     clients: list[ListedClient],
     supported: tuple[ClientInfo, ...],
     system: str,
+    role_examples: ListRoleExamplesUseCase,
+    environment_examples: ListEnvironmentExamplesUseCase,
     localizer_for: Callable[[str], MessageSource],
     seed: MessageSource,
 ) -> InitAnswers | None:
@@ -64,6 +71,8 @@ def run_interview(  # noqa: PLR0913  (one per question, plus what the no-client 
         clients: Every supported client with its installed-ness and version.
         supported: Every supported client, for the install commands on the exit path.
         system: The OS name, so those commands are the right ones.
+        role_examples: Supplies the roles offered as starting points.
+        environment_examples: Supplies the environments offered as starting points.
         localizer_for: Builds the catalogue for the chosen language.
         seed: The catalogue the language question itself is asked in -- the language is
             not chosen yet, which is why every language is offered under its own name.
@@ -80,9 +89,8 @@ def run_interview(  # noqa: PLR0913  (one per question, plus what the no-client 
         return None
 
     name = TtyTextPrompt(loc).ask(loc.t("init.name.header"), default_name, loc)
-    axes = TtyAxisChooser(loc)
-    role = axes.choose(ROLE_PROMPT, DEFAULT_ROLE, loc)
-    environment = axes.choose(ENVIRONMENT_PROMPT, DEFAULT_ENVIRONMENT, loc)
+    role = TtyRoleChooser(loc, role_examples).choose(DEFAULT_ROLE, loc)
+    environment = TtyEnvironmentChooser(loc, environment_examples).choose(DEFAULT_ENVIRONMENT, loc)
     persona = TtyPersonaChooser(loc).choose(personas, loc)
     client = choose_client(clients, loc)
     if client is None:  # declined at the last step: nothing to configure

@@ -2,7 +2,7 @@
 
 The mental model behind `gmlw`, in one place. Read this once, before the task-oriented
 [User guide](USER_GUIDE.md) or the reference docs — the pieces here (job, workflow,
-the four context axes, rules, why clients differ) recur across every other doc, and
+the four context sources, rules, why clients differ) recur across every other doc, and
 this is where each is explained in full rather than re-derived.
 
 ## The job model
@@ -24,7 +24,7 @@ you author once and launch a job with, so you don't re-explain standing instruct
 every session. `gmlw start <job>` with no workflow is already the whole wrapper —
 metered, recorded, status-lined. See [WORKFLOWS.md](WORKFLOWS.md) for authoring one.
 
-`run <workflow>` vs `start <job> -w <workflow>` is the other axis worth naming: `start`
+`run <workflow>` vs `start <job> -w <workflow>` is the other distinction worth naming: `start`
 enters a job you return to; `run` launches a *recurring procedure* whose job is named
 after the workflow itself (`gmlw help start-vs-run` from the CLI covers the same
 ground).
@@ -33,10 +33,10 @@ ground).
 <img src="images/gmlw-help.gif" alt="gmlw help — the built-in concept explainer" width="760">
 </div>
 
-## The four context axes
+## The four context sources
 
 Beyond metering, `gmlw` composes a portable operating context for the client from four
-independent axes:
+independent sources:
 
 - **Me** — who you are, invariant across every launch (`profile/me/`, including the
   `learned` notebook your tools mirror into — negatives ["what to avoid"] are
@@ -58,10 +58,10 @@ the `[startup.<mode>]` matrix — see [CONFIGURATION.md](CONFIGURATION.md).
 
 A **rule** is a reusable reflex you've demanded — a standard held on every future run,
 not a one-off decision about a single task. Because a rule is a projection of *you*, it
-lives on exactly one of the two axes above that describe you, never globally and never
+lives on exactly one of the two above that describe you, never globally and never
 per-workflow:
 
-| Axis | Folder | What belongs there |
+| Where | Folder | What belongs there |
 | --- | --- | --- |
 | Environment | `~/.gmlw/environments/<env>/rules/` | Constraints of the place — how docs are written here, how a service is built, the house lint config. Not your taste; it stops applying elsewhere. |
 | Role | `~/.gmlw/profile/roles/<role>/rules/` | Your own preferences about the craft — design patterns, how you approach code. They travel with you. |
@@ -69,7 +69,7 @@ per-workflow:
 At the moment a rule is born, exactly one environment and one role are active, so the
 choice is always between two concrete folders. When the two conflict, the
 **environment wins** — a constraint is not overridden by a preference. Within one
-axis, an explicit `Precedence: <n>` decides (higher wins).
+one, an explicit `Precedence: <n>` decides (higher wins).
 
 A rule is **active from the moment it is recorded** — you demanded it, so it applies
 immediately. Setting `status: draft` is your own off-switch, for retiring a rule later
@@ -79,7 +79,7 @@ fixed in the workflow itself, not patched by a rule beside it.
 
 Rule capture is **always-on**, in any session — not only inside a workflow. When
 you're dissatisfied with something and want it to never recur, the client offers to
-record the rule for you: proposing an axis (and letting you redirect it), reading your
+record the rule for you: proposing where it belongs (and letting you redirect it), reading your
 existing rules first so it updates or supersedes a match instead of stacking a
 near-duplicate, and — when the rule is mechanically enforceable — offering to realise
 it as a small script or check rather than a standing reminder.

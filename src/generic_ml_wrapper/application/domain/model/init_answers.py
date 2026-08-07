@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
+    from generic_ml_wrapper.application.domain.model.environment import Environment
+    from generic_ml_wrapper.application.domain.model.role import Role
 
 
 @dataclass(frozen=True)
@@ -21,16 +22,16 @@ class InitAnswers:
     Attributes:
         language: The language code gmlw will speak.
         name: The name the companion addresses the user by.
-        role: The resolved role -- slug, label and description.
-        environment: The resolved environment -- slug, label and description.
+        role: The resolved role -- code, label and description.
+        environment: The resolved environment -- code, label and description.
         persona: The chosen persona, or ``None`` to leave the companion off.
         client: The chosen default client.
     """
 
     language: str
     name: str
-    role: AxisSelection
-    environment: AxisSelection
+    role: Role
+    environment: Environment
     persona: str | None
     client: str
 

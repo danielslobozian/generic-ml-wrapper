@@ -372,17 +372,17 @@ class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
         return "\n\n".join(parts)
 
     def _rules_group(self, settings: dict[str, config.SourceSetting]) -> str:
-        """Compose the rule-capture directive and the two axis-scoped rule sets.
+        """Compose the rule-capture directive and the role's and environment's rule sets.
 
-        Rules are a projection of the user, so they live on the two axes that describe
-        one: the environment (the place) and the role (the craft). When either axis is
+        Rules are a projection of the user, so they live on the two things that describe
+        one: the environment (the place) and the role (the craft). When either is
         active the section leads with the capture directive (gmlw's voice) so a demanded
         correction becomes a draft rule in any session — even one with no rules yet. The
         directive stays verbatim; only the user's rule content is subject to compression.
 
-        Activation governs *loading*, not authoring: an axis switched off for this mode
+        Activation governs *loading*, not authoring: a side switched off for this mode
         still names a real folder, and a rule written there loads in the sessions where
-        that axis is on. So the directive offers both axes whenever it is shown at all.
+        that side is on. So the directive offers both whenever it is shown at all.
         """
         env_setting = settings[context_source.RULES_ENVIRONMENT.key]
         role_setting = settings[context_source.RULES_ROLE.key]

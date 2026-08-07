@@ -118,7 +118,7 @@ rule, and any rule the user has switched off with `status: draft` is skipped ent
 ## Rules
 
 See [CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (the environment
-vs role axis, `status: draft`, `Precedence`, always-on capture). The one thing specific
+vs role, `status: draft`, `Precedence`, always-on capture). The one thing specific
 to workflows: there is **no per-workflow rule tier**. A workflow that behaves wrongly
 is fixed in the workflow's own `workflow.md`, not patched by a rule beside it — rules
 describe the user, not a procedure.

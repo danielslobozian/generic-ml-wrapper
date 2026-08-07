@@ -9,7 +9,7 @@ notices about the user). The format is trimmed to fields that fit any job:
 ``Precedence``). ``Origin`` is provenance for the user and is stripped before the
 model; the rest reach it.
 
-A rule is a projection of the *user*, so it lives on one of the two axes that describe
+A rule is a projection of the *user*, so it lives on one of the two things that describe
 them: the **environment** (the place — its processes and standards) or the **role**
 (the craft — how the work is done, wherever it happens). There is no global tier and
 no workflow tier: a workflow that behaves wrongly is fixed in the workflow itself.
@@ -57,7 +57,8 @@ DIRECTIVE_TEMPLATE = """\
 The user keeps rules that gmlw reads into every AI tool they use, so a standard held in
 one client holds in all of them. Their active rules, if any, are included with this note.
 
-A rule lives on one of two axes, and this session has one of each active:
+A rule lives on either the environment or the role, and this session has one of each
+active:
 
 - **environment — `{environment}`** — a **constraint**, set by the company, the project, or
   the tooling: how documentation is written here, how a particular service is built, how the
@@ -68,7 +69,8 @@ A rule lives on one of two axes, and this session has one of each active:
   them wherever they work.
 
 When the two conflict, the environment rule wins: a constraint is not overridden by a
-preference. Within a single axis, an explicit `Precedence:` number decides.
+preference. Within the environment, or within the role, an explicit `Precedence:` number
+decides.
 
 There is no general or per-workflow rule. If a workflow behaves wrongly, fix the workflow.
 
@@ -79,11 +81,12 @@ rule, but a one-off decision often encodes a reflex underneath — extract the r
 the specifics. Offer, don't impose: one line, and only when the reflex is genuinely durable
 and reusable.
 
-Work out which axis it belongs to and say which you propose and why — but the choice is the
+Work out which of the two it belongs to and say which you propose and why — but the choice
+is the
 user's, so let them redirect it. When you genuinely cannot tell, ask rather than guess: a
-rule filed on the wrong axis is silently absent from every session that does not use it.
+rule filed on the wrong one is silently absent from every session that does not use it.
 
-Before writing one, read the existing rules on the axis you are about to write to (drafts
+Before writing one, read the existing rules on the side you are about to write to (drafts
 included). If one already covers this, update or supersede that file in place rather than
 stacking a near-duplicate — the same way you correct the learned notebook on a contradiction
 instead of piling a second, conflicting note on top.
@@ -94,7 +97,7 @@ If it is, offer to realise it as a small script or check the user can run, not j
 reminder — faster and reliable. Offer the code, leave the judgment rules as prose, and get the
 user's OK before writing either.
 
-Write the new rule as `<slug>.rule.md` in the folder for the chosen axis:
+Write the new rule as `<code>.rule.md` in the folder for the one you chose:
 
 - environment → `{environment_dir}`
 - role → `{role_dir}`
