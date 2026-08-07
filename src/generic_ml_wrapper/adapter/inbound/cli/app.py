@@ -11,7 +11,7 @@ import sys
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
@@ -27,9 +27,6 @@ from generic_ml_wrapper.application.domain.model.archive_unreadable_error import
     ArchiveUnreadableError,
 )
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
-from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
-from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
-from generic_ml_wrapper.application.domain.model.axis_label_error import AxisLabelError
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
 )
@@ -39,6 +36,9 @@ from generic_ml_wrapper.application.domain.model.credentials_unusable_error impo
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.env_var_name import EnvVarName
+from generic_ml_wrapper.application.domain.model.environment_code_already_exists_error import (
+    EnvironmentCodeAlreadyExistsError,
+)
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.invalid_setting_value_error import (
     InvalidSettingValueError,
@@ -58,7 +58,16 @@ from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
     ResumeNotSupportedError,
 )
+from generic_ml_wrapper.application.domain.model.role_code_already_exists_error import (
+    RoleCodeAlreadyExistsError,
+)
 from generic_ml_wrapper.application.domain.model.slug_migration_report import SlugMigrationReport
+from generic_ml_wrapper.application.domain.model.uncodable_environment_label_error import (
+    UncodableEnvironmentLabelError,
+)
+from generic_ml_wrapper.application.domain.model.uncodable_role_label_error import (
+    UncodableRoleLabelError,
+)
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import UnknownSettingError
 from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
@@ -68,9 +77,12 @@ from generic_ml_wrapper.application.domain.model.workflow_name_error import Work
 from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
     WorkflowNotFoundError,
 )
+from generic_ml_wrapper.application.port.inbound.add_environment_command import (
+    AddEnvironmentCommand,
+)
+from generic_ml_wrapper.application.port.inbound.add_role_command import AddRoleCommand
 from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
-from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
 from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
 from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
 from generic_ml_wrapper.application.port.inbound.init_outcome import InitOutcome
@@ -82,6 +94,12 @@ from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewW
 from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
 from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
 from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
+from generic_ml_wrapper.application.port.inbound.set_default_environment_command import (
+    SetDefaultEnvironmentCommand,
+)
+from generic_ml_wrapper.application.port.inbound.set_default_role_command import (
+    SetDefaultRoleCommand,
+)
 from generic_ml_wrapper.application.port.inbound.set_outcome import SetOutcome
 from generic_ml_wrapper.application.port.inbound.setting_view import SettingView
 from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
@@ -90,8 +108,9 @@ from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
 from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
 from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
+    build_add_environment,
+    build_add_role,
     build_application_settings,
-    build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
     build_check_for_update,
@@ -99,7 +118,6 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_check_store_contract,
     build_compose_statusline,
     build_config_commands,
-    build_create_axis,
     build_delete_jobs,
     build_delete_sessions,
     build_describe_build,
@@ -113,10 +131,14 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_available_languages,
     build_list_clients,
     build_list_drafts,
+    build_list_environment_examples,
+    build_list_environments,
     build_list_jobs,
     build_list_launch_clients,
     build_list_personas,
     build_list_plugins,
+    build_list_role_examples,
+    build_list_roles,
     build_list_rules,
     build_list_sessions,
     build_list_supported_clients,
@@ -129,6 +151,8 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_save_init_answers,
     build_save_usage_report,
     build_set_credential,
+    build_set_default_environment,
+    build_set_default_role,
     build_start_job,
     build_workflow_chooser,
     default_user_name,
@@ -477,24 +501,26 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     creds_set.add_argument("name", help=i18n.t("cli.arg.creds_name"))
 
     _add_config_parser(sub)
-    _add_axis_parsers(sub)
+    _add_role_and_environment_parsers(sub)
     _add_help_parser(sub)
     return parser
 
 
-def _add_axis_parsers(sub: _SubParsers) -> None:
+def _add_role_and_environment_parsers(sub: _SubParsers) -> None:
     """Add the ``environment`` and ``role`` commands (each with a ``new`` action)."""
-    # Keyed per axis rather than interpolating a noun into one sentence: "create and
+    # Keyed per side rather than interpolating a noun into one sentence: "create and
     # manage {noun}s" only pluralises in English, and French needs its own article and
-    # agreement per axis. Two axes is few enough to spell out honestly.
+    # agreement for each. Two of them is few enough to spell out honestly.
     for command in ("environment", "role"):
         parser = sub.add_parser(command, help=i18n.t(f"cli.cmd.{command}"))
         action = parser.add_subparsers(
             dest=f"{command}_command", metavar=i18n.t("cli.metavar.action")
         )
         new = action.add_parser("new", help=i18n.t(f"cli.cmd.{command}_new"))
-        new.add_argument("label", help=i18n.t("cli.arg.axis_label"))
-        new.add_argument("--description", default="", help=i18n.t("cli.flag.axis_description"))
+        new.add_argument("label", help=i18n.t(f"cli.arg.{command}.label"))
+        new.add_argument(
+            "--description", default="", help=i18n.t(f"cli.flag.{command}.description")
+        )
         new.add_argument(
             "--default",
             action="store_true",
@@ -1037,9 +1063,9 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command == "config":
             return _config(args)
         if args.command == "environment":
-            return _axis(AxisKind.ENVIRONMENT, args.environment_command, args)
+            return _environment(args.environment_command, args)
         if args.command == "role":
-            return _axis(AxisKind.ROLE, args.role_command, args)
+            return _role(args.role_command, args)
         # The delete sub-actions of the two list commands. Ahead of `_view`, which is for
         # reads: these write, and answer with an exit code rather than a rendered view.
         if args.command == "jobs" and args.jobs_command == "delete":
@@ -1080,9 +1106,9 @@ def _announce_init(outcome: InitOutcome) -> None:
                 language=outcome.language,
                 name=outcome.name,
                 role=outcome.role.label,
-                role_slug=outcome.role.slug,
+                role_code=outcome.role.code,
                 environment=outcome.environment.label,
-                environment_slug=outcome.environment.slug,
+                environment_code=outcome.environment.code,
             ),
             file=sys.stderr,
         )
@@ -1166,6 +1192,8 @@ def _run_init() -> int:
         clients=build_list_clients().execute(),
         supported=build_list_supported_clients().execute(),
         system=platform_name(),
+        role_examples=build_list_role_examples(),
+        environment_examples=build_list_environment_examples(),
         localizer_for=load_localizer,
         seed=seed_localizer(),
     )
@@ -1705,14 +1733,16 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     # The config switchers (browsers that mutate config in place, no hand-off): each fetches
     # its options + current value and injects an ``apply`` setter and, for the folder-backed
-    # axes, a ``create``. The app stays pure -- the wiring owns every outbound call.
+    # ones, a ``create``. The app stays pure -- the wiring owns every outbound call.
     config_commands = build_config_commands()
-    catalog = build_axis_catalog()
 
     t = i18n.active().t
 
     def _switcher(
-        label_key: str, key: str, choices: list[SwitchChoice], kind: AxisKind | None = None
+        label_key: str,
+        key: str,
+        choices: list[SwitchChoice],
+        create: Callable[[str], CreateOutcome] | None = None,
     ) -> Switcher:
         current = config_commands.get(key).value
         crumb = f"gmlw > {t('tui.config')} > {t(label_key)}"
@@ -1721,40 +1751,53 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             changed = config_commands.set(key, value).changed
             return t("tui.switch.set" if changed else "tui.switch.unchanged", value=value)
 
-        def create(label: str) -> CreateOutcome:
-            try:  # create + make it the default, so "New" from the switcher also switches
-                result = build_create_axis().execute(
-                    CreateAxisCommand(kind=cast(AxisKind, kind), label=label, make_default=True)
-                )
-            except AxisLabelError:
-                return CreateOutcome(None, t("tui.create.bad"))
-            except AxisExistsError:
-                return CreateOutcome(None, t("tui.create.exists"))
-            return CreateOutcome(SwitchChoice(result.slug, result.label, ""), "")
-
         return Switcher(
             crumb=crumb,
             choices=choices,
             current=current if isinstance(current, str) else None,
             apply=apply,
-            create=None if kind is None else create,
+            create=create,
+        )
+
+    def _create_role(label: str) -> CreateOutcome:
+        try:  # add + make it the default, so "New" from the switcher also switches
+            result = build_add_role().execute(AddRoleCommand(label=label))
+        except UncodableRoleLabelError:
+            return CreateOutcome(None, t("tui.create.bad"))
+        except RoleCodeAlreadyExistsError:
+            return CreateOutcome(None, t("tui.create.exists"))
+        build_set_default_role().execute(SetDefaultRoleCommand(code=result.role.code))
+        return CreateOutcome(SwitchChoice(result.role.code, result.role.label, ""), "")
+
+    def _create_environment(label: str) -> CreateOutcome:
+        try:  # add + make it the default, so "New" from the switcher also switches
+            result = build_add_environment().execute(AddEnvironmentCommand(label=label))
+        except UncodableEnvironmentLabelError:
+            return CreateOutcome(None, t("tui.create.bad"))
+        except EnvironmentCodeAlreadyExistsError:
+            return CreateOutcome(None, t("tui.create.exists"))
+        build_set_default_environment().execute(
+            SetDefaultEnvironmentCommand(code=result.environment.code)
+        )
+        return CreateOutcome(
+            SwitchChoice(result.environment.code, result.environment.label, ""), ""
         )
 
     personas = [
         SwitchChoice(p.name, p.name, p.description) for p in build_list_personas().execute()
     ]
     environments = [
-        SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ENVIRONMENT)
+        SwitchChoice(e.code, e.label, e.description) for e in build_list_environments().execute()
     ]
-    roles = [SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ROLE)]
+    roles = [SwitchChoice(r.code, r.label, r.description) for r in build_list_roles().execute()]
 
     switchers: dict[str, Switcher] = {}
     if personas:
         switchers["persona"] = _switcher("tui.cfg.persona", "companion.persona", personas)
     switchers["environment"] = _switcher(
-        "tui.cfg.environment", "profile.default_environment", environments, AxisKind.ENVIRONMENT
+        "tui.cfg.environment", "profile.default_environment", environments, _create_environment
     )
-    switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, AxisKind.ROLE)
+    switchers["role"] = _switcher("tui.cfg.role", "profile.default_role", roles, _create_role)
 
     # Config Get/Set: the settings snapshot + a setter, injected like the switchers. The picker
     # reads the snapshot; a set goes through the same ConfigCommandsUseCase.set that
@@ -2061,35 +2104,72 @@ def _print_exit_receipt(result: StartJobResult) -> None:
         print(tip, file=sys.stderr)
 
 
-def _axis(kind: AxisKind, subcommand: str | None, args: argparse.Namespace) -> int:
-    """Create a role/environment from a typed label (``environment new`` / ``role new``).
+def _role(subcommand: str | None, args: argparse.Namespace) -> int:
+    """Create a role from a typed label (``role new``).
+
+    Making it the default is a second use case, called here: adding a role and choosing
+    the default are two jobs, and one command asking for both does not make them one.
 
     Args:
-        kind: Which axis this command creates.
         subcommand: The chosen sub-action (only ``new`` today; ``None`` is handled upstream
             by the incomplete-command help).
         args: The parsed arguments (label, description, make_default).
 
     Returns:
-        ``0`` on success, ``2`` on a bad label or an existing slug.
+        ``0`` on success, ``2`` on an uncodable label or a code already taken.
     """
     if subcommand != "new":
         return 0
     try:
-        result = build_create_axis().execute(
-            CreateAxisCommand(
-                kind=kind,
-                label=args.label,
-                description=args.description,
-                make_default=bool(args.make_default),
-            )
+        result = build_add_role().execute(
+            AddRoleCommand(label=args.label, description=args.description)
         )
-    except (AxisLabelError, AxisExistsError) as error:
+    except (UncodableRoleLabelError, RoleCodeAlreadyExistsError) as error:
         print(_render_error(error), file=sys.stderr)
         return 2
-    print(i18n.t("axis.created", kind=kind.value, label=result.label, slug=result.slug))
-    if result.made_default:
-        print(i18n.t("axis.made_default", kind=kind.value, slug=result.slug))
+    print(i18n.t("role.created", label=result.role.label, code=result.role.code))
+    if args.make_default:
+        build_set_default_role().execute(SetDefaultRoleCommand(code=result.role.code))
+        print(i18n.t("role.made_default", code=result.role.code))
+    return 0
+
+
+def _environment(subcommand: str | None, args: argparse.Namespace) -> int:
+    """Create an environment from a typed label (``environment new``).
+
+    Making it the default is a second use case, called here: adding an environment and
+    choosing the default are two jobs, and one command asking for both does not make
+    them one.
+
+    Args:
+        subcommand: The chosen sub-action (only ``new`` today; ``None`` is handled upstream
+            by the incomplete-command help).
+        args: The parsed arguments (label, description, make_default).
+
+    Returns:
+        ``0`` on success, ``2`` on an uncodable label or a code already taken.
+    """
+    if subcommand != "new":
+        return 0
+    try:
+        result = build_add_environment().execute(
+            AddEnvironmentCommand(label=args.label, description=args.description)
+        )
+    except (UncodableEnvironmentLabelError, EnvironmentCodeAlreadyExistsError) as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    print(
+        i18n.t(
+            "environment.created",
+            label=result.environment.label,
+            code=result.environment.code,
+        )
+    )
+    if args.make_default:
+        build_set_default_environment().execute(
+            SetDefaultEnvironmentCommand(code=result.environment.code)
+        )
+        print(i18n.t("environment.made_default", code=result.environment.code))
     return 0
 
 

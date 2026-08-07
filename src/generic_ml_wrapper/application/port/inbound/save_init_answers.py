@@ -16,8 +16,8 @@ class SaveInitAnswersUseCase(ABC):
     """Persist the settled answers and report what the install became.
 
     All that is left of the old interview use case. Asking, defaulting, re-asking and
-    rendering were the terminal's and have gone there; resolving an axis answer to a
-    slug and writing the layout were always this layer's.
+    rendering were the terminal's and have gone there; persisting the chosen role and
+    environment and writing the layout were always this layer's.
     """
 
     @abstractmethod

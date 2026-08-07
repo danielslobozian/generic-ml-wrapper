@@ -35,9 +35,11 @@ from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
-from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
-from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
+from generic_ml_wrapper.application.domain.model.environment import Environment
+from generic_ml_wrapper.application.domain.model.role import Role
+from generic_ml_wrapper.application.domain.model.rule import Rule
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.port.inbound.list_rules_result import ListRulesResult
 from generic_ml_wrapper.application.wiring import localization as i18n
 
 
@@ -81,9 +83,9 @@ def _no_clients() -> list[ClientChoice]:
     return []
 
 
-def _no_rules() -> tuple[RuleGroup, ...]:
-    """Default rule catalogue when the app runs unwired (tests): the user has none."""
-    return ()
+def _no_rules() -> ListRulesResult:
+    """Default rule listing when the app runs unwired (tests): the user has none."""
+    return ListRulesResult(environments=(), roles=())
 
 
 def _no_save(_job: str) -> str:
@@ -219,7 +221,7 @@ class SwitchChoice:
     """One option in a switcher: the config ``value`` written, plus what the user sees.
 
     For personas ``value`` and ``label`` are both the persona name; for the folder-backed
-    axes ``value`` is the slug (what's stored) and ``label`` is the human name (what's shown).
+    ones ``value`` is the code (what's stored) and ``label`` is the human name (what's shown).
     """
 
     value: str
@@ -247,7 +249,7 @@ class Switcher:
     Mutable because ``current`` moves as the user switches. ``apply`` persists the chosen
     value; ``create`` (when set) creates a new option from a typed label and makes it
     current. Both are the only outbound calls, injected by the wiring so the app stays free
-    of use-case imports. ``create`` is ``None`` for axes that cannot be created (personas).
+    of use-case imports. ``create`` is ``None`` for options that cannot be created.
     """
 
     crumb: str
@@ -404,8 +406,29 @@ _TOP_MENU = (
     ("📏", "tui.rules", "menu:rules", ""),
     ("🚪", "tui.quit", "quit", ""),
 )
-# The icon per rule axis, so a group reads as a place or a craft at a glance.
-_AXIS_ICON = {RuleAxis.ENVIRONMENT: "🌍", RuleAxis.ROLE: "🎓"}
+# The icons, so a row reads as a place or a craft at a glance.
+_ENVIRONMENT_ICON = "🌍"
+_ROLE_ICON = "🎓"
+
+
+def _rule_rows(rules: tuple[Rule, ...]) -> list[_Item]:
+    """One row per rule: its code, the instruction itself, and its status."""
+    t = i18n.active().t
+    rows: list[_Item] = []
+    for rule in rules:
+        status = t("tui.rules.draft") if rule.draft else t("tui.rules.active")
+        if rule.strength:
+            status = f"{status} · {rule.strength}"
+        rows.append(
+            _Item(
+                "📝" if rule.draft else "📏",
+                rule.code,
+                rule.rule or t("tui.rules.norule"),
+                "rules:rule",
+                note=f"{status}\n{rule.when}" if rule.when else status,
+            )
+        )
+    return rows
 
 
 def _wf_display(flow: Workflow) -> tuple[str, str]:
@@ -1181,7 +1204,7 @@ class SwitcherScreen(_MenuScreen):
     A *browser* -- unlike the launchers, it stays in the TUI. Selecting a row calls the
     switcher's injected ``apply`` (which persists the config key), moves the dot in place,
     and confirms in the detail panel. No client is launched; no terminal hand-off. It shows
-    each option's ``label`` but sets its ``value`` (slug for the folder-backed axes).
+    each option's ``label`` but sets its ``value`` (the code for the folder-backed ones).
     """
 
     def __init__(self, key: str) -> None:
@@ -2318,7 +2341,7 @@ class ConfigListScreen(Screen[None]):
 
 
 class RulesMenuScreen(_MenuScreen):
-    """The rule axes that actually hold rules — nothing to walk into that would be empty.
+    """The two sides that actually hold rules — nothing to walk into that would be empty.
 
     A user with no rules yet sees the empty hint rather than two barren branches, because
     rules are not authored here: they are captured mid-session, active immediately, and land
@@ -2332,78 +2355,114 @@ class RulesMenuScreen(_MenuScreen):
         return f"gmlw > {i18n.active().t('tui.rules')}"
 
     def menu_items(self) -> list[_Item]:
-        """One row per axis holding at least one populated group."""
+        """One row for the environments and one for the roles, when either holds rules."""
         t = i18n.active().t
+        found = self.menu_app.list_rules()
         rows: list[_Item] = []
-        for axis in RuleAxis:
-            groups = [g for g in self.menu_app.rule_groups() if g.axis is axis]
-            if not groups:
-                continue
-            drafts = sum(g.draft_count for g in groups)
+        if found.environments:
+            drafts = sum(e.draft_count for e in found.environments)
             rows.append(
                 _Item(
-                    _AXIS_ICON[axis],
-                    t(f"tui.rules.axis.{axis.value}"),
-                    t(f"tui.rules.axis.{axis.value}.d"),
-                    f"rules:axis:{axis.value}",
+                    _ENVIRONMENT_ICON,
+                    t("tui.rules.environment.label"),
+                    t("tui.rules.environment.description"),
+                    "rules:environments",
+                    note=t("tui.rules.drafts", count=drafts) if drafts else "",
+                )
+            )
+        if found.roles:
+            drafts = sum(r.draft_count for r in found.roles)
+            rows.append(
+                _Item(
+                    _ROLE_ICON,
+                    t("tui.rules.role.label"),
+                    t("tui.rules.role.description"),
+                    "rules:roles",
                     note=t("tui.rules.drafts", count=drafts) if drafts else "",
                 )
             )
         return rows
 
     def handle(self, item: _Item) -> None:
-        """Open the chosen axis's groups."""
-        _, _, value = item.action.rpartition(":")
-        self.menu_app.push_screen(RuleAxisScreen(RuleAxis(value)))
+        """Open the environments or the roles."""
+        if item.action == "rules:environments":
+            self.menu_app.push_screen(EnvironmentRulesScreen())
+        elif item.action == "rules:roles":
+            self.menu_app.push_screen(RoleRulesScreen())
 
 
-class RuleAxisScreen(_MenuScreen):
-    """The environments (or roles) on one axis that hold rules."""
+class EnvironmentRulesScreen(_MenuScreen):
+    """The environments that hold rules."""
 
     empty_key = "tui.rules.none"
 
-    def __init__(self, axis: RuleAxis) -> None:
-        """Bind the screen to the axis whose groups it lists.
-
-        Args:
-            axis: The axis to browse.
-        """
-        super().__init__()
-        self._axis = axis
-
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Rules > <axis>."""
+        """Breadcrumb: gmlw > Rules > Environment."""
         t = i18n.active().t
-        return f"gmlw > {t('tui.rules')} > {t(f'tui.rules.axis.{self._axis.value}')}"
+        return f"gmlw > {t('tui.rules')} > {t('tui.rules.environment.label')}"
 
     def menu_items(self) -> list[_Item]:
-        """One row per populated group on this axis, labelled as the user named it."""
+        """One row per environment holding rules, labelled as the user named it."""
         t = i18n.active().t
         return [
             _Item(
-                _AXIS_ICON[group.axis],
-                group.label,
-                t("tui.rules.count", count=len(group.rules)),
-                f"rules:group:{group.slug}",
-                note=t("tui.rules.drafts", count=group.draft_count) if group.draft_count else "",
+                _ENVIRONMENT_ICON,
+                environment.label,
+                t("tui.rules.count", count=len(environment.rules)),
+                f"rules:environment:{environment.code}",
+                note=(
+                    t("tui.rules.drafts", count=environment.draft_count)
+                    if environment.draft_count
+                    else ""
+                ),
             )
-            for group in self.menu_app.rule_groups()
-            if group.axis is self._axis
+            for environment in self.menu_app.list_rules().environments
         ]
 
     def handle(self, item: _Item) -> None:
-        """Open the chosen group's rules."""
-        _, _, slug = item.action.rpartition(":")
-        group = next(
-            (g for g in self.menu_app.rule_groups() if g.axis is self._axis and g.slug == slug),
-            None,
+        """Open the chosen environment's rules."""
+        _, _, code = item.action.rpartition(":")
+        environment = next(
+            (e for e in self.menu_app.list_rules().environments if e.code == code), None
         )
-        if group is not None:
-            self.menu_app.push_screen(RuleListScreen(group))
+        if environment is not None:
+            self.menu_app.push_screen(EnvironmentRuleListScreen(environment))
 
 
-class RuleListScreen(_MenuScreen):
-    """One group's rules. Read-only: the detail panel shows the highlighted rule.
+class RoleRulesScreen(_MenuScreen):
+    """The roles that hold rules."""
+
+    empty_key = "tui.rules.none"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Rules > Role."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.rules')} > {t('tui.rules.role.label')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per role holding rules, labelled as the user named it."""
+        t = i18n.active().t
+        return [
+            _Item(
+                _ROLE_ICON,
+                role.label,
+                t("tui.rules.count", count=len(role.rules)),
+                f"rules:role:{role.code}",
+                note=t("tui.rules.drafts", count=role.draft_count) if role.draft_count else "",
+            )
+            for role in self.menu_app.list_rules().roles
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Open the chosen role's rules."""
+        _, _, code = item.action.rpartition(":")
+        role = next((r for r in self.menu_app.list_rules().roles if r.code == code), None)
+        if role is not None:
+            self.menu_app.push_screen(RoleRuleListScreen(role))
+
+
+class EnvironmentRuleListScreen(_MenuScreen):
+    """One environment's rules. Read-only: the detail panel shows the highlighted rule.
 
     A rule is active from creation; a draft is one the user has since switched off, and it
     is injected into no session. Both are listed and distinguished, because "which of these
@@ -2412,39 +2471,57 @@ class RuleListScreen(_MenuScreen):
 
     empty_key = "tui.rules.none"
 
-    def __init__(self, group: RuleGroup) -> None:
-        """Bind the screen to the group whose rules it lists.
+    def __init__(self, environment: Environment) -> None:
+        """Bind the screen to the environment whose rules it lists.
 
         Args:
-            group: The environment or role to browse.
+            environment: The environment to browse.
         """
         super().__init__()
-        self._group = group
+        self._environment = environment
 
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Rules > <axis> > <group label>."""
+        """Breadcrumb: gmlw > Rules > Environment > <label>."""
         t = i18n.active().t
-        axis = t(f"tui.rules.axis.{self._group.axis.value}")
-        return f"gmlw > {t('tui.rules')} > {axis} > {self._group.label}"
+        side = t("tui.rules.environment.label")
+        return f"gmlw > {t('tui.rules')} > {side} > {self._environment.label}"
 
     def menu_items(self) -> list[_Item]:
-        """One row per rule: its slug, the instruction itself, and its status."""
+        """One row per rule: its code, the instruction itself, and its status."""
+        return _rule_rows(self._environment.rules)
+
+    def handle(self, item: _Item) -> None:
+        """Rules are read-only here; the detail panel already shows the selection."""
+
+
+class RoleRuleListScreen(_MenuScreen):
+    """One role's rules. Read-only: the detail panel shows the highlighted rule.
+
+    A rule is active from creation; a draft is one the user has since switched off, and it
+    is injected into no session. Both are listed and distinguished, because "which of these
+    is actually live" is the question this screen exists to answer.
+    """
+
+    empty_key = "tui.rules.none"
+
+    def __init__(self, role: Role) -> None:
+        """Bind the screen to the role whose rules it lists.
+
+        Args:
+            role: The role to browse.
+        """
+        super().__init__()
+        self._role = role
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Rules > Role > <label>."""
         t = i18n.active().t
-        rows: list[_Item] = []
-        for rule in self._group.rules:
-            status = t("tui.rules.draft") if rule.draft else t("tui.rules.active")
-            if rule.strength:
-                status = f"{status} · {rule.strength}"
-            rows.append(
-                _Item(
-                    "📝" if rule.draft else "📏",
-                    rule.slug,
-                    rule.rule or t("tui.rules.norule"),
-                    "rules:rule",
-                    note=f"{status}\n{rule.when}" if rule.when else status,
-                )
-            )
-        return rows
+        side = t("tui.rules.role.label")
+        return f"gmlw > {t('tui.rules')} > {side} > {self._role.label}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per rule: its code, the instruction itself, and its status."""
+        return _rule_rows(self._role.rules)
 
     def handle(self, item: _Item) -> None:
         """Rules are read-only here; the detail panel already shows the selection."""
@@ -2498,7 +2575,7 @@ class MenuApp(App[MenuChoice | None]):
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
         workflows: list[Workflow] | None = None,
-        rules: Callable[[], tuple[RuleGroup, ...]] | None = None,
+        rules: Callable[[], ListRulesResult] | None = None,
         clients: Callable[[], list[ClientRow]] | None = None,
         set_default_client: Callable[[str], ConfigSetResult] | None = None,
         config: ConfigCatalog | None = None,
@@ -2562,7 +2639,7 @@ class MenuApp(App[MenuChoice | None]):
         self.save_usage = save_usage or _no_save
         self.workflows = workflows or []
         self.rules = rules or _no_rules
-        self._rule_cache: tuple[RuleGroup, ...] | None = None
+        self._rule_cache: ListRulesResult | None = None
         self.clients = clients
         self.set_default_client = set_default_client
         self.config = config
@@ -2582,12 +2659,12 @@ class MenuApp(App[MenuChoice | None]):
         if self.archiver is not None:
             self.workflows = self.archiver.reload_workflows()
 
-    def rule_groups(self) -> tuple[RuleGroup, ...]:
-        """The populated rule groups, read once and cached for the app's lifetime.
+    def list_rules(self) -> ListRulesResult:
+        """The environments and roles holding rules, read once and cached for the app's life.
 
-        Cached because every screen in the Rules tree asks for the whole catalogue to
-        filter it, and re-walking the rule folders on each cursor move would put disk I/O
-        on the keystroke path.
+        Cached because every screen in the Rules tree asks for the whole listing to filter
+        it, and re-walking the rule folders on each cursor move would put disk I/O on the
+        keystroke path.
 
         Returns:
             Every environment and role holding at least one rule.

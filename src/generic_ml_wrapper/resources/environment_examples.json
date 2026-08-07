@@ -1,0 +1,22 @@
+[
+  {
+    "code": "work",
+    "label": "init.environment.example.work.label",
+    "description": "init.environment.example.work.description"
+  },
+  {
+    "code": "home",
+    "label": "init.environment.example.home.label",
+    "description": "init.environment.example.home.description"
+  },
+  {
+    "code": "open-source",
+    "label": "init.environment.example.oss.label",
+    "description": "init.environment.example.oss.description"
+  },
+  {
+    "code": "personal-project",
+    "label": "init.environment.example.personal.label",
+    "description": "init.environment.example.personal.description"
+  }
+]

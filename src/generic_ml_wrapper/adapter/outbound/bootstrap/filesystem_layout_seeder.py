@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 # (created by `initialize` for the chosen env); the old profile/company is migrated into it.
 _DIRS = ("profile/me", "templates")
 _ENVIRONMENTS = "environments"
-# Rules are a projection of the user, so they live on the two axes that describe one: the
+# Rules are a projection of the user, so they live on the two things that describe one: the
 # environment (the place) and the role (the craft). InitUseCase seeds an empty rules/ drop-zone in
 # each of the chosen folders. There is no global tier and no per-workflow tier.
 _ROLES = "profile/roles"
@@ -135,7 +135,7 @@ __INIT_MARKER__
 __LANGUAGE_CODE__
 
 [profile]
-# The movie-set axes chosen at init: the role you play (a lens over `me`, not a copy of
+# The role and environment chosen at init: the role you play (a lens over `me`, not a copy of
 # it) and the environment the work happens in. Changeable later via the config commands.
 __DEFAULT_ROLE__
 __DEFAULT_ENVIRONMENT__
@@ -237,7 +237,7 @@ __COMPANION_PERSONA__
 # (record/replay — the same source replays for free). The prompt is chosen by the source's
 # data type; each is your IP (the repo ships none), so a source stays verbatim until a
 # prompt resolves for it. Kinds: human-touch (me.user + me.learned), technical (workflow
-# base + steps), rules (both rule axes); company/persona are verbatim.
+# base + steps), rules (role and environment); company/persona are verbatim.
 # adapter = "cursor"   # any generic-ml-cache client adapter / model / effort
 # model = "gpt-5.4"
 # effort = "low"
@@ -327,9 +327,9 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         """
         self._ensure_dirs()
         created = self._clock().isoformat()
-        # The chosen environment's slug-folder — the movie set the migration wraps company
-        # into — with its .about.toml recording the human label the slug came from.
-        env_dir = self._home / _ENVIRONMENTS / selections.environment.slug
+        # The chosen environment's folder — the movie set the migration wraps company
+        # into — with its .about.toml recording the human label the code came from.
+        env_dir = self._home / _ENVIRONMENTS / selections.environment.code
         # ...with an empty rules/ drop-zone: the place's own standards and processes.
         (env_dir / "rules").mkdir(parents=True, exist_ok=True)
         write_about(
@@ -337,7 +337,7 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         )
         # The chosen role's slug-folder, with an empty rules/ drop-zone: reflexes about the
         # craft, correct wherever the user is working.
-        role_dir = self._home / _ROLES / selections.role.slug
+        role_dir = self._home / _ROLES / selections.role.code
         (role_dir / "rules").mkdir(parents=True, exist_ok=True)
         write_about(role_dir, selections.role.label, selections.role.description, created)
         config = self._home / _CONFIG
@@ -348,8 +348,8 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
                 init_version=selections.version,
                 language=selections.language,
                 name=selections.name,
-                role=selections.role.slug,
-                environment=selections.environment.slug,
+                role=selections.role.code,
+                environment=selections.environment.code,
                 client=selections.client,
                 persona=selections.persona,
             ),
@@ -395,8 +395,8 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         settings: tuple[tuple[str, str, str | None], ...] = (
             ("init", "version", selections.version),
             ("language", "code", selections.language),
-            ("profile", "default_role", selections.role.slug),
-            ("profile", "default_environment", selections.environment.slug),
+            ("profile", "default_role", selections.role.code),
+            ("profile", "default_environment", selections.environment.code),
             ("companion", "name", selections.name),
             ("companion", "persona", selections.persona),
             ("client", "default", selections.client),

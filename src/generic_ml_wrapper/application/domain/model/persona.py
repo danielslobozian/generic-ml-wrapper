@@ -4,19 +4,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass, field
-from types import MappingProxyType
-
-
-def _no_dimensions() -> Mapping[str, str]:
-    """The default for a persona that declares no dimensions.
-
-    A plain ``MappingProxyType({})`` class-level default is rejected by Python 3.11's
-    dataclass field check (fixed in 3.12+, but 3.11 is still a supported floor) — a
-    ``default_factory`` sidesteps that check entirely, on every supported version.
-    """
-    return MappingProxyType({})
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -30,14 +18,9 @@ class Persona:
             ``{repo_note}`` slots the wrapper fills from live facts (free, no tokens).
         body: The tone block injected into the client's context when the persona
             source is active (identity, do/don't).
-        dimensions: The declared tone axes (``Warmth``, ``Verbosity``, ``Formality``,
-            ``Proactivity``) mapped to their level. Declared in frontmatter rather than
-            the body, so they name the axes for evaluation without spending context on
-            every turn. Empty for a persona that declares none.
     """
 
     name: str
     description: str
     greeting: str
     body: str
-    dimensions: Mapping[str, str] = field(default_factory=_no_dimensions)

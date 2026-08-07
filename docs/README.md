@@ -6,7 +6,7 @@ Where to look, in the order most people need it.
 
 - **[../README.md](../README.md)** — what `gmlw` is, why it exists, and how to install it.
 - **[CONCEPTS.md](CONCEPTS.md)** — the mental model: job → session → turn, the four
-  context axes (me/role/environment/persona), rules, and why clients differ in what
+  context sources (me/role/environment/persona), rules, and why clients differ in what
   they can do. Read this before the guides below — they build on it rather than
   re-explaining it.
 

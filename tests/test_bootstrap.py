@@ -8,7 +8,8 @@ from pathlib import Path
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
     FilesystemLayoutSeederAdapter,
 )
-from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
+from generic_ml_wrapper.application.domain.model.environment import Environment
+from generic_ml_wrapper.application.domain.model.role import Role
 from generic_ml_wrapper.application.port.outbound.init_persist import InitPersist
 from generic_ml_wrapper.application.port.outbound.init_selections import InitSelections
 from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
@@ -117,8 +118,8 @@ def test_initialize_writes_a_full_config_on_a_fresh_install(tmp_path: Path) -> N
             version="0.4.0",
             language="fr",
             name="Daniel",
-            role=AxisSelection("engineer", "Engineer", "Engineer"),
-            environment=AxisSelection("work", "Work", "Work"),
+            role=Role("engineer", "Engineer", "Engineer"),
+            environment=Environment("work", "Work", "Work"),
             persona="butler",
             client="claude",
         )
@@ -160,8 +161,8 @@ def test_initialize_merges_every_answer_into_a_legacy_config(tmp_path: Path) -> 
             version="0.4.0",
             language="fr",
             name="Daniel",
-            role=AxisSelection("engineer", "Engineer", "Engineer"),
-            environment=AxisSelection("work", "Work", "Work"),
+            role=Role("engineer", "Engineer", "Engineer"),
+            environment=Environment("work", "Work", "Work"),
             persona="butler",
             client="claude",
         )
@@ -197,8 +198,8 @@ def test_initialize_does_not_clear_settings_when_persona_or_client_declined(
             version="0.4.0",
             language="en",
             name="Ada",
-            role=AxisSelection("default", "Default", "Default"),
-            environment=AxisSelection("work", "Work", "Work"),
+            role=Role("default", "Default", "Default"),
+            environment=Environment("work", "Work", "Work"),
             persona=None,  # declined — must not clear the existing persona
             client=None,  # none chosen — must not clear the existing default
         )

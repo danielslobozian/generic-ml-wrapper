@@ -272,7 +272,7 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
 - **Rule capture (always-on):** the `rules` stage leads with a fixed capture directive
   (gmlw's voice, verbatim) whenever the source is active — on by default in every mode,
   including a plain start — so a demanded correction becomes a rule in any session, filed
-  on the environment or role axis, deduped against the existing rules, and, when
+  on the environment or the role, deduped against the existing rules, and, when
   mechanically enforceable, offered as a script rather than a reminder.
 - **Rule cleaning (always, lossless):** drop each rule's YAML frontmatter and the
   human-only `Origin` / `Notes` sections; skip rules the user has switched off with

@@ -21,15 +21,16 @@ from generic_ml_wrapper.adapter.outbound.config import toml_config_reader
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
 )
-from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
-from generic_ml_wrapper.application.domain.model.axis_kind import AxisKind
-from generic_ml_wrapper.application.domain.model.axis_selection import AxisSelection
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
     ClientSettingsUnusableError,
 )
 from generic_ml_wrapper.application.domain.model.companion_settings import (
     CompanionSettings,
+)
+from generic_ml_wrapper.application.domain.model.environment import Environment
+from generic_ml_wrapper.application.domain.model.environment_code_already_exists_error import (
+    EnvironmentCodeAlreadyExistsError,
 )
 from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
 from generic_ml_wrapper.application.domain.model.launch_location import (
@@ -44,6 +45,7 @@ from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
     ResumeNotSupportedError,
 )
+from generic_ml_wrapper.application.domain.model.role import Role
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
@@ -51,6 +53,16 @@ from generic_ml_wrapper.application.domain.model.workflow_exists_error import Wo
 from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
     WorkflowNotFoundError,
 )
+from generic_ml_wrapper.application.port.inbound.add_environment import AddEnvironmentUseCase
+from generic_ml_wrapper.application.port.inbound.add_environment_command import (
+    AddEnvironmentCommand,
+)
+from generic_ml_wrapper.application.port.inbound.add_environment_result import (
+    AddEnvironmentResult,
+)
+from generic_ml_wrapper.application.port.inbound.add_role import AddRoleUseCase
+from generic_ml_wrapper.application.port.inbound.add_role_command import AddRoleCommand
+from generic_ml_wrapper.application.port.inbound.add_role_result import AddRoleResult
 from generic_ml_wrapper.application.port.inbound.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.port.inbound.check_launch_location import (
@@ -59,9 +71,6 @@ from generic_ml_wrapper.application.port.inbound.check_launch_location import (
 from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
-from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxisUseCase
-from generic_ml_wrapper.application.port.inbound.create_axis_command import CreateAxisCommand
-from generic_ml_wrapper.application.port.inbound.create_axis_result import CreateAxisResult
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
@@ -98,6 +107,12 @@ from generic_ml_wrapper.application.port.inbound.session_footprint import Sessio
 from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
+from generic_ml_wrapper.application.port.inbound.set_default_environment import (
+    SetDefaultEnvironmentUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.set_default_environment_command import (
+    SetDefaultEnvironmentCommand,
+)
 from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
 from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
 from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
@@ -150,8 +165,8 @@ def _refusing_interview() -> Callable[..., InitAnswers | None]:
 _ANSWERS = InitAnswers(
     language="en",
     name="Dan",
-    role=AxisSelection("default", "Default", "Default"),
-    environment=AxisSelection("work", "Work", "Work"),
+    role=Role("default", "Default", "Default"),
+    environment=Environment("work", "Work", "Work"),
     persona=None,
     client="claude",
 )
@@ -300,8 +315,8 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
                 fresh=True,
                 language="en",
                 name="Dan",
-                role=AxisSelection("default", "Default", "Default"),
-                environment=AxisSelection("work", "Work", "Work"),
+                role=Role("default", "Default", "Default"),
+                environment=Environment("work", "Work", "Work"),
                 client="claude",
                 persona=None,
                 found=["claude"],
@@ -319,8 +334,8 @@ class _FreshInit(SaveInitAnswersUseCase):
             fresh=True,
             language="en",
             name="Dan",
-            role=AxisSelection("default", "Default", "Default"),
-            environment=AxisSelection("work", "Work", "Work"),
+            role=Role("default", "Default", "Default"),
+            environment=Environment("work", "Work", "Work"),
             client="claude",
             persona=None,
             found=["claude"],
@@ -877,8 +892,8 @@ def _fresh_outcome(
     return InitOutcome(
         language="en",
         name="Ada",
-        role=AxisSelection("default", "Default", "Default"),
-        environment=AxisSelection("work", "Work", "Work"),
+        role=Role("default", "Default", "Default"),
+        environment=Environment("work", "Work", "Work"),
         persona=persona,
         client=client,
         found=found if found is not None else (["cursor"] if client else []),
@@ -1649,59 +1664,77 @@ def test_build_edit_workflow_is_wired() -> None:
     assert isinstance(composition.build_edit_workflow(), EditWorkflowUseCase)
 
 
-class _FakeCreateAxis(CreateAxisUseCase):
+class _FakeAddEnvironment(AddEnvironmentUseCase):
     def __init__(self, error: Exception | None = None) -> None:
-        self.seen: CreateAxisCommand | None = None
+        self.seen: AddEnvironmentCommand | None = None
         self._error = error
 
-    def execute(self, command: CreateAxisCommand) -> CreateAxisResult:
+    def execute(self, command: AddEnvironmentCommand) -> AddEnvironmentResult:
         self.seen = command
         if self._error is not None:
             raise self._error
-        return CreateAxisResult(
-            kind=command.kind,
-            slug="client-project",
-            label=command.label,
-            made_default=command.make_default,
+        return AddEnvironmentResult(
+            environment=Environment("client-project", command.label, command.description)
         )
+
+
+class _FakeAddRole(AddRoleUseCase):
+    def __init__(self) -> None:
+        self.seen: AddRoleCommand | None = None
+
+    def execute(self, command: AddRoleCommand) -> AddRoleResult:
+        self.seen = command
+        return AddRoleResult(role=Role("code-reviewer", command.label, command.description))
+
+
+class _FakeSetDefaultEnvironment(SetDefaultEnvironmentUseCase):
+    def __init__(self) -> None:
+        self.seen: SetDefaultEnvironmentCommand | None = None
+
+    def execute(self, command: SetDefaultEnvironmentCommand) -> None:
+        self.seen = command
 
 
 def test_environment_new_builds_the_command_and_confirms(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake = _FakeCreateAxis()
-    monkeypatch.setattr(app, "build_create_axis", lambda: fake)
+    fake, default = _FakeAddEnvironment(), _FakeSetDefaultEnvironment()
+    monkeypatch.setattr(app, "build_add_environment", lambda: fake)
+    monkeypatch.setattr(app, "build_set_default_environment", lambda: default)
     assert app.main(["environment", "new", "Client Project", "--default"]) == 0
-    assert fake.seen == CreateAxisCommand(
-        kind=AxisKind.ENVIRONMENT, label="Client Project", description="", make_default=True
-    )
+    assert fake.seen == AddEnvironmentCommand(label="Client Project", description="")
+    # --default is a second use case, called by the adapter, not a flag on the first.
+    assert default.seen == SetDefaultEnvironmentCommand(code="client-project")
     out = capsys.readouterr().out
-    assert "client-project" in out  # the derived slug
+    assert "client-project" in out  # the derived code
     assert "default" in out  # made-default line printed
 
 
-def test_role_new_defaults_description_empty_and_no_default(
+def test_role_new_defaults_description_empty_and_does_not_set_the_default(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake = _FakeCreateAxis()
-    monkeypatch.setattr(app, "build_create_axis", lambda: fake)
+    fake, default = _FakeAddRole(), _FakeSetDefaultEnvironment()
+    monkeypatch.setattr(app, "build_add_role", lambda: fake)
+    monkeypatch.setattr(app, "build_set_default_environment", lambda: default)
     assert app.main(["role", "new", "Code Reviewer"]) == 0
-    assert fake.seen is not None
-    assert fake.seen.kind == AxisKind.ROLE
-    assert fake.seen.make_default is False
+    assert fake.seen == AddRoleCommand(label="Code Reviewer", description="")
+    assert default.seen is None
 
 
 def test_environment_new_reports_a_collision_and_exits_2(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    fake = _FakeCreateAxis(error=AxisExistsError("environment already exists: 'work'"))
-    monkeypatch.setattr(app, "build_create_axis", lambda: fake)
+    fake = _FakeAddEnvironment(
+        error=EnvironmentCodeAlreadyExistsError("error.environment.exists", code="work")
+    )
+    monkeypatch.setattr(app, "build_add_environment", lambda: fake)
     assert app.main(["environment", "new", "Work"]) == 2
     assert "already exists" in capsys.readouterr().err
 
 
-def test_build_create_axis_is_wired() -> None:
-    assert isinstance(composition.build_create_axis(), CreateAxisUseCase)
+def test_the_add_use_cases_are_wired() -> None:
+    assert isinstance(composition.build_add_role(), AddRoleUseCase)
+    assert isinstance(composition.build_add_environment(), AddEnvironmentUseCase)
 
 
 def test_preflight_resume_cwd_passes_when_the_folder_has_no_stored_cwd() -> None:

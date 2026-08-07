@@ -19,7 +19,7 @@ class RuleCaptureDirective:
         role_dir: str,
         template: str,
     ) -> str:
-        """Render the rule-capture directive for this session's active axes.
+        """Render the rule-capture directive for this session's role and environment.
 
         The directive is gmlw's own voice to the client, injected at the head of the
         ``rules`` context section so a demanded correction becomes a draft rule in any

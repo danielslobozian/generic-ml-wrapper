@@ -19,14 +19,21 @@ from generic_ml_wrapper.adapter.outbound.config.settings_registry import Invalid
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
 )
-from generic_ml_wrapper.application.domain.model.axis_exists_error import AxisExistsError
-from generic_ml_wrapper.application.domain.model.axis_label_error import AxisLabelError
 from generic_ml_wrapper.application.domain.model.domain_error import DomainError
+from generic_ml_wrapper.application.domain.model.environment_code_already_exists_error import (
+    EnvironmentCodeAlreadyExistsError,
+)
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
 from generic_ml_wrapper.application.domain.model.no_edit_to_resume_error import NoEditToResumeError
 from generic_ml_wrapper.application.domain.model.no_such_draft_error import NoSuchDraftError
 from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
     ResumeNotSupportedError,
+)
+from generic_ml_wrapper.application.domain.model.role_code_already_exists_error import (
+    RoleCodeAlreadyExistsError,
+)
+from generic_ml_wrapper.application.domain.model.uncodable_role_label_error import (
+    UncodableRoleLabelError,
 )
 from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
@@ -55,9 +62,9 @@ _CASES: list[DomainError] = [
     NoSuchDraftError("error.draft.no_session", key="abc123"),
     NoSuchDraftError("error.draft.resume_unsupported", client="codex", session_id="abc123"),
     NoSuchDraftError("error.draft.none_unfinished"),
-    AxisLabelError("error.axis.label_invalid", label="???"),
-    AxisExistsError("error.axis.exists.role", slug="qa"),
-    AxisExistsError("error.axis.exists.environment", slug="work"),
+    UncodableRoleLabelError("error.role.label.invalid", label="???"),
+    RoleCodeAlreadyExistsError("error.role.exists", code="qa"),
+    EnvironmentCodeAlreadyExistsError("error.environment.exists", code="work"),
     ArchiveUnreadableError("error.archive.not_found", archive="missing.zip"),
     ArchiveUnreadableError("error.archive.no_workflow", archive="bad.zip", steps="workflow.md"),
     InvalidSettingValueError("companion.persona", "loud", None),

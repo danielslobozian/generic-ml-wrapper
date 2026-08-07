@@ -558,7 +558,7 @@ def startup(mode: str, path: Path | None = None) -> dict[str, SourceSetting]:
     resolved: dict[str, SourceSetting] = {}
     for source in context_source.ALL_SOURCES:
         table = _source_table(context, source.key)
-        if not table and source in context_source.RULE_AXES:
+        if not table and source in context_source.RULE_SOURCES:
             table = legacy_rules
         default = defaults[source.key]
         activated = default.activated
@@ -576,8 +576,8 @@ def _legacy_rules_table(context: dict[str, object]) -> dict[str, object]:
 
     Rules used to be one source; they are now two (``rules.environment``/``rules.role``).
     A config written before the split holds ``activated``/``compression`` directly under
-    ``rules`` rather than nested axis tables, which tells the two shapes apart without a
-    version marker. The old value is honoured for both axes so a user who deliberately
+    ``rules`` rather than nested per-side tables, which tells the two shapes apart without a
+    version marker. The old value is honoured for both sides so a user who deliberately
     switched rules off never has that silently undone by the rename.
 
     Args:
@@ -590,7 +590,7 @@ def _legacy_rules_table(context: dict[str, object]) -> dict[str, object]:
     if not isinstance(table, dict):
         return {}
     legacy = cast("dict[str, object]", table)
-    if any(isinstance(legacy.get(axis), dict) for axis in ("environment", "role")):
+    if any(isinstance(legacy.get(side), dict) for side in ("environment", "role")):
         return {}
     return legacy
 

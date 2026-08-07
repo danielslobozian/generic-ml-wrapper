@@ -35,10 +35,10 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     UsageView,
     _Row,
 )
-from generic_ml_wrapper.application.domain.model.rule_axis import RuleAxis
-from generic_ml_wrapper.application.domain.model.rule_group import RuleGroup
-from generic_ml_wrapper.application.domain.model.rule_summary import RuleSummary
+from generic_ml_wrapper.application.domain.model.role import Role
+from generic_ml_wrapper.application.domain.model.rule import Rule
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.port.inbound.list_rules_result import ListRulesResult
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
 
@@ -1072,9 +1072,9 @@ def test_config_setup_exits_with_the_init_choice() -> None:
     assert result["value"] == MenuChoice(action="init")
 
 
-def _rules_app(groups: tuple[RuleGroup, ...]) -> MenuApp:
-    """A menu app whose Rules browser reads a fixture catalogue."""
-    return MenuApp(_JOBS, rules=lambda: groups)
+def _rules_app(found: ListRulesResult) -> MenuApp:
+    """A menu app whose Rules browser reads a fixture listing."""
+    return MenuApp(_JOBS, rules=lambda: found)
 
 
 async def _open_rules(pilot: Pilot[MenuChoice | None]) -> None:
@@ -1085,7 +1085,7 @@ async def _open_rules(pilot: Pilot[MenuChoice | None]) -> None:
 def test_rules_menu_is_empty_until_a_rule_exists() -> None:
     """With no rules the browser explains where they come from rather than showing branches."""
     text: dict[str, object] = {}
-    app = _rules_app(())
+    app = _rules_app(ListRulesResult(environments=(), roles=()))
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
@@ -1096,18 +1096,21 @@ def test_rules_menu_is_empty_until_a_rule_exists() -> None:
     assert "captured during a session" in str(text["empty"])
 
 
-def test_rules_menu_lists_only_axes_that_hold_rules() -> None:
+def test_rules_menu_lists_only_the_side_that_holds_rules() -> None:
     """A role rule exists and no environment rule does, so only Role is offered."""
-    groups = (
-        RuleGroup(
-            axis=RuleAxis.ROLE,
-            slug="software-engineer",
-            label="Software engineer",
-            rules=(RuleSummary(slug="no-transactional", rule="No @Transactional."),),
+    found = ListRulesResult(
+        environments=(),
+        roles=(
+            Role(
+                "software-engineer",
+                "Software engineer",
+                "",
+                (Rule(code="no-transactional", rule="No @Transactional."),),
+            ),
         ),
     )
     titles: dict[str, object] = {}
-    app = _rules_app(groups)
+    app = _rules_app(found)
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
@@ -1121,29 +1124,32 @@ def test_rules_menu_lists_only_axes_that_hold_rules() -> None:
 
 def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
     """Rules > Role > Software engineer lists the rule; the detail panel shows it."""
-    groups = (
-        RuleGroup(
-            axis=RuleAxis.ROLE,
-            slug="software-engineer",
-            label="Software engineer",
-            rules=(
-                RuleSummary(
-                    slug="no-transactional",
-                    rule="No @Transactional in a use case.",
-                    strength="hard",
-                    draft=True,
+    found = ListRulesResult(
+        environments=(),
+        roles=(
+            Role(
+                "software-engineer",
+                "Software engineer",
+                "",
+                (
+                    Rule(
+                        code="no-transactional",
+                        rule="No @Transactional in a use case.",
+                        strength="hard",
+                        draft=True,
+                    ),
                 ),
             ),
         ),
     )
     seen: dict[str, object] = {}
-    app = _rules_app(groups)
+    app = _rules_app(found)
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_rules(pilot)
-            await pilot.press("enter")  # the Role axis
-            await pilot.press("enter")  # the Software engineer group
+            await pilot.press("enter")  # the Role row
+            await pilot.press("enter")  # the Software engineer role
             rows = app.screen.query_one("#menu", ListView).query(_Row)
             seen["titles"] = [r.item.title for r in rows]
             seen["detail"] = str(app.screen.query_one("#detail", Static).render())

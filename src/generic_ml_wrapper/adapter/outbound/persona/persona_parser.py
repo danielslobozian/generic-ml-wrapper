@@ -2,10 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 """Parsing a persona file: frontmatter metadata plus the tone body.
 
-A file format, not a domain rule. Frontmatter delimiters, quoted values and a
-``·``-separated dimensions line are facts about how a persona is *written down*, not
-about what a persona is -- so they live beside the adapter that reads the files, which
-is the only thing that ever sees the text.
+A file format, not a domain rule. Frontmatter delimiters and quoted values are facts
+about how a persona is *written down*, not about what a persona is -- so they live beside
+the adapter that reads the files, which is the only thing that ever sees the text.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from generic_ml_wrapper.application.domain.model.persona import Persona
 
 _FRONTMATTER = re.compile(r"\A---\n(.*?)\n---\n?(.*)\Z", re.DOTALL)
 _QUOTED_MIN_LEN = 2  # a quoted value is at least the opening and closing quote
-_DIMENSION_SEP = "·"  # separates the axes on the single ``dimensions:`` line
 
 
 class PersonaParser:
@@ -26,9 +24,8 @@ class PersonaParser:
         """Parse a persona file into its metadata and tone body.
 
         The optional leading ``---`` frontmatter supplies ``name``/``description``/
-        ``greeting``/``dimensions`` (simple ``key: value`` lines, values optionally quoted);
-        everything after it is the tone body. A file with no frontmatter is all body — as is
-        a persona that predates ``dimensions``, which simply declares none.
+        ``greeting`` (simple ``key: value`` lines, values optionally quoted); everything
+        after it is the tone body. A file with no frontmatter is all body.
 
         Args:
             fallback_name: The name to use when frontmatter omits ``name`` (the file stem).
@@ -46,21 +43,7 @@ class PersonaParser:
             description=meta.get("description", ""),
             greeting=meta.get("greeting", ""),
             body=match.group(2).strip(),
-            dimensions=self._parse_dimensions(meta.get("dimensions", "")),
         )
-
-    def _parse_dimensions(self, value: str) -> dict[str, str]:
-        """Split an ``Axis: level · Axis: level`` line into its named axes.
-
-        Parts without a ``:``, or with an empty axis or level, are skipped — a malformed
-        dimensions line costs its own axes, never the rest of the persona.
-        """
-        dimensions: dict[str, str] = {}
-        for part in value.split(_DIMENSION_SEP):
-            axis, separator, level = part.partition(":")
-            if separator and axis.strip() and level.strip():
-                dimensions[axis.strip()] = level.strip()
-        return dimensions
 
     def _parse_meta(self, block: str) -> dict[str, str]:
         """Parse ``key: value`` frontmatter lines into a mapping (values unquoted)."""

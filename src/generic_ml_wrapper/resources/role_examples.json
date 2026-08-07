@@ -1,0 +1,22 @@
+[
+  {
+    "code": "software-engineer",
+    "label": "init.role.example.engineer.label",
+    "description": "init.role.example.engineer.description"
+  },
+  {
+    "code": "product-owner",
+    "label": "init.role.example.po.label",
+    "description": "init.role.example.po.description"
+  },
+  {
+    "code": "qa-engineer",
+    "label": "init.role.example.qa.label",
+    "description": "init.role.example.qa.description"
+  },
+  {
+    "code": "tech-writer",
+    "label": "init.role.example.writer.label",
+    "description": "init.role.example.writer.description"
+  }
+]

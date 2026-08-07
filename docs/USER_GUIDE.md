@@ -2,7 +2,7 @@
 
 Task-oriented recipes for the `gmlw` CLI. Each section is a concrete job with the exact
 command to run. For the mental model behind these (job/session/workflow, the four
-context axes, rules) see [CONCEPTS.md](CONCEPTS.md); for the full flag reference see
+context sources, rules) see [CONCEPTS.md](CONCEPTS.md); for the full flag reference see
 [CLI.md](CLI.md), for every config key see [CONFIGURATION.md](CONFIGURATION.md), and
 for per-client behaviour see [CLIENTS.md](CLIENTS.md).
 
@@ -106,8 +106,8 @@ Personas are off and invisible until you set this key.
 
 ## 7. Record a rule
 
-A rule is filed on the environment or role axis, not globally or per-workflow — see
-[CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (which axis wins on
+A rule is filed on the environment or the role, not globally or per-workflow — see
+[CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (which of the two wins on
 conflict, `status: draft`, `Precedence`). In practice, either edit the file directly or
 let the client capture it the moment you correct it:
 
