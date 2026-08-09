@@ -13,6 +13,9 @@ from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsSer
 
 
 class FakeStore(SessionStorePort):
+    def create_job(self, job: str) -> None:
+        pass
+
     def __init__(self, sessions: list[Session]) -> None:
         self._sessions = sessions
 

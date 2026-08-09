@@ -6,16 +6,20 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from generic_ml_wrapper.application.port.inbound.export_usage_query import (
+    ExportUsageQuery,
+)
 
-class SaveUsageReportUseCase(ABC):
+
+class ExportUsageToFileUseCase(ABC):
     """Save a job's recorded usage as a file, returning where it was written."""
 
     @abstractmethod
-    def execute(self, job: str) -> str:
+    def execute(self, query: ExportUsageQuery) -> str:
         """Build the job's report, serialise it, and write it to a file.
 
         Args:
-            job: The job identifier.
+            query: Names the job whose usage is wanted.
 
         Returns:
             Where the file was written, as text for the caller to show.

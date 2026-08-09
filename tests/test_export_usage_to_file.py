@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the SaveUsageReportUseCase use case and the filesystem report exporter."""
+"""Tests for the ExportUsageToFileUseCase use case and the filesystem report exporter."""
 
 from __future__ import annotations
 
@@ -12,9 +12,12 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import
     FilesystemReportExporterAdapter,
 )
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
+from generic_ml_wrapper.application.port.inbound.export_usage_query import (
+    ExportUsageQuery,
+)
 from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
 from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
-from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
+from generic_ml_wrapper.application.usecase.export_usage_to_file import ExportUsageToFileService
 
 
 class _FakeExport:
@@ -22,8 +25,8 @@ class _FakeExport:
         self._report = report
         self.seen: str | None = None
 
-    def execute(self, job: str) -> UsageReport:
-        self.seen = job
+    def execute(self, query: ExportUsageQuery) -> UsageReport:
+        self.seen = query.job
         return self._report
 
 
@@ -51,9 +54,9 @@ def _report() -> UsageReport:
 def test_save_usage_report_serialises_json_and_returns_where_it_was_written() -> None:
     exporter = _RecordingExporter("/exports/alpha-x.json")
     export = _FakeExport(_report())
-    use_case = SaveUsageReportService(export=export, exporter=exporter)  # type: ignore[arg-type]
+    use_case = ExportUsageToFileService(export=export, exporter=exporter)  # type: ignore[arg-type]
 
-    result = use_case.execute("alpha")
+    result = use_case.execute(ExportUsageQuery(job="alpha"))
 
     assert result == "/exports/alpha-x.json"
     assert export.seen == "alpha"

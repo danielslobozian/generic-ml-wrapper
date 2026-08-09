@@ -26,16 +26,19 @@ from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source imp
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
+from generic_ml_wrapper.application.port.inbound.create_workflow_command import (
+    CreateWorkflowCommand,
+)
+from generic_ml_wrapper.application.port.inbound.list_jobs_query import ListJobsQuery
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import (
     InterruptScopePort,
 )
+from generic_ml_wrapper.application.usecase.create_workflow import CreateWorkflowService
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
-from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowService
 
 
 class _NoInterrupts(InterruptScopePort):
@@ -58,7 +61,7 @@ class _NoLaunch(CliCallerPort):
 
 def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path / "ledger.db")
-    new_workflow = NewWorkflowService(
+    new_workflow = CreateWorkflowService(
         workflows=FilesystemWorkflowSourceAdapter(tmp_path / "workflows"),
         store=SqliteSessionStoreAdapter(ledger),
         callers=_NoLaunchProvider(),
@@ -70,13 +73,13 @@ def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -
             _NoInterrupts(),
         ),
     )
-    new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))
+    new_workflow.execute(CreateWorkflowCommand(label="doc-review", client="claude"))
 
     # The session is really there: the store keeps no secrets, so deleting it is possible.
     # Always as create-workflow -- the target name is a seed, decided at the end.
     assert SqliteSessionStoreAdapter(ledger).jobs() == [AuthoringJob.NAME]
     # `gmlw jobs` leaves that one name out, and it is the only name it leaves out.
-    assert ListJobsService(SqliteSessionStoreAdapter(ledger)).execute() == []
+    assert ListJobsService(SqliteSessionStoreAdapter(ledger)).execute(ListJobsQuery()) == []
 
 
 def test_the_listing_hides_nothing_else(tmp_path: Path) -> None:
@@ -93,7 +96,9 @@ def test_the_listing_hides_nothing_else(tmp_path: Path) -> None:
         )
     )
 
-    assert [summary.job for summary in ListJobsService(store).execute()] == ["PROJ-482"]
+    assert [summary.job for summary in ListJobsService(store).execute(ListJobsQuery())] == [
+        "PROJ-482"
+    ]
 
 
 def _localizer() -> MessageSource:

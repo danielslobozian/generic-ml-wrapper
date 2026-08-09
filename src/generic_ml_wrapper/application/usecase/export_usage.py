@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.port.inbound.export_usage_query import (
+    ExportUsageQuery,
+)
 from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
 from generic_ml_wrapper.application.port.inbound.turn_row import TurnRow
 from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
@@ -33,23 +36,23 @@ class ExportUsageService(ExportUsageUseCase):
         self._usage = usage
         self._turns = turns
 
-    def execute(self, job: str) -> UsageReport:
-        """Build a job's usage report.
+    def execute(self, query: ExportUsageQuery) -> UsageReport:
+        """Build a query.job's usage report.
 
         Args:
-            job: The job identifier.
+            query.job: The query.job identifier.
 
         Returns:
             Per-turn rows (chronological), per-model totals, per-session cost, and
-            job totals.
+            query.job totals.
         """
-        recorded = self._turns.turns_for_job(job)
+        recorded = self._turns.turns_for_job(query.job)
         turns = tuple(sorted((_row(turn) for turn in recorded), key=lambda row: row.timestamp))
         models = _model_totals(recorded)
-        costs = self._usage.session_costs(job)
+        costs = self._usage.session_costs(query.job)
         session_costs = tuple(SessionCost(session, costs[session]) for session in sorted(costs))
         return UsageReport(
-            job=job,
+            job=query.job,
             turns=turns,
             models=models,
             session_costs=session_costs,

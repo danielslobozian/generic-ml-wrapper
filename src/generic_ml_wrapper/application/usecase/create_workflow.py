@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The NewWorkflowUseCase use case: author a workflow via the create-workflow interview."""
+"""The CreateWorkflowUseCase use case: author a workflow via the create-workflow interview."""
 
 from __future__ import annotations
 
@@ -10,9 +10,7 @@ from datetime import UTC, datetime
 
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
-from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
-from generic_ml_wrapper.application.domain.model.no_such_draft_error import NoSuchDraftError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.slug import Slug
@@ -20,20 +18,25 @@ from generic_ml_wrapper.application.domain.model.workflow_exists_error import Wo
 from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
 from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
 from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
-from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
-from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
-from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
+from generic_ml_wrapper.application.port.inbound.create_workflow import CreateWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.create_workflow_command import (
+    CreateWorkflowCommand,
+)
+from generic_ml_wrapper.application.port.inbound.create_workflow_result import CreateWorkflowResult
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.draft_deployment import (
+    settle_draft,
+    validate_workflow_name,
+)
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 
 _META = "create-workflow"
 _RESERVED = frozenset({_META, "_common"})
 
 
-class NewWorkflowService(NewWorkflowUseCase):
+class CreateWorkflowService(CreateWorkflowUseCase):
     """Author a workflow in a draft folder, then deploy it once the session names it.
 
     The name is decided at the end of the interview, not the start, so authoring runs
@@ -71,7 +74,7 @@ class NewWorkflowService(NewWorkflowUseCase):
         self._launch = launch
         self._clock = clock
 
-    def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+    def execute(self, command: CreateWorkflowCommand) -> CreateWorkflowResult:
         """Run the authoring session for a new workflow and deploy its draft.
 
         Args:
@@ -84,12 +87,9 @@ class NewWorkflowService(NewWorkflowUseCase):
             WorkflowNameError: If a given name is invalid or reserved.
             WorkflowExistsError: If a given name already exists (fail fast, up front).
         """
-        if command.resume_draft is not None or command.resume_latest:
-            self._workflows.seed()
-            return self._reopen(command)
         if command.label is not None:  # a seed label lets a known collision fail fast
             seed = Slug.of(command.label).value
-            self._validate(seed)
+            validate_workflow_name(seed)
             if self._workflows.find(seed) is not None:
                 message = f"workflow already exists: {seed!r}"
                 raise WorkflowExistsError(message)
@@ -124,99 +124,7 @@ class NewWorkflowService(NewWorkflowUseCase):
         # session claimed a folder it had not stored, on a client nobody had asked.
         self._store.record(replace(session, cwd=draft, resumable=caller.can_resume()))
         exit_code = self._launch.run(caller, run)
-        return self._finalize(exit_code, draft)
-
-    def _reopen(self, command: NewWorkflowCommand) -> NewWorkflowResult:
-        """Reopen an unfinished draft and carry on the interview that made it.
-
-        The draft folder is named after the authoring session that created it, so the
-        session id is recovered from the folder rather than from anything we stored —
-        which is what lets drafts made before this existed be reopened too.
-
-        The client is the session's own, not the command's: the conversation belongs to
-        the client that held it, and reopening it on another one would start from
-        nothing. No context is re-injected for the same reason — the client already has
-        the interview in its history, and re-sending it would talk over that.
-
-        Raises:
-            NoSuchDraftError: If the named draft is gone, nothing is resumable, or the
-                session behind it was never recorded.
-        """
-        draft = self._target_draft(command)
-        session = next(
-            (s for s in self._store.sessions_for_job(_META) if s.session_id == draft.key), None
-        )
-        if session is None:
-            raise NoSuchDraftError("error.draft.no_session", key=draft.key)
-        run = RunContext(
-            job=_META,
-            session_id=session.session_id,
-            client=session.client,
-            uuid=session.uuid,
-            resume=True,
-            cwd=draft.path,
-            kickoff=(
-                "You are picking up an unfinished create-workflow interview. Your draft "
-                f"folder is {draft.path} and your earlier work is there. Take stock of "
-                "where it stands, tell me, then carry on from that point — do not start over."
-            ),
-        )
-        caller = self._callers.for_run(run)
-        if not caller.can_resume():
-            raise NoSuchDraftError(
-                "error.draft.resume_unsupported",
-                client=session.client,
-                session_id=session.session_id,
-            )
-        exit_code = self._launch.run(caller, run)
-        return self._finalize(exit_code, draft.path)
-
-    def _target_draft(self, command: NewWorkflowCommand) -> Draft:
-        """The draft to reopen: the one named, else the most recent unfinished one.
-
-        A *finished* draft is skipped by ``--resume-latest`` because it is not waiting on
-        the user — it converged and was blocked from deploying (its name was taken, or
-        unusable), and reopening it silently would hide that. Naming it explicitly still
-        works, which is how a user fixes exactly that.
-        """
-        drafts = self._workflows.drafts()
-        if command.resume_draft is not None:
-            found = next((d for d in drafts if d.key == command.resume_draft), None)
-            if found is None:
-                raise NoSuchDraftError("error.draft.not_found", key=command.resume_draft)
-            return found
-        unfinished = next((d for d in drafts if not d.finished), None)
-        if unfinished is None:
-            raise NoSuchDraftError("error.draft.none_unfinished")
-        return unfinished
-
-    def _finalize(self, exit_code: int, draft: str) -> NewWorkflowResult:
-        """Deploy the draft if the session settled it and declared it finished.
-
-        The slug comes from the label the session chose, the same way a role's or an
-        environment's does — the author names the workflow in words and never has to
-        think in kebab-case. An older interview that wrote a bare ``name`` instead still
-        works: that name is taken as both slug and label.
-
-        A missing/unfinished marker, a label that slugifies to nothing, or a slug already
-        taken each leaves the draft in place (nothing is lost); only a finished, valid,
-        free slug is deployed into ``workflows/<slug>/``.
-        """
-        marker = self._workflows.read_draft_marker(draft)
-        label = marker.label or marker.name
-        if not marker.finished or label is None:
-            return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, marker.name, draft)
-        slug = Slug.of(label).value if marker.label else label
-        try:
-            self._validate(slug)
-        except WorkflowNameError:  # the label yielded nothing usable — keep the draft
-            return NewWorkflowResult(exit_code, WorkflowOutcome.INCOMPLETE, slug or label, draft)
-        if self._workflows.find(slug) is not None:
-            return NewWorkflowResult(exit_code, WorkflowOutcome.COLLISION, slug, draft)
-        deployed = self._workflows.deploy_draft(
-            draft, slug, label, marker.description, self._clock().isoformat()
-        )
-        return NewWorkflowResult(exit_code, WorkflowOutcome.DEPLOYED, slug, deployed)
+        return settle_draft(self._workflows, self._clock, exit_code, draft)
 
     def _authoring_context(self, *, guided: bool, job: str) -> str:
         """The authoring context, with the guided-facilitation layer added when chosen."""

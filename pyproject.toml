@@ -79,7 +79,7 @@ dev = ["nox>=2026.4.10", "pre-commit>=4.6.0"]
 required-version = "==0.11.32"
 
 [project.scripts]
-gmlw = "generic_ml_wrapper.adapter.inbound.cli.app:main"
+gmlw = "generic_ml_wrapper.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/generic_ml_wrapper"]
@@ -103,8 +103,6 @@ target-version = "py311"
 extend-exclude = ["docs/tapes"]
 
 [tool.ruff.lint]
-# Strict from line one. ANN (mandatory annotations) and D (docstrings) are the
-# aggressive ones, kept on because the package is public and the bar is set now.
 select = [
   "E", "W", "F",   # pycodestyle + pyflakes
   "I",             # import sorting
@@ -124,16 +122,11 @@ select = [
   "TRY",           # tryceratops
   "RUF",           # ruff-specific
   "ANN",           # flake8-annotations
-  "D",             # pydocstyle
   "S",             # flake8-bandit
 ]
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests: asserts are the point; fakes implement port methods with unused args;
 # magic values, one-line lambdas, placeholder paths, and inline exception
 # messages are idiomatic in test setup.
-"tests/*" = ["S101", "D", "ANN", "ARG", "PLR2004", "PLW0108", "S108", "TRY003"]
-"noxfile.py" = ["D"]               # task file, not shipped API
+"tests/*" = ["S101", "ANN", "ARG", "PLR2004", "PLW0108", "S108", "TRY003"]

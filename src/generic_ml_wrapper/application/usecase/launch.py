@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Run a resolved caller with its lifecycle hooks — the shared launch sequence.
 
-Both ``StartJobUseCase`` and ``NewWorkflowUseCase`` end the same way: a caller is
+Both ``StartJobUseCase`` and ``CreateWorkflowUseCase`` end the same way: a caller is
 resolved for the run, metering is set up, the client runs (blocking) until it exits, and
 metering is torn down.
 This centralises that sequence and brackets it with the two lifecycle hook seams —

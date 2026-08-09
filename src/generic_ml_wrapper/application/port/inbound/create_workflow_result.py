@@ -10,7 +10,7 @@ from generic_ml_wrapper.application.port.inbound.workflow_outcome import Workflo
 
 
 @dataclass(frozen=True)
-class NewWorkflowResult:
+class CreateWorkflowResult:
     """The result of an authoring session.
 
     Attributes:

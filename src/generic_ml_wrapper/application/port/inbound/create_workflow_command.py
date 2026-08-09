@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class NewWorkflowCommand:
+class CreateWorkflowCommand:
     """A request to author a new workflow.
 
     Attributes:
@@ -21,15 +21,9 @@ class NewWorkflowCommand:
         client: The client to run the authoring session on.
         guided: Whether to add the guided-facilitation layer (a richer, costlier
             authoring experience) on top of the core interview.
-        resume_draft: The key of a draft to reopen instead of starting a fresh
-            interview, or ``None``. Takes precedence over ``resume_latest``.
-        resume_latest: Reopen the most recent unfinished draft instead of starting a
-            fresh interview. Ignored when ``resume_draft`` names one.
     """
 
     label: str | None
     client: str
     description: str = ""
     guided: bool = False
-    resume_draft: str | None = None
-    resume_latest: bool = False

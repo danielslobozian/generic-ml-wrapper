@@ -539,6 +539,9 @@ def test_provider_returns_vibe_caller() -> None:
 class _RecordingSessions(SessionStorePort):
     """A session store that only records what was bound back to it."""
 
+    def create_job(self, job: str) -> None:
+        pass
+
     def __init__(self) -> None:
         self.bound: list[tuple[str, str, str]] = []
 

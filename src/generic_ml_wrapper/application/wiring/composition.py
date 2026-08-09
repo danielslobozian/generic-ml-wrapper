@@ -152,12 +152,18 @@ from generic_ml_wrapper.application.port.inbound.check_store_contract import (
 )
 from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
+from generic_ml_wrapper.application.port.inbound.create_job import CreateJobUseCase
+from generic_ml_wrapper.application.port.inbound.create_workflow import CreateWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
 from generic_ml_wrapper.application.port.inbound.describe_build import DescribeBuildUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.port.inbound.export_usage_to_file import (
+    ExportUsageToFileUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.find_job import FindJobUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
     ListAuthoringModesUseCase,
@@ -190,18 +196,28 @@ from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import (
 from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
-from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.resume_create_workflow import (
+    ResumeCreateWorkflowUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.resume_edit_workflow import (
+    ResumeEditWorkflowUseCase,
+)
+from generic_ml_wrapper.application.port.inbound.resume_session_for_job import (
+    ResumeSessionForJobUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.save_init_answers import (
     SaveInitAnswersUseCase,
 )
-from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.port.inbound.set_default_environment import (
     SetDefaultEnvironmentUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.set_default_role import SetDefaultRoleUseCase
-from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
+from generic_ml_wrapper.application.port.inbound.start_new_session_for_job import (
+    StartNewSessionForJobUseCase,
+)
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
+from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
@@ -221,13 +237,18 @@ from generic_ml_wrapper.application.usecase.check_launch_location import (
 from generic_ml_wrapper.application.usecase.check_store_contract import (
     CheckStoreContractService,
 )
+from generic_ml_wrapper.application.usecase.client_arguments_binder import ClientArgumentsBinder
 from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
+from generic_ml_wrapper.application.usecase.create_job import CreateJobService
+from generic_ml_wrapper.application.usecase.create_workflow import CreateWorkflowService
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
 from generic_ml_wrapper.application.usecase.describe_build import DescribeBuildService
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowService
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageService
+from generic_ml_wrapper.application.usecase.export_usage_to_file import ExportUsageToFileService
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService
+from generic_ml_wrapper.application.usecase.find_job import FindJobService
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowService
 from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
@@ -259,18 +280,27 @@ from generic_ml_wrapper.application.usecase.list_workflow_catalog import (
 from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsService
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutService
 from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsService
-from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowService
 from generic_ml_wrapper.application.usecase.read_application_settings import (
     ReadApplicationSettingsService,
 )
+from generic_ml_wrapper.application.usecase.resume_create_workflow import (
+    ResumeCreateWorkflowService,
+)
+from generic_ml_wrapper.application.usecase.resume_edit_workflow import (
+    ResumeEditWorkflowService,
+)
+from generic_ml_wrapper.application.usecase.resume_session_for_job import (
+    ResumeSessionForJobService,
+)
 from generic_ml_wrapper.application.usecase.save_init_answers import SaveInitAnswersService
-from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportService
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
 from generic_ml_wrapper.application.usecase.set_default_environment import (
     SetDefaultEnvironmentService,
 )
 from generic_ml_wrapper.application.usecase.set_default_role import SetDefaultRoleService
-from generic_ml_wrapper.application.usecase.start_job import StartJobService
+from generic_ml_wrapper.application.usecase.start_new_session_for_job import (
+    StartNewSessionForJobService,
+)
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
 from generic_ml_wrapper.application.wiring.localization import (
@@ -516,46 +546,104 @@ def _launch_sequence() -> LaunchSequence:
     )
 
 
-def build_start_job() -> StartJobUseCase:
-    """Build the StartJobUseCase use case wired to the filesystem store and default callers.
-
-    Returns:
-        A ready-to-run StartJobUseCase.
-    """
-    interceptors = _interceptor_chain()
-    sessions = SqliteSessionStoreAdapter(_ledger())
-    return StartJobService(
-        store=sessions,
-        workflows=_workflow_source(interceptors),
-        callers=DefaultCliCallerProviderAdapter(
-            config.caller_overrides(),
-            metering=SqlitePerTurnStoreAdapter(_ledger()),
-            transcript=_transcript(),
-            interceptors=interceptors,
-            plugins=build_plugin_source(),
-            sessions=sessions,
-        ),
-        uuid_factory=lambda: str(uuid.uuid4()),
-        cwd_factory=os.getcwd,
-        credentials=FilesystemCredentialsStoreAdapter(paths.credentials),
-        launch=_launch_sequence(),
-        diagnostics=log.active(),
-        posix=os.name != "nt",
-        greeting=_persona_greeting,
-        capability_card=_capability_card,
-        client_args=config.client_args_for,
-    )
-
-
 def _capability_card() -> str | None:
     """The ambient capability card in the active language, or ``None`` when it is off.
 
     Off by default; enabled via ``[ambient] capability_card``. A static, localised "how do
-    I … in gmlw" card the client can answer from mid-session.
+    I ... in gmlw" card the client can answer from mid-session.
     """
     if not config.ambient_capability_card():
         return None
     return active().t("ambient.card")
+
+
+def _client_arguments_binder() -> ClientArgumentsBinder:
+    """Build the binder that attaches a run's passthrough launch arguments.
+
+    Returns:
+        A binder wired to the configured arguments and the active diagnostics sink.
+    """
+    return ClientArgumentsBinder(
+        configured=config.client_args_for,
+        posix=os.name != "nt",
+        diagnostics=log.active(),
+    )
+
+
+def _default_callers(
+    interceptors: InterceptorChain, sessions: SqliteSessionStoreAdapter
+) -> CliCallerProviderPort:
+    """Build the caller provider shared by the start and resume paths.
+
+    Args:
+        interceptors: The interceptor chain the callers run through.
+        sessions: The session store the callers bind observed ids into.
+
+    Returns:
+        A ready caller provider.
+    """
+    return DefaultCliCallerProviderAdapter(
+        config.caller_overrides(),
+        metering=SqlitePerTurnStoreAdapter(_ledger()),
+        transcript=_transcript(),
+        interceptors=interceptors,
+        plugins=build_plugin_source(),
+        sessions=sessions,
+    )
+
+
+def build_start_new_session_for_job() -> StartNewSessionForJobUseCase:
+    """Build the StartNewSessionForJobUseCase use case wired to the filesystem store.
+
+    Returns:
+        A ready-to-run StartNewSessionForJobUseCase.
+    """
+    interceptors = _interceptor_chain()
+    sessions = SqliteSessionStoreAdapter(_ledger())
+    return StartNewSessionForJobService(
+        store=sessions,
+        workflows=_workflow_source(interceptors),
+        callers=_default_callers(interceptors, sessions),
+        uuid_factory=lambda: str(uuid.uuid4()),
+        cwd_factory=os.getcwd,
+        credentials=FilesystemCredentialsStoreAdapter(paths.credentials),
+        launch=_launch_sequence(),
+        greeting=_persona_greeting,
+        capability_card=_capability_card,
+        client_arguments=_client_arguments_binder(),
+    )
+
+
+def build_resume_session_for_job() -> ResumeSessionForJobUseCase:
+    """Build the ResumeSessionForJobUseCase use case wired to the default callers.
+
+    Returns:
+        A ready-to-run ResumeSessionForJobUseCase.
+    """
+    interceptors = _interceptor_chain()
+    return ResumeSessionForJobService(
+        callers=_default_callers(interceptors, SqliteSessionStoreAdapter(_ledger())),
+        launch=_launch_sequence(),
+        client_arguments=_client_arguments_binder(),
+    )
+
+
+def build_find_job() -> FindJobUseCase:
+    """Build the FindJobUseCase use case wired to the session store.
+
+    Returns:
+        A ready-to-run FindJobUseCase.
+    """
+    return FindJobService(store=SqliteSessionStoreAdapter(_ledger()))
+
+
+def build_create_job() -> CreateJobUseCase:
+    """Build the CreateJobUseCase use case wired to the session store.
+
+    Returns:
+        A ready-to-run CreateJobUseCase.
+    """
+    return CreateJobService(store=SqliteSessionStoreAdapter(_ledger()))
 
 
 def build_list_jobs() -> ListJobsUseCase:
@@ -963,13 +1051,13 @@ def build_export_usage() -> ExportUsageUseCase:
     )
 
 
-def build_save_usage_report() -> SaveUsageReportUseCase:
-    """Build the SaveUsageReportUseCase use case: the report source plus the filesystem JSON writer.
+def build_export_usage_to_file() -> ExportUsageToFileUseCase:
+    """Build the ExportUsageToFileUseCase use case: the report source plus the JSON writer.
 
     Returns:
-        A ready-to-run SaveUsageReportUseCase writing to ``~/.gmlw/exports``.
+        A ready-to-run ExportUsageToFileUseCase writing to ``~/.gmlw/exports``.
     """
-    return SaveUsageReportService(
+    return ExportUsageToFileService(
         export=build_export_usage(),
         exporter=FilesystemReportExporterAdapter(
             paths.exports, clock=lambda: datetime.now(UTC).astimezone()
@@ -997,15 +1085,15 @@ def build_compose_statusline() -> ComposeStatuslineUseCase:
     )
 
 
-def build_new_workflow() -> NewWorkflowUseCase:
-    """Build the NewWorkflowUseCase use case wired to its outbound adapters.
+def build_create_workflow() -> CreateWorkflowUseCase:
+    """Build the CreateWorkflowUseCase use case wired to its outbound adapters.
 
     Returns:
-        A ready-to-run NewWorkflowUseCase.
+        A ready-to-run CreateWorkflowUseCase.
     """
     interceptors = _interceptor_chain()
     sessions = SqliteSessionStoreAdapter(_ledger())
-    return NewWorkflowService(
+    return CreateWorkflowService(
         workflows=_workflow_source(interceptors),
         store=sessions,
         callers=DefaultCliCallerProviderAdapter(
@@ -1041,6 +1129,38 @@ def build_edit_workflow() -> EditWorkflowUseCase:
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
+        launch=_launch_sequence(),
+    )
+
+
+def build_resume_create_workflow() -> ResumeCreateWorkflowUseCase:
+    """Build the ResumeCreateWorkflowUseCase use case wired to the filesystem store.
+
+    Returns:
+        A ready-to-run ResumeCreateWorkflowUseCase.
+    """
+    interceptors = _interceptor_chain()
+    sessions = SqliteSessionStoreAdapter(_ledger())
+    return ResumeCreateWorkflowService(
+        workflows=_workflow_source(interceptors),
+        store=sessions,
+        callers=_default_callers(interceptors, sessions),
+        launch=_launch_sequence(),
+    )
+
+
+def build_resume_edit_workflow() -> ResumeEditWorkflowUseCase:
+    """Build the ResumeEditWorkflowUseCase use case wired to the filesystem store.
+
+    Returns:
+        A ready-to-run ResumeEditWorkflowUseCase.
+    """
+    interceptors = _interceptor_chain()
+    sessions = SqliteSessionStoreAdapter(_ledger())
+    return ResumeEditWorkflowService(
+        workflows=_workflow_source(interceptors),
+        store=sessions,
+        callers=_default_callers(interceptors, sessions),
         launch=_launch_sequence(),
     )
 

@@ -11,12 +11,16 @@ directly, and goes away when the root becomes an injected dependency.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+HOME_VARIABLE = "GMLW_HOME"
+
 
 def _default_home() -> Path:
-    return Path.home() / ".gmlw"
+    configured = os.environ.get(HOME_VARIABLE, "").strip()
+    return Path(configured).expanduser() if configured else Path.home() / ".gmlw"
 
 
 @dataclass

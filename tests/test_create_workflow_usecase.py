@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the NewWorkflowUseCase use case, driven by fakes."""
+"""Tests for the CreateWorkflowUseCase use case, driven by fakes."""
 
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -15,22 +15,23 @@ from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
 )
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
-from generic_ml_wrapper.application.domain.model.no_such_draft_error import NoSuchDraftError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.model.workflow_exists_error import WorkflowExistsError
 from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
-from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
+from generic_ml_wrapper.application.port.inbound.create_workflow_command import (
+    CreateWorkflowCommand,
+)
 from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
 from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
 from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.create_workflow import CreateWorkflowService
 from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
-from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowService
 
 _UNFINISHED = DraftMarker(None, finished=False)
 
@@ -100,6 +101,9 @@ class FakeWorkflows(WorkflowSourcePort):
 
 
 class FakeStore(SessionStorePort):
+    def create_job(self, job: str) -> None:
+        pass
+
     def __init__(self, sessions: list[Session] | None = None) -> None:
         self.recorded: list[Session] = []
         self.sessions = sessions or []
@@ -147,8 +151,8 @@ class _NoopCaller(CliCallerPort):
 
 def _use_case(
     workflows: FakeWorkflows, store: FakeStore, provider: CapturingProvider
-) -> NewWorkflowService:
-    return NewWorkflowService(
+) -> CreateWorkflowService:
+    return CreateWorkflowService(
         workflows,
         store,
         provider,
@@ -168,7 +172,7 @@ def test_authoring_runs_in_a_draft_under_the_create_workflow_job() -> None:
     provider = CapturingProvider()
 
     result = _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(label=None, client="claude")
+        CreateWorkflowCommand(label=None, client="claude")
     )
 
     assert result.exit_code == 0
@@ -188,7 +192,7 @@ def test_deploys_a_finished_named_draft() -> None:
     workflows = FakeWorkflows(marker=DraftMarker("nightly-etl", finished=True))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(label=None, client="claude")
+        CreateWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.DEPLOYED
@@ -201,7 +205,7 @@ def test_a_seed_name_seeds_the_kickoff() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, FakeStore(), provider).execute(
-        NewWorkflowCommand(label="foo", client="claude")
+        CreateWorkflowCommand(label="foo", client="claude")
     )
 
     assert provider.run is not None
@@ -215,7 +219,7 @@ def test_rejects_a_seed_label_that_yields_nothing_usable(label: str) -> None:
     # for the same reason.
     with pytest.raises(WorkflowNameError):
         _use_case(FakeWorkflows(), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(label=label, client="claude")
+            CreateWorkflowCommand(label=label, client="claude")
         )
 
 
@@ -227,7 +231,7 @@ def test_a_label_with_spaces_and_capitals_is_now_fine(label: str, slug: str) -> 
     # were rejected when the positional had to be kebab-case already.
     workflows = FakeWorkflows(marker=DraftMarker(None, finished=True, label=label))
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(label=label, client="claude")
+        CreateWorkflowCommand(label=label, client="claude")
     )
     assert result.outcome is WorkflowOutcome.DEPLOYED
     assert result.name == slug
@@ -236,7 +240,7 @@ def test_a_label_with_spaces_and_capitals_is_now_fine(label: str, slug: str) -> 
 def test_a_taken_seed_name_fails_fast() -> None:
     with pytest.raises(WorkflowExistsError):
         _use_case(FakeWorkflows(existing=True), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(label="doc-review", client="claude")
+            CreateWorkflowCommand(label="doc-review", client="claude")
         )
 
 
@@ -245,7 +249,7 @@ def test_a_taken_name_at_deploy_keeps_the_draft() -> None:
     workflows = FakeWorkflows(existing=True, marker=DraftMarker("taken", finished=True))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(label=None, client="claude")
+        CreateWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.COLLISION
@@ -258,7 +262,7 @@ def test_incomplete_when_the_marker_is_absent_or_unfinished() -> None:
     workflows = FakeWorkflows(marker=DraftMarker("foo", finished=False))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(label=None, client="claude")
+        CreateWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.INCOMPLETE
@@ -270,7 +274,7 @@ def test_a_proposed_unusable_name_is_incomplete() -> None:
     workflows = FakeWorkflows(marker=DraftMarker("Bad Name", finished=True))
 
     result = _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-        NewWorkflowCommand(label=None, client="claude")
+        CreateWorkflowCommand(label=None, client="claude")
     )
 
     assert result.outcome is WorkflowOutcome.INCOMPLETE
@@ -282,7 +286,7 @@ def test_guided_appends_the_facilitation_layer() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, FakeStore(), provider).execute(
-        NewWorkflowCommand(label=None, client="claude", guided=True)
+        CreateWorkflowCommand(label=None, client="claude", guided=True)
     )
 
     assert provider.run is not None
@@ -295,7 +299,7 @@ def test_quick_omits_the_facilitation_layer() -> None:
     provider = CapturingProvider()
 
     _use_case(workflows, FakeStore(), provider).execute(
-        NewWorkflowCommand(label=None, client="claude", guided=False)
+        CreateWorkflowCommand(label=None, client="claude", guided=False)
     )
 
     assert provider.run is not None
@@ -317,141 +321,11 @@ def test_a_new_session_records_the_draft_it_runs_in() -> None:
     workflows = FakeWorkflows()
     store = FakeStore()
     _use_case(workflows, store, CapturingProvider()).execute(
-        NewWorkflowCommand(label=None, client="claude")
+        CreateWorkflowCommand(label=None, client="claude")
     )
     recorded = store.recorded[0]
     assert recorded.cwd == f"/drafts/{recorded.session_id}"
     assert recorded.resumable is True  # the caller said so
-
-
-def test_resuming_the_latest_draft_reopens_it_in_its_own_folder() -> None:
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
-    store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
-    provider = CapturingProvider()
-
-    _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-    )
-
-    assert provider.run is not None
-    assert provider.run.resume is True
-    assert provider.run.cwd == "/drafts/create-workflow_007"
-    assert provider.run.session_id == "create-workflow_007"
-    assert provider.run.uuid == "uuid-create-workflow_007"
-
-
-def test_resuming_does_not_re_inject_the_authoring_context() -> None:
-    # The client already holds the interview; re-sending the context would talk over it.
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
-    store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
-    provider = CapturingProvider()
-    _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-    )
-    assert provider.run is not None
-    assert provider.run.context is None
-
-
-def test_resuming_uses_the_sessions_own_client_not_the_commands() -> None:
-    # The conversation belongs to the client that held it; reopening it elsewhere would
-    # start from nothing.
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
-    store = FakeStore(sessions=[_authoring_session("create-workflow_007", client="cursor")])
-    provider = CapturingProvider()
-    _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-    )
-    assert provider.run is not None
-    assert provider.run.client == "cursor"
-
-
-def test_resuming_a_named_draft_picks_that_one() -> None:
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_009"), _draft("create-workflow_007")])
-    store = FakeStore(
-        sessions=[
-            _authoring_session("create-workflow_009"),
-            _authoring_session("create-workflow_007"),
-        ]
-    )
-    provider = CapturingProvider()
-    _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(label=None, client="claude", resume_draft="create-workflow_007")
-    )
-    assert provider.run is not None
-    assert provider.run.session_id == "create-workflow_007"
-
-
-def test_resume_latest_skips_a_finished_draft() -> None:
-    # A finished draft is not waiting on the user -- it converged and was blocked from
-    # deploying. Reopening it silently would hide that; naming it explicitly still works.
-    workflows = FakeWorkflows(
-        drafts=[
-            _draft("create-workflow_009", finished=True, name="taken"),
-            _draft("create-workflow_007"),
-        ]
-    )
-    store = FakeStore(
-        sessions=[
-            _authoring_session("create-workflow_009"),
-            _authoring_session("create-workflow_007"),
-        ]
-    )
-    provider = CapturingProvider()
-    _use_case(workflows, store, provider).execute(
-        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-    )
-    assert provider.run is not None
-    assert provider.run.session_id == "create-workflow_007"
-
-
-def test_resuming_an_unknown_draft_is_refused() -> None:
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
-    store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
-    with pytest.raises(NoSuchDraftError):
-        _use_case(workflows, store, CapturingProvider()).execute(
-            NewWorkflowCommand(label=None, client="claude", resume_draft="create-workflow_404")
-        )
-
-
-def test_resuming_with_no_drafts_is_refused() -> None:
-    with pytest.raises(NoSuchDraftError):
-        _use_case(FakeWorkflows(), FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-        )
-
-
-def test_a_draft_whose_session_was_never_recorded_is_refused() -> None:
-    # Drafts on disk and sessions in the ledger can drift apart; say so rather than
-    # relaunching with no client and no uuid.
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
-    with pytest.raises(NoSuchDraftError):
-        _use_case(workflows, FakeStore(), CapturingProvider()).execute(
-            NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-        )
-
-
-def test_a_resumed_draft_still_deploys_when_it_converges() -> None:
-    # The reopened session runs the same _finalize: finishing after a resume must deploy
-    # exactly as finishing first time round does.
-    workflows = FakeWorkflows(
-        marker=DraftMarker("nightly-etl", finished=True), drafts=[_draft("create-workflow_007")]
-    )
-    store = FakeStore(sessions=[_authoring_session("create-workflow_007")])
-    result = _use_case(workflows, store, CapturingProvider()).execute(
-        NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-    )
-    assert result.outcome is WorkflowOutcome.DEPLOYED
-    assert workflows.deployed == ("/drafts/create-workflow_007", "nightly-etl")
-
-
-def test_a_draft_on_a_client_that_cannot_reopen_is_refused() -> None:
-    # Better to say so than to relaunch a client that will start an empty session.
-    workflows = FakeWorkflows(drafts=[_draft("create-workflow_007")])
-    store = FakeStore(sessions=[_authoring_session("create-workflow_007", client="vibe")])
-    with pytest.raises(NoSuchDraftError):
-        _use_case(workflows, store, CapturingProvider(can_resume=False)).execute(
-            NewWorkflowCommand(label=None, client="claude", resume_latest=True)
-        )
 
 
 def _localizer() -> MessageSource:
@@ -465,7 +339,7 @@ def test_a_rejected_name_seeds_nothing() -> None:
     use_case = _use_case(workflows, FakeStore(), CapturingProvider())
 
     with pytest.raises(WorkflowNameError):
-        use_case.execute(NewWorkflowCommand(label="create-workflow", client="claude"))
+        use_case.execute(CreateWorkflowCommand(label="create-workflow", client="claude"))
 
     assert workflows.seeded is False
 
@@ -475,6 +349,6 @@ def test_a_name_already_taken_seeds_nothing() -> None:
     use_case = _use_case(workflows, FakeStore(), CapturingProvider())
 
     with pytest.raises(WorkflowExistsError):
-        use_case.execute(NewWorkflowCommand(label="nightly-etl", client="claude"))
+        use_case.execute(CreateWorkflowCommand(label="nightly-etl", client="claude"))
 
     assert workflows.seeded is False
