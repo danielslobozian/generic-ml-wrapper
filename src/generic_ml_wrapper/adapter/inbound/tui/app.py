@@ -9,26 +9,33 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.inbound.common.action import (
+    create_workflow,
     edit_workflow,
-    new_workflow,
     run_init,
     run_workflow,
 )
 from generic_ml_wrapper.adapter.inbound.common.announcer import print_exit_receipt
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_change_interceptor import (
+    LanguageChangeInterceptor,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    get_active,
+    get_message,
+)
 from generic_ml_wrapper.adapter.inbound.common.launcher import (
     preflight_client,
     preflight_cwd,
     preflight_resume_cwd,
 )
 from generic_ml_wrapper.adapter.inbound.common.renderer import (
-    client_version_label,
+    format_client_version,
     format_job_footprints,
     format_session_footprints,
     format_session_usage,
     format_set_outcome,
+    format_setting_value,
+    format_token_counts,
     render_error,
-    setting_value,
-    tokens,
 )
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
@@ -80,7 +87,6 @@ from generic_ml_wrapper.application.port.inbound.start_job_result import StartJo
 from generic_ml_wrapper.application.port.inbound.start_new_session_command import (
     StartNewSessionCommand,
 )
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_add_environment,
     build_add_role,
@@ -134,6 +140,8 @@ def tui_main() -> int:
         choice = _run_menu()
         if choice is None:  # quit from the menu itself
             return 0
+        if choice.action == "reload-for-language":
+            continue  # nothing was printed to read: rebuild straight into the new language
         exit_code = _act_on_tui_choice(choice)
         if exit_code is not None:  # a launch: the session is over, so gmlw is too
             return exit_code
@@ -147,7 +155,7 @@ def _pause_before_menu() -> None:
     restored terminal, and the next full-screen repaint takes that line with it. The
     outcome of a *delete* is the last thing that should flash past unread.
     """
-    print(i18n.t("tui.return"), file=sys.stderr)
+    print(get_message("tui.return"), file=sys.stderr)
     with contextlib.suppress(EOFError, KeyboardInterrupt):
         input()
 
@@ -199,8 +207,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             return render_error(error)
         kept = [footprint for footprint in outcome if not footprint.removed]
         if not kept:
-            return i18n.t("delete.jobs.done", count=len(outcome))
-        return i18n.t(
+            return get_message("delete.jobs.done", count=len(outcome))
+        return get_message(
             "delete.jobs.partial",
             removed=len(outcome) - len(kept),
             count=len(outcome),
@@ -222,8 +230,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             return render_error(error)
         kept = [footprint for footprint in outcome if not footprint.removed]
         if not kept:
-            return i18n.t("delete.sessions.done", count=len(outcome), job=job)
-        return i18n.t(
+            return get_message("delete.sessions.done", count=len(outcome), job=job)
+        return get_message(
             "delete.sessions.partial",
             removed=len(outcome) - len(kept),
             count=len(outcome),
@@ -243,7 +251,9 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _export_in_app(name: str) -> str:
         try:
-            return i18n.t("workflow.export.written", path=build_export_workflow().execute(name))
+            return get_message(
+                "workflow.export.written", path=build_export_workflow().execute(name)
+            )
         except (WorkflowNameError, WorkflowNotFoundError) as error:
             return f"✗ {render_error(error)}"
 
@@ -256,13 +266,13 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             # Not an error: the use case reports the clash instead of resolving it, so the
             # question can be asked. The menu turns this into a confirmation screen.
             return ImportAttempt(
-                i18n.t("workflow.import.exists", name=result.name), needs_confirmation=True
+                get_message("workflow.import.exists", name=result.name), needs_confirmation=True
             )
         if result.outcome is ImportOutcome.REPLACED:
             return ImportAttempt(
-                i18n.t("workflow.import.replaced", name=result.name, backup=result.backup)
+                get_message("workflow.import.replaced", name=result.name, backup=result.backup)
             )
-        return ImportAttempt(i18n.t("workflow.import.done", name=result.name))
+        return ImportAttempt(get_message("workflow.import.done", name=result.name))
 
     archiver = Archiver(
         export=_export_in_app,
@@ -296,19 +306,21 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _usage_view(job: str) -> UsageView:  # runs on a worker thread: fresh store/connection
         report = build_export_usage().execute(ExportUsageQuery(job=str(JobId(job))))
-        loc = i18n.active()
+        message_source = get_active()
         if report.turn_count == 0 and not report.session_costs:
             return UsageView(
                 job=job,
                 empty=True,
-                summary=loc.t("usage.none", job=repr(job)),
+                summary=message_source.get_message("usage.none", job=repr(job)),
                 model_rows=(),
                 session_rows=(),
             )
-        summary = loc.t(
+        summary = message_source.get_message(
             "usage.total",
             count=report.turn_count,
-            tokens=tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
+            tokens=format_token_counts(
+                report.input_tokens, report.output_tokens, report.cache_tokens, message_source
+            ),
             duration=f"{report.duration_s:.1f}",
             total=f"{report.total_usd:.2f}",
         )
@@ -337,12 +349,17 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         return [
             ClientRow(
                 client=status.display,
-                version=client_version_label(status, loc),
-                resumable=loc.t("clients.yes") if status.resumable else loc.t("clients.no"),
-                default=loc.t("clients.default_marker") if status.is_default else "",
+                version=format_client_version(status, message_source),
+                resumable=message_source.get_message("clients.yes")
+                if status.resumable
+                else message_source.get_message("clients.no"),
+                default=message_source.get_message("clients.default_marker")
+                if status.is_default
+                else "",
                 name=status.name,  # not shown: the id written when the row is made the default
                 note=(  # the caveat on the resume cell, kept out of the column
-                    f"{loc.t('clients.col.resumable')}: {loc.t(status.resume_hint)}"
+                    f"{message_source.get_message('clients.col.resumable')}: "
+                    f"{message_source.get_message(status.resume_hint)}"
                     if status.resume_hint
                     else ""
                 ),
@@ -355,7 +372,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     # ones, a ``create``. The app stays pure -- the wiring owns every outbound call.
     config_commands = build_config_commands()
 
-    t = i18n.active().t
+    message_source = get_active()
 
     def _switcher(
         label_key: str,
@@ -364,11 +381,16 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         create: Callable[[str], CreateOutcome] | None = None,
     ) -> Switcher:
         current = config_commands.get(key).value
-        crumb = f"gmlw > {t('tui.config')} > {t(label_key)}"
+        crumb = (
+            f"gmlw > {message_source.get_message('tui.config')} > "
+            f"{message_source.get_message(label_key)}"
+        )
 
         def apply(value: str) -> str:  # localised confirmation, shown in the detail panel
             changed = config_commands.set(key, value).changed
-            return t("tui.switch.set" if changed else "tui.switch.unchanged", value=value)
+            return message_source.get_message(
+                "tui.switch.set" if changed else "tui.switch.unchanged", value=value
+            )
 
         return Switcher(
             crumb=crumb,
@@ -382,9 +404,9 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         try:  # add + make it the default, so "New" from the switcher also switches
             result = build_add_role().execute(AddRoleCommand(label=label))
         except UncodableRoleLabelError:
-            return CreateOutcome(None, t("tui.create.bad"))
+            return CreateOutcome(None, message_source.get_message("tui.create.bad"))
         except RoleCodeAlreadyExistsError:
-            return CreateOutcome(None, t("tui.create.exists"))
+            return CreateOutcome(None, message_source.get_message("tui.create.exists"))
         build_set_default_role().execute(SetDefaultRoleCommand(code=result.role.code))
         return CreateOutcome(SwitchChoice(result.role.code, result.role.label, ""), "")
 
@@ -392,9 +414,9 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         try:  # add + make it the default, so "New" from the switcher also switches
             result = build_add_environment().execute(AddEnvironmentCommand(label=label))
         except UncodableEnvironmentLabelError:
-            return CreateOutcome(None, t("tui.create.bad"))
+            return CreateOutcome(None, message_source.get_message("tui.create.bad"))
         except EnvironmentCodeAlreadyExistsError:
-            return CreateOutcome(None, t("tui.create.exists"))
+            return CreateOutcome(None, message_source.get_message("tui.create.exists"))
         build_set_default_environment().execute(
             SetDefaultEnvironmentCommand(code=result.environment.code)
         )
@@ -422,14 +444,14 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     # reads the snapshot; a set goes through the same ConfigCommandsUseCase.set that
     # the CLI's `config set` uses
     # uses (values/defaults pre-rendered through setting_value so the app stays format-free).
-    loc = i18n.active()
+    message_source = get_active()
 
     def _config_settings() -> list[ConfigSetting]:
         return [
             ConfigSetting(
                 key=view.key,
-                value=setting_value(view.value, loc),
-                default=setting_value(view.default, loc),
+                value=format_setting_value(view.value, message_source),
+                default=format_setting_value(view.default, message_source),
                 type_name=view.type_name,
                 choices=view.choices,
                 description=view.description,
@@ -442,15 +464,19 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             outcome = config_commands.set(key, raw)
         except InvalidSettingValueError as error:
             return ConfigSetResult(ok=False, message=render_error(error))
+        language_changed = LanguageChangeInterceptor.after_setting_written(key, raw)
         return ConfigSetResult(
-            ok=True, message=format_set_outcome(outcome), value=setting_value(outcome.new, loc)
+            ok=True,
+            message=format_set_outcome(outcome),
+            value=format_setting_value(outcome.new, message_source),
+            language_changed=language_changed,
         )
 
     def _set_default_client(name: str) -> ConfigSetResult:  # Config → Clients: pick the default
         return _apply_setting("client.default", name)
 
     config_catalog = ConfigCatalog(
-        crumb=f"gmlw > {t('tui.config')}",
+        crumb=f"gmlw > {message_source.get_message('tui.config')}",
         settings=_config_settings(),
         apply=_apply_setting,
     )
@@ -459,7 +485,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         try:
             JobId(name)
         except IdentifierError:
-            return t("tui.newjob.invalid")
+            return message_source.get_message("tui.newjob.invalid")
         return None
 
     def _validate_workflow(name: str) -> str | None:  # empty is fine — named at the end
@@ -468,7 +494,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         try:
             WorkflowName(name)
         except IdentifierError:
-            return t("tui.wf.invalid")
+            return message_source.get_message("tui.wf.invalid")
         return None
 
     # The menu opens on a *snapshot* of the default client, for the rows that mention it.
@@ -527,7 +553,7 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:
     if choice.action == "run" and choice.workflow is not None:  # launch on the chosen workflow
         return run_workflow(choice.workflow, client)
     if choice.action == "workflow_new":  # author a new workflow (name may be None -> proposed)
-        return new_workflow(choice.workflow, client, choice.guided)
+        return create_workflow(choice.workflow, client, choice.guided)
     if choice.action == "workflow_edit" and choice.workflow is not None:
         return edit_workflow(choice.workflow, client, choice.guided)
     if choice.job is None or choice.action not in ("start", "resume"):

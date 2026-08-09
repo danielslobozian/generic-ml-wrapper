@@ -13,6 +13,12 @@ from pathlib import Path
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_workflow_chooser import TtyWorkflowChooser
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_context_holder import (
+    DEFAULT_LANGUAGE,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    get_active,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_environment_repository import (
     FilesystemEnvironmentRepositoryAdapter,
 )
@@ -83,9 +89,6 @@ from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
     StderrDiagnosticsAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.diagnostics.tee_diagnostics import TeeDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLanguageCatalogAdapter,
-)
 from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
     FilesystemPersonaSourceAdapter,
 )
@@ -167,9 +170,6 @@ from generic_ml_wrapper.application.port.inbound.find_job import FindJobUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
     ListAuthoringModesUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_available_languages import (
-    ListAvailableLanguagesUseCase,
 )
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_drafts import ListDraftsUseCase
@@ -254,9 +254,6 @@ from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflo
 from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
 from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuthoringModesService
-from generic_ml_wrapper.application.usecase.list_available_languages import (
-    ListAvailableLanguagesService,
-)
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsService
 from generic_ml_wrapper.application.usecase.list_environment_examples import (
@@ -303,12 +300,6 @@ from generic_ml_wrapper.application.usecase.start_new_session_for_job import (
 )
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
 from generic_ml_wrapper.application.wiring import diagnostics_log as log
-from generic_ml_wrapper.application.wiring.localization import (
-    MessageSource,
-    active,
-    load_localizer,
-    resolve_language,
-)
 from generic_ml_wrapper.application.wiring.paths import paths
 from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
 
@@ -554,7 +545,7 @@ def _capability_card() -> str | None:
     """
     if not config.ambient_capability_card():
         return None
-    return active().t("ambient.card")
+    return get_active().get_message("ambient.card")
 
 
 def _client_arguments_binder() -> ClientArgumentsBinder:
@@ -763,7 +754,7 @@ def build_workflow_chooser() -> TtyWorkflowChooser:
     Returns:
         A terminal chooser that offers the runnable workflows, or declines off a TTY.
     """
-    return TtyWorkflowChooser(build_localizer())
+    return TtyWorkflowChooser(get_active())
 
 
 def build_guided_chooser() -> TtyGuidedChooser:
@@ -772,7 +763,7 @@ def build_guided_chooser() -> TtyGuidedChooser:
     Returns:
         A terminal chooser that asks whether to author with the guided experience.
     """
-    return TtyGuidedChooser(build_localizer())
+    return TtyGuidedChooser(get_active())
 
 
 def build_set_credential() -> SetCredentialUseCase:
@@ -981,17 +972,10 @@ def build_save_init_answers() -> SaveInitAnswersUseCase:
     )
 
 
-def seed_localizer() -> MessageSource:
-    """The catalogue the language question itself is asked in.
-
-    Resolves from ``[language] code`` if a prior run set it, else ``$LANG``. The language
-    menu offers each language under its own name, so this only affects the words around
-    it -- and the terminal rebuilds the catalogue in the chosen language straight after.
-
-    Returns:
-        A message source for the seeded language.
-    """
-    return load_localizer(resolve_language(config.language() or os.environ.get("LANG")))
+def load_current_language() -> str:
+    available = get_active().available_languages()
+    preferences = (config.language(), OsSystemInfoAdapter().language(), DEFAULT_LANGUAGE)
+    return next((code for code in preferences if code in available), DEFAULT_LANGUAGE)
 
 
 def default_user_name() -> str:
@@ -1006,23 +990,6 @@ def default_user_name() -> str:
 def platform_name() -> str:
     """The OS name, so an install command is the right one for this machine."""
     return OsSystemInfoAdapter().platform_name()
-
-
-def seed_language() -> str:
-    """The language code the interview starts in (before the user chooses)."""
-    return resolve_language(config.language() or os.environ.get("LANG"))
-
-
-def build_localizer() -> MessageSource:
-    """Build the localiser for the language the wrapper speaks to the user.
-
-    Prefers the init-chosen ``[language] code``; falls back to ``$LANG`` (English when
-    unset or unsupported) until init has run.
-
-    Returns:
-        A ready-to-use localiser.
-    """
-    return load_localizer(resolve_language(config.language() or os.environ.get("LANG")))
 
 
 def build_check_client_ready() -> CheckClientReadyUseCase:
@@ -1209,15 +1176,6 @@ def build_diagnostics(
     if not sinks:
         return NullDiagnosticsAdapter()
     return sinks[0] if len(sinks) == 1 else TeeDiagnosticsAdapter(*sinks)
-
-
-def build_list_available_languages() -> ListAvailableLanguagesUseCase:
-    """Build the ListAvailableLanguagesUseCase use case over the packaged catalogues.
-
-    Returns:
-        A ready-to-ask ListAvailableLanguagesUseCase.
-    """
-    return ListAvailableLanguagesService(JsonCatalogLanguageCatalogAdapter())
 
 
 def build_list_authoring_modes() -> ListAuthoringModesUseCase:

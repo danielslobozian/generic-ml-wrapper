@@ -2,11 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the HookRunner: phase matching, client scoping, order, best-effort."""
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
 )
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.application.domain.model.hook_context import HookContext
 from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
@@ -88,6 +90,6 @@ def test_empty_runner_is_a_no_op() -> None:
     )  # does not raise
 
 
-def _localizer() -> MessageSource:
+def _message_source() -> MessageSourceAccessor:
     """The real English catalogue: these tests assert behaviour, not translations."""
-    return JsonCatalogLocalizerFactory().load("en")
+    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")

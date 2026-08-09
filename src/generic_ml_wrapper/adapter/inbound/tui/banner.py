@@ -17,7 +17,9 @@ from rich.panel import Panel
 from rich.text import Text
 
 from generic_ml_wrapper import __version__
-from generic_ml_wrapper.application.wiring import localization as i18n
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    get_message,
+)
 from generic_ml_wrapper.application.wiring.composition import build_list_supported_clients
 
 # The wordmark, coloured letter-by-letter (cyan → indigo). One colour per character.
@@ -46,7 +48,7 @@ def boxed_banner() -> Panel:
     """
     title = _wordmark()
     title.append("  ")
-    title.append(i18n.t("banner.tagline"), style="dim italic")
+    title.append(get_message("banner.tagline"), style="dim italic")
     body = Text()
     body.append(_clients_line(), style="cyan")
     body.append("   ·   ", style="dim")

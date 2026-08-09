@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import getpass
+import os
 import platform
 
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_code import LanguageCode
 from generic_ml_wrapper.application.port.outbound.system_info import SystemInfoPort
 
 
@@ -25,6 +27,10 @@ class OsSystemInfoAdapter(SystemInfoPort):
             return getpass.getuser()
         except (OSError, KeyError):
             return ""
+
+    def language(self) -> str | None:
+        """Return the host's language as a two-letter code, read from the environment."""
+        return LanguageCode.from_posix_locale(os.environ.get("LC_ALL") or os.environ.get("LANG"))
 
     def platform_name(self) -> str:
         """Return the platform's name as the client catalogue spells it."""

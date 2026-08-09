@@ -7,16 +7,26 @@ from __future__ import annotations
 from rich.console import Console
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+    set_active,
+)
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
 )
-from generic_ml_wrapper.application.wiring import localization as i18n
+
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
 
 
 def _render() -> list[str]:
     """Render the banner Panel to plain text lines (colour stripped, trailing space trimmed)."""
-    i18n.set_active(i18n.load_localizer("en"))
+    set_active(_accessor("en"))
     console = Console(width=80, no_color=True)
     with console.capture() as capture:
         console.print(boxed_banner())
@@ -44,10 +54,10 @@ def test_banner_is_a_closed_box_with_aligned_rows() -> None:
 
 def test_banner_tagline_is_localised() -> None:
     try:
-        i18n.set_active(i18n.load_localizer("fr"))
+        set_active(_accessor("fr"))
         console = Console(width=80, no_color=True)
         with console.capture() as capture:
             console.print(boxed_banner())
         assert "compagnon" in capture.get()  # the French tagline, not the English one
     finally:
-        i18n.set_active(i18n.load_localizer("en"))  # don't leak fr into other tests' assertions
+        set_active(_accessor("en"))  # don't leak fr into other tests' assertions

@@ -20,32 +20,40 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
     render_topic_list,
 )
 from generic_ml_wrapper.adapter.inbound.common.action import (
+    create_workflow,
     edit_workflow,
-    new_workflow,
     resume_edit_workflow,
     run_init,
     run_workflow,
 )
 from generic_ml_wrapper.adapter.inbound.common.announcer import (
-    announce_create_workflow,
-    announce_migration,
-    announce_slug_migration,
+    print_create_workflow,
     print_exit_receipt,
+    print_migration,
+    print_slug_migration,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_change_interceptor import (
+    LanguageChangeInterceptor,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+    get_active,
+    get_message,
 )
 from generic_ml_wrapper.adapter.inbound.common.launcher import (
     preflight_client,
     preflight_cwd,
 )
 from generic_ml_wrapper.adapter.inbound.common.renderer import (
-    client_version_label,
-    farewell,
+    format_client_version,
     format_job_footprints,
     format_session_footprints,
     format_session_usage,
     format_set_outcome,
+    format_setting_value,
+    format_token_counts,
+    get_farewell,
     render_error,
-    setting_value,
-    tokens,
 )
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
@@ -122,7 +130,6 @@ from generic_ml_wrapper.application.port.inbound.start_new_session_command impor
     StartNewSessionCommand,
 )
 from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_add_environment,
     build_add_role,
@@ -198,22 +205,22 @@ class LocalizedHelpFormatter(argparse.RawDescriptionHelpFormatter):
         prefix: str | None = None,
     ) -> None:
         """Render the usage line under a localised ``usage:`` prefix."""
-        super().add_usage(usage, actions, groups, prefix or i18n.t("cli.section.usage"))
+        super().add_usage(usage, actions, groups, prefix or get_message("cli.section.usage"))
 
     def start_section(self, heading: str | None) -> None:
         """Open a section, translating argparse's own headings on the way through."""
         key = self._HEADINGS.get(heading or "")
-        super().start_section(i18n.t(key) if key else heading)
+        super().start_section(get_message(key) if key else heading)
 
 
 def _add_json_flag(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--json`` flag to a read command's parser."""
-    parser.add_argument("--json", action="store_true", help=i18n.t("cli.flag.json"))
+    parser.add_argument("--json", action="store_true", help=get_message("cli.flag.json"))
 
 
 def _add_yes_flag(parser: argparse.ArgumentParser) -> None:
     """Add the shared ``--yes`` flag to a delete command's parser."""
-    parser.add_argument("--yes", action="store_true", help=i18n.t("cli.flag.yes"))
+    parser.add_argument("--yes", action="store_true", help=get_message("cli.flag.yes"))
 
 
 def _add_guided_flags(parser: argparse.ArgumentParser) -> None:
@@ -226,12 +233,12 @@ def _add_guided_flags(parser: argparse.ArgumentParser) -> None:
     group.add_argument(
         "--guided",
         action="store_true",
-        help=i18n.t("cli.flag.guided"),
+        help=get_message("cli.flag.guided"),
     )
     group.add_argument(
         "--quick",
         action="store_true",
-        help=i18n.t("cli.flag.quick"),
+        help=get_message("cli.flag.quick"),
     )
 
 
@@ -332,163 +339,168 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         # one language instead of two.
         add_help=False,
     )
-    parser.add_argument("-h", "--help", action="help", help=i18n.t("cli.flag.help"))
+    parser.add_argument("-h", "--help", action="help", help=get_message("cli.flag.help"))
     parser.add_argument(
-        "--version", action="version", version=_version_string(), help=i18n.t("cli.flag.version")
+        "--version",
+        action="version",
+        version=_version_string(),
+        help=get_message("cli.flag.version"),
     )
-    sub = parser.add_subparsers(dest="command", metavar=i18n.t("cli.metavar.command"))
+    sub = parser.add_subparsers(dest="command", metavar=get_message("cli.metavar.command"))
 
     sub.add_parser(
         "init",
-        help=i18n.t("cli.cmd.init"),
+        help=get_message("cli.cmd.init"),
     )
 
-    start = sub.add_parser("start", help=i18n.t("cli.cmd.start"))
-    start.add_argument("job", nargs="?", default=None, help=i18n.t("cli.arg.job"))
+    start = sub.add_parser("start", help=get_message("cli.cmd.start"))
+    start.add_argument("job", nargs="?", default=None, help=get_message("cli.arg.job"))
     start.add_argument(
         "--client",
         default=None,
-        help=i18n.t("cli.flag.client"),
+        help=get_message("cli.flag.client"),
     )
     start.add_argument(
         "--resume-latest",
         action="store_true",
-        help=i18n.t("cli.flag.resume_latest"),
+        help=get_message("cli.flag.resume_latest"),
     )
     start.add_argument(
         "--workflow",
         "-w",
         default=None,
-        help=i18n.t("cli.flag.workflow"),
+        help=get_message("cli.flag.workflow"),
     )
     start.add_argument(
         "--client-args",
         default=None,
-        help=i18n.t("cli.flag.client_args"),
+        help=get_message("cli.flag.client_args"),
     )
 
-    run = sub.add_parser("run", help=i18n.t("cli.cmd.run"))
+    run = sub.add_parser("run", help=get_message("cli.cmd.run"))
     run.add_argument(
         "workflow",
         nargs="?",
         default=None,
-        help=i18n.t("cli.arg.run_workflow"),
+        help=get_message("cli.arg.run_workflow"),
     )
     run.add_argument(
         "--client",
         default=None,
-        help=i18n.t("cli.flag.client"),
+        help=get_message("cli.flag.client"),
     )
     run.add_argument(
         "--client-args",
         default=None,
-        help=i18n.t("cli.flag.client_args"),
+        help=get_message("cli.flag.client_args"),
     )
 
     # `jobs` and `sessions` stay list-first: their `delete` sub-action is optional, so a
     # bare `gmlw jobs` still lists. Deliberately *not* in `_SUBACTIONS` — that map makes a
     # command with no action print its help, which is right for `workflow` and wrong here.
-    jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
+    jobs = sub.add_parser("jobs", help=get_message("cli.cmd.jobs"))
     _add_json_flag(jobs)
-    jobs_sub = jobs.add_subparsers(dest="jobs_command", metavar=i18n.t("cli.metavar.action"))
-    jobs_delete = jobs_sub.add_parser("delete", help=i18n.t("cli.cmd.jobs_delete"))
-    jobs_delete.add_argument("job", nargs="+", help=i18n.t("cli.arg.delete_jobs"))
+    jobs_sub = jobs.add_subparsers(dest="jobs_command", metavar=get_message("cli.metavar.action"))
+    jobs_delete = jobs_sub.add_parser("delete", help=get_message("cli.cmd.jobs_delete"))
+    jobs_delete.add_argument("job", nargs="+", help=get_message("cli.arg.delete_jobs"))
     _add_yes_flag(jobs_delete)
 
-    sessions = sub.add_parser("sessions", help=i18n.t("cli.cmd.sessions"))
-    sessions.add_argument("job", help=i18n.t("cli.arg.job"))
+    sessions = sub.add_parser("sessions", help=get_message("cli.cmd.sessions"))
+    sessions.add_argument("job", help=get_message("cli.arg.job"))
     _add_json_flag(sessions)
     sessions_sub = sessions.add_subparsers(
-        dest="sessions_command", metavar=i18n.t("cli.metavar.action")
+        dest="sessions_command", metavar=get_message("cli.metavar.action")
     )
-    sessions_delete = sessions_sub.add_parser("delete", help=i18n.t("cli.cmd.sessions_delete"))
-    sessions_delete.add_argument("session", nargs="+", help=i18n.t("cli.arg.delete_sessions"))
+    sessions_delete = sessions_sub.add_parser("delete", help=get_message("cli.cmd.sessions_delete"))
+    sessions_delete.add_argument("session", nargs="+", help=get_message("cli.arg.delete_sessions"))
     _add_yes_flag(sessions_delete)
 
-    export = sub.add_parser("export", help=i18n.t("cli.cmd.export"))
-    export.add_argument("job", help=i18n.t("cli.arg.job"))
+    export = sub.add_parser("export", help=get_message("cli.cmd.export"))
+    export.add_argument("job", help=get_message("cli.arg.job"))
     _add_json_flag(export)
 
-    clients = sub.add_parser("clients", help=i18n.t("cli.cmd.clients"))
+    clients = sub.add_parser("clients", help=get_message("cli.cmd.clients"))
     _add_json_flag(clients)
 
-    sub.add_parser("statusline", help=i18n.t("cli.cmd.statusline"))
+    sub.add_parser("statusline", help=get_message("cli.cmd.statusline"))
 
-    workflow = sub.add_parser("workflow", help=i18n.t("cli.cmd.workflow"))
+    workflow = sub.add_parser("workflow", help=get_message("cli.cmd.workflow"))
     workflow_sub = workflow.add_subparsers(
-        dest="workflow_command", metavar=i18n.t("cli.metavar.action")
+        dest="workflow_command", metavar=get_message("cli.metavar.action")
     )
-    new = workflow_sub.add_parser("new", help=i18n.t("cli.cmd.workflow_new"))
+    new = workflow_sub.add_parser("new", help=get_message("cli.cmd.workflow_new"))
     new.add_argument(
         "label",
         nargs="?",
         default=None,
-        help=i18n.t("cli.arg.workflow_label_optional"),
+        help=get_message("cli.arg.workflow_label_optional"),
     )
     new.add_argument(
         "--description",
         default="",
-        help=i18n.t("cli.flag.workflow_description"),
+        help=get_message("cli.flag.workflow_description"),
     )
     new.add_argument(
         "--client",
         default=None,
-        help=i18n.t("cli.flag.client"),
+        help=get_message("cli.flag.client"),
     )
     _add_guided_flags(new)
-    export_wf = workflow_sub.add_parser("export", help=i18n.t("cli.cmd.workflow_export"))
-    export_wf.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
-    import_wf = workflow_sub.add_parser("import", help=i18n.t("cli.cmd.workflow_import"))
-    import_wf.add_argument("archive", help=i18n.t("cli.arg.workflow_archive"))
+    export_wf = workflow_sub.add_parser("export", help=get_message("cli.cmd.workflow_export"))
+    export_wf.add_argument("name", help=get_message("cli.arg.workflow_name"))
+    import_wf = workflow_sub.add_parser("import", help=get_message("cli.cmd.workflow_import"))
+    import_wf.add_argument("archive", help=get_message("cli.arg.workflow_archive"))
     import_wf.add_argument(
         "--replace",
         action="store_true",
-        help=i18n.t("cli.flag.workflow_replace"),
+        help=get_message("cli.flag.workflow_replace"),
     )
-    drafts_parser = workflow_sub.add_parser("drafts", help=i18n.t("cli.cmd.workflow_drafts"))
+    drafts_parser = workflow_sub.add_parser("drafts", help=get_message("cli.cmd.workflow_drafts"))
     _add_json_flag(drafts_parser)
-    resume = workflow_sub.add_parser("resume", help=i18n.t("cli.cmd.workflow_resume"))
+    resume = workflow_sub.add_parser("resume", help=get_message("cli.cmd.workflow_resume"))
     resume.add_argument(
         "draft",
         nargs="?",
         default=None,
-        help=i18n.t("cli.arg.draft_optional"),
+        help=get_message("cli.arg.draft_optional"),
     )
-    edit = workflow_sub.add_parser("edit", help=i18n.t("cli.cmd.workflow_edit"))
-    edit.add_argument("name", help=i18n.t("cli.arg.workflow_name"))
+    edit = workflow_sub.add_parser("edit", help=get_message("cli.cmd.workflow_edit"))
+    edit.add_argument("name", help=get_message("cli.arg.workflow_name"))
     edit.add_argument(
         "--resume-latest",
         action="store_true",
-        help=i18n.t("cli.flag.resume_edit"),
+        help=get_message("cli.flag.resume_edit"),
     )
     edit.add_argument(
         "--client",
         default=None,
-        help=i18n.t("cli.flag.client"),
+        help=get_message("cli.flag.client"),
     )
     _add_guided_flags(edit)
-    workflow_list = workflow_sub.add_parser("list", help=i18n.t("cli.cmd.workflow_list"))
+    workflow_list = workflow_sub.add_parser("list", help=get_message("cli.cmd.workflow_list"))
     _add_json_flag(workflow_list)
 
-    persona = sub.add_parser("persona", help=i18n.t("cli.cmd.persona"))
+    persona = sub.add_parser("persona", help=get_message("cli.cmd.persona"))
     persona_sub = persona.add_subparsers(
-        dest="persona_command", metavar=i18n.t("cli.metavar.action")
+        dest="persona_command", metavar=get_message("cli.metavar.action")
     )
-    persona_list = persona_sub.add_parser("list", help=i18n.t("cli.cmd.persona_list"))
+    persona_list = persona_sub.add_parser("list", help=get_message("cli.cmd.persona_list"))
     _add_json_flag(persona_list)
 
-    plugins = sub.add_parser("plugins", help=i18n.t("cli.cmd.plugins"))
+    plugins = sub.add_parser("plugins", help=get_message("cli.cmd.plugins"))
     plugins_sub = plugins.add_subparsers(
-        dest="plugins_command", metavar=i18n.t("cli.metavar.action")
+        dest="plugins_command", metavar=get_message("cli.metavar.action")
     )
-    plugins_list = plugins_sub.add_parser("list", help=i18n.t("cli.cmd.plugins_list"))
+    plugins_list = plugins_sub.add_parser("list", help=get_message("cli.cmd.plugins_list"))
     _add_json_flag(plugins_list)
 
-    creds = sub.add_parser("creds", help=i18n.t("cli.cmd.creds"))
-    creds_sub = creds.add_subparsers(dest="creds_command", metavar=i18n.t("cli.metavar.action"))
-    creds_set = creds_sub.add_parser("set", help=i18n.t("cli.cmd.creds_set"))
-    creds_set.add_argument("workflow", help=i18n.t("cli.arg.creds_workflow"))
-    creds_set.add_argument("name", help=i18n.t("cli.arg.creds_name"))
+    creds = sub.add_parser("creds", help=get_message("cli.cmd.creds"))
+    creds_sub = creds.add_subparsers(
+        dest="creds_command", metavar=get_message("cli.metavar.action")
+    )
+    creds_set = creds_sub.add_parser("set", help=get_message("cli.cmd.creds_set"))
+    creds_set.add_argument("workflow", help=get_message("cli.arg.creds_workflow"))
+    creds_set.add_argument("name", help=get_message("cli.arg.creds_name"))
 
     _add_config_parser(sub)
     _add_role_and_environment_parsers(sub)
@@ -502,163 +514,182 @@ def _add_role_and_environment_parsers(sub: _SubParsers) -> None:
     # manage {noun}s" only pluralises in English, and French needs its own article and
     # agreement for each. Two of them is few enough to spell out honestly.
     for command in ("environment", "role"):
-        parser = sub.add_parser(command, help=i18n.t(f"cli.cmd.{command}"))
+        parser = sub.add_parser(command, help=get_message(f"cli.cmd.{command}"))
         action = parser.add_subparsers(
-            dest=f"{command}_command", metavar=i18n.t("cli.metavar.action")
+            dest=f"{command}_command", metavar=get_message("cli.metavar.action")
         )
-        new = action.add_parser("new", help=i18n.t(f"cli.cmd.{command}_new"))
-        new.add_argument("label", help=i18n.t(f"cli.arg.{command}.label"))
+        new = action.add_parser("new", help=get_message(f"cli.cmd.{command}_new"))
+        new.add_argument("label", help=get_message(f"cli.arg.{command}.label"))
         new.add_argument(
-            "--description", default="", help=i18n.t(f"cli.flag.{command}.description")
+            "--description", default="", help=get_message(f"cli.flag.{command}.description")
         )
         new.add_argument(
             "--default",
             action="store_true",
             dest="make_default",
-            help=i18n.t(f"cli.flag.{command}_default"),
+            help=get_message(f"cli.flag.{command}_default"),
         )
 
 
 def _add_config_parser(sub: _SubParsers) -> None:
     """Add the ``config`` command (list/get/set) to the top-level subparsers."""
-    config_parser = sub.add_parser("config", help=i18n.t("cli.cmd.config"))
+    config_parser = sub.add_parser("config", help=get_message("cli.cmd.config"))
     config_sub = config_parser.add_subparsers(
-        dest="config_command", metavar=i18n.t("cli.metavar.action")
+        dest="config_command", metavar=get_message("cli.metavar.action")
     )
-    config_list = config_sub.add_parser("list", help=i18n.t("cli.cmd.config_list"))
+    config_list = config_sub.add_parser("list", help=get_message("cli.cmd.config_list"))
     _add_json_flag(config_list)
-    config_get = config_sub.add_parser("get", help=i18n.t("cli.cmd.config_get"))
-    config_get.add_argument("key", help=i18n.t("cli.arg.config_key_example"))
+    config_get = config_sub.add_parser("get", help=get_message("cli.cmd.config_get"))
+    config_get.add_argument("key", help=get_message("cli.arg.config_key_example"))
     _add_json_flag(config_get)
-    config_set = config_sub.add_parser("set", help=i18n.t("cli.cmd.config_set"))
-    config_set.add_argument("key", help=i18n.t("cli.arg.config_key"))
-    config_set.add_argument("value", help=i18n.t("cli.arg.config_value"))
+    config_set = config_sub.add_parser("set", help=get_message("cli.cmd.config_set"))
+    config_set.add_argument("key", help=get_message("cli.arg.config_key"))
+    config_set.add_argument("value", help=get_message("cli.arg.config_value"))
 
 
 def _add_help_parser(sub: _SubParsers) -> None:
     """Add the ``help`` command (topic explainers) to the top-level subparsers."""
-    help_parser = sub.add_parser("help", help=i18n.t("cli.cmd.help"))
+    help_parser = sub.add_parser("help", help=get_message("cli.cmd.help"))
     help_parser.add_argument(
         "topic",
         nargs="?",
         default=None,
-        metavar=i18n.t("cli.metavar.topic"),
-        help=i18n.t("cli.arg.help_topic", topics=", ".join(TOPICS)),
+        metavar=get_message("cli.metavar.topic"),
+        help=get_message("cli.arg.help_topic", topics=", ".join(TOPICS)),
     )
 
 
-def format_jobs(summaries: list[JobSummary], loc: i18n.MessageSource | None = None) -> str:
+def format_jobs(
+    summaries: list[JobSummary], message_source: MessageSourceAccessor | None = None
+) -> str:
     """Render the job summaries as human-readable lines.
 
     Args:
         summaries: The job summaries to render.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if not summaries:
-        return loc.t("jobs.none")
-    lines = [loc.t("jobs.count", count=len(summaries)), ""]
+        return message_source.get_message("jobs.none")
+    lines = [message_source.get_message("jobs.count", count=len(summaries)), ""]
     width = max(len(summary.job) for summary in summaries)
     lines += [
-        loc.t("jobs.row", job=f"{summary.job:<{width}}", count=summary.session_count)
+        message_source.get_message(
+            "jobs.row", job=f"{summary.job:<{width}}", count=summary.session_count
+        )
         for summary in summaries
     ]
     return "\n".join(lines)
 
 
 def format_sessions(
-    job: str, sessions: list[SessionSummary], loc: i18n.MessageSource | None = None
+    job: str, sessions: list[SessionSummary], message_source: MessageSourceAccessor | None = None
 ) -> str:
     """Render a job's sessions as human-readable lines.
 
     Args:
         job: The job the sessions belong to.
         sessions: The session summaries to render.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if not sessions:
-        return loc.t("sessions.none", job=repr(job), start_job=job)
-    lines = [loc.t("sessions.count", job=job, count=len(sessions)), ""]
+        return message_source.get_message("sessions.none", job=repr(job), start_job=job)
+    lines = [message_source.get_message("sessions.count", job=job, count=len(sessions)), ""]
     session_width = max(len(session.session_id) for session in sessions)
     client_width = max(len(session.client) for session in sessions)
-    usages = [format_session_usage(session, loc) for session in sessions]
+    usages = [format_session_usage(session, message_source) for session in sessions]
     usage_width = max(len(usage) for usage in usages)
     for session, usage in zip(sessions, usages, strict=True):
-        resumable = loc.t("clients.yes") if session.resumable else loc.t("clients.no")
+        resumable = (
+            message_source.get_message("clients.yes")
+            if session.resumable
+            else message_source.get_message("clients.no")
+        )
         lines.append(
-            loc.t(
+            message_source.get_message(
                 "sessions.row",
                 session=f"{session.session_id:<{session_width}}",
                 date=f"{(session.created_at or '')[:16]:<16}",  # YYYY-MM-DD HH:MM (blank if unset)
                 client=f"{session.client:<{client_width}}",
                 resumable=f"{resumable:<3}",
                 usage=f"{usage:<{usage_width}}",
-                folder=session.cwd or loc.t("sessions.no_folder"),
+                folder=session.cwd or message_source.get_message("sessions.no_folder"),
             )
         )
     return "\n".join(lines)
 
 
-def format_usage(report: UsageReport, loc: i18n.MessageSource | None = None) -> str:
+def format_usage(report: UsageReport, message_source: MessageSourceAccessor | None = None) -> str:
     """Render a job's usage report: per-turn rows, totals by model, cost, and totals.
 
     Args:
         report: The usage report to render.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if report.turn_count == 0 and not report.session_costs:
-        return loc.t("usage.none", job=repr(report.job))
+        return message_source.get_message("usage.none", job=repr(report.job))
     width = max(
         (len(model.model) for model in report.models),
         default=len(_UNKNOWN_LABEL),
     )
-    lines = [loc.t("usage.header", job=report.job, count=report.turn_count), ""]
+    lines = [
+        message_source.get_message("usage.header", job=report.job, count=report.turn_count),
+        "",
+    ]
     for turn in report.turns:
         lines.append(
-            loc.t(
+            message_source.get_message(
                 "usage.turn_row",
                 clock=_clock(turn.timestamp),
                 model=f"{turn.model:<{width}}",
                 duration=f"{turn.duration_s:>5.1f}",
-                tokens=tokens(turn.input_tokens, turn.output_tokens, turn.cache_tokens, loc),
+                tokens=format_token_counts(
+                    turn.input_tokens, turn.output_tokens, turn.cache_tokens, message_source
+                ),
                 turn_id=turn.turn_id or "-",
             )
         )
     if report.models:
-        lines += ["", loc.t("usage.totals_by_model")]
+        lines += ["", message_source.get_message("usage.totals_by_model")]
         lines += [
-            loc.t(
+            message_source.get_message(
                 "usage.model_row",
                 model=f"{model.model:<{width}}",
                 calls=f"{model.calls:>3}",
-                tokens=tokens(model.input_tokens, model.output_tokens, model.cache_tokens, loc),
+                tokens=format_token_counts(
+                    model.input_tokens, model.output_tokens, model.cache_tokens, message_source
+                ),
                 duration=f"{model.duration_s:.1f}",
             )
             for model in report.models
         ]
     if report.session_costs:
-        lines += ["", loc.t("usage.cost_by_session")]
+        lines += ["", message_source.get_message("usage.cost_by_session")]
         lines += [
-            loc.t("usage.cost_row", session=cost.session_id, cost=f"{cost.cost_usd:.2f}")
+            message_source.get_message(
+                "usage.cost_row", session=cost.session_id, cost=f"{cost.cost_usd:.2f}"
+            )
             for cost in report.session_costs
         ]
     lines += [
         "",
-        loc.t(
+        message_source.get_message(
             "usage.total",
             count=report.turn_count,
-            tokens=tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
+            tokens=format_token_counts(
+                report.input_tokens, report.output_tokens, report.cache_tokens, message_source
+            ),
             duration=f"{report.duration_s:.1f}",
             total=f"{report.total_usd:.2f}",
         ),
@@ -676,33 +707,37 @@ def _clock(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).astimezone().strftime("%H:%M:%S")
 
 
-def format_drafts(drafts: list[Draft], loc: i18n.MessageSource | None = None) -> str:
+def format_drafts(drafts: list[Draft], message_source: MessageSourceAccessor | None = None) -> str:
     """Render the unfinished authoring drafts as human-readable lines.
 
     Args:
         drafts: The drafts to render, newest first.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if not drafts:
-        return loc.t("draft.none")
-    lines = [loc.t("draft.count", count=len(drafts)), ""]
+        return message_source.get_message("draft.none")
+    lines = [message_source.get_message("draft.count", count=len(drafts)), ""]
     lines += [
-        loc.t(
+        message_source.get_message(
             "draft.row",
             draft=draft.key,
-            state=loc.t("draft.finished" if draft.finished else "draft.unfinished"),
-            name=draft.name or loc.t("draft.unnamed"),
+            state=message_source.get_message(
+                "draft.finished" if draft.finished else "draft.unfinished"
+            ),
+            name=draft.name or message_source.get_message("draft.unnamed"),
         )
         for draft in drafts
     ]
     return "\n".join(lines)
 
 
-def format_workflows(workflows: list[Workflow], loc: i18n.MessageSource | None = None) -> str:
+def format_workflows(
+    workflows: list[Workflow], message_source: MessageSourceAccessor | None = None
+) -> str:
     """Render the runnable workflows as human-readable lines.
 
     Shows the slug the user types beside the label its author gave it. A workflow
@@ -711,17 +746,17 @@ def format_workflows(workflows: list[Workflow], loc: i18n.MessageSource | None =
 
     Args:
         workflows: The workflows to render, sorted by slug.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if not workflows:
-        return loc.t("workflow.none")
-    lines = [loc.t("workflow.count", count=len(workflows)), ""]
+        return message_source.get_message("workflow.none")
+    lines = [message_source.get_message("workflow.count", count=len(workflows)), ""]
     lines += [
-        loc.t(
+        message_source.get_message(
             "workflow.row",
             workflow=flow.slug,
             label="" if flow.label == flow.slug else flow.label,
@@ -732,72 +767,86 @@ def format_workflows(workflows: list[Workflow], loc: i18n.MessageSource | None =
     return "\n".join(lines)
 
 
-def format_personas(personas: list[Persona], loc: i18n.MessageSource | None = None) -> str:
+def format_personas(
+    personas: list[Persona], message_source: MessageSourceAccessor | None = None
+) -> str:
     """Render the selectable personas as human-readable lines.
 
     Args:
         personas: The personas to render.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if not personas:
-        return loc.t("persona.none")
-    lines = [loc.t("persona.count", count=len(personas)), ""]
+        return message_source.get_message("persona.none")
+    lines = [message_source.get_message("persona.count", count=len(personas)), ""]
     width = max(len(persona.name) for persona in personas)
     lines += [
-        loc.t("persona.row", name=f"{persona.name:<{width}}", description=persona.description)
+        message_source.get_message(
+            "persona.row", name=f"{persona.name:<{width}}", description=persona.description
+        )
         for persona in personas
     ]
     return "\n".join(lines)
 
 
-def format_plugins(plugins: list[Plugin], loc: i18n.MessageSource | None = None) -> str:
+def format_plugins(
+    plugins: list[Plugin], message_source: MessageSourceAccessor | None = None
+) -> str:
     """Render the installed plugins as human-readable lines.
 
     Args:
         plugins: The plugins to render.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     if not plugins:
-        return loc.t("plugins.none")
-    lines = [loc.t("plugins.count", count=len(plugins)), ""]
+        return message_source.get_message("plugins.none")
+    lines = [message_source.get_message("plugins.count", count=len(plugins)), ""]
     width = max(len(plugin.plugin_id) for plugin in plugins)
     lines += [
-        loc.t("plugins.row", plugin=f"{plugin.plugin_id:<{width}}", description=plugin.description)
+        message_source.get_message(
+            "plugins.row", plugin=f"{plugin.plugin_id:<{width}}", description=plugin.description
+        )
         for plugin in plugins
     ]
     return "\n".join(lines)
 
 
-def format_clients(statuses: list[ListedClient], loc: i18n.MessageSource | None = None) -> str:
+def format_clients(
+    statuses: list[ListedClient], message_source: MessageSourceAccessor | None = None
+) -> str:
     """Render the supported clients as human-readable lines: version, resume, default.
 
     Args:
         statuses: The client statuses to render, in catalog order.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
-    lines = [loc.t("clients.count", count=len(statuses)), ""]
-    versions = [client_version_label(status, loc) for status in statuses]
+    message_source = message_source or get_active()
+    lines = [message_source.get_message("clients.count", count=len(statuses)), ""]
+    versions = [format_client_version(status, message_source) for status in statuses]
     name_width = max(len(status.display) for status in statuses)
     version_width = max(len(version) for version in versions)
     for status, version in zip(statuses, versions, strict=True):
-        resumable = loc.t("clients.yes") if status.resumable else loc.t("clients.no")
+        resumable = (
+            message_source.get_message("clients.yes")
+            if status.resumable
+            else message_source.get_message("clients.no")
+        )
         if status.resume_hint:  # a yes with a condition on it (codex: only once bound)
-            resumable += f" ({loc.t(status.resume_hint)})"
-        default = loc.t("clients.default") if status.is_default else ""
+            resumable += f" ({message_source.get_message(status.resume_hint)})"
+        default = message_source.get_message("clients.default") if status.is_default else ""
         lines.append(
-            loc.t(
+            message_source.get_message(
                 "clients.row",
                 client=f"{status.display:<{name_width}}",
                 version=f"{version:<{version_width}}",
@@ -874,8 +923,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         # is a no-op once the old layout is gone — catching installs initialised before the
         # migration existed. The `init` command runs its own below (after it writes config).
         if args.command != "init":
-            announce_migration(build_migrate_layout().execute())
-            announce_slug_migration(build_migrate_slugs().execute())
+            print_migration(build_migrate_layout().execute())
+            print_slug_migration(build_migrate_slugs().execute())
     try:
         if args.command == "help":
             return _help(args)
@@ -925,13 +974,13 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
 
 def _help(args: argparse.Namespace) -> int:
     """``gmlw help`` lists the topics; ``gmlw help <topic>`` explains one."""
-    loc = i18n.active()
+    message_source = get_active()
     if args.topic is None:
-        print(render_topic_list(loc))
+        print(render_topic_list(message_source))
         return 0
-    body = render_topic(loc, args.topic)
+    body = render_topic(message_source, args.topic)
     if body is None:
-        print(i18n.t("help.unknown", topic=args.topic), file=sys.stderr)
+        print(get_message("help.unknown", topic=args.topic), file=sys.stderr)
         return 2
     print(body)
     return 0
@@ -986,9 +1035,9 @@ def _confirm_delete(preview: str, *, assume_yes: bool) -> bool:
         return True
     print(preview, file=sys.stderr)
     if not (sys.stdin.isatty() and sys.stderr.isatty()):
-        print(i18n.t("delete.no_tty"), file=sys.stderr)
+        print(get_message("delete.no_tty"), file=sys.stderr)
         return False
-    return input(i18n.t("delete.confirm")).strip().lower() in _AFFIRMATIVE
+    return input(get_message("delete.confirm")).strip().lower() in _AFFIRMATIVE
 
 
 def _jobs_delete(args: argparse.Namespace) -> int:
@@ -1016,17 +1065,17 @@ def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
         print(render_error(error), file=sys.stderr)
         return 2
     if not _confirm_delete(format_job_footprints(footprints), assume_yes=assume_yes):
-        print(i18n.t("delete.cancelled"), file=sys.stderr)
+        print(get_message("delete.cancelled"), file=sys.stderr)
         return 2
     outcome = delete.execute(jobs)
     kept = [footprint for footprint in outcome if not footprint.removed]
     if not kept:
-        print(i18n.t("delete.jobs.done", count=len(outcome)), file=sys.stderr)
+        print(get_message("delete.jobs.done", count=len(outcome)), file=sys.stderr)
         return 0
     # The receipt: what stayed, in the rows the user already read before confirming.
     print(format_job_footprints(kept), file=sys.stderr)
     print(
-        i18n.t(
+        get_message(
             "delete.jobs.partial",
             removed=len(outcome) - len(kept),
             count=len(outcome),
@@ -1062,16 +1111,16 @@ def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> 
         print(render_error(error), file=sys.stderr)
         return 2
     if not _confirm_delete(format_session_footprints(job, footprints), assume_yes=assume_yes):
-        print(i18n.t("delete.cancelled"), file=sys.stderr)
+        print(get_message("delete.cancelled"), file=sys.stderr)
         return 2
     outcome = delete.execute(job, sessions)
     kept = [footprint for footprint in outcome if not footprint.removed]
     if not kept:
-        print(i18n.t("delete.sessions.done", count=len(outcome), job=job), file=sys.stderr)
+        print(get_message("delete.sessions.done", count=len(outcome), job=job), file=sys.stderr)
         return 0
     print(format_session_footprints(job, kept), file=sys.stderr)
     print(
-        i18n.t(
+        get_message(
             "delete.sessions.partial",
             removed=len(outcome) - len(kept),
             count=len(outcome),
@@ -1102,7 +1151,7 @@ def _statusline() -> int:
 
 def _start(args: argparse.Namespace) -> int:
     if args.job is None:  # `gmlw start` with no job — guide instead of an argparse dump
-        print(i18n.t("start.needs_job"), file=sys.stderr)
+        print(get_message("start.needs_job"), file=sys.stderr)
         return 2
     workflow = None if args.workflow is None else str(args.workflow)
     client = build_application_settings().resolve_client(args.client)
@@ -1127,7 +1176,7 @@ def _start(args: argparse.Namespace) -> int:
     ) as error:
         print(render_error(error))
         return 2
-    print(farewell(), file=sys.stderr)
+    print(get_farewell(), file=sys.stderr)
     print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
     return result.exit_code
 
@@ -1195,13 +1244,13 @@ def _resolve_workflow(given: str | None) -> str | None:
         return str(given)
     names = build_list_workflows().execute()
     if not names:  # nothing to run yet — point at authoring, not a picker with no options
-        print(i18n.t("run.no_workflows"), file=sys.stderr)
+        print(get_message("run.no_workflows"), file=sys.stderr)
         return None
     chosen = build_workflow_chooser().choose(names)
     if chosen is None:  # declined, or no terminal to prompt on
-        print(i18n.t("run.needs_workflow"), file=sys.stderr)
+        print(get_message("run.needs_workflow"), file=sys.stderr)
         return None
-    print(i18n.t("run.echo", workflow=chosen), file=sys.stderr)  # teach the fast path
+    print(get_message("run.echo", workflow=chosen), file=sys.stderr)  # teach the fast path
     return chosen
 
 
@@ -1228,10 +1277,10 @@ def _role(subcommand: str | None, args: argparse.Namespace) -> int:
     except (UncodableRoleLabelError, RoleCodeAlreadyExistsError) as error:
         print(render_error(error), file=sys.stderr)
         return 2
-    print(i18n.t("role.created", label=result.role.label, code=result.role.code))
+    print(get_message("role.created", label=result.role.label, code=result.role.code))
     if args.make_default:
         build_set_default_role().execute(SetDefaultRoleCommand(code=result.role.code))
-        print(i18n.t("role.made_default", code=result.role.code))
+        print(get_message("role.made_default", code=result.role.code))
     return 0
 
 
@@ -1260,7 +1309,7 @@ def _environment(subcommand: str | None, args: argparse.Namespace) -> int:
         print(render_error(error), file=sys.stderr)
         return 2
     print(
-        i18n.t(
+        get_message(
             "environment.created",
             label=result.environment.label,
             code=result.environment.code,
@@ -1270,7 +1319,7 @@ def _environment(subcommand: str | None, args: argparse.Namespace) -> int:
         build_set_default_environment().execute(
             SetDefaultEnvironmentCommand(code=result.environment.code)
         )
-        print(i18n.t("environment.made_default", code=result.environment.code))
+        print(get_message("environment.made_default", code=result.environment.code))
     return 0
 
 
@@ -1279,50 +1328,62 @@ def _creds(args: argparse.Namespace) -> int:
         workflow = WorkflowName(args.workflow)
         name = EnvVarName(args.name)
         build_set_credential().execute(SetCredentialCommand(workflow=workflow, name=name))
-        print(i18n.t("creds.stored", workflow=workflow, name=name))
+        print(get_message("creds.stored", workflow=workflow, name=name))
         return 0
     return 0
 
 
-def format_setting_list(views: list[SettingView], loc: i18n.MessageSource | None = None) -> str:
+def format_setting_list(
+    views: list[SettingView], message_source: MessageSourceAccessor | None = None
+) -> str:
     """Render every setting with its current value and description (aligned).
 
     Args:
         views: The settings to render, in registry order.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
-    lines = [loc.t("config.list.header", count=len(views)), ""]
+    message_source = message_source or get_active()
+    lines = [message_source.get_message("config.list.header", count=len(views)), ""]
     width = max((len(view.key) for view in views), default=0)
     for view in views:
         lines.append(
-            loc.t("config.row", key=f"{view.key:<{width}}", value=setting_value(view.value, loc))
+            message_source.get_message(
+                "config.row",
+                key=f"{view.key:<{width}}",
+                value=format_setting_value(view.value, message_source),
+            )
         )
-        lines.append(loc.t("config.row_desc", description=view.description))
+        lines.append(message_source.get_message("config.row_desc", description=view.description))
     return "\n".join(lines)
 
 
-def format_setting(view: SettingView, loc: i18n.MessageSource | None = None) -> str:
+def format_setting(view: SettingView, message_source: MessageSourceAccessor | None = None) -> str:
     """Render a single setting: value, description, default and any allowed values.
 
     Args:
         view: The setting to render.
-        loc: The localiser to render through; defaults to the active language.
+        message_source: The message source to render through; defaults to the active language.
 
     Returns:
         The text to print (no trailing newline).
     """
-    loc = loc or i18n.active()
+    message_source = message_source or get_active()
     lines = [
-        loc.t("config.get", key=view.key, value=setting_value(view.value, loc)),
-        loc.t("config.get_desc", description=view.description),
-        loc.t("config.get_default", default=setting_value(view.default, loc)),
+        message_source.get_message(
+            "config.get", key=view.key, value=format_setting_value(view.value, message_source)
+        ),
+        message_source.get_message("config.get_desc", description=view.description),
+        message_source.get_message(
+            "config.get_default", default=format_setting_value(view.default, message_source)
+        ),
     ]
     if view.choices is not None:
-        lines.append(loc.t("config.get_allowed", choices=", ".join(view.choices)))
+        lines.append(
+            message_source.get_message("config.get_allowed", choices=", ".join(view.choices))
+        )
     return "\n".join(lines)
 
 
@@ -1340,7 +1401,7 @@ def _config(args: argparse.Namespace) -> int:
         try:
             view = commands.get(args.key)
         except UnknownSettingError:
-            print(i18n.t("config.unknown_key", key=args.key), file=sys.stderr)
+            print(get_message("config.unknown_key", key=args.key), file=sys.stderr)
             return 2
         print(_as_json(_setting_payload(view)) if as_json else format_setting(view))
         return 0
@@ -1353,11 +1414,12 @@ def _config_set(commands: ConfigCommandsUseCase, key: str, value: str) -> int:
     try:
         outcome = commands.set(key, value)
     except UnknownSettingError:
-        print(i18n.t("config.unknown_key", key=key), file=sys.stderr)
+        print(get_message("config.unknown_key", key=key), file=sys.stderr)
         return 2
     except InvalidSettingValueError as error:
         print(render_error(error), file=sys.stderr)
         return 2
+    LanguageChangeInterceptor.after_setting_written(key, value)
     print(format_set_outcome(outcome))
     return 0
 
@@ -1404,7 +1466,7 @@ def _workflow_new(args: argparse.Namespace) -> int:
     on a collision. The draft's fate on the return is reported from the result.
     """
     label = None if args.label is None else str(args.label)
-    return new_workflow(
+    return create_workflow(
         label,
         build_application_settings().resolve_client(args.client),
         _resolve_guided(args),
@@ -1431,7 +1493,7 @@ def _export_workflow(name: str) -> int:
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(render_error(error))
         return 2
-    print(i18n.t("workflow.export.written", path=written), file=sys.stderr)
+    print(get_message("workflow.export.written", path=written), file=sys.stderr)
     return 0
 
 
@@ -1458,7 +1520,7 @@ def _import_workflow(archive: str, *, replace: bool = False) -> int:
         result = build_import_workflow().execute(archive, replace=replace)
         if result.outcome is ImportOutcome.REFUSED:
             if not _confirm_replace(result.name):
-                print(i18n.t("workflow.import.kept", name=result.name), file=sys.stderr)
+                print(get_message("workflow.import.kept", name=result.name), file=sys.stderr)
                 return 2
             result = build_import_workflow().execute(archive, replace=True)
     except (ArchiveUnreadableError, WorkflowNameError) as error:
@@ -1466,21 +1528,21 @@ def _import_workflow(archive: str, *, replace: bool = False) -> int:
         return 2
     if result.outcome is ImportOutcome.REPLACED:
         print(
-            i18n.t("workflow.import.replaced", name=result.name, backup=result.backup),
+            get_message("workflow.import.replaced", name=result.name, backup=result.backup),
             file=sys.stderr,
         )
     else:
-        print(i18n.t("workflow.import.done", name=result.name), file=sys.stderr)
+        print(get_message("workflow.import.done", name=result.name), file=sys.stderr)
     return 0
 
 
 def _confirm_replace(name: str) -> bool:
     """Ask whether to displace an existing workflow; ``False`` when nobody can answer."""
     if not (sys.stdin.isatty() and sys.stderr.isatty()):
-        print(i18n.t("workflow.import.exists_no_tty", name=name), file=sys.stderr)
+        print(get_message("workflow.import.exists_no_tty", name=name), file=sys.stderr)
         return False
-    print(i18n.t("workflow.import.exists", name=name), file=sys.stderr)
-    return input(i18n.t("workflow.import.confirm")).strip().lower() in _AFFIRMATIVE
+    print(get_message("workflow.import.exists", name=name), file=sys.stderr)
+    return input(get_message("workflow.import.confirm")).strip().lower() in _AFFIRMATIVE
 
 
 def _workflow_resume(args: argparse.Namespace) -> int:
@@ -1495,9 +1557,9 @@ def _workflow_resume(args: argparse.Namespace) -> int:
             ResumeCreateWorkflowCommand(draft_key=draft)
         )
     except NoSuchDraftError as error:
-        print(i18n.t("draft.cannot_resume", error=render_error(error)), file=sys.stderr)
+        print(get_message("draft.cannot_resume", error=render_error(error)), file=sys.stderr)
         return 2
-    announce_create_workflow(result)
+    print_create_workflow(result)
     return result.exit_code
 
 

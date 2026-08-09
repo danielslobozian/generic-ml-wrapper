@@ -21,17 +21,19 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number, emit
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
     from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
     from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
 
 
-def choose_client(clients: list[ListedClient], loc: MessageSource) -> str | None:
+def choose_client(clients: list[ListedClient], message_source: MessageSourceAccessor) -> str | None:
     """Offer the installed clients and return the chosen one.
 
     Args:
         clients: Every supported client with its installed-ness and version.
-        loc: Renders the prompts.
+        message_source: Renders the prompts.
 
     Returns:
         The chosen client's name, or ``None`` when nothing is installed or the user
@@ -43,16 +45,20 @@ def choose_client(clients: list[ListedClient], loc: MessageSource) -> str | None
         return None
     if len(installed) == 1:
         only = installed[0]
-        emit(loc.t("init.client.only_one", client=only.display))
+        emit(message_source.get_message("init.client.only_one", client=only.display))
         return only.name
     choices = [
         Choice(value=client.name, label=client.display, description=client.version or "")
         for client in installed
     ]
-    return choose_number(loc.t("init.client.header"), choices, loc, default=0)
+    return choose_number(
+        message_source.get_message("init.client.header"), choices, message_source, default=0
+    )
 
 
-def report_no_client(supported: tuple[ClientInfo, ...], system: str, loc: MessageSource) -> None:
+def report_no_client(
+    supported: tuple[ClientInfo, ...], system: str, message_source: MessageSourceAccessor
+) -> None:
     """Tell the user nothing is installed, and how to install something.
 
     Printed unconditionally, unlike the prompts: this is why the run is ending, not
@@ -62,9 +68,9 @@ def report_no_client(supported: tuple[ClientInfo, ...], system: str, loc: Messag
     Args:
         supported: Every client gmlw supports, in canonical order.
         system: The OS name, so each command is the right one for this machine.
-        loc: Renders the message.
+        message_source: Renders the message.
     """
-    print(loc.t("init.client.none_installed"), file=sys.stderr)
+    print(message_source.get_message("init.client.none_installed"), file=sys.stderr)
     for info in supported:
         print(f"  {info.display}: {info.install_for(system)}", file=sys.stderr)
-    print(loc.t("init.client.install_then_relaunch"), file=sys.stderr)
+    print(message_source.get_message("init.client.install_then_relaunch"), file=sys.stderr)

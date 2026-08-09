@@ -8,9 +8,19 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli.setup import tty_text_prompt
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_text_prompt import TtyTextPrompt
-from generic_ml_wrapper.application.wiring.localization import load_localizer
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 
-_I18N = load_localizer("en")
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
+
+
+_I18N = _accessor("en")
 
 
 class _Tty(io.StringIO):
@@ -56,7 +66,9 @@ def test_end_of_input_falls_back_to_default(monkeypatch: pytest.MonkeyPatch) -> 
     assert TtyTextPrompt(_I18N).ask("Your name?", "ada") == "ada"
 
 
-def test_passed_localiser_overrides_the_construction_one(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_passed_message_source_overrides_the_construction_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     err = _wire(monkeypatch, stdin="\n")
-    TtyTextPrompt(_I18N).ask("Nom ?", "ada", load_localizer("fr"))
+    TtyTextPrompt(_I18N).ask("Nom ?", "ada", _accessor("fr"))
     assert "défaut ada" in err.getvalue()  # the French fragment, not the English one

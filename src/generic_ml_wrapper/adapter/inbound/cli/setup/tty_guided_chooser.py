@@ -10,7 +10,9 @@ from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choo
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
 
 
 class TtyGuidedChooser:
@@ -22,16 +24,16 @@ class TtyGuidedChooser:
     ``None`` and the caller falls back to the lean interview.
     """
 
-    def __init__(self, i18n: MessageSource) -> None:
-        """Bind the chooser to a localiser for its prompt text.
+    def __init__(self, message_source: MessageSourceAccessor) -> None:
+        """Bind the chooser to a message source for its prompt text.
 
         Args:
-            i18n: The localiser supplying the header and the two option labels.
+            message_source: The message source supplying the header and the two option labels.
         """
-        self._i18n = i18n
+        self._message_source = message_source
 
     def choose(
-        self, modes: list[AuthoringMode], i18n: MessageSource | None = None
+        self, modes: list[AuthoringMode], message_source: MessageSourceAccessor | None = None
     ) -> AuthoringMode | None:
         """Offer the modes and return the chosen one, or ``None``.
 
@@ -42,20 +44,24 @@ class TtyGuidedChooser:
 
         Args:
             modes: The offered modes, in the order they should be presented.
-            i18n: The localiser for the prompt; ``None`` uses the construction-time one.
+            message_source: The message source for the prompt; ``None`` uses the
+                construction-time one.
 
         Returns:
             The chosen :class:`AuthoringMode`; ``None`` when there is no terminal to
             prompt on, and so nobody to ask.
         """
-        loc = i18n or self._i18n
+        message_source = message_source or self._message_source
         picked = choose_number(
-            loc.t("guided.header"),
+            message_source.get_message("guided.header"),
             [
-                Choice(value=mode.value, label=loc.t(f"guided.choice_{mode.value}"))
+                Choice(
+                    value=mode.value,
+                    label=message_source.get_message(f"guided.choice_{mode.value}"),
+                )
                 for mode in modes
             ],
-            loc,
+            message_source,
             default=0,  # Enter → the first offered mode
         )
         return AuthoringMode(picked) if picked is not None else None

@@ -14,8 +14,8 @@ call site::
 
 The active sink is a
 :class:`~generic_ml_wrapper.application.port.outbound.diagnostics.DiagnosticsPort`,
-installed by :func:`set_active` — the same shape ``i18n.set_active`` already uses for the
-active localiser, and for the same reason: threading a logger through every constructor
+installed by :func:`set_active` — the same shape ``set_active`` already uses for the
+active message source, and for the same reason: threading a logger through every constructor
 in the app buys nothing when there is exactly one of it per process.
 
 **This module deliberately imports no sink.** The default below is a no-op, and the
@@ -27,7 +27,7 @@ service that needs to report something is handed a
 :class:`~generic_ml_wrapper.application.port.outbound.diagnostics.DiagnosticsPort`.
 
 The message handed to a sink is **already localised**: resolving a catalogue key is the
-caller's job (``i18n.t(...)``), so a sink stays a dumb destination.
+caller's job (``get_message(...)``), so a sink stays a dumb destination.
 """
 
 from __future__ import annotations

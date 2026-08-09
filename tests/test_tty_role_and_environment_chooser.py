@@ -16,6 +16,12 @@ from generic_ml_wrapper.adapter.inbound.cli.setup.tty_environment_chooser import
     TtyEnvironmentChooser,
 )
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_role_chooser import TtyRoleChooser
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 from generic_ml_wrapper.application.domain.model.role import Role
 from generic_ml_wrapper.application.port.outbound.role_examples_repository import (
     RoleExamplesRepositoryPort,
@@ -25,7 +31,11 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_environment_examples,
     build_list_role_examples,
 )
-from generic_ml_wrapper.application.wiring.localization import load_localizer
+
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
+
 
 if TYPE_CHECKING:
     import pytest
@@ -49,18 +59,18 @@ def _wire(monkeypatch: pytest.MonkeyPatch, *, stdin: str, tty: bool = True) -> i
 
 
 def _environments() -> TtyEnvironmentChooser:
-    return TtyEnvironmentChooser(load_localizer("en"), build_list_environment_examples())
+    return TtyEnvironmentChooser(_accessor("en"), build_list_environment_examples())
 
 
 def _roles() -> TtyRoleChooser:
-    return TtyRoleChooser(load_localizer("en"), build_list_role_examples())
+    return TtyRoleChooser(_accessor("en"), build_list_role_examples())
 
 
 def test_picking_an_example_returns_its_code_and_rendered_label(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _wire(monkeypatch, stdin="1\n")  # the first environment example is "work"
-    chosen = _environments().choose("work", load_localizer("en"))
+    chosen = _environments().choose("work", _accessor("en"))
     assert (chosen.code, chosen.label) == ("work", "Work")
 
 
@@ -68,14 +78,14 @@ def test_picking_a_role_example_returns_its_code_and_rendered_label(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _wire(monkeypatch, stdin="1\n")  # the first role example is "software-engineer"
-    chosen = _roles().choose("default", load_localizer("en"))
+    chosen = _roles().choose("default", _accessor("en"))
     assert (chosen.code, chosen.label) == ("software-engineer", "Software engineer")
 
 
 def test_type_your_own_codes_the_answer_and_echoes_it(monkeypatch: pytest.MonkeyPatch) -> None:
     # 4 examples + "type your own" = option 5; then a free-text French answer.
     err = _wire(monkeypatch, stdin="5\nÉquipe Produit\n")
-    chosen = _environments().choose("work", load_localizer("en"))
+    chosen = _environments().choose("work", _accessor("en"))
     assert chosen.code == "equipe-produit"  # accents stripped, kebab-cased
     assert chosen.label == "Équipe Produit"  # the human wording is kept as the label
     assert "equipe-produit" in err.getvalue()  # the code is echoed back
@@ -83,13 +93,13 @@ def test_type_your_own_codes_the_answer_and_echoes_it(monkeypatch: pytest.Monkey
 
 def test_non_tty_declines_to_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="1\n", tty=False)
-    chosen = _environments().choose("work", load_localizer("en"))
+    chosen = _environments().choose("work", _accessor("en"))
     assert (chosen.code, chosen.label, chosen.description) == ("work", "work", "work")
 
 
 def test_empty_typed_answer_falls_back_to_the_default(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="5\n\n")  # choose "type your own", then an empty line
-    assert _environments().choose("work", load_localizer("en")).code == "work"
+    assert _environments().choose("work", _accessor("en")).code == "work"
 
 
 def test_a_label_with_nothing_codeable_falls_back_rather_than_refusing(
@@ -97,15 +107,15 @@ def test_a_label_with_nothing_codeable_falls_back_rather_than_refusing(
 ) -> None:
     # Setup cannot be skipped, so an uncodable answer keeps the default instead of raising.
     _wire(monkeypatch, stdin="5\n!!!\n")
-    assert _environments().choose("work", load_localizer("en")).code == "work"
+    assert _environments().choose("work", _accessor("en")).code == "work"
 
 
 def test_no_offered_examples_still_allows_typing_your_own(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _wire(monkeypatch, stdin="1\nMy Own Role\n")  # the only option is "type your own"
-    chooser = TtyRoleChooser(load_localizer("en"), ListRoleExamplesService(_NoExamples()))
-    assert chooser.choose("default", load_localizer("en")).code == "my-own-role"
+    chooser = TtyRoleChooser(_accessor("en"), ListRoleExamplesService(_NoExamples()))
+    assert chooser.choose("default", _accessor("en")).code == "my-own-role"
 
 
 class _NoExamples(RoleExamplesRepositoryPort):

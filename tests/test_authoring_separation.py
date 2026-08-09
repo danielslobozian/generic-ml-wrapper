@@ -13,11 +13,13 @@ from pathlib import Path
 
 from _delete_doubles import FakeSessionLock
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
 )
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
@@ -61,7 +63,7 @@ class _NoLaunch(CliCallerPort):
 
 def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path / "ledger.db")
-    new_workflow = CreateWorkflowService(
+    create_workflow = CreateWorkflowService(
         workflows=FilesystemWorkflowSourceAdapter(tmp_path / "workflows"),
         store=SqliteSessionStoreAdapter(ledger),
         callers=_NoLaunchProvider(),
@@ -73,7 +75,7 @@ def test_authoring_is_recorded_but_left_out_of_the_job_listing(tmp_path: Path) -
             _NoInterrupts(),
         ),
     )
-    new_workflow.execute(CreateWorkflowCommand(label="doc-review", client="claude"))
+    create_workflow.execute(CreateWorkflowCommand(label="doc-review", client="claude"))
 
     # The session is really there: the store keeps no secrets, so deleting it is possible.
     # Always as create-workflow -- the target name is a seed, decided at the end.
@@ -101,6 +103,6 @@ def test_the_listing_hides_nothing_else(tmp_path: Path) -> None:
     ]
 
 
-def _localizer() -> MessageSource:
+def _message_source() -> MessageSourceAccessor:
     """The real English catalogue: these tests assert behaviour, not translations."""
-    return JsonCatalogLocalizerFactory().load("en")
+    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")

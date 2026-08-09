@@ -39,7 +39,7 @@ def test_unexpected_error_exits_1_with_a_friendly_message(
 
 def test_farewell_is_the_same_line_for_everyone() -> None:
     """No companion check: a goodbye is a label, and everyone gets it."""
-    assert renderer.farewell() == "Bye."
+    assert renderer.get_farewell() == "Bye."
 
 
 def _noop_signal(*_args: object) -> None:

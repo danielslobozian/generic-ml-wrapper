@@ -16,6 +16,15 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli.setup import interview as interview_module
 from generic_ml_wrapper.adapter.inbound.cli.setup.interview import run_interview
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_context_holder import (
+    LanguageContextHolder,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
 from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
 from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
@@ -23,16 +32,16 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_environment_examples,
     build_list_role_examples,
 )
-from generic_ml_wrapper.application.wiring.localization import load_localizer
+
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
+
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    pass
 
-_EN = load_localizer("en")
-
-
-def _localizer_for(_code: str) -> MessageSource:
-    return _EN
+_EN = _accessor("en")
 
 
 def _client(name: str, *, installed: bool) -> ListedClient:
@@ -71,8 +80,6 @@ def _run(clients: list[ListedClient]) -> InitAnswers | None:
         system="Linux",
         role_examples=build_list_role_examples(),
         environment_examples=build_list_environment_examples(),
-        localizer_for=_localizer_for,
-        seed=_EN,
     )
 
 
@@ -114,12 +121,9 @@ def test_the_language_question_is_asked_before_anything_else(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # It sets the voice the rest is asked in, so it cannot come second.
-    asked: list[str] = []
     monkeypatch.setattr("sys.stdin", io.StringIO(""))
-
-    def _record(code: str) -> MessageSource:
-        asked.append(code)
-        return _EN
+    original = LanguageContextHolder.get_language()
+    LanguageContextHolder.set_language("fr")
 
     run_interview(
         languages=["en", "fr"],
@@ -131,7 +135,6 @@ def test_the_language_question_is_asked_before_anything_else(
         system="Linux",
         role_examples=build_list_role_examples(),
         environment_examples=build_list_environment_examples(),
-        localizer_for=_record,
-        seed=_EN,
     )
-    assert asked == ["en"]  # the catalogue is built once, from the answer to question one
+    assert LanguageContextHolder.get_language() == "en"  # question one installed the voice
+    LanguageContextHolder.set_language(original)

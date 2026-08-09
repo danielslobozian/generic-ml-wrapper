@@ -12,10 +12,17 @@ import tomllib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_change_interceptor import (
+    LANGUAGE_SETTING_KEY,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_code import LanguageCode
 from generic_ml_wrapper.adapter.outbound.config import settings_registry
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.companion_settings import (
     CompanionSettings,
+)
+from generic_ml_wrapper.application.domain.model.invalid_setting_value_error import (
+    InvalidSettingValueError,
 )
 from generic_ml_wrapper.application.wiring.paths import paths
 
@@ -230,7 +237,11 @@ def language(path: Path | None = None) -> str | None:
         The configured language code, or ``None`` when unset.
     """
     value = _table(_load(path), "language").get("code")
-    return value if isinstance(value, str) and value else None
+    if not isinstance(value, str) or not value:
+        return None
+    if not LanguageCode.is_language(value):
+        raise InvalidSettingValueError(LANGUAGE_SETTING_KEY, value, None)
+    return value
 
 
 def default_role(path: Path | None = None) -> str:

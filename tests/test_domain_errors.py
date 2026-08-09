@@ -3,7 +3,7 @@
 """Every :class:`DomainError` subclass renders through the catalogue, in every language.
 
 0.9.1 closed a gap where a domain exception's message was a raw English literal,
-interpolated verbatim into an otherwise-localised shell (``i18n.t("error.generic",
+interpolated verbatim into an otherwise-localised shell (``get_message("error.generic",
 error=error)``). This guards the fix: each user-facing exception must render to real,
 language-specific text — never the raw catalogue key, and never the same string in both
 languages (the one case a same-string check would miss silently is a key whose template
@@ -15,6 +15,12 @@ from __future__ import annotations
 
 import pytest
 
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 from generic_ml_wrapper.adapter.outbound.config.settings_registry import InvalidSettingValueError
 from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
     ArchiveUnreadableError,
@@ -40,10 +46,14 @@ from generic_ml_wrapper.application.domain.model.workflow_name_error import Work
 from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
     WorkflowNotFoundError,
 )
-from generic_ml_wrapper.application.wiring import localization as i18n
 
-_EN = i18n.load_localizer("en")
-_FR = i18n.load_localizer("fr")
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
+
+
+_EN = _accessor("en")
+_FR = _accessor("fr")
 
 _CASES: list[DomainError] = [
     IdentifierError("error.identifier.job_id", value="bad id"),
@@ -75,9 +85,9 @@ _CASES: list[DomainError] = [
 @pytest.mark.parametrize("error", _CASES, ids=lambda error: error.catalogue_key)
 def test_domain_error_renders_in_every_language(error: DomainError) -> None:
     # Rendered the way a caller renders it: the error carries the key and the params, and
-    # whoever caught it holds the localiser. The error itself never reaches for one.
-    rendered_en = _EN.t(error.catalogue_key, **error.params)
-    rendered_fr = _FR.t(error.catalogue_key, **error.params)
+    # whoever caught it holds the message_source. The error itself never reaches for one.
+    rendered_en = _EN.get_message(error.catalogue_key, **error.params)
+    rendered_fr = _FR.get_message(error.catalogue_key, **error.params)
     assert rendered_en != error.catalogue_key, "no English template for this key"
     assert rendered_fr != error.catalogue_key, "no French template for this key"
     assert rendered_en != rendered_fr, "French falls back to the English template"

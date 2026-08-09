@@ -9,9 +9,10 @@ speaking. :class:`DomainError` closes that gap: a subclass raises with a catalog
 the params to fill it, and both are readable off the error.
 
 **Rendering is not this type's job.** The error carries the key and the params; whoever
-catches it holds a localiser and renders them. A ``localized(loc)`` method here would mean
-handing a port to a domain object to get one line back — the domain reaching outward for a
-delivery concern — and the caller must already hold the localiser to have called it at all.
+catches it holds a message source and renders them. A ``localized(message_source)`` method here
+would mean handing a port to a domain object to get one line back — the domain reaching
+outward for a delivery concern — and the caller must already hold the message source to have
+called it at all.
 
 ``str(error)`` still works, rendering the key for logs and tracebacks.
 

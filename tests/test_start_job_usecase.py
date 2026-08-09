@@ -10,11 +10,13 @@ from pathlib import Path
 import pytest
 from _delete_doubles import FakeSessionLock
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
 )
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSourceAdapter,
 )
@@ -538,6 +540,6 @@ def test_unparseable_configured_args_are_dropped_but_reported(
     assert capsys.readouterr().err == "", "and not by dumping a traceback on the client's screen"
 
 
-def _localizer() -> MessageSource:
+def _message_source() -> MessageSourceAccessor:
     """The real English catalogue: these tests assert behaviour, not translations."""
-    return JsonCatalogLocalizerFactory().load("en")
+    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")
