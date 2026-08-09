@@ -8,11 +8,13 @@ from contextlib import contextmanager
 import pytest
 from _delete_doubles import FakeSessionLock
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
 )
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.run import RunContext
@@ -221,6 +223,6 @@ def test_an_edit_records_the_folder_it_ran_in() -> None:
     assert recorded.resumable is True
 
 
-def _localizer() -> MessageSource:
+def _message_source() -> MessageSourceAccessor:
     """The real English catalogue: these tests assert behaviour, not translations."""
-    return JsonCatalogLocalizerFactory().load("en")
+    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")

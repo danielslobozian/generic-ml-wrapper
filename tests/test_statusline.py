@@ -6,11 +6,13 @@ import json
 
 import pytest
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
 )
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import (
     ClaudeStatusParserAdapter,
 )
@@ -52,9 +54,9 @@ _NO_WORKSPACE = Workspace(folder=None, repo=None, branch=None, short_sha=None, d
 _REPO = Workspace(folder="~/dev/app", repo="app", branch="main", short_sha="abc1234", dirty=3)
 
 
-def _localizer() -> MessageSource:
+def _message_source() -> MessageSourceAccessor:
     """The real English catalogue: these tests assert behaviour, not translations."""
-    return JsonCatalogLocalizerFactory().load("en")
+    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")
 
 
 class FakeUsageStore(UsageStorePort):

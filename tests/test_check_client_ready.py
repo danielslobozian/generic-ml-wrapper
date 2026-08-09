@@ -20,6 +20,9 @@ class _FakeDetector(ClientDetectorPort):
 
 
 class _FakeSystem(SystemInfoPort):
+    def language(self) -> str | None:
+        return None
+
     """A fixed platform, so the install commands a test reads do not depend on the host."""
 
     def username(self) -> str:

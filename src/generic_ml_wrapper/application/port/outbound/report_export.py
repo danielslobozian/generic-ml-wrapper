@@ -17,7 +17,7 @@ class ReportExportPort(ABC):
         The destination comes back as text, not as a filesystem type: it is an answer to
         be shown, and nobody above this line opens it, joins onto it, or reads from it.
         The words placed around it are the delivery layer's, which is where the
-        localiser lives.
+        message source lives.
 
         Args:
             job: The job the report belongs to (used to name the file).

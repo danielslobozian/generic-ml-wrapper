@@ -17,7 +17,9 @@ from generic_ml_wrapper.application.wiring.diagnostics_log import log
 from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
 # The tips, in reveal order. Each is (stable id, catalogue key). The id is what's recorded
 # as seen, so reordering or rewording a tip never re-shows an already-seen one.
 TIPS: tuple[tuple[str, str], ...] = (
@@ -47,11 +49,11 @@ def _mark_seen(hint_id: str) -> None:
         log.debug(f"could not record hint {hint_id} as seen: {error}")
 
 
-def next_hint(loc: MessageSource) -> str | None:
+def next_hint(message_source: MessageSourceAccessor) -> str | None:
     """Return the next unseen tip's text (marking it seen), or ``None``.
 
     Args:
-        loc: The localiser to render the tip through.
+        message_source: The message source to render the tip through.
 
     Returns:
         The localised tip, or ``None`` when hints are off or every tip has been shown.
@@ -62,5 +64,5 @@ def next_hint(loc: MessageSource) -> str | None:
     for hint_id, key in TIPS:
         if hint_id not in seen:
             _mark_seen(hint_id)
-            return loc.t(key)
+            return message_source.get_message(key)
     return None

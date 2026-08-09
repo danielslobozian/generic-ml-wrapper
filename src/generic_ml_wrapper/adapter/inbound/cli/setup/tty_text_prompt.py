@@ -14,21 +14,25 @@ import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
 
 
 class TtyTextPrompt:
     """Ask one free-text question at an interactive terminal; else return the default."""
 
-    def __init__(self, i18n: MessageSource) -> None:
-        """Bind the prompt to a localiser for its fixed ``[default …]`` fragment.
+    def __init__(self, message_source: MessageSourceAccessor) -> None:
+        """Bind the prompt to a message source for its fixed ``[default …]`` fragment.
 
         Args:
-            i18n: The localiser supplying the ``prompt.ask_text`` fragment.
+            message_source: The message source supplying the ``prompt.ask_text`` fragment.
         """
-        self._i18n = i18n
+        self._message_source = message_source
 
-    def ask(self, header: str, default: str, i18n: MessageSource | None = None) -> str:
+    def ask(
+        self, header: str, default: str, message_source: MessageSourceAccessor | None = None
+    ) -> str:
         """Ask ``header`` and return the typed answer, or ``default``.
 
         Writes to ``sys.stderr`` and reads from ``sys.stdin`` (both resolved at call
@@ -37,7 +41,7 @@ class TtyTextPrompt:
         Args:
             header: The already-localised question line printed above the prompt.
             default: The value used on an empty line, at end of input, or off a terminal.
-            i18n: The localiser for the ``[default …]`` fragment; ``None`` uses the
+            message_source: The message source for the ``[default …]`` fragment; ``None`` uses the
                 construction-time one.
 
         Returns:
@@ -45,9 +49,14 @@ class TtyTextPrompt:
         """
         if not (sys.stdin.isatty() and sys.stderr.isatty()):
             return default
-        loc = i18n or self._i18n
+        message_source = message_source or self._message_source
         print(header, file=sys.stderr)
-        print(loc.t("prompt.ask_text", default=default), end="", file=sys.stderr, flush=True)
+        print(
+            message_source.get_message("prompt.ask_text", default=default),
+            end="",
+            file=sys.stderr,
+            flush=True,
+        )
         line = sys.stdin.readline()
         if line == "":  # end of input
             return default

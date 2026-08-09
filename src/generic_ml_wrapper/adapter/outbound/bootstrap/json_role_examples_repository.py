@@ -20,7 +20,7 @@ class JsonRoleExamplesRepositoryAdapter(RoleExamplesRepositoryPort):
     """Read the offered starting-point roles from the packaged JSON file.
 
     The label and description hold a catalogue key rather than typed text. Nothing has to
-    flag that: the localiser falls back to the key itself when the catalogue has no entry,
+    flag that: the message source falls back to the key itself when the catalogue has no entry,
     so a role the user typed passes through unchanged while an offered one is translated.
     """
 

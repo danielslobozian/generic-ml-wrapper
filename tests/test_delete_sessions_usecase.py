@@ -10,11 +10,13 @@ import pytest
 from _conformance import InMemoryPerTurnStore, InMemorySessionStore, InMemoryUsageStore
 from _delete_doubles import FakeSessionLock, RecordingArtifactPurge, RecordingLedgerPurge
 
-from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.i18n.json_catalog_localizer import (
-    JsonCatalogLocalizerFactory,
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
 )
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
 from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
 from generic_ml_wrapper.application.domain.model.no_such_session_error import NoSuchSessionError
 from generic_ml_wrapper.application.domain.model.session import Session
@@ -25,9 +27,9 @@ from generic_ml_wrapper.application.port.inbound.session_footprint import Sessio
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
 
 
-def _localizer() -> MessageSource:
+def _message_source() -> MessageSourceAccessor:
     """The real English catalogue: these tests assert behaviour, not translations."""
-    return JsonCatalogLocalizerFactory().load("en")
+    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")
 
 
 class _Fixture:

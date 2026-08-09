@@ -27,12 +27,13 @@ from generic_ml_wrapper.adapter.inbound.cli.setup.tty_language_chooser import Tt
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_role_chooser import TtyRoleChooser
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_text_prompt import TtyTextPrompt
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_context_holder import (
+    LanguageContextHolder,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import get_active
 from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
     from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
     from generic_ml_wrapper.application.domain.model.persona import Persona
     from generic_ml_wrapper.application.port.inbound.list_environment_examples import (
@@ -58,8 +59,6 @@ def run_interview(  # noqa: PLR0913  (one per question, plus what the no-client 
     system: str,
     role_examples: ListRoleExamplesUseCase,
     environment_examples: ListEnvironmentExamplesUseCase,
-    localizer_for: Callable[[str], MessageSource],
-    seed: MessageSource,
 ) -> InitAnswers | None:
     """Ask the six questions and return the answers, or ``None`` to stop.
 
@@ -73,26 +72,28 @@ def run_interview(  # noqa: PLR0913  (one per question, plus what the no-client 
         system: The OS name, so those commands are the right ones.
         role_examples: Supplies the roles offered as starting points.
         environment_examples: Supplies the environments offered as starting points.
-        localizer_for: Builds the catalogue for the chosen language.
-        seed: The catalogue the language question itself is asked in -- the language is
-            not chosen yet, which is why every language is offered under its own name.
 
     Returns:
         The settled answers, or ``None`` when no client is installed or the client
         question was declined -- in which case nothing should be persisted.
     """
-    language = TtyLanguageChooser(seed).choose(languages, default_language)
-    loc = localizer_for(language)
+    language = TtyLanguageChooser(get_active()).choose(languages, default_language)
+    LanguageContextHolder.set_language(language)
+    message_source = get_active()
 
     if not any(client.installed for client in clients):
-        report_no_client(supported, system, loc)
+        report_no_client(supported, system, message_source)
         return None
 
-    name = TtyTextPrompt(loc).ask(loc.t("init.name.header"), default_name, loc)
-    role = TtyRoleChooser(loc, role_examples).choose(DEFAULT_ROLE, loc)
-    environment = TtyEnvironmentChooser(loc, environment_examples).choose(DEFAULT_ENVIRONMENT, loc)
-    persona = TtyPersonaChooser(loc).choose(personas, loc)
-    client = choose_client(clients, loc)
+    name = TtyTextPrompt(message_source).ask(
+        message_source.get_message("init.name.header"), default_name, message_source
+    )
+    role = TtyRoleChooser(message_source, role_examples).choose(DEFAULT_ROLE, message_source)
+    environment = TtyEnvironmentChooser(message_source, environment_examples).choose(
+        DEFAULT_ENVIRONMENT, message_source
+    )
+    persona = TtyPersonaChooser(message_source).choose(personas, message_source)
+    client = choose_client(clients, message_source)
     if client is None:  # declined at the last step: nothing to configure
         return None
     return InitAnswers(

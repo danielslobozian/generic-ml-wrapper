@@ -20,7 +20,7 @@ class JsonEnvironmentExamplesRepositoryAdapter(EnvironmentExamplesRepositoryPort
     """Read the offered starting-point environments from the packaged JSON file.
 
     The label and description hold a catalogue key rather than typed text. Nothing has to
-    flag that: the localiser falls back to the key itself when the catalogue has no entry,
+    flag that: the message source falls back to the key itself when the catalogue has no entry,
     so an environment the user typed passes through unchanged while an offered one is
     translated.
     """

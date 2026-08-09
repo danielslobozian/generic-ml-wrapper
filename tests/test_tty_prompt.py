@@ -8,9 +8,19 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli.setup import tty_prompt
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
-from generic_ml_wrapper.application.wiring.localization import load_localizer
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 
-_I18N = load_localizer("en")
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
+
+
+_I18N = _accessor("en")
 _CHOICES = [Choice("a", "Alpha"), Choice("b", "Beta", icon="✨", description="the second")]
 
 

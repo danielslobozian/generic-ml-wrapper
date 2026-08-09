@@ -31,6 +31,9 @@ from pydantic_settings import (
     TomlConfigSettingsSource,
 )
 
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    get_message,
+)
 from generic_ml_wrapper.application.domain.model.invalid_setting_value_error import (
     InvalidSettingValueError,
 )
@@ -38,7 +41,6 @@ from generic_ml_wrapper.application.domain.model.setting_row import SettingRow
 from generic_ml_wrapper.application.domain.model.unknown_setting_error import (
     UnknownSettingError,
 )
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.paths import paths
 
 if TYPE_CHECKING:
@@ -317,9 +319,9 @@ def registry_rows() -> list[SettingRow]:
                     choices=_choices(field),
                     # A Field's `description` holds the *catalogue key*, not the text: a
                     # model's fields are evaluated at import time, long before the active
-                    # localiser exists, so the sentence cannot live there. Resolving here
+                    # message source exists, so the sentence cannot live there. Resolving here
                     # — at render time — is what lets `config list` speak French.
-                    description=i18n.t(field.description) if field.description else "",
+                    description=get_message(field.description) if field.description else "",
                 )
             )
     return rows

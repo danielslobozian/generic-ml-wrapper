@@ -16,6 +16,15 @@ from generic_ml_wrapper import main as entry_point
 from generic_ml_wrapper.adapter.inbound.cli import app
 from generic_ml_wrapper.adapter.inbound.common import action, announcer, launcher
 from generic_ml_wrapper.adapter.inbound.common.action import run_init
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_context_holder import (
+    LanguageContextHolder,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 from generic_ml_wrapper.adapter.inbound.tui import app as tui_app
 from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
@@ -144,8 +153,11 @@ from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
 from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
 from generic_ml_wrapper.application.wiring import composition
 from generic_ml_wrapper.application.wiring.composition import build_application_settings
-from generic_ml_wrapper.application.wiring.localization import load_localizer
 from generic_ml_wrapper.application.wiring.paths import paths
+
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
 
 
 class _RecordingBootstrap(BootstrapUseCase):
@@ -556,7 +568,7 @@ def test_run_interactive_pick_echoes_the_fast_path(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class _Chooser:
-        def choose(self, names: list[str], i18n: object | None = None) -> str | None:
+        def choose(self, names: list[str], message_source: object | None = None) -> str | None:
             return names[0]
 
     seen: dict[str, StartNewSessionCommand] = {}
@@ -630,12 +642,12 @@ def test_format_jobs_lists_each_summary() -> None:
     assert "2 session(s)" in text
 
 
-def test_format_jobs_renders_through_an_injected_localiser() -> None:
-    # The renderers take an explicit localiser so app-wide localisation is testable
+def test_format_jobs_renders_through_an_injected_message_source() -> None:
+    # The renderers take an explicit message source so app-wide localisation is testable
     # without mutating the process-global active language.
-    french = load_localizer("fr")
-    assert "Aucun job" in app.format_jobs([], loc=french)
-    assert "Aucun usage" in app.format_usage(UsageReport("JOB-1"), loc=french)
+    french = _accessor("fr")
+    assert "Aucun job" in app.format_jobs([], message_source=french)
+    assert "Aucun usage" in app.format_usage(UsageReport("JOB-1"), message_source=french)
 
 
 def test_jobs_command_prints_the_summaries(
@@ -1007,9 +1019,9 @@ def test_gate_forces_init_when_uninitialised(
 def test_init_announcement_speaks_the_chosen_language_not_the_os_locale(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Regression: a French OS locale seeds the startup active localiser, but the user
+    # Regression: a French OS locale seeds the startup active message source, but the user
     # chose English in init. The closing narration must speak the CHOSEN language, not $LANG.
-    monkeypatch.setattr(entry_point, "build_localizer", lambda: load_localizer("fr"))  # $LANG=fr
+    monkeypatch.setattr(entry_point, "load_current_language", lambda: "fr")  # $LANG=fr
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
     monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))  # chose en
@@ -1018,7 +1030,7 @@ def test_init_announcement_speaks_the_chosen_language_not_the_os_locale(
     err = capsys.readouterr().err
     assert "set up — speaking en" in err  # English announcement, per the chosen language
     assert "configuré" not in err  # NOT the French ($LANG) announcement
-    assert app.i18n.active().lang == "en"  # active re-seeded to the chosen language
+    assert LanguageContextHolder.get_language() == "en"  # re-seeded to the chosen language
 
 
 def test_gate_skips_init_when_initialised(
@@ -2487,7 +2499,7 @@ def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) ->
 
     monkeypatch.setattr(tui_app, "_tui_launch_job", _launch)
     monkeypatch.setattr(tui_app, "run_workflow", _run)
-    monkeypatch.setattr(tui_app, "new_workflow", _new)
+    monkeypatch.setattr(tui_app, "create_workflow", _new)
     monkeypatch.setattr(tui_app, "edit_workflow", _edit)
     tui_app._act_on_tui_choice(choice)
     return seen[0]

@@ -42,8 +42,8 @@ def preflight_resume_cwd(cwd: str | None) -> bool:
     """Check a resumed session's recorded folder still exists.
 
     Args:
-        cwd: ``None`` for a session recorded before folders were tracked, which always
-            passes.
+        cwd: ``None`` for a session recorded before folders were tracked, which skips the
+            recorded-folder check only — the current directory is still checked.
 
     Returns:
         ``True`` to go ahead; ``False`` after guidance has been written to stderr.

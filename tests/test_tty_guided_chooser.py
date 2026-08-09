@@ -8,12 +8,22 @@ import pytest
 
 from generic_ml_wrapper.adapter.inbound.cli.setup import tty_prompt
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
-from generic_ml_wrapper.application.wiring.localization import load_localizer
+
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
+
 
 _MODES = [AuthoringMode.GUIDED, AuthoringMode.QUICK]
 
-_I18N = load_localizer("en")
+_I18N = _accessor("en")
 
 
 class _Tty(io.StringIO):

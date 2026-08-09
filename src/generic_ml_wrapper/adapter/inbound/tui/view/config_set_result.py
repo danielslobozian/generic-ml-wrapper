@@ -11,3 +11,4 @@ class ConfigSetResult:
     ok: bool
     message: str
     value: str = ""
+    language_changed: bool = False

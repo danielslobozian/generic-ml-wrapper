@@ -7,17 +7,24 @@ import sys
 
 from generic_ml_wrapper.adapter.inbound.cli.setup.interview import run_interview
 from generic_ml_wrapper.adapter.inbound.common.announcer import (
-    announce_create_workflow,
-    announce_init,
-    announce_migration,
-    announce_slug_migration,
+    print_create_workflow,
     print_exit_receipt,
+    print_init,
+    print_migration,
+    print_slug_migration,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.language_context_holder import (
+    LanguageContextHolder,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    get_active,
+    get_message,
 )
 from generic_ml_wrapper.adapter.inbound.common.launcher import (
     preflight_client,
     preflight_cwd,
 )
-from generic_ml_wrapper.adapter.inbound.common.renderer import farewell, render_error
+from generic_ml_wrapper.adapter.inbound.common.renderer import get_farewell, render_error
 from generic_ml_wrapper.application.domain.model.job_id import JobId
 from generic_ml_wrapper.application.domain.model.no_edit_to_resume_error import NoEditToResumeError
 from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
@@ -40,12 +47,10 @@ from generic_ml_wrapper.application.port.inbound.resume_edit_workflow_command im
 from generic_ml_wrapper.application.port.inbound.start_new_session_command import (
     StartNewSessionCommand,
 )
-from generic_ml_wrapper.application.wiring import localization as i18n
 from generic_ml_wrapper.application.wiring.composition import (
     build_create_job,
     build_create_workflow,
     build_edit_workflow,
-    build_list_available_languages,
     build_list_clients,
     build_list_environment_examples,
     build_list_personas,
@@ -57,31 +62,14 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_save_init_answers,
     build_start_new_session_for_job,
     default_user_name,
-    load_localizer,
     platform_name,
-    seed_language,
-    seed_localizer,
 )
 
 
 def run_init() -> int:
-    """Run the setup interview, then the layout/slug migrations — the ``gmlw init`` flow.
-
-    Re-running on an initialized installation merges the answers into the existing config (never
-    wipes).
-
-    The interview happens here, in the terminal. The application is asked what is on offer
-    — which languages ship, which personas exist, which clients are installed — and is
-    told what was chosen. It is never asked for a label.
-
-    Returns:
-        ``0`` normally; ``2`` when no client is installed, having written nothing. A
-        client is a prerequisite, not an answer: without one there is nothing to
-        configure, and persisting half a setup would only make the next run stranger.
-    """
     answers = run_interview(
-        languages=build_list_available_languages().execute(),
-        default_language=seed_language(),
+        languages=get_active().available_languages(),
+        default_language=LanguageContextHolder.get_language(),
         default_name=default_user_name(),
         personas=build_list_personas().execute(),
         clients=build_list_clients().execute(),
@@ -89,15 +77,13 @@ def run_init() -> int:
         system=platform_name(),
         role_examples=build_list_role_examples(),
         environment_examples=build_list_environment_examples(),
-        localizer_for=load_localizer,
-        seed=seed_localizer(),
     )
     if answers is None:  # no client installed, or the last question declined
         return 2
-    announce_init(build_save_init_answers().execute(answers))
-    announce_migration(build_migrate_layout().execute())
-    announce_slug_migration(build_migrate_slugs().execute())
-    print(i18n.t("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
+    print_init(build_save_init_answers().execute(answers))
+    print_migration(build_migrate_layout().execute())
+    print_slug_migration(build_migrate_slugs().execute())
+    print(get_message("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
     return 0
 
 
@@ -116,7 +102,7 @@ def run_workflow(workflow: str, client: str, client_args: str | None = None) -> 
     """
     if not preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2
-    if not preflight_client(client):  # client not installed — guide, don't launch
+    if not preflight_client(client):
         return 2
     try:
         build_create_job().execute(CreateJobCommand(job=str(JobId(workflow))))
@@ -131,12 +117,12 @@ def run_workflow(workflow: str, client: str, client_args: str | None = None) -> 
     except (UnknownWorkflowError, ResumeNotSupportedError) as error:
         print(render_error(error))
         return 2
-    print(farewell(), file=sys.stderr)
+    print(get_farewell(), file=sys.stderr)
     print_exit_receipt(result)
     return result.exit_code
 
 
-def new_workflow(label: str | None, client: str, guided: bool, *, description: str = "") -> int:
+def create_workflow(label: str | None, client: str, guided: bool, *, description: str = "") -> int:
     """Author a new workflow through an editing session on the client.
 
     Args:
@@ -158,13 +144,13 @@ def new_workflow(label: str | None, client: str, guided: bool, *, description: s
                 label=label, client=client, guided=guided, description=description
             )
         )
-    except WorkflowExistsError:  # a seed name that already exists — point at editing it
-        print(i18n.t("workflow.new.exists", name=label), file=sys.stderr)
+    except WorkflowExistsError:
+        print(get_message("workflow.new.exists", name=label), file=sys.stderr)
         return 2
     except WorkflowNameError as error:
         print(render_error(error))
         return 2
-    announce_create_workflow(result)
+    print_create_workflow(result)
     return result.exit_code
 
 
@@ -210,7 +196,10 @@ def resume_edit_workflow(workflow_name: str) -> int:
             ResumeEditWorkflowCommand(workflow_name=workflow_name)
         )
     except NoEditToResumeError as error:
-        print(i18n.t("workflow.edit.nothing_to_resume", error=render_error(error)), file=sys.stderr)
+        print(
+            get_message("workflow.edit.nothing_to_resume", error=render_error(error)),
+            file=sys.stderr,
+        )
         return 2
     except (WorkflowNameError, WorkflowNotFoundError) as error:
         print(render_error(error))

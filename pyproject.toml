@@ -48,6 +48,13 @@ dependencies = [
   # A deliberate exception to the thin-dep rule, like pydantic above: it is used only by the
   # opt-in tui adapter, imported lazily, and never on the flag-CLI / statusline hot paths.
   "textual>=0.60",
+  # python-iso639 (Apache-2.0, the project's own licence) answers one question: is this
+  # two-letter code a real language? Python has no stdlib equivalent of java.util.Locale,
+  # and the alternative is maintaining an ISO 639-1 table by hand. Chosen over pycountry
+  # (LGPL, and carries countries/currencies/scripts) and iso-639 (AGPL). Install name and
+  # import name differ: `python-iso639` installs, `iso639` imports. Data comes from SIL's
+  # tables, which carry their own terms on top of the licence.
+  "python-iso639>=2024.4.27",
 ]
 
 [project.urls]

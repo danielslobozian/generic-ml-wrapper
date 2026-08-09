@@ -12,7 +12,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
 # The topics, in display order. Each name maps to catalogue keys ``help.<name>.summary``
 # (the one-line listing) and ``help.<name>.body`` (the full explainer).
 TOPICS: tuple[str, ...] = ("job-vs-workflow", "start-vs-run", "personas", "cost")
@@ -23,29 +25,33 @@ def _key(topic: str) -> str:
     return topic.replace("-", "_")
 
 
-def render_topic_list(loc: MessageSource) -> str:
+def render_topic_list(message_source: MessageSourceAccessor) -> str:
     """Render the list of help topics with their one-line summaries.
 
     Args:
-        loc: The localiser to render through.
+        message_source: The message source to render through.
 
     Returns:
         The listing text (no trailing newline).
     """
     width = max(len(topic) for topic in TOPICS)
-    lines = [loc.t("help.header"), ""]
+    lines = [message_source.get_message("help.header"), ""]
     for topic in TOPICS:
-        summary = loc.t(f"help.{_key(topic)}.summary")
-        lines.append(loc.t("help.topic_line", topic=f"{topic:<{width}}", summary=summary))
-    lines += ["", loc.t("help.footer")]
+        summary = message_source.get_message(f"help.{_key(topic)}.summary")
+        lines.append(
+            message_source.get_message(
+                "help.topic_line", topic=f"{topic:<{width}}", summary=summary
+            )
+        )
+    lines += ["", message_source.get_message("help.footer")]
     return "\n".join(lines)
 
 
-def render_topic(loc: MessageSource, topic: str) -> str | None:
+def render_topic(message_source: MessageSourceAccessor, topic: str) -> str | None:
     """Render one topic's explainer, or ``None`` when the topic is unknown.
 
     Args:
-        loc: The localiser to render through.
+        message_source: The message source to render through.
         topic: The requested topic name.
 
     Returns:
@@ -53,4 +59,4 @@ def render_topic(loc: MessageSource, topic: str) -> str | None:
     """
     if topic not in TOPICS:
         return None
-    return loc.t(f"help.{_key(topic)}.body")
+    return message_source.get_message(f"help.{_key(topic)}.body")

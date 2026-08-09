@@ -6,7 +6,7 @@ One implementation behind every first-run picker (client, persona, …). It writ
 list to stderr and reads a line from stdin, so stdout stays clean for ``--json`` and
 view output, and it declines (returns ``None``) whenever either end is not a TTY — a
 piped or automated run never blocks. The fixed fragments (the pick line, the range
-error) are localised through a :class:`MessageSource`; the caller passes already-localised
+error) are localised through a :class:`MessageSourceAccessor`; the caller passes already-localised
 choices, so this stays dependency-free and framework-free.
 """
 
@@ -19,7 +19,9 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
 
 
 @dataclass(frozen=True)
@@ -42,7 +44,7 @@ class Choice:
 def choose_number(
     header: str,
     choices: Sequence[Choice],
-    i18n: MessageSource,
+    message_source: MessageSourceAccessor,
     *,
     default: int | None = None,
     skippable: bool = False,
@@ -55,7 +57,7 @@ def choose_number(
     Args:
         header: The already-localised question line printed above the options.
         choices: The options, in display order.
-        i18n: The localiser supplying the fixed prompt fragments.
+        message_source: The message source supplying the fixed prompt fragments.
         default: Index picked on an empty line; ``None`` means empty does not default.
         skippable: When true, an empty line returns ``None`` (skip) instead.
 
@@ -72,11 +74,11 @@ def choose_number(
         print(f"  {index}) {icon}{choice.label}{description}", file=sys.stderr)
     rng = f"1-{len(choices)}"
     if skippable:
-        pick = i18n.t("prompt.pick_skippable", range=rng)
+        pick = message_source.get_message("prompt.pick_skippable", range=rng)
     elif default is not None:
-        pick = i18n.t("prompt.pick_default", range=rng, default=default + 1)
+        pick = message_source.get_message("prompt.pick_default", range=rng, default=default + 1)
     else:
-        pick = i18n.t("prompt.pick_plain", range=rng)
+        pick = message_source.get_message("prompt.pick_plain", range=rng)
     while True:
         reply = _read(pick)
         if reply is None:
@@ -90,7 +92,10 @@ def choose_number(
             continue
         if reply.isdigit() and 1 <= int(reply) <= len(choices):
             return choices[int(reply) - 1].value
-        print("  " + i18n.t("prompt.not_in_range", reply=reply, range=rng), file=sys.stderr)
+        print(
+            "  " + message_source.get_message("prompt.not_in_range", reply=reply, range=rng),
+            file=sys.stderr,
+        )
 
 
 def emit(*lines: str) -> None:

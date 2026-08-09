@@ -24,6 +24,15 @@ class SystemInfoPort(ABC):
         """
 
     @abstractmethod
+    def language(self) -> str | None:
+        """Return the language the host is set to, as a two-letter code.
+
+        Returns:
+            The code, or ``None`` when the host names no language or names something
+            that is not a language at all.
+        """
+
+    @abstractmethod
     def platform_name(self) -> str:
         """Return the platform's name, as the client catalogue spells it.
 

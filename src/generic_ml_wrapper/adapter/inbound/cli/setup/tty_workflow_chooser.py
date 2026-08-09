@@ -16,7 +16,9 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.adapter.inbound.cli.setup.tty_prompt import Choice, choose_number
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
 
 
 class TtyWorkflowChooser:
@@ -26,28 +28,31 @@ class TtyWorkflowChooser:
     the user toward naming a workflow explicitly.
     """
 
-    def __init__(self, i18n: MessageSource) -> None:
-        """Bind the chooser to a localiser for its prompt text.
+    def __init__(self, message_source: MessageSourceAccessor) -> None:
+        """Bind the chooser to a message source for its prompt text.
 
         Args:
-            i18n: The localiser supplying the header and fixed prompt fragments.
+            message_source: The message source supplying the header and fixed prompt fragments.
         """
-        self._i18n = i18n
+        self._message_source = message_source
 
-    def choose(self, names: list[str], i18n: MessageSource | None = None) -> str | None:
+    def choose(
+        self, names: list[str], message_source: MessageSourceAccessor | None = None
+    ) -> str | None:
         """Offer ``names`` and return the chosen workflow, or ``None`` to decline.
 
         Args:
             names: The runnable workflow names to offer, in display order.
-            i18n: The localiser for the prompt; ``None`` uses the construction-time one.
+            message_source: The message source for the prompt; ``None`` uses the
+                construction-time one.
 
         Returns:
             The chosen workflow name, or ``None`` when skipped or there is no terminal.
         """
-        loc = i18n or self._i18n
+        message_source = message_source or self._message_source
         return choose_number(
-            loc.t("run.pick_header"),
+            message_source.get_message("run.pick_header"),
             [Choice(value=name, label=name) for name in names],
-            loc,
+            message_source,
             skippable=True,
         )

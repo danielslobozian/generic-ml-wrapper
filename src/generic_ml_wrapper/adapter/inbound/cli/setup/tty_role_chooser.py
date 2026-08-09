@@ -22,7 +22,9 @@ from generic_ml_wrapper.application.domain.model.uncodable_role_label_error impo
 )
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.cli.setup.message_source import MessageSource
+    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+        MessageSourceAccessor,
+    )
     from generic_ml_wrapper.application.port.inbound.list_role_examples import (
         ListRoleExamplesUseCase,
     )
@@ -39,45 +41,60 @@ _SAVED = "init.role.saved"
 class TtyRoleChooser:
     """Guide the role choice at an interactive terminal."""
 
-    def __init__(self, i18n: MessageSource, examples: ListRoleExamplesUseCase) -> None:
-        """Bind the chooser to a localiser and the roles it offers.
+    def __init__(
+        self, message_source: MessageSourceAccessor, examples: ListRoleExamplesUseCase
+    ) -> None:
+        """Bind the chooser to a message source and the roles it offers.
 
         Args:
-            i18n: The default localiser for the blurb, menu, and echo.
+            message_source: The default message source for the blurb, menu, and echo.
             examples: Supplies the offered starting-point roles.
         """
-        self._i18n = i18n
+        self._message_source = message_source
         self._examples = examples
 
-    def choose(self, default: str, i18n: MessageSource | None = None) -> Role:
+    def choose(self, default: str, message_source: MessageSourceAccessor | None = None) -> Role:
         """Offer the examples plus "type your own"; return the chosen role.
 
         Args:
             default: The code used off a terminal, or when a typed answer yields none.
-            i18n: The localiser to use; ``None`` falls back to the construction-time one.
+            message_source: The message source to use; ``None`` falls back to the
+                construction-time one.
 
         Returns:
             The chosen role.
         """
-        loc = i18n or self._i18n
+        message_source = message_source or self._message_source
         offered = self._examples.execute()
-        emit(loc.t(_INTRO))
+        emit(message_source.get_message(_INTRO))
         choices = [
-            Choice(value=role.code, label=loc.t(role.label), description=loc.t(role.description))
+            Choice(
+                value=role.code,
+                label=message_source.get_message(role.label),
+                description=message_source.get_message(role.description),
+            )
             for role in offered
         ]
-        choices.append(Choice(value=_TYPE_YOUR_OWN, label=loc.t(_TYPE_YOUR_OWN_KEY)))
-        picked = choose_number(loc.t(_HEADER), choices, loc, default=0)
+        choices.append(
+            Choice(value=_TYPE_YOUR_OWN, label=message_source.get_message(_TYPE_YOUR_OWN_KEY))
+        )
+        picked = choose_number(
+            message_source.get_message(_HEADER), choices, message_source, default=0
+        )
         if picked is None:  # non-TTY, EOF — decline to the default
             return Role(default, default, default)
         if picked != _TYPE_YOUR_OWN:
             chosen = next(role for role in offered if role.code == picked)
-            return Role(chosen.code, loc.t(chosen.label), loc.t(chosen.description))
-        return self._type_your_own(default, loc)
+            return Role(
+                chosen.code,
+                message_source.get_message(chosen.label),
+                message_source.get_message(chosen.description),
+            )
+        return self._type_your_own(default, message_source)
 
-    def _type_your_own(self, default: str, loc: MessageSource) -> Role:
+    def _type_your_own(self, default: str, message_source: MessageSourceAccessor) -> Role:
         """Read a free-text answer, keep it as the label, and derive + echo its code."""
-        typed = self._read(loc.t(_PROMPT))
+        typed = self._read(message_source.get_message(_PROMPT))
         if typed is None or not typed.strip():
             return Role(default, default, default)
         label = typed.strip()
@@ -87,7 +104,7 @@ class TtyRoleChooser:
             # Nothing codeable in what they typed; keep the default rather than refuse a
             # setup step the user cannot skip.
             return Role(default, default, default)
-        emit(loc.t(_SAVED, code=role.code))
+        emit(message_source.get_message(_SAVED, code=role.code))
         return role
 
     @staticmethod

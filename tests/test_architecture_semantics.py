@@ -287,6 +287,14 @@ def test_inbound_adapters_name_only_what_they_drive() -> None:
     )
 
 
+# The message catalogues are this layer's own channel, the way argv is the CLI's: reading
+# the packaged language files is what turning a key into a sentence consists of, and routing
+# it through an outbound port and a use case would buy nothing the application ever asks for.
+_READS_ITS_OWN_PACKAGED_RESOURCES = frozenset(
+    {"adapter/inbound/common/i18n/json_catalog_message_source.py"}
+)
+
+
 def test_inbound_adapters_acquire_nothing() -> None:
     """An inbound adapter parses its input, calls a port, and renders the answer.
 
@@ -298,6 +306,8 @@ def test_inbound_adapters_acquire_nothing() -> None:
     """
     offenders: list[str] = []
     for path in _modules(*_INBOUND):
+        if path.relative_to(_SOURCE).as_posix() in _READS_ITS_OWN_PACKAGED_RESOURCES:
+            continue
         reached = sorted(_imported_roots(ast.parse(path.read_text(encoding="utf-8"))) & _ACQUIRES)
         if reached:
             offenders.append(f"{path.relative_to(_SOURCE)}: {', '.join(reached)}")

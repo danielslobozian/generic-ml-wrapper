@@ -414,6 +414,7 @@ _SETTINGS = [
     ),
     ConfigSetting("hints.show", "true", "true", "bool", None, "show usage hints"),
     ConfigSetting("companion.name", "(unset)", "(unset)", "str?", None, "your name"),
+    ConfigSetting("language.code", "en", "en", "choice", ("en", "fr"), "the language"),
 ]
 
 
@@ -2356,3 +2357,51 @@ def test_resume_is_unchanged_and_still_reopens_a_session() -> None:
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(action="resume", job="alpha", session="alpha_003")
+
+
+def test_changing_the_language_ends_the_menu_so_it_rebuilds_in_the_new_one() -> None:
+    """A language change cannot be patched into a mounted screen: Textual bakes every string
+    into its widgets at compose time, and the crumbs and pick-lists below are built before the
+    app starts. The menu exits with the reload action instead, and the loop that already
+    rebuilds it each turn brings it back speaking the new language."""
+
+    def apply(key: str, raw: str) -> ConfigSetResult:
+        return ConfigSetResult(
+            ok=True, message="ok", value=raw, language_changed=key == "language.code"
+        )
+
+    async def scenario() -> MenuChoice | None:
+        app = MenuApp(_JOBS, config=_config_catalog(apply))
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_set(pilot)
+            await pilot.press("l", "a", "n", "g")  # filter → language.code
+            await pilot.pause()
+            await pilot.press("enter")  # open the choice screen
+            await pilot.pause()
+            await pilot.press("down", "enter")  # en (row 0) → fr (row 1)
+            await pilot.pause()
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="reload-for-language")
+
+
+def test_changing_another_setting_leaves_the_menu_running() -> None:
+    """The counterpart: only a language change ends the menu. Everything else stays put."""
+
+    def apply(key: str, raw: str) -> ConfigSetResult:
+        return ConfigSetResult(ok=True, message="ok", value=raw, language_changed=False)
+
+    async def scenario() -> MenuChoice | None:
+        app = MenuApp(_JOBS, config=_config_catalog(apply))
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_config_set(pilot)
+            await pilot.press("l", "o", "g")  # filter → logging.level
+            await pilot.pause()
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press("up", "up", "enter")
+            await pilot.pause()
+            running = app.is_running
+        return None if running else MenuChoice(action="ended")
+
+    assert asyncio.run(scenario()) is None

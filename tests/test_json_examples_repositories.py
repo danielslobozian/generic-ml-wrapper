@@ -4,13 +4,22 @@
 
 from __future__ import annotations
 
+from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
+    JsonCatalogMessageSource,
+)
+from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
+    MessageSourceAccessor,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.json_environment_examples_repository import (
     JsonEnvironmentExamplesRepositoryAdapter,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.json_role_examples_repository import (
     JsonRoleExamplesRepositoryAdapter,
 )
-from generic_ml_wrapper.application.wiring.localization import load_localizer
+
+
+def _accessor(language: str) -> MessageSourceAccessor:
+    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
 
 
 def test_the_packaged_roles_are_offered_in_file_order() -> None:
@@ -23,15 +32,15 @@ def test_the_packaged_environments_are_offered_in_file_order() -> None:
     assert codes == ["work", "home", "open-source", "personal-project"]
 
 
-def test_an_example_carries_catalogue_keys_that_the_localiser_resolves() -> None:
+def test_an_example_carries_catalogue_keys_that_the_message_source_resolves() -> None:
     # The label and description are keys, not text; nothing flags that, because the
-    # localiser falls back to the key itself when the catalogue has no entry.
+    # message source falls back to the key itself when the catalogue has no entry.
     role = JsonRoleExamplesRepositoryAdapter().find_all()[0]
-    localizer = load_localizer("en")
+    message_source = _accessor("en")
     assert role.label == "init.role.example.engineer.label"
-    assert localizer.t(role.label) == "Software engineer"
-    assert localizer.t(role.description) == "Building and maintaining software."
+    assert message_source.get_message(role.label) == "Software engineer"
+    assert message_source.get_message(role.description) == "Building and maintaining software."
 
 
-def test_a_users_own_text_passes_through_the_localiser_unchanged() -> None:
-    assert load_localizer("en").t("a health nut") == "a health nut"
+def test_a_users_own_text_passes_through_the_message_source_unchanged() -> None:
+    assert _accessor("en").get_message("a health nut") == "a health nut"

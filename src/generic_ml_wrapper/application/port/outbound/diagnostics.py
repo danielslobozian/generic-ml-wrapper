@@ -12,7 +12,7 @@ alongside it::
     diag.error("relay handler thread crashed", exc=error, session=session_id)
 
 **The message is already localised when it arrives.** Resolving a catalogue key is the
-caller's job, not the sink's: a sink that resolved keys would have to know about i18n, and
+caller's job, not the sink's: a sink that resolved keys would have to know about message_source, and
 a sink is meant to be a dumb destination. Pass ``key=`` alongside so the raw catalogue key
 lands in the record too and logs stay greppable whatever language they were written in.
 """

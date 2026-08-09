@@ -35,7 +35,7 @@ def test_bare_launch_off_a_terminal_is_refused(
 
 def test_bare_launch_on_a_terminal_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _initialised)
-    monkeypatch.setattr(TerminalValidActionsPolicy, "is_interactive", lambda: True)
+    monkeypatch.setattr(TerminalValidActionsPolicy, "_is_interactive", lambda: True)
     opened: list[str] = []
 
     monkeypatch.setattr(entry_point, "tui_main", lambda: opened.append("menu") or 0)

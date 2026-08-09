@@ -28,15 +28,15 @@ class TerminalValidActionsPolicy:
             A refusal carrying the message code to show, or an allowance carrying none.
         """
         if (
-            not TerminalValidActionsPolicy.is_interactive()
-            and TerminalValidActionsPolicy.needs_the_terminal(arguments)
+            not TerminalValidActionsPolicy._is_interactive()
+            and TerminalValidActionsPolicy._needs_the_terminal(arguments)
         ):
             return TerminalActionVerdict(allowed=False, message_code=NOT_INTERACTIVE_MESSAGE_CODE)
 
         return TerminalActionVerdict(allowed=True)
 
     @staticmethod
-    def is_interactive() -> bool:
+    def _is_interactive() -> bool:
         """Whether a person is present.
 
         Returns:
@@ -46,7 +46,7 @@ class TerminalValidActionsPolicy:
         return sys.stdin.isatty() and sys.stdout.isatty()
 
     @staticmethod
-    def needs_the_terminal(arguments: list[str]) -> bool:
+    def _needs_the_terminal(arguments: list[str]) -> bool:
         """Whether the requested command takes the terminal over.
 
         Returns:
@@ -57,12 +57,12 @@ class TerminalValidActionsPolicy:
             return True
         if arguments[0] in HANDOVER_COMMANDS:
             return True
-        return arguments[0] == WORKFLOW_COMMAND and TerminalValidActionsPolicy.is_handover_workflow(
-            arguments
-        )
+        return arguments[
+            0
+        ] == WORKFLOW_COMMAND and TerminalValidActionsPolicy._is_handover_workflow(arguments)
 
     @staticmethod
-    def is_handover_workflow(arguments: list[str]) -> bool:
+    def _is_handover_workflow(arguments: list[str]) -> bool:
         """Whether a ``workflow`` command names one of the actions that opens a session.
 
         Returns:
