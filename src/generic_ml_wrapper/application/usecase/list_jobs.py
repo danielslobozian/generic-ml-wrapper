@@ -13,6 +13,7 @@ from __future__ import annotations
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.port.inbound.list_jobs_query import ListJobsQuery
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 
 
@@ -27,7 +28,7 @@ class ListJobsService(ListJobsUseCase):
         """
         self._store = store
 
-    def execute(self) -> list[JobSummary]:
+    def execute(self, query: ListJobsQuery) -> list[JobSummary]:  # noqa: ARG002
         """List the jobs with recorded activity, except the authoring job.
 
         Returns:

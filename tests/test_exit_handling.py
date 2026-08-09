@@ -7,7 +7,9 @@ import io
 
 import pytest
 
+from generic_ml_wrapper import main as entry_point
 from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper.adapter.inbound.common import renderer
 from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
 
 
@@ -17,8 +19,8 @@ def test_keyboard_interrupt_exits_130_without_a_traceback(
     def interrupt(_argv: list[str]) -> int:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr(app, "_dispatch", interrupt)
-    assert app.main([]) == 130
+    monkeypatch.setattr(entry_point, "cli_main", interrupt)
+    assert entry_point.main(["jobs"]) == 130
     assert "Traceback" not in capsys.readouterr().err
 
 
@@ -28,8 +30,8 @@ def test_unexpected_error_exits_1_with_a_friendly_message(
     def boom(_argv: list[str]) -> int:
         raise ValueError("kaboom")
 
-    monkeypatch.setattr(app, "_dispatch", boom)
-    assert app.main([]) == 1
+    monkeypatch.setattr(entry_point, "cli_main", boom)
+    assert entry_point.main(["jobs"]) == 1
     err = capsys.readouterr().err
     assert "Traceback" not in err
     assert "kaboom" in err
@@ -37,7 +39,7 @@ def test_unexpected_error_exits_1_with_a_friendly_message(
 
 def test_farewell_is_the_same_line_for_everyone() -> None:
     """No companion check: a goodbye is a label, and everyone gets it."""
-    assert app._farewell() == "Bye."
+    assert renderer.farewell() == "Bye."
 
 
 def _noop_signal(*_args: object) -> None:
@@ -60,9 +62,9 @@ class _TerminatedStartJob:
 
 
 def test_a_terminated_client_reports_128_plus_the_signal(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(app, "_preflight_cwd", _true)
-    monkeypatch.setattr(app, "_preflight_client", _true_for_client)
-    monkeypatch.setattr(app, "build_start_job", _TerminatedStartJob)
+    monkeypatch.setattr(app, "preflight_cwd", _true)
+    monkeypatch.setattr(app, "preflight_client", _true_for_client)
+    monkeypatch.setattr(app, "build_start_new_session_for_job", _TerminatedStartJob)
     args = argparse.Namespace(
         job="test", client="claude", workflow=None, resume_latest=False, client_args=None
     )

@@ -9,15 +9,8 @@ from dataclasses import replace
 
 from generic_ml_wrapper.application.domain.model.authoring_job import AuthoringJob
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
-from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
-from generic_ml_wrapper.application.domain.model.no_edit_to_resume_error import NoEditToResumeError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
-from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
-    WorkflowNotFoundError,
-)
 from generic_ml_wrapper.application.domain.service.session_naming import SessionNaming
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
@@ -25,11 +18,7 @@ from generic_ml_wrapper.application.port.outbound.cli_caller_provider import Cli
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import LaunchSequence
-
-# The create-workflow meta drives the authoring session (for editing as for creating); its
-# name and the shared partial are reserved and cannot themselves be edited.
-_META = "create-workflow"
-_RESERVED = frozenset({_META, "_common"})
+from generic_ml_wrapper.application.usecase.workflow_folder import META, folder_for_editing
 
 
 class EditWorkflowService(EditWorkflowUseCase):
@@ -72,24 +61,11 @@ class EditWorkflowService(EditWorkflowUseCase):
             WorkflowNotFoundError: If no workflow with that name exists.
         """
         name = command.name
-        try:
-            WorkflowName(name)
-        except IdentifierError as error:
-            raise WorkflowNameError(error.catalogue_key, **error.params) from error
-        if name in _RESERVED:
-            raise WorkflowNameError("error.workflow.reserved_name", name=name)
-        # No seeding here, for the reason `ExportWorkflowService` gives: everything it
-        # installs is already rejected as reserved above.
-        if self._workflows.find(name) is None:
-            raise WorkflowNotFoundError("error.workflow.not_found", name=name)
-
-        folder = self._workflows.folder(name)  # the existing folder — never (re)created
+        folder = folder_for_editing(self._workflows, name)
         # Editing files under the same job as creating: authoring is one history, whatever
         # workflow it touches, and one name is all the job listing has to leave out. Which
         # workflow a session edited is told by its folder, not by the job it is filed under.
         job = AuthoringJob.NAME
-        if command.resume_latest:
-            return self._reopen(job, name, folder)
         session = Session(
             session_id=SessionNaming().next_session_id(job, self._store.ids_for_job(job)),
             job=job,
@@ -124,56 +100,9 @@ class EditWorkflowService(EditWorkflowUseCase):
         self._store.record(replace(session, cwd=folder, resumable=caller.can_resume()))
         return self._launch.run(caller, run)
 
-    def _reopen(self, job: str, name: str, folder: str) -> int:
-        """Reopen this workflow's most recent editing session, in its own folder.
-
-        Only sessions that ran *in the workflow's folder* count. Every edit of every
-        workflow files under the one authoring job, so the job's latest session is just
-        as likely to be an edit of something else — and reopening one of those here would
-        relaunch it in the wrong directory, where a cwd-scoped client (Claude) correctly
-        reports no such conversation. An edit of *this* workflow is exactly the session
-        whose folder is this one.
-
-        That also excludes edits recorded before the folder was stored: their ``cwd`` is
-        ``None``, so they cannot be told apart from a run, and guessing would reopen the
-        wrong conversation rather than none.
-
-        No context is re-injected: the client still holds the edit conversation, and
-        re-sending it would talk over that history.
-
-        Raises:
-            NoEditToResumeError: If the workflow has no editing session, or its client
-                cannot reopen one.
-        """
-        edits = [s for s in self._store.sessions_for_job(job) if s.cwd == folder]
-        if not edits:
-            raise NoEditToResumeError("error.workflow.no_edit_session", name=name)
-        session = edits[-1]
-        run = RunContext(
-            job=job,
-            session_id=session.session_id,
-            client=session.client,
-            uuid=session.uuid,
-            resume=True,
-            cwd=folder,
-            kickoff=(
-                f"You are picking up an interrupted edit of the workflow {name!r}. Your "
-                f"working directory is its folder ({folder}). Take stock of what you had "
-                "already changed, tell me, then carry on from there — do not start over."
-            ),
-        )
-        caller = self._callers.for_run(run)
-        if not caller.can_resume():
-            raise NoEditToResumeError(
-                "error.workflow.no_edit_resume_unsupported",
-                client=session.client,
-                session_id=session.session_id,
-            )
-        return self._launch.run(caller, run)
-
     def _authoring_context(self, *, guided: bool, job: str) -> str:
         """The authoring context, with the guided-facilitation layer added when chosen."""
-        context = self._workflows.compile(CompileMode.AUTHORING, _META, job=job)
+        context = self._workflows.compile(CompileMode.AUTHORING, META, job=job)
         if not guided:
             return context
         guide = self._workflows.meta_guide()

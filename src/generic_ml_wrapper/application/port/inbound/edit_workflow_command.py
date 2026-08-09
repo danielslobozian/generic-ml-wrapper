@@ -16,12 +16,8 @@ class EditWorkflowCommand:
         client: The client to run the authoring session on.
         guided: Whether to add the guided-facilitation layer (a richer, costlier
             authoring experience) on top of the core interview.
-        resume_latest: Reopen this workflow's most recent editing session instead of
-            starting a fresh one — an edit interrupted halfway is picked up where it
-            stopped rather than begun again.
     """
 
     name: str
     client: str
     guided: bool = False
-    resume_latest: bool = False

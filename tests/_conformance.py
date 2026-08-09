@@ -50,6 +50,9 @@ class InMemorySessionStore(SessionStorePort):
     def jobs(self) -> list[str]:
         return sorted(self._by_job)
 
+    def create_job(self, job: str) -> None:
+        self._by_job.setdefault(job, [])
+
     def record(self, session: Session) -> None:
         self._by_job.setdefault(session.job, []).append(session)
 
@@ -147,6 +150,22 @@ class SessionStoreConformance:
 
     def test_jobs_starts_empty(self, tmp_path: Path) -> None:
         assert self.make_store(tmp_path).jobs() == []
+
+    def test_a_created_job_is_listed_before_it_has_any_session(self, tmp_path: Path) -> None:
+        # Planned ahead of its first run: the job exists, and listing it is how the user
+        # sees what they set up.
+        store = self.make_store(tmp_path)
+        store.create_job("JOB-7")
+        assert store.jobs() == ["JOB-7"]
+        assert store.sessions_for_job("JOB-7") == []
+
+    def test_creating_a_job_twice_changes_nothing(self, tmp_path: Path) -> None:
+        store = self.make_store(tmp_path)
+        store.create_job("JOB-7")
+        store.record(Session("JOB-7_001", "JOB-7", "claude", None))
+        store.create_job("JOB-7")
+        assert store.jobs() == ["JOB-7"]
+        assert [s.session_id for s in store.sessions_for_job("JOB-7")] == ["JOB-7_001"]
 
     def test_record_then_read_round_trip_oldest_first(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)

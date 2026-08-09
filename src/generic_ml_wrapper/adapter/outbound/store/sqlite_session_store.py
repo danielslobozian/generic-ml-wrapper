@@ -32,12 +32,15 @@ class SqliteSessionStoreAdapter(SessionStorePort):
         self._ledger = ledger
 
     def jobs(self) -> list[str]:
-        """Return the ids of the jobs that have recorded sessions, sorted."""
+        """Return the ids of all known jobs, sorted, sessions or not."""
         with self._ledger.connect() as connection:
-            rows = connection.execute(
-                "SELECT DISTINCT job FROM sessions ORDER BY job",
-            ).fetchall()
+            rows = connection.execute("SELECT job FROM jobs ORDER BY job").fetchall()
         return [row["job"] for row in rows]
+
+    def create_job(self, job: str) -> None:
+        """Record a job that has no sessions yet."""
+        with self._ledger.connect() as connection:
+            connection.execute("INSERT OR IGNORE INTO jobs (job) VALUES (?)", (job,))
 
     def record(self, session: Session) -> None:
         """Persist a session, creating its job if the name is new."""

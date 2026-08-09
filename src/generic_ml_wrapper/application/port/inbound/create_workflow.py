@@ -6,15 +6,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
-from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
-from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
+from generic_ml_wrapper.application.port.inbound.create_workflow_command import (
+    CreateWorkflowCommand,
+)
+from generic_ml_wrapper.application.port.inbound.create_workflow_result import CreateWorkflowResult
 
 
-class NewWorkflowUseCase(ABC):
+class CreateWorkflowUseCase(ABC):
     """Author a new workflow through the create-workflow interview."""
 
     @abstractmethod
-    def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+    def execute(self, command: CreateWorkflowCommand) -> CreateWorkflowResult:
         """Run the authoring session for a new workflow.
 
         Args:

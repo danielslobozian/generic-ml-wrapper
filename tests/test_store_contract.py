@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper import main as entry_point
 from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
     SqliteStoreMigrationAdapter,
 )
@@ -55,12 +55,12 @@ def test_a_lineage_that_cannot_reach_the_required_version_stops_the_command(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(
-        app,
+        entry_point,
         "build_check_store_contract",
         lambda: CheckStoreContractService(_Lineage(CURRENT_SCHEMA_VERSION - 1)),
     )
 
-    exit_code = app.main(["jobs"])
+    exit_code = entry_point.main(["jobs"])
 
     assert exit_code == 1
     error_text = capsys.readouterr().err
@@ -73,7 +73,7 @@ def test_the_shipped_lineage_satisfies_the_handshake(
 ) -> None:
     # The real files, unpatched: this is the test that fails if a migration is added
     # without bumping the version the code requires, or vice versa.
-    assert app.main(["jobs"]) == 0
+    assert entry_point.main(["jobs"]) == 0
     assert "incomplete" not in capsys.readouterr().err
 
 

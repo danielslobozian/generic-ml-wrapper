@@ -45,12 +45,14 @@ forbidden_modules =
 # became an escape hatch. This contract inverts the default — a top-level package that
 # is not declared here fails the build, so the next one cannot appear by accident.
 #
+# `main` sits above both: it is the process entry point, it decides which adapter runs,
+# and nothing may import it. Declaring it as the outermost layer is what stops an adapter
+# reaching back into the launcher.
+#
 # `adapter` and `application` are siblings rather than ordered because the composition
-# root lives inside `application.wiring` and builds adapters, while the CLI entry point
-# reaches back into it to obtain what it runs. That single reverse edge is the CLI/
-# composition-root coupling recorded separately; ordering the two here would prejudge
-# its fix. Rule 2 already forbids the edges that matter (the application ring reaching
-# outward), so nothing enforced today is lost.
+# root lives inside `application.wiring` and builds adapters, while an adapter reaches
+# back into it to obtain what it runs. Rule 2 already forbids the edges that matter (the
+# application ring reaching outward), so nothing enforced today is lost.
 #
 # `resources` is data (JSON catalogues, packaged templates) with no importable code;
 # `_build_info` is the generated version stamp. Neither is a layer.
@@ -60,6 +62,7 @@ type = layers
 containers =
     generic_ml_wrapper
 layers =
+    main
     adapter : application
 exhaustive = true
 exhaustive_ignores =

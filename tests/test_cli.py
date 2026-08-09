@@ -12,7 +12,11 @@ from typing import cast
 
 import pytest
 
+from generic_ml_wrapper import main as entry_point
 from generic_ml_wrapper.adapter.inbound.cli import app
+from generic_ml_wrapper.adapter.inbound.common import action, announcer, launcher
+from generic_ml_wrapper.adapter.inbound.common.action import run_init
+from generic_ml_wrapper.adapter.inbound.tui import app as tui_app
 from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
     TomlClientCatalogAdapter,
@@ -33,6 +37,8 @@ from generic_ml_wrapper.application.domain.model.environment_code_already_exists
     EnvironmentCodeAlreadyExistsError,
 )
 from generic_ml_wrapper.application.domain.model.init_answers import InitAnswers
+from generic_ml_wrapper.application.domain.model.job import Job
+from generic_ml_wrapper.application.domain.model.job_id import JobId
 from generic_ml_wrapper.application.domain.model.launch_location import (
     LaunchLocation,
     LaunchLocationProblem,
@@ -46,6 +52,7 @@ from generic_ml_wrapper.application.domain.model.resume_not_supported_error impo
     ResumeNotSupportedError,
 )
 from generic_ml_wrapper.application.domain.model.role import Role
+from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
@@ -71,12 +78,22 @@ from generic_ml_wrapper.application.port.inbound.check_launch_location import (
 from generic_ml_wrapper.application.port.inbound.client_readiness import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
+from generic_ml_wrapper.application.port.inbound.create_job import CreateJobUseCase
+from generic_ml_wrapper.application.port.inbound.create_job_command import CreateJobCommand
+from generic_ml_wrapper.application.port.inbound.create_workflow import CreateWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.create_workflow_command import (
+    CreateWorkflowCommand,
+)
+from generic_ml_wrapper.application.port.inbound.create_workflow_result import CreateWorkflowResult
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.edit_workflow_command import EditWorkflowCommand
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.port.inbound.export_usage_query import ExportUsageQuery
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.port.inbound.find_job import FindJobUseCase
+from generic_ml_wrapper.application.port.inbound.find_job_query import FindJobQuery
 from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.port.inbound.import_workflow_result import ImportWorkflowResult
@@ -86,6 +103,7 @@ from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
 from generic_ml_wrapper.application.port.inbound.launch_client import LaunchClient
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.port.inbound.list_jobs_query import ListJobsQuery
 from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClientsUseCase
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPluginsUseCase
@@ -97,9 +115,10 @@ from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkf
 from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.port.inbound.model_total import ModelTotal
-from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.new_workflow_command import NewWorkflowCommand
-from generic_ml_wrapper.application.port.inbound.new_workflow_result import NewWorkflowResult
+from generic_ml_wrapper.application.port.inbound.resume_session_command import ResumeSessionCommand
+from generic_ml_wrapper.application.port.inbound.resume_session_for_job import (
+    ResumeSessionForJobUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.save_init_answers import (
     SaveInitAnswersUseCase,
 )
@@ -113,13 +132,18 @@ from generic_ml_wrapper.application.port.inbound.set_default_environment import 
 from generic_ml_wrapper.application.port.inbound.set_default_environment_command import (
     SetDefaultEnvironmentCommand,
 )
-from generic_ml_wrapper.application.port.inbound.start_job import StartJobUseCase
-from generic_ml_wrapper.application.port.inbound.start_job_command import StartJobCommand
 from generic_ml_wrapper.application.port.inbound.start_job_result import StartJobResult
+from generic_ml_wrapper.application.port.inbound.start_new_session_command import (
+    StartNewSessionCommand,
+)
+from generic_ml_wrapper.application.port.inbound.start_new_session_for_job import (
+    StartNewSessionForJobUseCase,
+)
 from generic_ml_wrapper.application.port.inbound.turn_row import TurnRow
 from generic_ml_wrapper.application.port.inbound.usage_report import UsageReport
 from generic_ml_wrapper.application.port.inbound.workflow_outcome import WorkflowOutcome
 from generic_ml_wrapper.application.wiring import composition
+from generic_ml_wrapper.application.wiring.composition import build_application_settings
 from generic_ml_wrapper.application.wiring.localization import load_localizer
 from generic_ml_wrapper.application.wiring.paths import paths
 
@@ -205,7 +229,8 @@ def _stub_bootstrap(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap([]))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_done)
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate())  # no-op by default
-    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient())
+    monkeypatch.setattr(action, "build_migrate_layout", lambda: _FakeMigrate())  # no-op by default
+    monkeypatch.setattr(launcher, "build_check_client_ready", lambda: _CheckClient())
 
 
 def test_implicit_start_rewrites_a_bare_job() -> None:
@@ -236,7 +261,6 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "export": ["export", "J"],
         "clients": ["clients"],
         "statusline": ["statusline"],
-        "tui": ["tui"],
         "workflow": ["workflow"],
         "persona": ["persona"],
         "plugins": ["plugins"],
@@ -253,23 +277,31 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
 
 
 def test_bare_job_dispatches_to_start(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, StartJobCommand] = {}
+    seen: dict[str, StartNewSessionCommand] = {}
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["my-proj"]) == 0  # `gmlw my-proj`
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["my-proj"]) == 0  # `gmlw my-proj`
     assert seen["command"].job == "my-proj"
 
 
 def test_start_without_a_job_prints_a_friendly_message(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
-    assert app.main(["start"]) == 2
+    monkeypatch.setattr(
+        app, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    monkeypatch.setattr(
+        action, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    assert app.cli_main(["start"]) == 2
     err = capsys.readouterr().err
     assert "start needs a job" in err
     assert "gmlw jobs" in err  # points at how to see jobs
@@ -285,20 +317,17 @@ def test_parser_parses_start_with_flags() -> None:
     assert args.resume_latest is True
 
 
+class _FakeCreateJob(CreateJobUseCase):
+    """Creating a job is a precondition of starting, not what these tests are about."""
+
+    def execute(self, command: CreateJobCommand) -> Job:
+        return Job(job_id=JobId(command.job))
+
+
 def test_client_defaults_to_config_when_flag_absent() -> None:
-    assert app._client(None) == toml_config_reader.default_client()
-    assert app._client("cursor") == "cursor"
-
-
-def test_bare_gmlw_shows_the_capability_index(capsys: pytest.CaptureFixture[str]) -> None:
-    # Initialised install (fixture pins init_version): bare gmlw shows the grouped index,
-    # not the raw argparse help.
-    assert app.main([]) == 0
-    out = capsys.readouterr().out
-    assert "launch" in out  # the groups
-    assert "inspect" in out
-    assert "author" in out
-    assert "gmlw help <topic>" in out  # the next-action footer
+    settings = build_application_settings()
+    assert settings.resolve_client(None) == toml_config_reader.default_client()
+    assert settings.resolve_client("cursor") == "cursor"
 
 
 def test_bare_gmlw_on_a_fresh_install_runs_init(
@@ -322,9 +351,10 @@ def test_bare_gmlw_on_a_fresh_install_runs_init(
                 found=["claude"],
             )
 
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _Init())
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
-    assert app.main([]) == 0
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _Init())
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
+    monkeypatch.setattr(tui_app, "_run_menu", lambda: None)  # the menu is not what this asserts
+    assert tui_app.tui_main() == 0
     assert seen == ["init"]
 
 
@@ -342,89 +372,86 @@ class _FreshInit(SaveInitAnswersUseCase):
         )
 
 
-def test_bare_gmlw_on_a_tty_opens_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Initialised install: bare gmlw is the front door — it redirects to the interactive menu
-    # (on a real terminal; off one, _tui itself falls back to the capability index).
-    called: list[str] = []
-    monkeypatch.setattr(app, "_tui", lambda: (called.append("tui"), 0)[1])
-    assert app.main([]) == 0
-    assert called == ["tui"]
-
-
 def test_bare_gmlw_fresh_install_runs_init_then_opens_the_menu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Setup wins over the menu, and the menu opens behind it: someone who has just answered
     # the interview has earned something to look at, and it proves the setup works.
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FreshInit())
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
-    tui_called: list[str] = []
-    monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui") or 0)
-    assert app.main([]) == 0
-    assert tui_called == ["tui"]
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FreshInit())
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
+    opened: list[str] = []
+    monkeypatch.setattr(tui_app, "_run_menu", lambda: opened.append("menu") or None)
+    assert tui_app.tui_main() == 0
+    assert opened == ["menu"]
 
 
 def test_init_prints_the_reinit_hint(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # The end of init tells the user how to re-run setup from the menu.
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FreshInit())
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
-    assert app.main(["init"]) == 0
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FreshInit())
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
+    assert app.cli_main(["init"]) == 0
     err = capsys.readouterr().err
     assert "Config > Setup" in err  # names the specific menu chain
     assert "gmlw tui" in err
 
 
 def test_help_lists_topics(capsys: pytest.CaptureFixture[str]) -> None:
-    assert app.main(["help"]) == 0
+    assert app.cli_main(["help"]) == 0
     out = capsys.readouterr().out
     assert "job-vs-workflow" in out
     assert "cost" in out
 
 
 def test_help_prints_a_topic(capsys: pytest.CaptureFixture[str]) -> None:
-    assert app.main(["help", "cost"]) == 0
+    assert app.cli_main(["help", "cost"]) == 0
     assert "metered" in capsys.readouterr().out
 
 
 def test_help_unknown_topic_errors(capsys: pytest.CaptureFixture[str]) -> None:
-    assert app.main(["help", "nope"]) == 2
+    assert app.cli_main(["help", "nope"]) == 2
     assert "no help topic" in capsys.readouterr().err
 
 
 def test_explicit_help_flag_still_shows_argparse(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
-        app.main(["--help"])
+        app.cli_main(["--help"])
     assert "a wrapper around an ML coding CLI" in capsys.readouterr().out  # argparse banner
 
 
 def test_start_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, StartJobCommand] = {}
+    seen: dict[str, StartNewSessionCommand] = {}
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=3, job=command.job, session_id=f"{command.job}_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    exit_code = app.main(["start", "JOB-9", "--resume-latest"])
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    exit_code = app.cli_main(["start", "JOB-9"])
 
     assert exit_code == 3
-    assert seen["command"] == StartJobCommand(job="JOB-9", client="claude", resume_latest=True)
+    assert seen["command"] == StartNewSessionCommand(job="JOB-9", client="claude")
 
 
 def test_start_passes_the_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, StartJobCommand] = {}
+    seen: dict[str, StartNewSessionCommand] = {}
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    app.main(["start", "JOB-1", "--workflow", "doc-review"])
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    app.cli_main(["start", "JOB-1", "--workflow", "doc-review"])
 
     assert seen["command"].workflow == "doc-review"
 
@@ -432,12 +459,15 @@ def test_start_passes_the_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_start_reports_unknown_workflow_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FailingUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             raise UnknownWorkflowError("unknown workflow: 'missing'")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
-    assert app.main(["start", "JOB-1", "--workflow", "missing"]) == 2
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FailingUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FailingUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["start", "JOB-1", "--workflow", "missing"]) == 2
     assert "unknown workflow" in capsys.readouterr().out
 
 
@@ -453,30 +483,35 @@ def test_parser_parses_run() -> None:
 
 
 def test_run_launches_the_workflow_as_its_own_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, StartJobCommand] = {}
+    seen: dict[str, StartNewSessionCommand] = {}
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["run", "nightly-etl"]) == 0
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["run", "nightly-etl"]) == 0
     command = seen["command"]
     assert command.job == "nightly-etl"  # job is named after the workflow
     assert command.workflow == "nightly-etl"
-    assert command.resume_latest is False
 
 
 def test_run_reports_unknown_workflow_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FailingUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             raise UnknownWorkflowError("unknown workflow: 'missing'")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
-    assert app.main(["run", "missing"]) == 2
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FailingUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FailingUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["run", "missing"]) == 2
     assert "unknown workflow" in capsys.readouterr().out
 
 
@@ -493,8 +528,13 @@ def test_run_without_a_workflow_off_a_tty_guides(
 ) -> None:
     # No terminal in tests, so the real chooser declines -> we guide instead of blocking.
     monkeypatch.setattr(app, "build_list_workflows", lambda: _FakeWorkflows(["a", "b"]))
-    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
-    assert app.main(["run"]) == 2
+    monkeypatch.setattr(
+        app, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    monkeypatch.setattr(
+        action, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    assert app.cli_main(["run"]) == 2
     assert "run needs a workflow" in capsys.readouterr().err
 
 
@@ -502,8 +542,13 @@ def test_run_without_a_workflow_and_none_authored_points_to_authoring(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_list_workflows", lambda: _FakeWorkflows([]))
-    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
-    assert app.main(["run"]) == 2
+    monkeypatch.setattr(
+        app, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    monkeypatch.setattr(
+        action, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    assert app.cli_main(["run"]) == 2
     assert "no workflows to run" in capsys.readouterr().err
 
 
@@ -514,17 +559,20 @@ def test_run_interactive_pick_echoes_the_fast_path(
         def choose(self, names: list[str], i18n: object | None = None) -> str | None:
             return names[0]
 
-    seen: dict[str, StartJobCommand] = {}
+    seen: dict[str, StartNewSessionCommand] = {}
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             seen["command"] = command
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
     monkeypatch.setattr(app, "build_list_workflows", lambda: _FakeWorkflows(["nightly-etl"]))
     monkeypatch.setattr(app, "build_workflow_chooser", lambda: _Chooser())
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["run"]) == 0
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["run"]) == 0
     assert seen["command"].job == "nightly-etl"
     assert "gmlw run nightly-etl" in capsys.readouterr().err  # teaches the fast path
 
@@ -532,17 +580,41 @@ def test_run_interactive_pick_echoes_the_fast_path(
 def test_start_reports_resume_not_supported_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FailingResume(ResumeSessionForJobUseCase):
+        def execute(self, command: ResumeSessionCommand) -> StartJobResult:
             raise ResumeNotSupportedError("session resume not supported on codex")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
-    assert app.main(["start", "JOB-1", "--client", "codex", "--resume-latest"]) == 2
+    class FoundJob(FindJobUseCase):
+        def execute(self, query: FindJobQuery) -> Job:
+            return Job(
+                job_id=JobId(query.job),
+                sessions=(Session("JOB-1_001", query.job, "codex", "uuid-1"),),
+            )
+
+    monkeypatch.setattr(app, "build_find_job", lambda: FoundJob())
+    monkeypatch.setattr(app, "build_resume_session_for_job", lambda: FailingResume())
+    assert app.cli_main(["start", "JOB-1", "--client", "codex", "--resume-latest"]) == 2
     assert "session resume not supported on codex" in capsys.readouterr().out
 
 
+def test_resume_latest_refuses_a_job_that_has_never_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The old behaviour minted a brand-new session here, silently.
+    class EmptyJob(FindJobUseCase):
+        def execute(self, query: FindJobQuery) -> Job:
+            return Job(job_id=JobId(query.job))
+
+    monkeypatch.setattr(app, "build_find_job", lambda: EmptyJob())
+    assert app.cli_main(["start", "JOB-1", "--resume-latest"]) == 2
+    assert "no sessions yet" in capsys.readouterr().out
+
+
 def test_build_start_job_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_start_job(), StartJobUseCase)
+    assert isinstance(composition.build_start_new_session_for_job(), StartNewSessionForJobUseCase)
+    assert isinstance(composition.build_resume_session_for_job(), ResumeSessionForJobUseCase)
+    assert isinstance(composition.build_find_job(), FindJobUseCase)
+    assert isinstance(composition.build_create_job(), CreateJobUseCase)
 
 
 def test_format_jobs_empty() -> None:
@@ -570,11 +642,11 @@ def test_jobs_command_prints_the_summaries(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobsUseCase):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, query: ListJobsQuery) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     out = capsys.readouterr().out
     assert "JOB-7" in out
     assert "3 session(s)" in out
@@ -584,11 +656,11 @@ def test_jobs_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobsUseCase):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, query: ListJobsQuery) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
-    assert app.main(["jobs", "--json"]) == 0
+    assert app.cli_main(["jobs", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3}]
 
 
@@ -610,7 +682,8 @@ def test_clients_command_prints_the_table(
         ),
     ]
     monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
-    assert app.main(["clients"]) == 0
+    monkeypatch.setattr(action, "build_list_clients", lambda: _FakeListClients(statuses))
+    assert app.cli_main(["clients"]) == 0
     out = capsys.readouterr().out
     assert "Claude Code" in out
     assert "1.2.3" in out
@@ -626,7 +699,8 @@ def test_clients_command_json_output(
 ) -> None:
     statuses = [ListedClient("claude", "Claude Code", True, "1.2.3", True, True)]
     monkeypatch.setattr(app, "build_list_clients", lambda: _FakeListClients(statuses))
-    assert app.main(["clients", "--json"]) == 0
+    monkeypatch.setattr(action, "build_list_clients", lambda: _FakeListClients(statuses))
+    assert app.cli_main(["clients", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload[0]["name"] == "claude"
     assert payload[0]["version"] == "1.2.3"
@@ -641,11 +715,11 @@ def test_jobs_command_json_empty_is_an_empty_array(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobsUseCase):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, query: ListJobsQuery) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
-    assert app.main(["jobs", "--json"]) == 0
+    assert app.cli_main(["jobs", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == []  # not the "No jobs yet" hint
 
 
@@ -694,7 +768,7 @@ def test_sessions_command_prints_them(
             return [SessionSummary("JOB-1_001", "claude")]
 
     monkeypatch.setattr(app, "build_list_sessions", lambda: FakeUseCase())
-    assert app.main(["sessions", "JOB-1"]) == 0
+    assert app.cli_main(["sessions", "JOB-1"]) == 0
     assert "JOB-1_001" in capsys.readouterr().out
 
 
@@ -706,7 +780,7 @@ def test_sessions_command_json_output(
             return [SessionSummary("JOB-1_001", "claude")]
 
     monkeypatch.setattr(app, "build_list_sessions", lambda: FakeUseCase())
-    assert app.main(["sessions", "JOB-1", "--json"]) == 0
+    assert app.cli_main(["sessions", "JOB-1", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == [
         {
             "session_id": "JOB-1_001",
@@ -771,11 +845,12 @@ def test_export_command_prints_the_report(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ExportUsageUseCase):
-        def execute(self, job: str) -> UsageReport:
+        def execute(self, query: ExportUsageQuery) -> UsageReport:
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
-    assert app.main(["export", "JOB-1"]) == 0
+    monkeypatch.setattr(announcer, "build_export_usage", lambda: FakeUseCase())
+    assert app.cli_main(["export", "JOB-1"]) == 0
     out = capsys.readouterr().out
     assert "JOB-1_001" in out
     assert "$0.99" in out
@@ -785,11 +860,12 @@ def test_export_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ExportUsageUseCase):
-        def execute(self, job: str) -> UsageReport:
+        def execute(self, query: ExportUsageQuery) -> UsageReport:
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
-    assert app.main(["export", "JOB-1", "--json"]) == 0
+    monkeypatch.setattr(announcer, "build_export_usage", lambda: FakeUseCase())
+    assert app.cli_main(["export", "JOB-1", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["job"] == "JOB-1"
     assert payload["turn_count"] == 2
@@ -819,7 +895,7 @@ def test_statusline_command_reads_stdin_and_prints(
     monkeypatch.setattr(app, "build_compose_statusline", _build_statusline)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"cost": {"total_cost_usd": 0.43}}'))
 
-    assert app.main(["statusline"]) == 0
+    assert app.cli_main(["statusline"]) == 0
     # Only the payload crosses this boundary. Which run it belongs to is read by the use
     # case from what the launch announced, not handed over by whoever invoked the command.
     assert '"total_cost_usd": 0.43' in (seen["payload"] or "")
@@ -837,7 +913,7 @@ def test_statusline_renders_the_cursor_plan_block_end_to_end(
     paths.cursor_plan.write_text('{"auto_pct": 6, "api_pct": 3}', encoding="utf-8")
     monkeypatch.setenv("GMLW_CLIENT", "cursor")
     monkeypatch.setattr(app.sys, "stdin", io.StringIO('{"model": {"display_name": "Composer"}}'))
-    assert app.main(["statusline"]) == 0  # real cursor parser + renderer
+    assert app.cli_main(["statusline"]) == 0  # real cursor parser + renderer
     assert "plan auto 6% · api 3%" in capsys.readouterr().out
 
 
@@ -846,11 +922,11 @@ def test_main_self_initializes_on_a_real_command(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
     class _Jobs(ListJobsUseCase):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, query: ListJobsQuery) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     assert calls == ["init"]
 
 
@@ -867,7 +943,7 @@ def test_main_skips_self_init_for_statusline(monkeypatch: pytest.MonkeyPatch) ->
 
     monkeypatch.setattr(app, "build_compose_statusline", _build_status)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO(""))
-    assert app.main(["statusline"]) == 0
+    assert app.cli_main(["statusline"]) == 0
     assert calls == []
 
 
@@ -904,7 +980,7 @@ def _fresh_outcome(
 
 def _stub_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Jobs(ListJobsUseCase):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, query: ListJobsQuery) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
@@ -917,10 +993,10 @@ def test_gate_forces_init_when_uninitialised(
     ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     assert ran == ["init"]  # forced init ran before the requested command
     assert boot == []  # bootstrap did not (init seeds the layout)
     err = capsys.readouterr().err
@@ -933,12 +1009,12 @@ def test_init_announcement_speaks_the_chosen_language_not_the_os_locale(
 ) -> None:
     # Regression: a French OS locale seeds the startup active localiser, but the user
     # chose English in init. The closing narration must speak the CHOSEN language, not $LANG.
-    monkeypatch.setattr(app, "build_localizer", lambda: load_localizer("fr"))  # $LANG=fr seed
+    monkeypatch.setattr(entry_point, "build_localizer", lambda: load_localizer("fr"))  # $LANG=fr
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))  # chose en
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))  # chose en
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert entry_point.main(["jobs"]) == 0
     err = capsys.readouterr().err
     assert "set up — speaking en" in err  # English announcement, per the chosen language
     assert "configuré" not in err  # NOT the French ($LANG) announcement
@@ -951,9 +1027,9 @@ def test_gate_skips_init_when_initialised(
     boot: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_done)
-    monkeypatch.setattr(app, "run_interview", _refusing_interview())
+    monkeypatch.setattr(action, "run_interview", _refusing_interview())
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     assert boot == ["init"]  # only bootstrap ran
 
 
@@ -962,9 +1038,9 @@ def test_init_command_runs_the_use_case(
 ) -> None:
     ran: list[str] = []
     monkeypatch.setattr(toml_config_reader, "init_version", _init_done)  # even when already done
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
-    assert app.main(["init"]) == 0
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
+    assert app.cli_main(["init"]) == 0
     assert ran == ["init"]
 
 
@@ -977,9 +1053,9 @@ def test_init_command_on_a_fresh_install_never_bootstraps_first(
     ran: list[str] = []
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)  # fresh
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
-    assert app.main(["init"]) == 0
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), ran))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
+    assert app.cli_main(["init"]) == 0
     assert ran == ["init"]  # init ran exactly once
     assert boot == []  # bootstrap never ran
 
@@ -990,11 +1066,11 @@ def test_setup_stops_and_writes_nothing_when_no_client_is_installed(
     # A client is a prerequisite, not an answer. The interview declines, and nothing is
     # persisted -- half a setup would only make the next run stranger.
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "run_interview", _stub_interview(None))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(None))
     monkeypatch.setattr(
-        app, "build_save_init_answers", lambda: pytest.fail("nothing may be written")
+        action, "build_save_init_answers", lambda: pytest.fail("nothing may be written")
     )
-    assert app._run_init() == 2
+    assert run_init() == 2
 
 
 def test_init_on_legacy_reports_the_merge_and_any_overwrites(
@@ -1002,10 +1078,10 @@ def test_init_on_legacy_reports_the_merge_and_any_overwrites(
 ) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     outcome = _fresh_outcome(fresh=False, overwrites=("client.default: cursor → claude",))
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(outcome, []))
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(outcome, []))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     err = capsys.readouterr().err
     assert "your choices were saved into" in err
     assert "client.default: cursor → claude" in err  # the replaced value is surfaced
@@ -1020,11 +1096,11 @@ def test_init_announces_the_chosen_persona(
 ) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
     monkeypatch.setattr(
-        app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(persona="butler"), [])
+        action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(persona="butler"), [])
     )
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     assert "persona 'butler' selected" in capsys.readouterr().err
 
 
@@ -1035,8 +1111,9 @@ def test_migration_is_announced_on_the_bootstrap_path(
     # install initialised before migration existed.
     report = MigrationReport(environment="work", moved=["stack.md", "policies.md"])
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
+    monkeypatch.setattr(action, "build_migrate_layout", lambda: _FakeMigrate(report))
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     err = capsys.readouterr().err
     assert "migrated 2 item(s) from profile/company into environments/work" in err
     assert "stack.md" in err
@@ -1047,8 +1124,9 @@ def test_migration_surfaces_skipped_collisions(
 ) -> None:
     report = MigrationReport(environment="work", moved=["ok.md"], skipped=["stack.md"])
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
+    monkeypatch.setattr(action, "build_migrate_layout", lambda: _FakeMigrate(report))
     _stub_jobs(monkeypatch)
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     err = capsys.readouterr().err
     assert "left 1 item(s) in profile/company" in err
     assert "stack.md" in err
@@ -1058,7 +1136,7 @@ def test_no_migration_output_when_nothing_moved(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _stub_jobs(monkeypatch)  # fixture's migrate stub returns an empty report
-    assert app.main(["jobs"]) == 0
+    assert app.cli_main(["jobs"]) == 0
     assert "migrated" not in capsys.readouterr().err
 
 
@@ -1066,11 +1144,12 @@ def test_init_command_runs_migration_after_init(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(toml_config_reader, "init_version", _init_absent)
-    monkeypatch.setattr(app, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
-    monkeypatch.setattr(app, "run_interview", _stub_interview(_ANSWERS))
+    monkeypatch.setattr(action, "build_save_init_answers", lambda: _FakeInit(_fresh_outcome(), []))
+    monkeypatch.setattr(action, "run_interview", _stub_interview(_ANSWERS))
     report = MigrationReport(environment="work", moved=["co.md"])
     monkeypatch.setattr(app, "build_migrate_layout", lambda: _FakeMigrate(report))
-    assert app.main(["init"]) == 0
+    monkeypatch.setattr(action, "build_migrate_layout", lambda: _FakeMigrate(report))
+    assert app.cli_main(["init"]) == 0
     err = capsys.readouterr().err
     assert "set up — speaking en" in err  # init announced
     assert "migrated 1 item(s)" in err  # and migration ran after it
@@ -1085,12 +1164,15 @@ def test_start_does_not_print_the_greeting_to_stderr(
 ) -> None:
     # The host greeting is now injected into the session context (rendered in-band by the
     # client), not printed to the launch-time stderr that the client immediately clears.
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["start", "JOB-1"]) == 0
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["start", "JOB-1"]) == 0
     assert "# Greeting" not in capsys.readouterr().err  # no greeting on stderr anymore
 
 
@@ -1122,16 +1204,19 @@ def test_start_aborts_with_guidance_when_client_missing(
 ) -> None:
     launched: list[str] = []
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             launched.append(command.job)
             return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
     readiness = _not_ready("cursor")
-    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
+    monkeypatch.setattr(launcher, "build_check_client_ready", lambda: _CheckClient(readiness))
 
-    assert app.main(["start", "JOB-1", "--client", "cursor"]) == 2
+    assert app.cli_main(["start", "JOB-1", "--client", "cursor"]) == 2
     err = capsys.readouterr().err
     assert "cursor.com/install" in err  # the install command
     assert "cursor-agent login" in err  # the login hint
@@ -1141,20 +1226,26 @@ def test_start_aborts_with_guidance_when_client_missing(
 def test_start_missing_client_suggests_an_installed_alternative(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app, "build_start_job", lambda: None)
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: None)
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: None)
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
     readiness = _not_ready("claude", installed=("codex",))
-    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
-    assert app.main(["start", "JOB-1"]) == 2
+    monkeypatch.setattr(launcher, "build_check_client_ready", lambda: _CheckClient(readiness))
+    assert app.cli_main(["start", "JOB-1"]) == 2
     assert "--client codex" in capsys.readouterr().err  # suggest the one they have
 
 
 def test_start_lists_all_when_no_client_installed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app, "build_start_job", lambda: None)
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: None)
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: None)
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
     readiness = _not_ready("claude")
-    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
-    assert app.main(["start", "JOB-1"]) == 2
+    monkeypatch.setattr(launcher, "build_check_client_ready", lambda: _CheckClient(readiness))
+    assert app.cli_main(["start", "JOB-1"]) == 2
     err = capsys.readouterr().err
     for (
         info
@@ -1165,10 +1256,11 @@ def test_start_lists_all_when_no_client_installed(
 def test_workflow_new_aborts_when_client_missing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(app, "build_new_workflow", lambda: None)
+    monkeypatch.setattr(action, "build_create_workflow", lambda: None)
+    monkeypatch.setattr(action, "build_create_workflow", lambda: None)
     readiness = _not_ready("codex")
-    monkeypatch.setattr(app, "build_check_client_ready", lambda: _CheckClient(readiness))
-    assert app.main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
+    monkeypatch.setattr(launcher, "build_check_client_ready", lambda: _CheckClient(readiness))
+    assert app.cli_main(["workflow", "new", "doc-review", "--client", "codex"]) == 2
     assert _client("codex").install_for(platform.system()) in capsys.readouterr().err
 
 
@@ -1183,9 +1275,14 @@ def test_start_aborts_cleanly_when_the_cwd_is_deleted(
         def execute(self, session_folder: str | None = None) -> LaunchLocation:
             return LaunchLocation(LaunchLocationProblem.CURRENT_GONE)
 
-    monkeypatch.setattr(app, "build_check_launch_location", lambda: _CurrentGone())
-    monkeypatch.setattr(app, "build_start_job", lambda: None)  # must never be reached
-    assert app.main(["start", "JOB-1"]) == 2
+    monkeypatch.setattr(launcher, "build_check_launch_location", lambda: _CurrentGone())
+    monkeypatch.setattr(
+        app, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    monkeypatch.setattr(
+        action, "build_start_new_session_for_job", lambda: None
+    )  # must never be reached
+    assert app.cli_main(["start", "JOB-1"]) == 2
     assert "current directory no longer exists" in capsys.readouterr().err
 
 
@@ -1201,7 +1298,7 @@ def test_creds_set_reads_stdin_and_stores_without_echoing(
     monkeypatch.setattr(app, "build_set_credential", lambda: FakeUseCase())
     monkeypatch.setattr(app.sys, "stdin", io.StringIO("ghp_secret\n"))
 
-    assert app.main(["creds", "set", "doc-review", "GITHUB_TOKEN"]) == 0
+    assert app.cli_main(["creds", "set", "doc-review", "GITHUB_TOKEN"]) == 0
     # The command names what to store, not the secret: reading it is an outward reach, so
     # the use case does it. How it is read without echoing is asserted against that prompt.
     assert seen["command"] == SetCredentialCommand("doc-review", "GITHUB_TOKEN")
@@ -1215,7 +1312,7 @@ def test_build_set_credential_wires_a_real_use_case() -> None:
 
 
 def test_incomplete_subcommand_prints_its_help(capsys: pytest.CaptureFixture[str]) -> None:
-    assert app.main(["workflow"]) == 0  # no action -> auto help
+    assert app.cli_main(["workflow"]) == 0  # no action -> auto help
     out = capsys.readouterr().out
     assert "usage: gmlw workflow" in out
     assert "new" in out
@@ -1223,9 +1320,9 @@ def test_incomplete_subcommand_prints_its_help(capsys: pytest.CaptureFixture[str
 
 
 def test_incomplete_persona_and_plugins_print_help(capsys: pytest.CaptureFixture[str]) -> None:
-    assert app.main(["persona"]) == 0
+    assert app.cli_main(["persona"]) == 0
     assert "usage: gmlw persona" in capsys.readouterr().out
-    assert app.main(["plugins"]) == 0
+    assert app.cli_main(["plugins"]) == 0
     assert "usage: gmlw plugins" in capsys.readouterr().out
 
 
@@ -1237,15 +1334,15 @@ def test_complete_subcommand_does_not_print_help(
             return []
 
     monkeypatch.setattr(app, "build_list_workflows", lambda: _Workflows())
-    assert app.main(["workflow", "list"]) == 0
+    assert app.cli_main(["workflow", "list"]) == 0
     assert "usage: gmlw workflow" not in capsys.readouterr().out  # it ran, not helped
 
 
-def _deploying_use_case(seen: dict[str, NewWorkflowCommand]) -> NewWorkflowUseCase:
-    class FakeUseCase(NewWorkflowUseCase):
-        def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+def _deploying_use_case(seen: dict[str, CreateWorkflowCommand]) -> CreateWorkflowUseCase:
+    class FakeUseCase(CreateWorkflowUseCase):
+        def execute(self, command: CreateWorkflowCommand) -> CreateWorkflowResult:
             seen["command"] = command
-            return NewWorkflowResult(
+            return CreateWorkflowResult(
                 exit_code=0,
                 outcome=WorkflowOutcome.DEPLOYED,
                 name=command.label or "nightly-etl",
@@ -1258,29 +1355,32 @@ def _deploying_use_case(seen: dict[str, NewWorkflowCommand]) -> NewWorkflowUseCa
 def test_workflow_new_dispatches_to_the_use_case(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    seen: dict[str, NewWorkflowCommand] = {}
-    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
-    assert app.main(["workflow", "new", "doc-review"]) == 0
-    assert seen["command"] == NewWorkflowCommand(label="doc-review", client="claude")
+    seen: dict[str, CreateWorkflowCommand] = {}
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    assert app.cli_main(["workflow", "new", "doc-review"]) == 0
+    assert seen["command"] == CreateWorkflowCommand(label="doc-review", client="claude")
     assert "created" in capsys.readouterr().err  # the deployed announcement
 
 
 def test_workflow_new_without_a_name_is_allowed(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, NewWorkflowCommand] = {}
-    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
-    assert app.main(["workflow", "new"]) == 0
-    assert seen["command"] == NewWorkflowCommand(label=None, client="claude")  # name optional
+    seen: dict[str, CreateWorkflowCommand] = {}
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    assert app.cli_main(["workflow", "new"]) == 0
+    assert seen["command"] == CreateWorkflowCommand(label=None, client="claude")  # name optional
 
 
 def test_workflow_new_reports_a_seed_name_collision(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(NewWorkflowUseCase):
-        def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
+    class FailingUseCase(CreateWorkflowUseCase):
+        def execute(self, command: CreateWorkflowCommand) -> CreateWorkflowResult:
             raise WorkflowExistsError("workflow already exists: 'doc-review'")
 
-    monkeypatch.setattr(app, "build_new_workflow", lambda: FailingUseCase())
-    assert app.main(["workflow", "new", "doc-review"]) == 2
+    monkeypatch.setattr(action, "build_create_workflow", lambda: FailingUseCase())
+    monkeypatch.setattr(action, "build_create_workflow", lambda: FailingUseCase())
+    assert app.cli_main(["workflow", "new", "doc-review"]) == 2
     err = capsys.readouterr().err
     assert "already exists" in err
     assert "gmlw workflow edit doc-review" in err  # points at editing the existing one
@@ -1289,41 +1389,45 @@ def test_workflow_new_reports_a_seed_name_collision(
 def test_workflow_new_reports_an_incomplete_draft(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class IncompleteUseCase(NewWorkflowUseCase):
-        def execute(self, command: NewWorkflowCommand) -> NewWorkflowResult:
-            return NewWorkflowResult(
+    class IncompleteUseCase(CreateWorkflowUseCase):
+        def execute(self, command: CreateWorkflowCommand) -> CreateWorkflowResult:
+            return CreateWorkflowResult(
                 exit_code=0,
                 outcome=WorkflowOutcome.INCOMPLETE,
                 name=None,
                 draft_path="/drafts/create-workflow_002",
             )
 
-    monkeypatch.setattr(app, "build_new_workflow", lambda: IncompleteUseCase())
-    assert app.main(["workflow", "new"]) == 0
+    monkeypatch.setattr(action, "build_create_workflow", lambda: IncompleteUseCase())
+    monkeypatch.setattr(action, "build_create_workflow", lambda: IncompleteUseCase())
+    assert app.cli_main(["workflow", "new"]) == 0
     err = capsys.readouterr().err
     assert "wasn't finished" in err
     assert "/drafts/create-workflow_002" in err  # the kept draft is surfaced
 
 
 def test_workflow_new_guided_flag_sets_guided(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, NewWorkflowCommand] = {}
-    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
-    assert app.main(["workflow", "new", "--guided"]) == 0
+    seen: dict[str, CreateWorkflowCommand] = {}
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    assert app.cli_main(["workflow", "new", "--guided"]) == 0
     assert seen["command"].guided is True
 
 
 def test_workflow_new_quick_flag_unsets_guided(monkeypatch: pytest.MonkeyPatch) -> None:
-    seen: dict[str, NewWorkflowCommand] = {}
-    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
-    assert app.main(["workflow", "new", "--quick"]) == 0
+    seen: dict[str, CreateWorkflowCommand] = {}
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    assert app.cli_main(["workflow", "new", "--quick"]) == 0
     assert seen["command"].guided is False
 
 
 def test_workflow_new_off_a_tty_defaults_to_quick(monkeypatch: pytest.MonkeyPatch) -> None:
     # No flag + no terminal (tests) -> the guided chooser declines -> lean interview.
-    seen: dict[str, NewWorkflowCommand] = {}
-    monkeypatch.setattr(app, "build_new_workflow", lambda: _deploying_use_case(seen))
-    assert app.main(["workflow", "new"]) == 0
+    seen: dict[str, CreateWorkflowCommand] = {}
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    monkeypatch.setattr(action, "build_create_workflow", lambda: _deploying_use_case(seen))
+    assert app.cli_main(["workflow", "new"]) == 0
     assert seen["command"].guided is False
 
 
@@ -1333,7 +1437,7 @@ def test_workflow_new_guided_and_quick_are_mutually_exclusive() -> None:
 
 
 def test_build_new_workflow_wires_a_real_use_case() -> None:
-    assert isinstance(composition.build_new_workflow(), NewWorkflowUseCase)
+    assert isinstance(composition.build_create_workflow(), CreateWorkflowUseCase)
 
 
 def test_format_workflows_empty() -> None:
@@ -1363,7 +1467,7 @@ def test_workflow_list_prints_the_names(
             return [Workflow("doc-review", "Doc review", "Reviews a document.")]
 
     monkeypatch.setattr(app, "build_list_workflow_catalog", lambda: FakeUseCase())
-    assert app.main(["workflow", "list"]) == 0
+    assert app.cli_main(["workflow", "list"]) == 0
     out = capsys.readouterr().out
     assert "doc-review" in out  # the slug the user types
     assert "Doc review" in out  # and the words its author gave it
@@ -1378,7 +1482,7 @@ def test_workflow_list_json_output(
             return [Workflow("doc-review", "Doc review", "Reviews a document.")]
 
     monkeypatch.setattr(app, "build_list_workflow_catalog", lambda: FakeUseCase())
-    assert app.main(["workflow", "list", "--json"]) == 0
+    assert app.cli_main(["workflow", "list", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == [
         {"slug": "doc-review", "label": "Doc review", "description": "Reviews a document."}
     ]
@@ -1405,7 +1509,8 @@ def test_persona_list_prints_the_personas(
             return [Persona("butler", "A Jeeves.", "g", "b")]
 
     monkeypatch.setattr(app, "build_list_personas", lambda: FakeUseCase())
-    assert app.main(["persona", "list"]) == 0
+    monkeypatch.setattr(action, "build_list_personas", lambda: FakeUseCase())
+    assert app.cli_main(["persona", "list"]) == 0
     out = capsys.readouterr().out
     assert "butler" in out
     assert "A Jeeves." in out
@@ -1419,7 +1524,8 @@ def test_persona_list_json_output(
             return [Persona("butler", "A Jeeves.", "g", "b")]
 
     monkeypatch.setattr(app, "build_list_personas", lambda: FakeUseCase())
-    assert app.main(["persona", "list", "--json"]) == 0
+    monkeypatch.setattr(action, "build_list_personas", lambda: FakeUseCase())
+    assert app.cli_main(["persona", "list", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == [{"name": "butler", "description": "A Jeeves."}]
 
 
@@ -1435,7 +1541,7 @@ def test_plugins_list_prints_the_plugins(
             return [Plugin("cursor-mitm", "Cursor via MITM proxy")]
 
     monkeypatch.setattr(app, "build_list_plugins", lambda: FakeUseCase())
-    assert app.main(["plugins", "list"]) == 0
+    assert app.cli_main(["plugins", "list"]) == 0
     out = capsys.readouterr().out
     assert "cursor-mitm" in out
     assert "Cursor via MITM proxy" in out
@@ -1449,7 +1555,7 @@ def test_plugins_list_json_output(
             return [Plugin("cursor-mitm", "MITM")]
 
     monkeypatch.setattr(app, "build_list_plugins", lambda: FakeUseCase())
-    assert app.main(["plugins", "list", "--json"]) == 0
+    assert app.cli_main(["plugins", "list", "--json"]) == 0
     assert json.loads(capsys.readouterr().out) == [{"id": "cursor-mitm", "description": "MITM"}]
 
 
@@ -1461,7 +1567,7 @@ def test_plugins_list_empty_hint(
             return []
 
     monkeypatch.setattr(app, "build_list_plugins", lambda: FakeUseCase())
-    assert app.main(["plugins", "list"]) == 0
+    assert app.cli_main(["plugins", "list"]) == 0
     assert "~/.gmlw/plugins/" in capsys.readouterr().out
 
 
@@ -1478,7 +1584,7 @@ def test_start_rejects_an_unsafe_job_id(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["start", "../etc/passwd"]) == 2
+    assert app.cli_main(["start", "../etc/passwd"]) == 2
     assert "invalid job id" in capsys.readouterr().err
 
 
@@ -1486,20 +1592,23 @@ def test_sessions_rejects_an_unsafe_job_id(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["sessions", "a/b"]) == 2
+    assert app.cli_main(["sessions", "a/b"]) == 2
     assert "invalid job id" in capsys.readouterr().err
 
 
 def test_start_aborts_on_unreadable_settings(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FailingUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FailingUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             raise ClientSettingsUnusableError("/x/.claude/settings.json")
 
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    monkeypatch.setattr(app, "build_start_job", lambda: FailingUseCase())
-    assert app.main(["start", "JOB-1"]) == 2
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FailingUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FailingUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["start", "JOB-1"]) == 2
     assert "is not valid JSON" in capsys.readouterr().err
 
 
@@ -1507,7 +1616,7 @@ def test_creds_set_rejects_invalid_workflow_name(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["creds", "set", "Bad Name", "TOKEN"]) == 2
+    assert app.cli_main(["creds", "set", "Bad Name", "TOKEN"]) == 2
     assert "invalid workflow name" in capsys.readouterr().err
 
 
@@ -1515,7 +1624,7 @@ def test_creds_set_rejects_invalid_env_var_name(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["creds", "set", "wf", "1BAD"]) == 2
+    assert app.cli_main(["creds", "set", "wf", "1BAD"]) == 2
     assert "invalid environment-variable name" in capsys.readouterr().err
 
 
@@ -1523,7 +1632,7 @@ def test_config_list_prints_settings_with_values(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config", "list"]) == 0
+    assert app.cli_main(["config", "list"]) == 0
     out = capsys.readouterr().out
     assert "client.default" in out
     assert "profile.default_role" in out
@@ -1533,7 +1642,7 @@ def test_config_list_json(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config", "list", "--json"]) == 0
+    assert app.cli_main(["config", "list", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     keys = {row["key"] for row in payload}
     assert "logging.level" in keys
@@ -1543,7 +1652,7 @@ def test_config_get_prints_one_setting(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config", "get", "logging.level"]) == 0
+    assert app.cli_main(["config", "get", "logging.level"]) == 0
     out = capsys.readouterr().out
     assert "logging.level = warning" in out
     assert "allowed:" in out
@@ -1553,7 +1662,7 @@ def test_config_get_unknown_key_errors(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config", "get", "nope.key"]) == 2
+    assert app.cli_main(["config", "get", "nope.key"]) == 2
     assert "unknown setting" in capsys.readouterr().err
 
 
@@ -1561,7 +1670,7 @@ def test_config_set_persists_and_echoes_the_change(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config", "set", "profile.default_role", "reviewer"]) == 0
+    assert app.cli_main(["config", "set", "profile.default_role", "reviewer"]) == 0
     out = capsys.readouterr().out
     assert "profile.default_role = reviewer" in out
     assert 'default_role = "reviewer"' in (paths.home / "config.toml").read_text(encoding="utf-8")
@@ -1571,7 +1680,7 @@ def test_config_set_invalid_value_errors(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config", "set", "logging.level", "loud"]) == 2
+    assert app.cli_main(["config", "set", "logging.level", "loud"]) == 2
     assert "invalid value" in capsys.readouterr().err
 
 
@@ -1579,7 +1688,7 @@ def test_bare_config_shows_its_help(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(app, "build_bootstrap", lambda: _NoBootstrap())
-    assert app.main(["config"]) == 0
+    assert app.cli_main(["config"]) == 0
     assert "list" in capsys.readouterr().out  # the sub-action help
 
 
@@ -1590,12 +1699,15 @@ def test_build_config_commands_is_wired() -> None:
 def test_exit_receipt_prints_cost_and_next_steps(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["start", "JOB-1"]) == 0
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["start", "JOB-1"]) == 0
     err = capsys.readouterr().err
     assert "JOB-1_001" in err  # this session
     assert "gmlw start JOB-1 --resume-latest" in err  # resume command
@@ -1605,16 +1717,19 @@ def test_exit_receipt_prints_cost_and_next_steps(
 def test_exit_receipt_tip_is_shown_once_then_suppressed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["start", "JOB-1"]) == 0
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["start", "JOB-1"]) == 0
     first = capsys.readouterr().err
     assert "tip:" in first  # the first unseen hint
     # a second run shows a different hint (the first was recorded as seen)
-    assert app.main(["start", "JOB-1"]) == 0
+    assert app.cli_main(["start", "JOB-1"]) == 0
     second = capsys.readouterr().err
     assert "tip:" in second
     assert first != second
@@ -1626,12 +1741,15 @@ def test_exit_receipt_tip_suppressed_when_hints_disabled(
     (paths.home).mkdir(parents=True, exist_ok=True)
     (paths.home / "config.toml").write_text("[hints]\nshow = false\n", encoding="utf-8")
 
-    class FakeUseCase(StartJobUseCase):
-        def execute(self, command: StartJobCommand) -> StartJobResult:
+    class FakeUseCase(StartNewSessionForJobUseCase):
+        def execute(self, command: StartNewSessionCommand) -> StartJobResult:
             return StartJobResult(exit_code=0, job=command.job, session_id="JOB-1_001")
 
-    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
-    assert app.main(["start", "JOB-1"]) == 0
+    monkeypatch.setattr(app, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "build_create_job", lambda: _FakeCreateJob())
+    monkeypatch.setattr(action, "build_start_new_session_for_job", lambda: FakeUseCase())
+    monkeypatch.setattr(action, "build_create_job", lambda: _FakeCreateJob())
+    assert app.cli_main(["start", "JOB-1"]) == 0
     assert "tip:" not in capsys.readouterr().err
 
 
@@ -1643,8 +1761,8 @@ def test_workflow_edit_dispatches_to_the_use_case(monkeypatch: pytest.MonkeyPatc
             seen["command"] = command
             return 0
 
-    monkeypatch.setattr(app, "build_edit_workflow", lambda: FakeUseCase())
-    assert app.main(["workflow", "edit", "doc-review"]) == 0
+    monkeypatch.setattr(action, "build_edit_workflow", lambda: FakeUseCase())
+    assert app.cli_main(["workflow", "edit", "doc-review"]) == 0
     assert seen["command"] == EditWorkflowCommand(name="doc-review", client="claude")
 
 
@@ -1655,8 +1773,8 @@ def test_workflow_edit_reports_a_missing_workflow(
         def execute(self, command: EditWorkflowCommand) -> int:
             raise WorkflowNotFoundError("unknown workflow: 'missing'")
 
-    monkeypatch.setattr(app, "build_edit_workflow", lambda: FailingUseCase())
-    assert app.main(["workflow", "edit", "missing"]) == 2
+    monkeypatch.setattr(action, "build_edit_workflow", lambda: FailingUseCase())
+    assert app.cli_main(["workflow", "edit", "missing"]) == 2
     assert "unknown workflow" in capsys.readouterr().out
 
 
@@ -1701,7 +1819,7 @@ def test_environment_new_builds_the_command_and_confirms(
     fake, default = _FakeAddEnvironment(), _FakeSetDefaultEnvironment()
     monkeypatch.setattr(app, "build_add_environment", lambda: fake)
     monkeypatch.setattr(app, "build_set_default_environment", lambda: default)
-    assert app.main(["environment", "new", "Client Project", "--default"]) == 0
+    assert app.cli_main(["environment", "new", "Client Project", "--default"]) == 0
     assert fake.seen == AddEnvironmentCommand(label="Client Project", description="")
     # --default is a second use case, called by the adapter, not a flag on the first.
     assert default.seen == SetDefaultEnvironmentCommand(code="client-project")
@@ -1716,7 +1834,7 @@ def test_role_new_defaults_description_empty_and_does_not_set_the_default(
     fake, default = _FakeAddRole(), _FakeSetDefaultEnvironment()
     monkeypatch.setattr(app, "build_add_role", lambda: fake)
     monkeypatch.setattr(app, "build_set_default_environment", lambda: default)
-    assert app.main(["role", "new", "Code Reviewer"]) == 0
+    assert app.cli_main(["role", "new", "Code Reviewer"]) == 0
     assert fake.seen == AddRoleCommand(label="Code Reviewer", description="")
     assert default.seen is None
 
@@ -1728,7 +1846,7 @@ def test_environment_new_reports_a_collision_and_exits_2(
         error=EnvironmentCodeAlreadyExistsError("error.environment.exists", code="work")
     )
     monkeypatch.setattr(app, "build_add_environment", lambda: fake)
-    assert app.main(["environment", "new", "Work"]) == 2
+    assert app.cli_main(["environment", "new", "Work"]) == 2
     assert "already exists" in capsys.readouterr().err
 
 
@@ -1739,18 +1857,18 @@ def test_the_add_use_cases_are_wired() -> None:
 
 def test_preflight_resume_cwd_passes_when_the_folder_has_no_stored_cwd() -> None:
     # A pre-folder session (cwd None) resumes in the current directory; nothing to guard.
-    assert app._preflight_resume_cwd(None) is True
+    assert launcher.preflight_resume_cwd(None) is True
 
 
 def test_preflight_resume_cwd_passes_when_the_folder_exists(tmp_path: Path) -> None:
-    assert app._preflight_resume_cwd(str(tmp_path)) is True
+    assert launcher.preflight_resume_cwd(str(tmp_path)) is True
 
 
 def test_preflight_resume_cwd_blocks_and_names_a_deleted_folder(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     gone = tmp_path / "was-here"
-    assert app._preflight_resume_cwd(str(gone)) is False
+    assert launcher.preflight_resume_cwd(str(gone)) is False
     err = capsys.readouterr().err
     assert str(gone) in err  # the missing folder is named plainly
     assert "Traceback" not in err
@@ -1790,8 +1908,8 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
         launched.append(client)
         return 0
 
-    monkeypatch.setattr(app, "_tui_launch_job", _record_launch)
-    assert app._tui() == 0
+    monkeypatch.setattr(tui_app, "_tui_launch_job", _record_launch)
+    assert tui_app.tui_main() == 0
     assert launched == ["codex"]  # the switch just made, not the default the menu opened on
 
 
@@ -1922,7 +2040,7 @@ def test_jobs_delete_previews_then_deletes_when_confirmed(
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
     _answer(monkeypatch, "y")
 
-    assert app.main(["jobs", "delete", "alpha"]) == 0
+    assert app.cli_main(["jobs", "delete", "alpha"]) == 0
     assert fake.executed == [["alpha"]]
     err = capsys.readouterr().err
     assert "3 session(s)" in err  # the footprint was shown before the question
@@ -1936,7 +2054,7 @@ def test_jobs_delete_declined_removes_nothing(
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
     _answer(monkeypatch, "n")
 
-    assert app.main(["jobs", "delete", "alpha"]) == 2
+    assert app.cli_main(["jobs", "delete", "alpha"]) == 2
     assert fake.executed == []
     assert "nothing was deleted" in capsys.readouterr().err
 
@@ -1949,7 +2067,7 @@ def test_yes_skips_the_question_entirely(monkeypatch: pytest.MonkeyPatch) -> Non
         raise AssertionError("--yes must not prompt")
 
     monkeypatch.setattr("builtins.input", _never)
-    assert app.main(["jobs", "delete", "alpha", "--yes"]) == 0
+    assert app.cli_main(["jobs", "delete", "alpha", "--yes"]) == 0
     assert fake.executed == [["alpha"]]
 
 
@@ -1960,7 +2078,7 @@ def test_off_a_tty_a_delete_is_refused_rather_than_assumed(
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
     monkeypatch.setattr(app.sys, "stdin", io.StringIO())  # isatty() is False
 
-    assert app.main(["jobs", "delete", "alpha"]) == 2
+    assert app.cli_main(["jobs", "delete", "alpha"]) == 2
     assert fake.executed == []
     assert "--yes" in capsys.readouterr().err  # and says how to mean it
 
@@ -1972,7 +2090,7 @@ def test_jobs_delete_reports_an_unknown_job_and_stops(
     fake = _FakeDeleteJobs([], error=error)
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
 
-    assert app.main(["jobs", "delete", "nope", "--yes"]) == 2
+    assert app.cli_main(["jobs", "delete", "nope", "--yes"]) == 2
     assert fake.executed == []
     assert "nope" in capsys.readouterr().err
 
@@ -1981,7 +2099,7 @@ def test_repeated_ids_are_asked_for_once(monkeypatch: pytest.MonkeyPatch) -> Non
     fake = _FakeDeleteJobs([_job_footprint()])
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
 
-    assert app.main(["jobs", "delete", "alpha", "beta", "alpha", "--yes"]) == 0
+    assert app.cli_main(["jobs", "delete", "alpha", "beta", "alpha", "--yes"]) == 0
     assert fake.executed == [["alpha", "beta"]]
 
 
@@ -1992,7 +2110,7 @@ def test_an_invalid_job_id_never_reaches_the_use_case(
         raise AssertionError("a bad id must be refused at the boundary")
 
     monkeypatch.setattr(app, "build_delete_jobs", _unreachable)
-    assert app.main(["jobs", "delete", "../etc", "--yes"]) == 2
+    assert app.cli_main(["jobs", "delete", "../etc", "--yes"]) == 2
     assert "invalid job id" in capsys.readouterr().err
 
 
@@ -2003,7 +2121,7 @@ def test_sessions_delete_previews_then_deletes_when_confirmed(
     monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
     _answer(monkeypatch, "y")
 
-    assert app.main(["sessions", "alpha", "delete", "alpha_002"]) == 0
+    assert app.cli_main(["sessions", "alpha", "delete", "alpha_002"]) == 0
     assert fake.executed == [("alpha", ["alpha_002"])]
     assert "alpha_002" in capsys.readouterr().err
 
@@ -2015,7 +2133,7 @@ def test_sessions_delete_reports_an_unknown_session(
     fake = _FakeDeleteSessions([], error=error)
     monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
 
-    assert app.main(["sessions", "alpha", "delete", "alpha_009", "--yes"]) == 2
+    assert app.cli_main(["sessions", "alpha", "delete", "alpha_009", "--yes"]) == 2
     assert fake.executed == []
     assert "alpha_009" in capsys.readouterr().err
 
@@ -2087,9 +2205,9 @@ def _drive_tui(
 
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
-    monkeypatch.setattr(app, "_run_menu", _fake_menu)
-    monkeypatch.setattr(app, "_pause_before_menu", lambda: None)
-    return app._tui(), passes["n"]
+    monkeypatch.setattr(tui_app, "_run_menu", _fake_menu)
+    monkeypatch.setattr(tui_app, "_pause_before_menu", lambda: None)
+    return tui_app.tui_main(), passes["n"]
 
 
 def test_quitting_the_menu_exits(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2103,7 +2221,7 @@ def test_config_setup_returns_to_the_menu(monkeypatch: pytest.MonkeyPatch) -> No
         ran.append(True)
         return 0
 
-    monkeypatch.setattr(app, "_run_init", _init)
+    monkeypatch.setattr(tui_app, "run_init", _init)
 
     code, opened = _drive_tui(monkeypatch, _menu_returning(tui.MenuChoice(action="init"), None))
 
@@ -2119,7 +2237,7 @@ def test_a_launch_ends_gmlw_rather_than_returning(monkeypatch: pytest.MonkeyPatc
     ) -> int:
         return 7
 
-    monkeypatch.setattr(app, "_tui_launch_job", _launch)
+    monkeypatch.setattr(tui_app, "_tui_launch_job", _launch)
 
     code, opened = _drive_tui(
         monkeypatch, _menu_returning(tui.MenuChoice(action="start", job="alpha"))
@@ -2132,7 +2250,7 @@ def test_a_workflow_run_ends_gmlw(monkeypatch: pytest.MonkeyPatch) -> None:
     def _run(_workflow: str, _client: str) -> int:
         return 3
 
-    monkeypatch.setattr(app, "_run_workflow", _run)
+    monkeypatch.setattr(tui_app, "run_workflow", _run)
 
     code, opened = _drive_tui(
         monkeypatch, _menu_returning(tui.MenuChoice(action="run", workflow="nightly"))
@@ -2160,7 +2278,7 @@ def _built_deleter(monkeypatch: pytest.MonkeyPatch) -> tui.Deleter:
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
     monkeypatch.setattr(tui, "MenuApp", _Capture)
-    app._run_menu()
+    tui_app._run_menu()
     return captured["deleter"]
 
 
@@ -2168,7 +2286,7 @@ def test_the_menu_is_given_a_deleter_that_previews_without_deleting(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    monkeypatch.setattr(tui_app, "build_delete_jobs", lambda: fake)
 
     text = _built_deleter(monkeypatch).preview_jobs(("alpha",))
 
@@ -2180,7 +2298,7 @@ def test_the_injected_deleter_removes_jobs_and_reports_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _FakeDeleteJobs([_job_footprint()])
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+    monkeypatch.setattr(tui_app, "build_delete_jobs", lambda: fake)
 
     message = _built_deleter(monkeypatch).delete_jobs(("alpha",))
 
@@ -2192,7 +2310,7 @@ def test_the_injected_deleter_removes_sessions_and_reports_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake = _FakeDeleteSessions([_session_footprint()])
-    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+    monkeypatch.setattr(tui_app, "build_delete_sessions", lambda: fake)
 
     deleter = _built_deleter(monkeypatch)
     preview = deleter.preview_sessions("alpha", ("alpha_002",))
@@ -2208,7 +2326,7 @@ def test_a_stale_selection_is_reported_rather_than_raised(
 ) -> None:
     """The menu holds a snapshot; if it went stale the message goes on screen, not a crash."""
     error = NoSuchJobError("error.job.not_found", job="gone")
-    monkeypatch.setattr(app, "build_delete_jobs", lambda: _FakeDeleteJobs([], error=error))
+    monkeypatch.setattr(tui_app, "build_delete_jobs", lambda: _FakeDeleteJobs([], error=error))
 
     assert "gone" in _built_deleter(monkeypatch).preview_jobs(("gone",))
 
@@ -2225,14 +2343,14 @@ def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatc
             return None
 
     class _Jobs(ListJobsUseCase):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, query: ListJobsQuery) -> list[JobSummary]:
             return [JobSummary(job="beta", session_count=1)]
 
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
     monkeypatch.setattr(tui, "MenuApp", _Capture)
-    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
-    app._run_menu()
+    monkeypatch.setattr(tui_app, "build_list_jobs", lambda: _Jobs())
+    tui_app._run_menu()
 
     reload_jobs = cast("Callable[[], list[tui.JobChoice]]", captured["reload"])
     assert [j.job for j in reload_jobs()] == ["beta"]
@@ -2240,8 +2358,8 @@ def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatc
 
 def test_the_in_app_verbs_no_longer_come_back_through_the_choice_handler() -> None:
     """Delete, export and import are done in-app; none should reach the terminal hand-off."""
-    for action in ("jobs_delete", "sessions_delete", "workflow_export", "workflow_import"):
-        assert app._act_on_tui_choice(tui.MenuChoice(action=action)) == 0
+    for verb in ("jobs_delete", "sessions_delete", "workflow_export", "workflow_import"):
+        assert tui_app._act_on_tui_choice(tui.MenuChoice(action=verb)) == 0
 
 
 def _built_archiver(monkeypatch: pytest.MonkeyPatch) -> tui.Archiver:
@@ -2258,7 +2376,7 @@ def _built_archiver(monkeypatch: pytest.MonkeyPatch) -> tui.Archiver:
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
     monkeypatch.setattr(tui, "MenuApp", _Capture)
-    app._run_menu()
+    tui_app._run_menu()
     return captured["archiver"]
 
 
@@ -2269,7 +2387,7 @@ def test_the_injected_archiver_exports_and_reports_where(
         def execute(self, name: str) -> str:
             return str(tmp_path / f"{name}.zip")
 
-    monkeypatch.setattr(app, "build_export_workflow", lambda: _Export())
+    monkeypatch.setattr(tui_app, "build_export_workflow", lambda: _Export())
 
     assert "nightly.zip" in _built_archiver(monkeypatch).export("nightly")
 
@@ -2281,7 +2399,7 @@ def test_an_export_failure_is_reported_rather_than_raised(
         def execute(self, name: str) -> str:
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
 
-    monkeypatch.setattr(app, "build_export_workflow", lambda: _Export())
+    monkeypatch.setattr(tui_app, "build_export_workflow", lambda: _Export())
 
     message = _built_archiver(monkeypatch).export("gone")
     assert message.startswith("✗")
@@ -2298,7 +2416,7 @@ def _import_returning(result: ImportWorkflowResult) -> type[ImportWorkflowUseCas
 
 def test_the_injected_archiver_installs_and_reports_it(monkeypatch: pytest.MonkeyPatch) -> None:
     result = ImportWorkflowResult(ImportOutcome.IMPORTED, "nightly", "/w/nightly")
-    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+    monkeypatch.setattr(tui_app, "build_import_workflow", lambda: _import_returning(result)())
 
     attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", False)
 
@@ -2309,7 +2427,7 @@ def test_the_injected_archiver_installs_and_reports_it(monkeypatch: pytest.Monke
 def test_a_name_clash_asks_rather_than_failing(monkeypatch: pytest.MonkeyPatch) -> None:
     """The use case reports the clash; the menu turns that into a question, not an error."""
     result = ImportWorkflowResult(ImportOutcome.REFUSED, "nightly", "/w/nightly")
-    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+    monkeypatch.setattr(tui_app, "build_import_workflow", lambda: _import_returning(result)())
 
     attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", False)
 
@@ -2319,7 +2437,7 @@ def test_a_name_clash_asks_rather_than_failing(monkeypatch: pytest.MonkeyPatch) 
 
 def test_a_replacement_names_the_backup_it_kept(monkeypatch: pytest.MonkeyPatch) -> None:
     result = ImportWorkflowResult(ImportOutcome.REPLACED, "nightly", "/w/nightly", "/backups/n")
-    monkeypatch.setattr(app, "build_import_workflow", lambda: _import_returning(result)())
+    monkeypatch.setattr(tui_app, "build_import_workflow", lambda: _import_returning(result)())
 
     attempt = _built_archiver(monkeypatch).install("/tmp/a.zip", True)
 
@@ -2333,7 +2451,7 @@ def test_an_unreadable_archive_is_reported_rather_than_raised(
         def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
             raise ArchiveUnreadableError("error.archive.unreadable", archive=archive)
 
-    monkeypatch.setattr(app, "build_import_workflow", lambda: _Import())
+    monkeypatch.setattr(tui_app, "build_import_workflow", lambda: _Import())
 
     attempt = _built_archiver(monkeypatch).install("/tmp/broken.zip", False)
     assert attempt.message.startswith("✗")
@@ -2367,11 +2485,11 @@ def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) ->
         seen.append(client)
         return 0
 
-    monkeypatch.setattr(app, "_tui_launch_job", _launch)
-    monkeypatch.setattr(app, "_run_workflow", _run)
-    monkeypatch.setattr(app, "_new_workflow", _new)
-    monkeypatch.setattr(app, "_edit_workflow", _edit)
-    app._act_on_tui_choice(choice)
+    monkeypatch.setattr(tui_app, "_tui_launch_job", _launch)
+    monkeypatch.setattr(tui_app, "run_workflow", _run)
+    monkeypatch.setattr(tui_app, "new_workflow", _new)
+    monkeypatch.setattr(tui_app, "edit_workflow", _edit)
+    tui_app._act_on_tui_choice(choice)
     return seen[0]
 
 
@@ -2399,10 +2517,11 @@ def test_authoring_launches_on_the_client_the_menu_picked(
 def test_no_pick_falls_back_to_the_configured_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """A launch that never went through the picker behaves exactly as it always did."""
 
-    def _default(_raw: str | None) -> str:
-        return "claude"
+    class _DefaultSettings:
+        def resolve_client(self, explicit: str | None) -> str:
+            return explicit or "claude"
 
-    monkeypatch.setattr(app, "_client", _default)
+    monkeypatch.setattr(tui_app, "build_application_settings", _DefaultSettings)
     choice = tui.MenuChoice(action="start", job="alpha")
     assert _launched_client(monkeypatch, choice) == "claude"
 
@@ -2435,8 +2554,8 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
     monkeypatch.setattr(app.sys, "stdin", _Tty())
     monkeypatch.setattr(app.sys, "stdout", _Tty())
     monkeypatch.setattr(tui, "MenuApp", _Capture)
-    monkeypatch.setattr(app, "build_list_launch_clients", lambda: _Launch())
-    app._run_menu()
+    monkeypatch.setattr(tui_app, "build_list_launch_clients", lambda: _Launch())
+    tui_app._run_menu()
 
     listing = cast("Callable[[], list[tui.ClientChoice]]", captured["clients"])
     (only,) = listing()
@@ -2469,7 +2588,7 @@ def test_a_job_that_could_not_be_removed_is_reported_and_exits_nonzero(
     )
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
 
-    assert app.main(["jobs", "delete", "alpha", "beta", "--yes"]) == 1
+    assert app.cli_main(["jobs", "delete", "alpha", "beta", "--yes"]) == 1
     err = capsys.readouterr().err
     assert "not removed" in err
     assert "removed 1 of 2 job(s)" in err
@@ -2481,7 +2600,7 @@ def test_a_fully_successful_job_delete_says_nothing_about_leftovers(
     fake = _FakeDeleteJobs([_job_footprint()])
     monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
 
-    assert app.main(["jobs", "delete", "alpha", "--yes"]) == 0
+    assert app.cli_main(["jobs", "delete", "alpha", "--yes"]) == 0
     assert "not removed" not in capsys.readouterr().err
 
 
@@ -2492,7 +2611,7 @@ def test_a_session_that_could_not_be_removed_is_reported_and_exits_nonzero(
     fake = _FakeDeleteSessions([_session_footprint()], outcome=[kept])
     monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
 
-    assert app.main(["sessions", "alpha", "delete", "alpha_002", "--yes"]) == 1
+    assert app.cli_main(["sessions", "alpha", "delete", "alpha_002", "--yes"]) == 1
     err = capsys.readouterr().err
     assert "not removed" in err
     assert "removed 0 of 1 session(s)" in err

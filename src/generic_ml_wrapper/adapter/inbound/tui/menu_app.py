@@ -35,6 +35,18 @@ from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
+from generic_ml_wrapper.adapter.inbound.tui.view.client_choice import ClientChoice
+from generic_ml_wrapper.adapter.inbound.tui.view.client_row import ClientRow
+from generic_ml_wrapper.adapter.inbound.tui.view.config_set_result import ConfigSetResult
+from generic_ml_wrapper.adapter.inbound.tui.view.config_setting import ConfigSetting
+from generic_ml_wrapper.adapter.inbound.tui.view.create_outcome import CreateOutcome
+from generic_ml_wrapper.adapter.inbound.tui.view.import_attempt import ImportAttempt
+from generic_ml_wrapper.adapter.inbound.tui.view.item import Item
+from generic_ml_wrapper.adapter.inbound.tui.view.job_choice import JobChoice
+from generic_ml_wrapper.adapter.inbound.tui.view.menu_choice import MenuChoice
+from generic_ml_wrapper.adapter.inbound.tui.view.session_choice import SessionChoice
+from generic_ml_wrapper.adapter.inbound.tui.view.switch_choice import SwitchChoice
+from generic_ml_wrapper.adapter.inbound.tui.view.usage_view import UsageView
 from generic_ml_wrapper.application.domain.model.environment import Environment
 from generic_ml_wrapper.application.domain.model.role import Role
 from generic_ml_wrapper.application.domain.model.rule import Rule
@@ -94,61 +106,6 @@ def _no_save(_job: str) -> str:
 
 
 @dataclass(frozen=True)
-class MenuChoice:
-    """What the user asked the app to do, handed back to the wiring on exit.
-
-    Job launchers use ``job`` (and, for ``"resume"``, the specific ``session``). Workflow
-    launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
-    open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
-    new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
-    ``archive`` to install from. ``client`` is the one this launch was pointed at, or
-    ``None`` to use the configured default -- a per-launch choice, exactly like ``--client``
-    on the CLI, and never a change to the default itself. A ``None`` return means "do
-    nothing".
-
-    Only things that need the terminal come back this way. Deleting does not -- it happens
-    in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
-    question is a round trip that ends somewhere other than where it started.
-    """
-
-    action: str
-    job: str | None = None
-    session: str | None = None
-    workflow: str | None = None
-    guided: bool = False
-    archive: str | None = None
-    client: str | None = None
-
-
-@dataclass(frozen=True)
-class JobChoice:
-    """A job the user can resume, plus how many sessions it has (for display)."""
-
-    job: str
-    session_count: int
-
-
-@dataclass(frozen=True)
-class SessionChoice:
-    """A recorded session the resume picker shows: what it was and whether it can resume.
-
-    ``client`` is the client that made it (a resume relaunches on it, not the current
-    default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
-    marks the newest; ``usage`` is its already-rendered turn/cost cell (the word for
-    "empty" when it never ran a turn), formatted by the wiring so the CLI listing and this
-    app cannot describe the same session two different ways.
-    """
-
-    session_id: str
-    client: str
-    cwd: str | None
-    resumable: bool
-    date: str
-    is_latest: bool
-    usage: str = ""
-
-
-@dataclass(frozen=True)
 class Deleter:
     """The four calls the delete screens need, grouped as one injected collaborator.
 
@@ -169,39 +126,6 @@ class Deleter:
 
 
 @dataclass(frozen=True)
-class ClientChoice:
-    """One client a launch can be pointed at, as the picker shows it.
-
-    Every row here is launchable -- the wiring only offers what is actually available, so
-    unlike the resume picker there is nothing to disable. ``custom`` marks a client that
-    came from the user's own ``[callers]`` config rather than the built-in catalog.
-    """
-
-    name: str
-    display: str
-    is_default: bool
-    custom: bool = False
-
-
-@dataclass(frozen=True)
-class ImportAttempt:
-    """What came back from trying to install an archive.
-
-    ``needs_confirmation`` is the use case reporting a name clash rather than resolving it
-    — the same answer the CLI turns into its replace prompt. Here it becomes a confirmation
-    screen, and a yes re-runs the install with ``replace``.
-
-    Attributes:
-        message: The line to show — the outcome, the clash, or the error.
-        needs_confirmation: Whether a workflow of that name already exists and the user
-            has to say whether to displace it.
-    """
-
-    message: str
-    needs_confirmation: bool = False
-
-
-@dataclass(frozen=True)
 class Archiver:
     """Sharing a workflow out and installing one in, as injected closures.
 
@@ -214,32 +138,6 @@ class Archiver:
     export: Callable[[str], str]
     install: Callable[[str, bool], ImportAttempt]
     reload_workflows: Callable[[], list[Workflow]]
-
-
-@dataclass(frozen=True)
-class SwitchChoice:
-    """One option in a switcher: the config ``value`` written, plus what the user sees.
-
-    For personas ``value`` and ``label`` are both the persona name; for the folder-backed
-    ones ``value`` is the code (what's stored) and ``label`` is the human name (what's shown).
-    """
-
-    value: str
-    label: str
-    description: str
-
-
-@dataclass(frozen=True)
-class CreateOutcome:
-    """The result of a create-from-label attempt handed back by the injected ``create``.
-
-    On success ``choice`` is the new option to add and select; on failure it is ``None``
-    (a bad label or a collision) and ``message`` explains why. Either way ``message`` is
-    shown in the panel.
-    """
-
-    choice: SwitchChoice | None
-    message: str
 
 
 @dataclass
@@ -260,39 +158,6 @@ class Switcher:
 
 
 @dataclass
-class ConfigSetting:
-    """One setting the Config Get/Set browsers show: what it is and its current value.
-
-    All display fields are pre-rendered by the wiring (``value``/``default`` already read
-    through the CLI's ``_setting_value``), so the app stays free of formatting concerns.
-    ``value`` is mutable: a successful set patches it in place so the picker reflects the
-    change without a re-read. ``type_name`` (``str`` / ``str?`` / ``bool`` / ``choice``) and
-    ``choices`` pick which value editor Set opens.
-    """
-
-    key: str
-    value: str
-    default: str
-    type_name: str
-    choices: tuple[str, ...] | None
-    description: str
-
-
-@dataclass(frozen=True)
-class ConfigSetResult:
-    """The outcome of a set attempt handed back by the injected ``apply``.
-
-    ``ok`` is ``False`` for a rejected value (the editor keeps the screen and shows
-    ``message``); on success ``value`` is the new rendered value the catalog is patched with.
-    Either way ``message`` is the localised line shown to the user.
-    """
-
-    ok: bool
-    message: str
-    value: str = ""
-
-
-@dataclass
 class ConfigCatalog:
     """The settings the Config Get/Set browsers read, plus the setter they call.
 
@@ -304,61 +169,6 @@ class ConfigCatalog:
     crumb: str
     settings: list[ConfigSetting]
     apply: Callable[[str, str], ConfigSetResult]
-
-
-@dataclass(frozen=True)
-class UsageView:
-    """A job's usage, pre-rendered for the Export summary view.
-
-    Structured so the screen can lay it out as tables without any formatting logic: ``summary``
-    is the totals line (already localised), and ``model_rows``/``session_rows`` are the cells of
-    the by-model and by-session-cost tables (all values pre-rendered to strings by the wiring).
-    ``empty`` means the job has no recorded usage. The full per-turn detail is deliberately not
-    here -- that is what the JSON file export carries.
-    """
-
-    job: str
-    empty: bool
-    summary: str
-    model_rows: tuple[tuple[str, ...], ...]
-    session_rows: tuple[tuple[str, ...], ...]
-
-
-@dataclass(frozen=True)
-class ClientRow:
-    """One supported client's row for the Config Clients table, pre-rendered by the wiring.
-
-    All cells are display strings (``version`` reads "not installed" when absent, ``default``
-    is a marker or empty) so the screen only fills the table. Two fields are not cells:
-    ``name`` is the client *id* the screen writes when the row is made the default, and
-    ``note`` is the caveat on the resumable cell (codex resumes only once its id is bound),
-    shown in the detail line rather than crammed into the column.
-    """
-
-    client: str
-    version: str
-    resumable: str
-    default: str
-    name: str = ""
-    note: str = ""
-
-
-@dataclass(frozen=True)
-class _Item:
-    """One menu row: an icon, a bold title, a dim subtitle, and what it does.
-
-    ``action`` drives the screen's ``handle``; ``example`` is the equivalent CLI shown in
-    the detail panel; ``payload`` carries data a dynamic row needs (e.g. a job id).
-    """
-
-    icon: str
-    title: str
-    subtitle: str
-    action: str
-    example: str = ""
-    payload: str = ""
-    note: str = ""  # an extra plain detail line (no "$" prefix), e.g. a resume caveat
-    disabled: bool = False  # shown but not selectable (e.g. a non-resumable session)
 
 
 # The object-first menu tree, built through the active localiser. Each entry is
@@ -411,16 +221,16 @@ _ENVIRONMENT_ICON = "🌍"
 _ROLE_ICON = "🎓"
 
 
-def _rule_rows(rules: tuple[Rule, ...]) -> list[_Item]:
+def _rule_rows(rules: tuple[Rule, ...]) -> list[Item]:
     """One row per rule: its code, the instruction itself, and its status."""
     t = i18n.active().t
-    rows: list[_Item] = []
+    rows: list[Item] = []
     for rule in rules:
         status = t("tui.rules.draft") if rule.draft else t("tui.rules.active")
         if rule.strength:
             status = f"{status} · {rule.strength}"
         rows.append(
-            _Item(
+            Item(
                 "📝" if rule.draft else "📏",
                 rule.code,
                 rule.rule or t("tui.rules.norule"),
@@ -443,11 +253,11 @@ def _wf_display(flow: Workflow) -> tuple[str, str]:
     return flow.label, flow.slug
 
 
-def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[_Item]:
+def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[Item]:
     """Resolve a menu spec into localised rows (subtitle key = title key + ``.d``)."""
     t = i18n.active().t
     return [
-        _Item(icon, t(key), t(f"{key}.d"), action, example) for icon, key, action, example in rows
+        Item(icon, t(key), t(f"{key}.d"), action, example) for icon, key, action, example in rows
     ]
 
 
@@ -459,13 +269,13 @@ class _Row(ListItem):
     up to the whole viewport.
     """
 
-    def __init__(self, item: _Item) -> None:
+    def __init__(self, item: Item) -> None:
         self._label = Label(self._markup(item.icon, item))
         super().__init__(self._label, disabled=item.disabled)
         self.item = item
 
     @staticmethod
-    def _markup(icon: str, item: _Item) -> str:
+    def _markup(icon: str, item: Item) -> str:
         return f"{icon}  [b]{item.title}[/b]\n    [dim]{item.subtitle}[/dim]"
 
     def set_icon(self, icon: str) -> None:
@@ -507,7 +317,7 @@ class _MenuScreen(Screen[None]):
         """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
         return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The rows for this screen (overridden by dynamic screens like the job picker)."""
         return []
 
@@ -557,7 +367,7 @@ class _MenuScreen(Screen[None]):
             lines.append(item.note)
         self.query_one("#detail", Static).update("\n".join(lines))
 
-    def _highlighted(self) -> _Item | None:
+    def _highlighted(self) -> Item | None:
         try:
             row = self.query_one("#menu", ListView).highlighted_child
         except Exception:  # noqa: BLE001  no list on this screen (empty state)
@@ -570,11 +380,11 @@ class _MenuScreen(Screen[None]):
         if isinstance(event.item, _Row):
             self.handle(event.item.item)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Act on a selected row. Base behaviour: flag it as not wired, and beep."""
         self._stub(item)
 
-    def _stub(self, item: _Item) -> None:
+    def _stub(self, item: Item) -> None:
         self.query_one("#detail", Static).update(i18n.active().t("tui.stub", title=item.title))
         self.menu_app.bell()
 
@@ -632,10 +442,10 @@ class ClientPickerScreen(_MenuScreen):
     def _choices(self) -> list[ClientChoice]:
         return self.menu_app.launch_clients()
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per launchable client, the default marked and your own callers flagged."""
         t = i18n.active().t
-        items: list[_Item] = []
+        items: list[Item] = []
         for choice in self._choices():
             if choice.is_default:
                 icon = "●"
@@ -644,7 +454,7 @@ class ClientPickerScreen(_MenuScreen):
             else:
                 icon = "○"
             items.append(
-                _Item(
+                Item(
                     icon,
                     choice.display,
                     t("tui.client.default") if choice.is_default else t("tui.client.once"),
@@ -663,7 +473,7 @@ class ClientPickerScreen(_MenuScreen):
         """
         return next((i for i, c in enumerate(self._choices()) if c.is_default), 0)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Exit with the pending launch, now carrying the chosen client."""
         if item.action == "client:pick":
             self.menu_app.exit(replace(self._pending, client=item.payload))
@@ -724,8 +534,8 @@ class ConfirmScreen(Screen[bool]):
         yield Static(self._crumb, id="crumb")
         yield Static(self._consequences, id="consequences")
         yield ListView(
-            _Row(_Item("↩", t(self._no_key), t(f"{self._no_key}.d"), "no")),
-            _Row(_Item(self._yes_icon, t(self._yes_key), t(f"{self._yes_key}.d"), "yes")),
+            _Row(Item("↩", t(self._no_key), t(f"{self._no_key}.d"), "no")),
+            _Row(Item(self._yes_icon, t(self._yes_key), t(f"{self._yes_key}.d"), "yes")),
             id="menu",
             initial_index=0,  # the safe answer is the one ⏎ lands on
         )
@@ -795,7 +605,7 @@ class _MultiSelectScreen(_MenuScreen):
             row.set_icon(self.ticked)
         self._sync_detail()
 
-    def handle(self, item: _Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
+    def handle(self, item: Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
         """``⏎``: ask about the ticked rows, or explain how to tick one when none are."""
         if not self._selected:
             self.query_one("#detail", Static).update(i18n.active().t("tui.del.none_selected"))
@@ -847,11 +657,11 @@ class TopMenuScreen(_MenuScreen):
 
     show_banner = True
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The object rows: Job, Workflow, Config, Rules, Quit."""
         return _menu(_TOP_MENU)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Quit, or open the Job/Workflow/Config/Rules sub-menu."""
         if item.action == "quit":
             self.menu_app.exit(None)
@@ -876,11 +686,11 @@ class JobMenuScreen(_MenuScreen):
         """Breadcrumb: gmlw > Job (localised)."""
         return f"gmlw > {i18n.active().t('tui.job')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The Job verbs."""
         return _menu(_JOB_MENU)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """New and Resume launch, List and Export browse; any other Job verb is stubbed."""
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
@@ -903,11 +713,11 @@ class WorkflowMenuScreen(_MenuScreen):
         """Breadcrumb: gmlw > Workflow (localised)."""
         return f"gmlw > {i18n.active().t('tui.workflow')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The Workflow verbs."""
         return _menu(_WORKFLOW_MENU)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Each Workflow verb: Run/Edit pick a workflow, Create names one, List browses."""
         if item.action == "wf:run":
             self.menu_app.push_screen(WorkflowPickerScreen("run"))
@@ -935,14 +745,14 @@ class WorkflowListScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.workflow')} > {t('tui.wf.list')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per workflow; the detail panel shows how to run it."""
         return [
-            _Item("📄", *_wf_display(flow), "wf:listrow", example=f"gmlw run {flow.slug}")
+            Item("📄", *_wf_display(flow), "wf:listrow", example=f"gmlw run {flow.slug}")
             for flow in self.menu_app.workflows
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Read-only: selecting a workflow does nothing (the detail panel is the view)."""
 
 
@@ -966,14 +776,14 @@ class WorkflowPickerScreen(_MenuScreen):
         verb = t(f"tui.wf.{self._mode}")
         return f"gmlw > {t('tui.workflow')} > {verb}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per workflow: its label to read, its slug carried as the payload."""
         return [
-            _Item("⏵", *_wf_display(flow), "wf:pick", payload=flow.slug)
+            Item("⏵", *_wf_display(flow), "wf:pick", payload=flow.slug)
             for flow in self.menu_app.workflows
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Run exits with the choice; Export packs in place; Edit picks a depth first."""
         if item.action != "wf:pick":
             return
@@ -1139,15 +949,15 @@ class GuidedChoiceScreen(_MenuScreen):
         verb = t("tui.wf.create") if self._action == "workflow_new" else t("tui.wf.edit")
         return f"gmlw > {t('tui.workflow')} > {verb}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """Two rows: the guided (facilitative) experience or the quick (lean) interview."""
         t = i18n.active().t
         return [
-            _Item("✨", t("tui.wf.guided"), t("tui.wf.guided.d"), "guided:yes"),
-            _Item("⏩", t("tui.wf.quick"), t("tui.wf.quick.d"), "guided:no"),
+            Item("✨", t("tui.wf.guided"), t("tui.wf.guided.d"), "guided:yes"),
+            Item("⏩", t("tui.wf.quick"), t("tui.wf.quick.d"), "guided:no"),
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Move on to the client step with the authoring choice at the picked depth."""
         if item.action in ("guided:yes", "guided:no"):
             self.menu_app.launch(
@@ -1173,14 +983,14 @@ class ConfigMenuScreen(_MenuScreen):
         """Breadcrumb: gmlw > Config (localised)."""
         return f"gmlw > {i18n.active().t('tui.config')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The Config verbs."""
         return _menu(_CONFIG_MENU)
 
     # Config verb -> the mode its type-to-filter settings picker opens in.
     _PICKERS: ClassVar[dict[str, str]] = {"cfg:get": "get", "cfg:set": "set"}
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """A switcher verb opens its picker, Get/Set the settings picker; the rest are stubs."""
         key = self._SWITCHERS.get(item.action)
         mode = self._PICKERS.get(item.action)
@@ -1220,11 +1030,11 @@ class SwitcherScreen(_MenuScreen):
         """The switcher's own breadcrumb (e.g. ``gmlw > Config > Environment``)."""
         return self._switcher.crumb
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per option (active one dotted), then a "New…" row when creatable."""
         current = self._switcher.current
         items = [
-            _Item(
+            Item(
                 "●" if c.value == current else "○",
                 c.label,
                 c.description,
@@ -1235,7 +1045,7 @@ class SwitcherScreen(_MenuScreen):
         ]
         if self._switcher.create is not None:
             t = i18n.active().t
-            new_row = _Item("➕", t("tui.new"), t("tui.new.d"), "switch:new")  # noqa: RUF001
+            new_row = Item("➕", t("tui.new"), t("tui.new.d"), "switch:new")  # noqa: RUF001
             items.append(new_row)
         return items
 
@@ -1245,7 +1055,7 @@ class SwitcherScreen(_MenuScreen):
         current = self._switcher.current
         return values.index(current) if current in values else 0
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Set the picked value, or open the create form for the "New…" row."""
         if item.action == "switch:new":
             self.menu_app.push_screen(CreateAxisScreen(self._key), self._on_created)
@@ -1385,11 +1195,11 @@ class ConfigPickerScreen(_MenuScreen):
         self._sync_detail()
         self.query_one("#filter", Input).focus()
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per setting whose key contains the filter (case-insensitive; empty = all)."""
         needle = self._filter.lower()
         return [
-            _Item("🔧", s.key, s.description, "cfg:pick", payload=s.key, note=self._note(s))
+            Item("🔧", s.key, s.description, "cfg:pick", payload=s.key, note=self._note(s))
             for s in self._config.settings
             if needle in s.key.lower()
         ]
@@ -1447,7 +1257,7 @@ class ConfigPickerScreen(_MenuScreen):
         if item is not None:
             self.handle(item)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Get: no-op (detail is the read). Set: open the value editor for the setting's type."""
         if item.action != "cfg:pick" or self._mode == "get":
             return
@@ -1488,11 +1298,11 @@ class ConfigChoiceScreen(_MenuScreen):
         """Breadcrumb: gmlw > Config > Set > <key>."""
         return f"{self._config.crumb} > {i18n.active().t('tui.cfg.set')} > {self._key}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per allowed value, the current one dotted."""
         current = self._setting().value
         return [
-            _Item("●" if value == current else "○", value, "", "choice:set", payload=value)
+            Item("●" if value == current else "○", value, "", "choice:set", payload=value)
             for value in self._options()
         ]
 
@@ -1502,7 +1312,7 @@ class ConfigChoiceScreen(_MenuScreen):
         current = self._setting().value
         return options.index(current) if current in options else 0
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Apply the picked value; on success confirm on the picker and pop, else explain."""
         if item.action != "choice:set":
             return
@@ -1599,11 +1409,11 @@ class NewSessionScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.new')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The type-a-name row, then one row per job already recorded."""
         t = i18n.active().t
         rows = [
-            _Item(
+            Item(
                 "✏️",
                 t("tui.newsession.type"),
                 t("tui.newsession.type.d"),
@@ -1612,7 +1422,7 @@ class NewSessionScreen(_MenuScreen):
             )
         ]
         rows += [
-            _Item(
+            Item(
                 "🗂",
                 job.job,
                 t("tui.sessions", count=job.session_count),
@@ -1624,7 +1434,7 @@ class NewSessionScreen(_MenuScreen):
         ]
         return rows
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Typing opens the name form; an existing job goes on to the client step."""
         if item.action == "session:type":
             self.menu_app.push_screen(NewJobScreen())
@@ -1685,15 +1495,15 @@ class JobPickerScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.resume')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per resumable job, carrying the job id as payload."""
         t = i18n.active().t
         return [
-            _Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
+            Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Picking a job opens its session picker (choose which session to resume)."""
         if item.action == "pick":
             self.menu_app.push_screen(SessionPickerScreen(item.payload))
@@ -1721,7 +1531,7 @@ class SessionPickerScreen(_MenuScreen):
     def _sessions(self) -> list[SessionChoice]:
         return self.menu_app.sessions_for(self._job)
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per session (newest last); non-resumable rows are disabled.
 
         Three leading icons make the state glanceable: ``▶`` resume on your current client,
@@ -1731,7 +1541,7 @@ class SessionPickerScreen(_MenuScreen):
         """
         t = i18n.active().t
         current = self.menu_app.current_client
-        items: list[_Item] = []
+        items: list[Item] = []
         for s in self._sessions():
             folder = s.cwd if s.cwd else t("tui.resume.no_folder")
             title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
@@ -1744,7 +1554,7 @@ class SessionPickerScreen(_MenuScreen):
             else:
                 icon, note = "▶", ""
             items.append(
-                _Item(
+                Item(
                     icon,
                     title,
                     f"{s.date} · {client} · {folder}",
@@ -1764,7 +1574,7 @@ class SessionPickerScreen(_MenuScreen):
                 return i
         return 0
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """A picked session exits the app with a resume choice carrying its id."""
         if item.action == "resume:pick":
             self.menu_app.exit(MenuChoice(action="resume", job=self._job, session=item.payload))
@@ -1782,17 +1592,15 @@ class JobListScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per job, carrying the job id as payload (empty -> the base empty state)."""
         t = i18n.active().t
         return [
-            _Item(
-                "🗂", j.job, t("tui.sessions", count=j.session_count), "joblist:job", payload=j.job
-            )
+            Item("🗂", j.job, t("tui.sessions", count=j.session_count), "joblist:job", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Selecting a job opens its (read-only) session list."""
         if item.action == "joblist:job":
             self.menu_app.push_screen(SessionListScreen(item.payload))
@@ -1856,11 +1664,11 @@ class DeleteMenuScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.delete')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """The two delete grains."""
         return _menu(_DELETE_MENU)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Jobs ticks jobs directly; Sessions picks a job first, then ticks its sessions."""
         if item.action == "del:jobs":
             self.menu_app.push_screen(JobDeleteScreen())
@@ -1883,11 +1691,11 @@ class JobDeleteScreen(_MultiSelectScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.jobs')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One tickable row per job, carrying the job id as payload."""
         t = i18n.active().t
         return [
-            _Item(
+            Item(
                 self.ticked if j.job in self._selected else self.unticked,
                 j.job,
                 t("tui.sessions", count=j.session_count),
@@ -1926,15 +1734,15 @@ class DeleteJobPickerScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per job, carrying the job id as payload."""
         t = i18n.active().t
         return [
-            _Item("🗂", j.job, t("tui.sessions", count=j.session_count), "del:pick", payload=j.job)
+            Item("🗂", j.job, t("tui.sessions", count=j.session_count), "del:pick", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Selecting a job opens its session-delete list."""
         if item.action == "del:pick":
             self.menu_app.push_screen(SessionDeleteScreen(item.payload))
@@ -1961,11 +1769,11 @@ class SessionDeleteScreen(_MultiSelectScreen):
             f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')} > {self._job}"
         )
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One tickable row per session: date, client, and what it actually used."""
         t = i18n.active().t
         return [
-            _Item(
+            Item(
                 self.ticked if s.session_id in self._selected else self.unticked,
                 s.session_id,
                 t("tui.del.session.row", date=s.date, client=s.client, usage=s.usage),
@@ -2006,17 +1814,15 @@ class JobExportScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.export')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per job, carrying the job id as payload (empty -> the base empty state)."""
         t = i18n.active().t
         return [
-            _Item(
-                "📊", j.job, t("tui.sessions", count=j.session_count), "export:job", payload=j.job
-            )
+            Item("📊", j.job, t("tui.sessions", count=j.session_count), "export:job", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Selecting a job opens the destination chooser (view here / save to file)."""
         if item.action == "export:job":
             self.menu_app.push_screen(ExportDestScreen(item.payload))
@@ -2039,15 +1845,15 @@ class ExportDestScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """Two destinations: view a summary here, or save the full JSON report to a file."""
         t = i18n.active().t
         return [
-            _Item("📈", t("export.dest.view"), t("export.dest.view.d"), "export:view"),
-            _Item("💾", t("export.dest.file"), t("export.dest.file.d"), "export:file"),
+            Item("📈", t("export.dest.view"), t("export.dest.view.d"), "export:view"),
+            Item("💾", t("export.dest.file"), t("export.dest.file.d"), "export:file"),
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Open the summary view, or the save-to-file screen."""
         if item.action == "export:view":
             self.menu_app.push_screen(UsageSummaryScreen(self._job))
@@ -2354,15 +2160,15 @@ class RulesMenuScreen(_MenuScreen):
         """Breadcrumb: gmlw > Rules (localised)."""
         return f"gmlw > {i18n.active().t('tui.rules')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row for the environments and one for the roles, when either holds rules."""
         t = i18n.active().t
         found = self.menu_app.list_rules()
-        rows: list[_Item] = []
+        rows: list[Item] = []
         if found.environments:
             drafts = sum(e.draft_count for e in found.environments)
             rows.append(
-                _Item(
+                Item(
                     _ENVIRONMENT_ICON,
                     t("tui.rules.environment.label"),
                     t("tui.rules.environment.description"),
@@ -2373,7 +2179,7 @@ class RulesMenuScreen(_MenuScreen):
         if found.roles:
             drafts = sum(r.draft_count for r in found.roles)
             rows.append(
-                _Item(
+                Item(
                     _ROLE_ICON,
                     t("tui.rules.role.label"),
                     t("tui.rules.role.description"),
@@ -2383,7 +2189,7 @@ class RulesMenuScreen(_MenuScreen):
             )
         return rows
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Open the environments or the roles."""
         if item.action == "rules:environments":
             self.menu_app.push_screen(EnvironmentRulesScreen())
@@ -2401,11 +2207,11 @@ class EnvironmentRulesScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.rules')} > {t('tui.rules.environment.label')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per environment holding rules, labelled as the user named it."""
         t = i18n.active().t
         return [
-            _Item(
+            Item(
                 _ENVIRONMENT_ICON,
                 environment.label,
                 t("tui.rules.count", count=len(environment.rules)),
@@ -2419,7 +2225,7 @@ class EnvironmentRulesScreen(_MenuScreen):
             for environment in self.menu_app.list_rules().environments
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Open the chosen environment's rules."""
         _, _, code = item.action.rpartition(":")
         environment = next(
@@ -2439,11 +2245,11 @@ class RoleRulesScreen(_MenuScreen):
         t = i18n.active().t
         return f"gmlw > {t('tui.rules')} > {t('tui.rules.role.label')}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per role holding rules, labelled as the user named it."""
         t = i18n.active().t
         return [
-            _Item(
+            Item(
                 _ROLE_ICON,
                 role.label,
                 t("tui.rules.count", count=len(role.rules)),
@@ -2453,7 +2259,7 @@ class RoleRulesScreen(_MenuScreen):
             for role in self.menu_app.list_rules().roles
         ]
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Open the chosen role's rules."""
         _, _, code = item.action.rpartition(":")
         role = next((r for r in self.menu_app.list_rules().roles if r.code == code), None)
@@ -2486,11 +2292,11 @@ class EnvironmentRuleListScreen(_MenuScreen):
         side = t("tui.rules.environment.label")
         return f"gmlw > {t('tui.rules')} > {side} > {self._environment.label}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per rule: its code, the instruction itself, and its status."""
         return _rule_rows(self._environment.rules)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Rules are read-only here; the detail panel already shows the selection."""
 
 
@@ -2519,11 +2325,11 @@ class RoleRuleListScreen(_MenuScreen):
         side = t("tui.rules.role.label")
         return f"gmlw > {t('tui.rules')} > {side} > {self._role.label}"
 
-    def menu_items(self) -> list[_Item]:
+    def menu_items(self) -> list[Item]:
         """One row per rule: its code, the instruction itself, and its status."""
         return _rule_rows(self._role.rules)
 
-    def handle(self, item: _Item) -> None:
+    def handle(self, item: Item) -> None:
         """Rules are read-only here; the detail panel already shows the selection."""
 
 
