@@ -118,6 +118,8 @@ from generic_ml_wrapper.application.wiring.composition import (
 if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice
 
+CLIENT_DEFAULT_KEY = "client.default"
+
 
 def tui_main() -> int:
     """Run the interactive menu until something ends the session.
@@ -393,6 +395,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             )
 
         return Switcher(
+            key=key,
             crumb=crumb,
             choices=choices,
             current=current if isinstance(current, str) else None,
@@ -446,6 +449,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     # uses (values/defaults pre-rendered through setting_value so the app stays format-free).
     message_source = get_active()
 
+    dedicated_menu_keys = {switcher.key for switcher in switchers.values()} | {CLIENT_DEFAULT_KEY}
+
     def _config_settings() -> list[ConfigSetting]:
         return [
             ConfigSetting(
@@ -457,6 +462,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
                 description=view.description,
             )
             for view in config_commands.list()
+            if view.key not in dedicated_menu_keys
         ]
 
     def _apply_setting(key: str, raw: str) -> ConfigSetResult:
@@ -473,7 +479,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         )
 
     def _set_default_client(name: str) -> ConfigSetResult:  # Config → Clients: pick the default
-        return _apply_setting("client.default", name)
+        return _apply_setting(CLIENT_DEFAULT_KEY, name)
 
     config_catalog = ConfigCatalog(
         crumb=f"gmlw > {message_source.get_message('tui.config')}",
