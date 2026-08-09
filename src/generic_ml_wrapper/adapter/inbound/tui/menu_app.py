@@ -152,6 +152,7 @@ class Switcher:
     of use-case imports. ``create`` is ``None`` for options that cannot be created.
     """
 
+    key: str
     crumb: str
     choices: list[SwitchChoice]
     current: str | None

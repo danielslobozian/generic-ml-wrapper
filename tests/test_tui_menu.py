@@ -54,6 +54,7 @@ def _persona_switcher(
     """A fresh persona switcher (mentor/coach) for one test -- never share the mutable state."""
     return {
         "persona": Switcher(
+            key="companion.persona",
             crumb="gmlw > Config > Persona",
             choices=[
                 SwitchChoice("mentor", "mentor", "steady and instructive"),
@@ -228,6 +229,7 @@ def _env_switcher(
     """An environment switcher (one option + a create callback) for the create tests."""
     return {
         "environment": Switcher(
+            key="profile.default_environment",
             crumb="gmlw > Config > Environment",
             choices=[SwitchChoice("work", "work", "the day job")],
             current=current,
