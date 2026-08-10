@@ -7,7 +7,7 @@ name = "generic-ml-wrapper"
 version = "0.11.0"
 description = "A wrapper around an ML coding CLI: enter at a job, get a named resumable session, optionally driven by a workflow."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Daniel Slobozian" }]
@@ -18,7 +18,6 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
@@ -104,7 +103,7 @@ addopts = "-ra"
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 # Demo-tape helpers are throwaway scripts for regenerating the README GIFs, not
 # shipped API — exempt from the strict lint the package is held to.
 extend-exclude = ["docs/tapes"]
