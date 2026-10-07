@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-
+from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
+from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
     render_statusline,
     render_usage_row,
@@ -92,7 +92,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                     "session",
                     session,
                     len(session_turns),
-                    _tokens(session_turns),
+                    TokenCounts.of(session_turns),
                     costs.get(session, 0.0),
                     self._age(session_turns),
                 )
@@ -107,7 +107,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                 "job",
                 job,
                 len(turns),
-                _tokens(turns),
+                TokenCounts.of(turns),
                 round(sum(costs.values()), 2),
                 self._age(turns),
             )
@@ -128,13 +128,6 @@ class RenderStatuslineUseCase(RenderStatusline):
         """
         stamps = [turn.timestamp for turn in turns if turn.timestamp]
         return self._clock() - min(stamps) if stamps else None
-
-
-def _tokens(turns: Sequence[TurnUsage]) -> int:
-    return sum(
-        turn.input_tokens + turn.output_tokens + turn.cache_creation_tokens + turn.cache_read_tokens
-        for turn in turns
-    )
 
 
 def _decode(payload_json: str) -> dict[str, object]:

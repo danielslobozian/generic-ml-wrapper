@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+    from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
     from generic_ml_wrapper.application.domain.model.workspace import Workspace
 
 _SEPARATOR = "  ·  "
@@ -118,9 +119,14 @@ def format_age(seconds: float) -> str:
 
 
 def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
-    label: str, name: str, turns: int, tokens: int, cost_usd: float, age_s: float | None = None
+    label: str,
+    name: str,
+    turns: int,
+    tokens: TokenCounts,
+    cost_usd: float,
+    age_s: float | None = None,
 ) -> str:
-    """Render one usage footer row -- ``<label> <name> (age) · N turns · tok · $``.
+    """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · $``.
 
     Used for both the current-session row (``label="session"``) and the whole-job
     total (``label="job"``). Turns/tokens show only when deep-metered (``turns`` > 0);
@@ -135,7 +141,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
         label: The scope label, ``"session"`` or ``"job"``.
         name: The session id or job id.
         turns: The recorded turn count for this scope (``0`` if unmetered).
-        tokens: The total tokens across those turns (input + output + cache).
+        tokens: The tokens across those turns, by kind -- shown as ``↑`` input, ``↓``
+            output, ``⟲`` cache read and ``✎`` cache write, each compacted to k/M/G.
         cost_usd: The scope's cumulative cost.
         age_s: How long ago this scope's first recorded turn was, or ``None`` when it
             has none -- a session launched but never prompted has no age to show.
@@ -147,9 +154,27 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     parts = [head]
     if turns:
         parts.append(f"{turns} turns")
-        parts.append(f"{_compact(tokens)} tok")  # k/M/G so a heavy job's total stays scannable
+        parts.append(render_tokens(tokens))
     parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
+
+
+def render_tokens(tokens: TokenCounts) -> str:
+    """The four token counts as ``↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k``.
+
+    A space after each mark, so a narrow glyph never runs into its number; two between
+    the pairs, so each reads as one unit. Compacted to k/M/G, because the cache read of
+    a long session runs to millions and must stay scannable.
+    """
+    return "  ".join(
+        f"{mark} {_compact(count)}"
+        for mark, count in (
+            ("↑", tokens.input),
+            ("↓", tokens.output),
+            ("⟲", tokens.cache_read),
+            ("✎", tokens.cache_write),
+        )
+    )
 
 
 def _git(workspace: Workspace) -> str | None:
