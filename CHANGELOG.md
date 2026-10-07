@@ -32,6 +32,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   home.
 
 ### Fixed
+- **A dropped connection printed a traceback over the client's screen.** Logs are kept off
+  the terminal while a client owns it, but a session started from the menu opened with a
+  bare `gmlw` — the usual way in — was not counted as one of those, so every relay failure
+  went to stderr too: a full traceback drawn over Claude, gone on the next redraw and
+  impossible to copy. On a flaky connection that was several times a day.
+  - Bare `gmlw` now keeps logs off the terminal, like `gmlw tui` and `gmlw start`.
+  - A lost connection (a timeout, a reset, a TLS EOF, a name that will not resolve) is
+    logged as one warning line naming the cause, under `log.gateway_connection_lost`. Only
+    an unexpected failure keeps its traceback. Either way the client gets a `502` it retries.
 - **In the menu, persona, role, environment and the default client could each be set in
   two places that disagreed.** Each had its own screen, and was offered again under
   Config → Get/Set/List. Both read a value captured before the menu opened and neither

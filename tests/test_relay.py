@@ -442,7 +442,7 @@ def _dying_forwarder(
     return UpstreamResponse(200, [("Content-Type", "text/event-stream")], _half_stream())
 
 
-def test_a_failed_handshake_returns_502_and_logs_instead_of_crashing(
+def test_a_failed_handshake_returns_502_and_logs_one_line_instead_of_crashing(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     sink = _Recording()
@@ -458,10 +458,73 @@ def test_a_failed_handshake_returns_502_and_logs_instead_of_crashing(
         set_active(previous)
 
     assert status == 502, "the client should get a clean gateway error it can retry"
+    # A lost connection is the network, not a bug: a warning naming the cause, no traceback.
+    assert sink.keys("warning") == ["log.gateway_connection_lost"]
+    assert sink.keys("error") == []
+    # The whole point: nothing reaches the terminal the client is drawing on.
+    assert capsys.readouterr().err == ""
+
+
+def _buggy_forwarder(
+    method: str, path: str, headers: Mapping[str, str], body: bytes
+) -> UpstreamResponse:
+    """Not the network: a defect, whose traceback is worth keeping."""
+    message = "a bug in the relay"
+    raise ValueError(message)
+
+
+def test_an_unexpected_failure_still_logs_its_traceback(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(job="J", session="S", metering=_FakeStore(), forwarder=_buggy_forwarder)
+    relay.start()
+    try:
+        status, _ = _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+
+    assert status == 502
     assert sink.keys("error") == ["log.gateway_request_failed"]
     errors = [record for record in sink.records if record[0] == "error"]
-    assert isinstance(errors[0][2], ssl.SSLError), "the traceback must reach the sink"
-    # The whole point: nothing reaches the terminal the client is drawing on.
+    assert isinstance(errors[0][2], ValueError), "the traceback must reach the sink"
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        TimeoutError("The read operation timed out"),
+        ConnectionResetError(104, "Connection reset by peer"),
+        BrokenPipeError(32, "Broken pipe"),
+        socket.gaierror(-3, "Temporary failure in name resolution"),
+        http.client.RemoteDisconnected("Remote end closed connection without response"),
+    ],
+)
+def test_each_way_a_network_drops_is_one_warning_line(
+    error: Exception, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The failures seen in real logs on a flaky hotspot, plus a DNS one.
+    def _forwarder(
+        method: str, path: str, headers: Mapping[str, str], body: bytes
+    ) -> UpstreamResponse:
+        raise error
+
+    sink = _Recording()
+    previous = set_active(sink)
+    relay = MeteringRelay(job="J", session="S", metering=_FakeStore(), forwarder=_forwarder)
+    relay.start()
+    try:
+        status, _ = _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+
+    assert status == 502
+    assert sink.keys("warning") == ["log.gateway_connection_lost"]
+    assert sink.keys("error") == []
     assert capsys.readouterr().err == ""
 
 
