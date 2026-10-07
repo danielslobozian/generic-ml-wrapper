@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
+
 
 class WorkflowArchivePort(ABC):
     """Pack a workflow folder into an archive, and unpack one back out.
@@ -19,6 +21,18 @@ class WorkflowArchivePort(ABC):
     else. What is left behind is left behind on purpose, and the implementation says
     which and why.
     """
+
+    @abstractmethod
+    def inspect(self, archive: Path) -> ArchiveStatus:
+        """Report whether an archive carries a workflow, without extracting anything.
+
+        Args:
+            archive: The archive to read.
+
+        Returns:
+            ``MISSING`` if nothing readable is there, ``INCOMPLETE`` if it carries no
+            workflow, ``COMPLETE`` if it can be installed.
+        """
 
     @abstractmethod
     def pack(self, folder: Path, slug: str) -> Path:

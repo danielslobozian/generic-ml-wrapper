@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- **Replacing a workflow by import could leave you with neither the old one nor the new.**
+  The installed workflow was moved aside first, and only then was the archive unpacked and
+  checked. An archive that was not a workflow — the wrong file, a truncated download —
+  displaced the old one and installed nothing.
+  - The archive is now inspected before anything moves. A file that is missing, is not a
+    zip, or carries no top-level `workflow.md` is refused with the installed workflow
+    exactly where it was.
+  - If unpacking still fails part way (a full disk), the old workflow is put back and
+    whatever the failed attempt wrote is discarded rather than merged into it.
+  - Two replacements of the same workflow within one second no longer nest the older
+    backup inside the newer one; the second gets a `-2` suffix and both sit side by side.
+
 ## [0.11.0] - 2026-08-02
 
 Things can be removed now. Until this release gmlw only ever accumulated: every job that had
