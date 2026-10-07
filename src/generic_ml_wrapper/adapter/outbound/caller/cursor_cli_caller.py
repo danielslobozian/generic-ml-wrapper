@@ -1,18 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``CursorCliCallerAdapter``: launch cursor-agent and install its status line (no metering)."""
+"""``CursorCliCaller``: launch cursor-agent and install its status line (no metering)."""
 
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.caller import context_file, status_line_config
-from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import StatusLineSnapshot
 from generic_ml_wrapper.application.domain.model.run import RunContext
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
 
 BINARY = "cursor-agent"
 _CONFIG = Path.home() / ".cursor" / "cli-config.json"
@@ -24,7 +24,7 @@ _STATUSLINE: dict[str, object] = {
 }
 
 
-class CursorCliCallerAdapter(CliCallerPort):
+class CursorCliCaller(CliCaller):
     """Launch cursor-agent for a run, with the wrapper's status line, without metering.
 
     cursor-agent hosts a command-backed status line (``~/.cursor/cli-config.json``),
@@ -97,4 +97,6 @@ class CursorCliCallerAdapter(CliCallerPort):
             "GMLW_SESSION": self.run.session_id,
             "GMLW_CLIENT": self.run.client,
         }
-        return ChildProcess().run(argv, self.run.cwd, env)
+        # Trusted argv from our resolved run; no shell. The program is PATH-resolved (BINARY).
+        completed = subprocess.run(argv, check=False, cwd=self.run.cwd, env=env)  # noqa: S603
+        return completed.returncode

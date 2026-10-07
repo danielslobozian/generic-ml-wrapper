@@ -18,8 +18,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-from generic_ml_wrapper.application.port.outbound.transcript_call import TranscriptCall
+from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -27,7 +26,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 
-class FilesystemTranscriptStoreAdapter(TranscriptPort):
+class FilesystemTranscriptStore(TranscriptPort):
     """Persist each call's in/out/usage trio under a per-session folder."""
 
     def __init__(self, root: Path) -> None:

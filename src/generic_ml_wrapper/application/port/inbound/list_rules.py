@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The inbound port for browsing the user's rules."""
+"""The inbound port for browsing the user's rules by axis."""
 
 from __future__ import annotations
 
@@ -8,21 +8,17 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.port.inbound.list_rules_result import ListRulesResult
+    from generic_ml_wrapper.application.domain.model.rule_catalog import RuleGroup
 
 
-class ListRulesUseCase(ABC):
+class ListRules(ABC):
     """List the environments and roles that hold rules."""
 
     @abstractmethod
-    def execute(self) -> ListRulesResult:
-        """Return the environments and roles holding at least one rule.
-
-        Best-effort: an unreadable file is skipped rather than raised, so browsing never
-        fails on one malformed rule. Anything holding no rules is left out entirely, so a
-        folder the user has never written to never appears as an empty branch to walk into.
+    def execute(self) -> tuple[RuleGroup, ...]:
+        """Return the populated rule groups.
 
         Returns:
-            The populated environments and roles, each sorted by code. Both empty when the
-            user has never recorded a rule.
+            Every environment and role holding at least one rule, environments first.
+            Empty when the user has never recorded one.
         """

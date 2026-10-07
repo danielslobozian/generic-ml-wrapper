@@ -25,15 +25,12 @@ from _conformance import (
 )
 
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
-    FilesystemTranscriptStoreAdapter,
+    FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import (
-    SqlitePerTurnStoreAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
-from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStoreAdapter
-from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
@@ -48,7 +45,7 @@ if TYPE_CHECKING:
 
 class TestSqliteSessionStore(SessionStoreConformance):
     def make_store(self, tmp_path: Path) -> SessionStorePort:
-        return SqliteSessionStoreAdapter(Ledger(tmp_path / "ledger.db"))
+        return SqliteSessionStore(Ledger(tmp_path / "ledger.db"), kind="work")
 
 
 class TestInMemorySessionStore(SessionStoreConformance):
@@ -56,27 +53,12 @@ class TestInMemorySessionStore(SessionStoreConformance):
         return InMemorySessionStore()
 
 
-def _record_sessions(tmp_path: Path, job: str, *sessions: str) -> None:
-    """Persist the sessions a turn or a cost will be recorded against.
-
-    The ledger's tables reference each other, so a turn or a cost cannot be written for a
-    session that was never recorded. In a real run the session is persisted before the
-    client that produces either is launched; here it has to be said out loud.
-    """
-    store = SqliteSessionStoreAdapter(Ledger(tmp_path / "ledger.db"))
-    for session in sessions:
-        store.record(Session(session, job, "claude", None))
-
-
 # -- PerTurnMeteringPort ---------------------------------------------------- #
 
 
 class TestSqlitePerTurnStore(PerTurnMeteringConformance):
     def make_store(self, tmp_path: Path) -> PerTurnMeteringPort:
-        return SqlitePerTurnStoreAdapter(Ledger(tmp_path / "ledger.db"))
-
-    def seed_sessions(self, tmp_path: Path, job: str, *sessions: str) -> None:
-        _record_sessions(tmp_path, job, *sessions)
+        return SqlitePerTurnStore(Ledger(tmp_path / "ledger.db"))
 
 
 class TestInMemoryPerTurnStore(PerTurnMeteringConformance):
@@ -89,10 +71,7 @@ class TestInMemoryPerTurnStore(PerTurnMeteringConformance):
 
 class TestSqliteUsageStore(UsageStoreConformance):
     def make_store(self, tmp_path: Path) -> UsageStorePort:
-        return SqliteUsageStoreAdapter(Ledger(tmp_path / "ledger.db"))
-
-    def seed_sessions(self, tmp_path: Path, job: str, *sessions: str) -> None:
-        _record_sessions(tmp_path, job, *sessions)
+        return SqliteUsageStore(Ledger(tmp_path / "ledger.db"))
 
 
 class TestInMemoryUsageStore(UsageStoreConformance):
@@ -105,7 +84,7 @@ class TestInMemoryUsageStore(UsageStoreConformance):
 
 class TestFilesystemTranscriptStore(TranscriptStoreConformance):
     def make_store(self, tmp_path: Path) -> TranscriptPort:
-        return FilesystemTranscriptStoreAdapter(tmp_path)
+        return FilesystemTranscriptStore(tmp_path)
 
     def read_trio(
         self, store: TranscriptPort, tmp_path: Path, job: str, session: str, seq: int

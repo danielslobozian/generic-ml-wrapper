@@ -14,19 +14,10 @@ class SessionStorePort(ABC):
 
     @abstractmethod
     def jobs(self) -> list[str]:
-        """Return the ids of all known jobs.
+        """Return the ids of all jobs that have recorded sessions.
 
         Returns:
-            The job ids, sorted — including a job created ahead of its first session,
-            which has no sessions yet but exists.
-        """
-
-    @abstractmethod
-    def create_job(self, job: str) -> None:
-        """Record a job that has no sessions yet.
-
-        Args:
-            job: The job id to create; creating one that already exists changes nothing.
+            The job ids, sorted (empty if nothing has been recorded).
         """
 
     @abstractmethod

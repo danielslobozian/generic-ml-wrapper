@@ -2,11 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """SQLite ``SessionStorePort``: sessions in the shared ``ledger.db``.
 
-Every job is the same kind of thing here. A job's name is its identity and the store
-holds no opinion about what the job is for, so recording a session under a name that
-already exists is how a job accumulates its history rather than a collision to refuse.
-Hiding the one job the system names for itself is a listing concern, not this one's --
-see :class:`~generic_ml_wrapper.application.domain.model.authoring_job.AuthoringJob`.
+The store is scoped to a ``kind`` (``work`` or ``authoring``): recording tags the
+job with it and :meth:`jobs` filters by it, so authoring sessions stay out of
+``gmlw jobs`` -- the same separation the old parallel filesystem root gave, without
+a second store.
 """
 
 from __future__ import annotations
@@ -20,34 +19,35 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 
 
-class SqliteSessionStoreAdapter(SessionStorePort):
-    """Persist and read sessions in the ledger."""
+class SqliteSessionStore(SessionStorePort):
+    """Persist and read sessions in the ledger, scoped to a job ``kind``."""
 
-    def __init__(self, ledger: Ledger) -> None:
-        """Bind the store to the ledger.
+    def __init__(self, ledger: Ledger, kind: str = "work") -> None:
+        """Bind the store to the ledger and the job kind it owns.
 
         Args:
             ledger: The shared SQLite ledger.
+            kind: The job kind this store records and lists (``work`` | ``authoring``).
         """
         self._ledger = ledger
+        self._kind = kind
 
     def jobs(self) -> list[str]:
-        """Return the ids of all known jobs, sorted, sessions or not."""
+        """Return the ids of this kind's jobs that have recorded sessions, sorted."""
         with self._ledger.connect() as connection:
-            rows = connection.execute("SELECT job FROM jobs ORDER BY job").fetchall()
+            rows = connection.execute(
+                "SELECT DISTINCT s.job FROM sessions s JOIN jobs j ON s.job = j.job "
+                "WHERE j.kind = ? ORDER BY s.job",
+                (self._kind,),
+            ).fetchall()
         return [row["job"] for row in rows]
 
-    def create_job(self, job: str) -> None:
-        """Record a job that has no sessions yet."""
-        with self._ledger.connect() as connection:
-            connection.execute("INSERT OR IGNORE INTO jobs (job) VALUES (?)", (job,))
-
     def record(self, session: Session) -> None:
-        """Persist a session, creating its job if the name is new."""
+        """Persist a session, creating its job (tagged with this store's kind) if new."""
         with self._ledger.connect() as connection:
             connection.execute(
-                "INSERT OR IGNORE INTO jobs (job) VALUES (?)",
-                (session.job,),
+                "INSERT OR IGNORE INTO jobs (job, kind) VALUES (?, ?)",
+                (session.job, self._kind),
             )
             connection.execute(
                 "INSERT INTO sessions (session_id, job, client, uuid, cwd, resumable) "
@@ -67,10 +67,8 @@ class SqliteSessionStoreAdapter(SessionStorePort):
 
         Also flips ``resumable`` on: a client that mints its own id is recorded as
         not-resumable precisely because we had no id to target, so learning one is what
-        makes the session resumable. Scoped by ``job`` as well as ``session_id``: the id
-        is unique across the table, so the job adds nothing to the lookup, but it makes
-        the statement match nothing rather than update a stranger's row if the two are
-        ever passed inconsistently.
+        makes the session resumable. Scoped by ``job`` as well as ``session_id`` because
+        the ``<job>_NNN`` id is only unique within its job.
         """
         with self._ledger.connect() as connection:
             connection.execute(

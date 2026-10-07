@@ -6,24 +6,12 @@ import io
 
 import pytest
 
-from generic_ml_wrapper.adapter.inbound.cli.setup import tty_prompt
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_persona_chooser import (
-    TtyPersonaChooser,
-)
-from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
-    JsonCatalogMessageSource,
-)
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    MessageSourceAccessor,
-)
+from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.application.domain.model.persona import Persona
+from generic_ml_wrapper.common.i18n import load_localizer
 
-
-def _accessor(language: str) -> MessageSourceAccessor:
-    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
-
-
-_I18N = _accessor("en")
+_I18N = load_localizer("en")
 _PERSONAS = [Persona("plain", "Neutral.", "", "b"), Persona("butler", "A Jeeves.", "", "b")]
 
 

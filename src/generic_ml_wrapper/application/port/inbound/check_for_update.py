@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class CheckForUpdateUseCase(ABC):
+class CheckForUpdate(ABC):
     """Report a newer published version, at most once per cache TTL."""
 
     @abstractmethod

@@ -16,7 +16,7 @@ Run **claude**, **cursor**, **codex**, or **vibe** exactly as you know them — 
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-185FA5?style=for-the-badge&labelColor=403E3A)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/danielslobozian/generic-ml-wrapper/ci.yml?branch=main&style=for-the-badge&labelColor=403E3A&label=ci)](https://github.com/danielslobozian/generic-ml-wrapper/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/sonar/coverage/danielslobozian_generic-ml-wrapper?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&labelColor=403E3A)](https://sonarcloud.io/summary/overall?id=danielslobozian_generic-ml-wrapper)
-[![Python](https://img.shields.io/badge/python-3.12%E2%80%933.14-185FA5?style=for-the-badge&labelColor=403E3A)](pyproject.toml)
+[![Python](https://img.shields.io/badge/python-3.11%E2%80%933.14-185FA5?style=for-the-badge&labelColor=403E3A)](pyproject.toml)
 
 [![client: claude](https://img.shields.io/badge/client-claude-534AB7?style=for-the-badge&labelColor=3C3489)](src/generic_ml_wrapper/adapter/outbound/caller/claude_cli_caller.py)
 [![client: cursor](https://img.shields.io/badge/client-cursor-534AB7?style=for-the-badge&labelColor=3C3489)](src/generic_ml_wrapper/adapter/outbound/caller/cursor_cli_caller.py)
@@ -192,7 +192,7 @@ The gates are defined once in [`noxfile.py`](noxfile.py); CI is a thin caller of
 
 ```sh
 uv sync --extra dev          # or: nox -s dev   (builds the IDE .venv)
-nox                          # lint · imports · typecheck · tests (3.12–3.14)
+nox                          # lint · imports · typecheck · tests (3.11–3.14)
 nox -s green                 # the whole gate in one env (lint · format · imports · pyright · coverage)
 ```
 

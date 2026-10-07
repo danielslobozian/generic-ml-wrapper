@@ -7,7 +7,7 @@ to (at most) the `[client] default` chosen from the clients found on your `PATH`
 Every section is optional. Uncomment and edit only what you need. Delete the file
 entirely to fall back to the built-in defaults.
 
-For the concepts behind the sections below (the four context sources, rules) see
+For the concepts behind the sections below (the four context axes, rules) see
 [CONCEPTS.md](CONCEPTS.md). Related guides: [WORKFLOWS.md](WORKFLOWS.md),
 [CLIENTS.md](CLIENTS.md), [DESIGN.md](DESIGN.md), and the [security model](../SECURITY.md).
 
@@ -106,7 +106,7 @@ under several targets.
 **Wire targets** (metered clients only): `request` (outbound body) \| `response`
 (captured reply, observe-only).
 
-The built-in `MessageSizeLoggerAdapter` logs each message's size — bind it to `request` and
+The built-in `MessageSizeLogger` logs each message's size — bind it to `request` and
 `response` to trace sizes in and out.
 
 Default: no interceptors.
@@ -117,11 +117,11 @@ Default: no interceptors.
 ```toml
 [[interceptors]]
 target = "request"
-spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
+spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
 
 [[interceptors]]
 target = "response"
-spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
+spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
 ```
 
 ## `[[hooks]]`
@@ -144,7 +144,7 @@ session. For cleanup, notification, archival, or roll-up.
 
 Hooks are **best-effort**: a failing hook is logged and skipped, never breaking a launch
 or its teardown. A `spec` may be a plugin id (resolved through `~/.gmlw/plugins/<id>/`,
-the same as a `[callers]` reference) or a direct spec. The built-in `SessionLoggerAdapter`
+the same as a `[callers]` reference) or a direct spec. The built-in `SessionLogger`
 appends a line to `~/.gmlw/sessions.log` at each seam — a template to copy for your own.
 
 Default: no hooks.
@@ -155,11 +155,11 @@ Default: no hooks.
 ```toml
 [[hooks]]
 phase = "pre-launch"
-spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
+spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
 
 [[hooks]]
 phase = "post-session"
-spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
+spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
 client = "claude"   # optional; omit to run for every client
 ```
 
@@ -401,6 +401,6 @@ check = false
 
 ## See also
 
-- [CONCEPTS.md](CONCEPTS.md) — the four context sources and rules these keys configure.
+- [CONCEPTS.md](CONCEPTS.md) — the four context axes and rules these keys configure.
 - [WORKFLOWS.md](WORKFLOWS.md) · [CLIENTS.md](CLIENTS.md) · [DESIGN.md](DESIGN.md)
 - [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md)

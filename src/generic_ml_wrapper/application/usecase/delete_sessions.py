@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The DeleteSessionsUseCase use case: remove sessions, their usage, and their files.
+"""The DeleteSessions use case: remove sessions, their usage, and their files.
 
 The session is the finer of the two removal grains. It is deliberately surgical -- it
 touches only the rows and files keyed to the sessions named, and leaves the job row and
@@ -15,36 +15,30 @@ a job safe.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import replace
-from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.no_such_job_error import NoSuchJobError
-from generic_ml_wrapper.application.domain.model.no_such_session_error import NoSuchSessionError
-from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
-from generic_ml_wrapper.application.port.inbound.session_footprint import SessionFootprint
+from generic_ml_wrapper.application.port.inbound.delete_sessions import (
+    DeleteSessions,
+    NoSuchJobError,
+    NoSuchSessionError,
+    SessionFootprint,
+)
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurgePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
-from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
-if TYPE_CHECKING:
-    from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 
-
-class DeleteSessionsService(DeleteSessionsUseCase):
+class DeleteSessionsUseCase(DeleteSessions):
     """Measure and remove a job's sessions."""
 
-    def __init__(  # noqa: PLR0913, PLR0917  (the read ports it measures with, plus both purges and the lock)
+    def __init__(
         self,
         store: SessionStorePort,
         turns: PerTurnMeteringPort,
         usage: UsageStorePort,
         ledger: LedgerPurgePort,
         artifacts: ArtifactPurgePort,
-        locks: SessionLockPort,
-        diagnostics: DiagnosticsPort,
     ) -> None:
         """Wire the use case to the stores it measures and the purges it removes through.
 
@@ -58,16 +52,12 @@ class DeleteSessionsService(DeleteSessionsUseCase):
             usage: Where recorded session costs are read from.
             ledger: Removes the recorded rows.
             artifacts: Counts and removes the files on disk.
-            diagnostics: Where a session whose files would not go is reported.
-            locks: Claims each session, so none is removed while its client runs.
         """
         self._store = store
         self._turns = turns
         self._usage = usage
         self._ledger = ledger
         self._artifacts = artifacts
-        self._locks = locks
-        self._diagnostics = diagnostics
 
     def preview(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
         """Report what deleting these sessions would remove, without removing it."""
@@ -75,48 +65,15 @@ class DeleteSessionsService(DeleteSessionsUseCase):
         return self._footprints(job, sessions)
 
     def execute(self, job: str, sessions: Sequence[str]) -> list[SessionFootprint]:
-        """Delete the sessions, their recorded usage, and their files.
-
-        Returns:
-            One footprint per session asked for, each carrying whether it actually went.
-            A session whose files could not be removed keeps its rows and comes back
-            marked, rather than taking the rest of the batch down with it.
-
-        Raises:
-            SessionRunningError: If one of the sessions has a live client. The batch
-                stops there, the same way an unrecorded id stops it -- but unlike that
-                check this one cannot be made up front for the whole batch, because the
-                claim must still be held when the rows go.
-        """
+        """Delete the sessions, their recorded usage, and their files."""
         self._validate(job, sessions)
         # Measured before the first removal, and returned afterwards: once the rows are
         # gone there is nothing left to count, so "what went" has to be taken up front.
         footprints = self._footprints(job, sessions)
-        return [self._purge(footprint) for footprint in footprints]
-
-    def _purge(self, footprint: SessionFootprint) -> SessionFootprint:
-        """Remove one session's files and then its rows, or report that it stayed.
-
-        The files go first. They are what nothing else can find again: a row names its
-        session and can be asked for a second time, while a file whose row is gone is
-        invisible to every listing the tool has. So a failure here leaves a session that
-        still lists, still resumes, and still deletes on the next attempt -- which is why
-        the rows are only reached once the files are actually gone.
-        """
-        job, session = footprint.job, footprint.session
-        # Held across both removals: a client cannot start against this session in the
-        # gap between its files going and its rows going.
-        with self._locks.claim_session(job, session):
-            try:
-                self._artifacts.purge_session(job, session)
-            except OSError as error:
-                self._diagnostics.warning(
-                    f"session '{session}' was not deleted: its files could not be removed: {error}",
-                    key="log.session_not_deleted",
-                )
-                return replace(footprint, removed=False)
+        for session in sessions:
             self._ledger.purge_session(job, session)
-        return footprint
+            self._artifacts.purge_session(job, session)
+        return footprints
 
     def _validate(self, job: str, sessions: Sequence[str]) -> None:
         """Reject the whole batch unless every id in it is recorded.

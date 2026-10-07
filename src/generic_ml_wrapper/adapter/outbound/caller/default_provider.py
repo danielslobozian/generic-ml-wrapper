@@ -1,32 +1,32 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``DefaultCliCallerProviderAdapter``: config overrides first, then built-in callers."""
+"""``DefaultCliCallerProvider``: config overrides first, then built-in callers."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCallerAdapter
-from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCallerAdapter
-from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCallerAdapter
+from generic_ml_wrapper.adapter.outbound.caller.claude_cli_caller import ClaudeCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.codex_cli_caller import CodexCliCaller
+from generic_ml_wrapper.adapter.outbound.caller.cursor_cli_caller import CursorCliCaller
 from generic_ml_wrapper.adapter.outbound.caller.loader import load_caller_class
-from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCallerAdapter
-from generic_ml_wrapper.application.domain.model.unsupported_client_error import (
-    UnsupportedClientError,
-)
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
+from generic_ml_wrapper.adapter.outbound.caller.vibe_cli_caller import VibeCliCaller
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
+    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
     from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 
-class DefaultCliCallerProviderAdapter(CliCallerProviderPort):
+class UnsupportedClientError(ValueError):
+    """Raised when a run's client has no override and no built-in caller."""
+
+
+class DefaultCliCallerProvider(CliCallerProvider):
     """Resolve a run's caller: a config override if present, else the built-in one."""
 
     def __init__(  # noqa: PLR0913  (one collaborator per concern, all keyword-only)
@@ -60,7 +60,7 @@ class DefaultCliCallerProviderAdapter(CliCallerProviderPort):
         self._plugins = plugins
         self._sessions = sessions
 
-    def for_run(self, run: RunContext) -> CliCallerPort:
+    def for_run(self, run: RunContext) -> CliCaller:
         """Return the caller for the run's client.
 
         Args:
@@ -81,13 +81,14 @@ class DefaultCliCallerProviderAdapter(CliCallerProviderPort):
                 spec = self._plugins.resolve_caller(spec)
             return load_caller_class(spec)(run)
         if run.client == "claude":
-            return ClaudeCliCallerAdapter(run, self._metering, self._interceptors, self._transcript)
+            return ClaudeCliCaller(run, self._metering, self._interceptors, self._transcript)
         if run.client == "cursor":
-            return CursorCliCallerAdapter(run)
+            return CursorCliCaller(run)
         if run.client == "codex":
-            return CodexCliCallerAdapter(
+            return CodexCliCaller(
                 run, self._metering, self._interceptors, self._transcript, self._sessions
             )
         if run.client == "vibe":
-            return VibeCliCallerAdapter(run, self._metering, self._interceptors, self._transcript)
-        raise UnsupportedClientError(run.client)
+            return VibeCliCaller(run, self._metering, self._interceptors, self._transcript)
+        message = f"unsupported client: {run.client!r}"
+        raise UnsupportedClientError(message)

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""BootstrapUseCase an isolated vibe config that routes the active model through a relay.
+"""Bootstrap an isolated vibe config that routes the active model through a relay.
 
 The metering gateway copies the user's real ``~/.vibe/config.toml`` into a throwaway
 ``VIBE_HOME`` and repoints one thing: the ``api_base`` of the provider its active

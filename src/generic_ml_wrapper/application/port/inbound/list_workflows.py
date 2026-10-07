@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class ListWorkflowsUseCase(ABC):
+class ListWorkflows(ABC):
     """List the runnable workflows."""
 
     @abstractmethod

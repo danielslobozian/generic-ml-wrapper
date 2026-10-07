@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
+from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.port.outbound.layout_migrator import LayoutMigratorPort
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ _OLD_COMPANY = ("profile", "company")
 _ENVIRONMENTS = "environments"
 
 
-class FilesystemLayoutMigratorAdapter(LayoutMigratorPort):
+class FilesystemLayoutMigrator(LayoutMigratorPort):
     """Move the old ``~/.gmlw/profile/company`` context into ``environments/<env>``."""
 
     def __init__(self, home: Path) -> None:

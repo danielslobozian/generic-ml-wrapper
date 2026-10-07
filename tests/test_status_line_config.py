@@ -10,9 +10,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.caller import status_line_config
-from generic_ml_wrapper.application.domain.model.client_settings_unusable_error import (
-    ClientSettingsUnusableError,
-)
+from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -52,7 +50,7 @@ def test_unparseable_file_aborts_and_is_left_untouched(tmp_path: Path, content: 
     path = tmp_path / "settings.json"
     path.write_text(content, encoding="utf-8")
     before = path.read_bytes()
-    with pytest.raises(ClientSettingsUnusableError):
+    with pytest.raises(SettingsUnreadableError):
         status_line_config.install(path, _STATUS)
     assert path.read_bytes() == before  # byte-for-byte: never overwritten
 
@@ -81,6 +79,6 @@ def test_install_best_effort_still_aborts_on_unparseable_settings(tmp_path: Path
     path = tmp_path / "settings.json"
     path.write_text("{ not json", encoding="utf-8")  # unreadable settings stay fatal
     before = path.read_bytes()
-    with pytest.raises(ClientSettingsUnusableError):
+    with pytest.raises(SettingsUnreadableError):
         status_line_config.install_best_effort(path, _STATUS)
     assert path.read_bytes() == before  # never overwritten

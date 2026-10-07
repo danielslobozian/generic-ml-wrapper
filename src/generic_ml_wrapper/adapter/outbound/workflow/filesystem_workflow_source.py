@@ -12,19 +12,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import ABOUT, write_about
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
-from generic_ml_wrapper.application.domain.model.rule_capture_directive import RuleCaptureDirective
-from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
+from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE, rule_capture_directive
 from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.domain.service.rule_cleaner import RuleCleaner
-from generic_ml_wrapper.application.domain.service.rule_parser import RuleParser
+from generic_ml_wrapper.application.domain.service import rule_parser
+from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.common import config
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -47,7 +46,7 @@ _FINISHED = "finished"
 _GUIDE = "guided.md"
 
 
-class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
+class FilesystemWorkflowSource(WorkflowSourcePort):
     """Read workflows from ``<root>/<name>/workflow.md``; seed packaged defaults.
 
     ``compile`` composes a run's operating context from several locations — the
@@ -155,22 +154,16 @@ class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
             if child.name not in _HIDDEN and (child / "workflow.md").is_file()
         )
 
-    def find(self, name: str) -> Workflow | None:
-        """Return the workflow at ``<root>/<name>``, or ``None`` if none is runnable there.
-
-        Runnable means the folder holds a ``workflow.md``; the shared base and the
-        meta-workflow are hidden from this the same way they are hidden from the listing,
-        so a caller can never be handed one of them as if it were a user's own.
+    def exists(self, name: str) -> bool:
+        """Return whether ``<root>/<name>/workflow.md`` exists.
 
         Args:
             name: The workflow name.
 
         Returns:
-            The workflow with its ``.about.toml`` words, or ``None``.
+            ``True`` if the workflow has a ``workflow.md``.
         """
-        if name in _HIDDEN or not (self._root / name / "workflow.md").is_file():
-            return None
-        return self._described(name)
+        return (self._root / name / "workflow.md").is_file()
 
     def catalog(self) -> list[Workflow]:
         """Return the runnable workflows with their ``.about.toml`` words, sorted by slug.
@@ -372,17 +365,17 @@ class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
         return "\n\n".join(parts)
 
     def _rules_group(self, settings: dict[str, config.SourceSetting]) -> str:
-        """Compose the rule-capture directive and the role's and environment's rule sets.
+        """Compose the rule-capture directive and the two axis-scoped rule sets.
 
-        Rules are a projection of the user, so they live on the two things that describe
-        one: the environment (the place) and the role (the craft). When either is
+        Rules are a projection of the user, so they live on the two axes that describe
+        one: the environment (the place) and the role (the craft). When either axis is
         active the section leads with the capture directive (gmlw's voice) so a demanded
         correction becomes a draft rule in any session — even one with no rules yet. The
         directive stays verbatim; only the user's rule content is subject to compression.
 
-        Activation governs *loading*, not authoring: a side switched off for this mode
+        Activation governs *loading*, not authoring: an axis switched off for this mode
         still names a real folder, and a rule written there loads in the sessions where
-        that side is on. So the directive offers both whenever it is shown at all.
+        that axis is on. So the directive offers both axes whenever it is shown at all.
         """
         env_setting = settings[context_source.RULES_ENVIRONMENT.key]
         role_setting = settings[context_source.RULES_ROLE.key]
@@ -391,7 +384,7 @@ class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
         env_dir = self._environment_rules_dir()
         role_dir = self._role_rules_dir()
         parts: list[str] = [
-            RuleCaptureDirective().render(
+            rule_capture_directive(
                 environment=self._default_environment(),
                 role=self._default_role(),
                 environment_dir=str(env_dir) if env_dir else "(no environment configured)",
@@ -444,7 +437,7 @@ class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
         self, mode: CompileMode, name: str | None, settings: dict[str, config.SourceSetting]
     ) -> str:
         """Compose the shared base and the workflow's steps (workflow/authoring only)."""
-        if not mode.includes_workflow():
+        if not context_source.includes_workflow(mode):
             return ""
         parts: list[str] = []
         base = self._maybe_compress(
@@ -569,8 +562,8 @@ class FilesystemWorkflowSourceAdapter(WorkflowSourcePort):
             raw = path.read_text(encoding="utf-8").strip()
             # Draft-ness is a frontmatter key, not a phrase: a substring search over the
             # whole file silently dropped any live rule that merely mentioned drafting.
-            if raw and not RuleParser().is_draft(raw):
-                rule = RuleCleaner().clean_rule(raw, _STRIP_SECTIONS)
+            if raw and not rule_parser.is_draft(raw):
+                rule = clean_rule(raw, _STRIP_SECTIONS)
                 if rule:
                     cleaned.append(rule)
         return "\n\n---\n\n".join(cleaned)

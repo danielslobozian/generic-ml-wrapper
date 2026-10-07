@@ -1,27 +1,18 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ConfigCommandsUseCase use case (config list/get/set)."""
+"""Tests for the ConfigCommands use case (config list/get/set)."""
 
 from pathlib import Path
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.config import settings_registry
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
-from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import (
-    TomlSettingsCatalogAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
-    TomlkitConfigWriterAdapter,
-)
-from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
+from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.common import config, settings_registry
 
 
-def _commands(config_file: Path) -> UpdateConfigService:
-    return UpdateConfigService(
-        writer=TomlkitConfigWriterAdapter(lambda: config_file),
-        settings=TomlSettingsCatalogAdapter(lambda: config_file),
-    )
+def _commands(config_file: Path) -> UpdateConfigUseCase:
+    return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=lambda: config_file)
 
 
 def test_list_covers_every_registry_key_with_current_values(tmp_path: Path) -> None:

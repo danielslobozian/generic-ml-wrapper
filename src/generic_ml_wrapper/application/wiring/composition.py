@@ -4,326 +4,171 @@
 
 from __future__ import annotations
 
+import getpass
 import os
-import sqlite3
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_workflow_chooser import TtyWorkflowChooser
-from generic_ml_wrapper.adapter.inbound.common.i18n.language_context_holder import (
-    DEFAULT_LANGUAGE,
-)
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    get_active,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_environment_repository import (
-    FilesystemEnvironmentRepositoryAdapter,
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
+    FilesystemAxisCatalog,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_migrator import (
-    FilesystemLayoutMigratorAdapter,
+    FilesystemLayoutMigrator,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_layout_seeder import (
-    FilesystemLayoutSeederAdapter,
+    FilesystemLayoutSeeder,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_role_repository import (
-    FilesystemRoleRepositoryAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_store import (
-    FilesystemRuleStore,
+from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_rule_catalog import (
+    FilesystemRuleCatalog,
 )
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_slug_migrator import (
-    FilesystemSlugMigratorAdapter,
+    FilesystemSlugMigrator,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_working_folder import (
-    FilesystemWorkingFolderAdapter,
+from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import HttpClientVersions
+from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import PathClientDetector
+from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner import (
+    SubprocessCommandRunner,
 )
-from generic_ml_wrapper.adapter.outbound.bootstrap.http_client_versions import (
-    HttpClientVersionsAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.json_environment_examples_repository import (
-    JsonEnvironmentExamplesRepositoryAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.json_role_examples_repository import (
-    JsonRoleExamplesRepositoryAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.module_build_info import ModuleBuildInfoAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.os_system_info import OsSystemInfoAdapter
-from generic_ml_wrapper.adapter.outbound.bootstrap.path_client_detector import (
-    PathClientDetectorAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
-    TomlClientCatalogAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_secret_prompt import TtySecretPromptAdapter
-from generic_ml_wrapper.adapter.outbound.caller.default_provider import (
-    DefaultCliCallerProviderAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.caller.environment_run_handoff import (
-    EnvironmentRunHandoffAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.caller.signal_interrupt_scope import (
-    SignalInterruptScopeAdapter,
-)
+from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
+from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
-    CacheBackedContextCompressorAdapter,
+    CacheBackedContextCompressor,
 )
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
-from generic_ml_wrapper.adapter.outbound.config.toml_runtime_config import TomlRuntimeConfigAdapter
-from generic_ml_wrapper.adapter.outbound.config.toml_settings_catalog import (
-    TomlSettingsCatalogAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
-    TomlkitConfigWriterAdapter,
-)
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
-    FilesystemCredentialsStoreAdapter,
+    FilesystemCredentialsStore,
 )
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
+from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnostics
 from generic_ml_wrapper.adapter.outbound.diagnostics.rolling_file_diagnostics import (
-    RollingFileDiagnosticsAdapter,
+    RollingFileDiagnostics,
 )
-from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
-    StderrDiagnosticsAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.diagnostics.tee_diagnostics import TeeDiagnosticsAdapter
+from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import StderrDiagnostics
+from generic_ml_wrapper.adapter.outbound.diagnostics.tee_diagnostics import TeeDiagnostics
 from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source import (
-    FilesystemPersonaSourceAdapter,
+    FilesystemPersonaSource,
 )
 from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import (
-    FilesystemPluginSourceAdapter,
+    FilesystemPluginSource,
 )
-from generic_ml_wrapper.adapter.outbound.status.catalogued_status_parsers import (
-    CataloguedStatusParsersAdapter,
-)
+from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
+from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
-    FilesystemArtifactPurgeAdapter,
+    FilesystemArtifactPurge,
 )
 from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
-    FilesystemReportExporterAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.store.filesystem_session_lock import (
-    FilesystemSessionLockAdapter,
+    FilesystemReportExporter,
 )
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
-    FilesystemTranscriptStoreAdapter,
+    FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
-from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurgeAdapter
-from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import (
-    SqlitePerTurnStoreAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStoreAdapter
-from generic_ml_wrapper.adapter.outbound.store.sqlite_store_migration import (
-    SqliteStoreMigrationAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStoreAdapter
-from generic_ml_wrapper.adapter.outbound.update.filesystem_update_cache import (
-    FilesystemUpdateCacheAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import (
-    PypiVersionCheckerAdapter,
-)
-from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_backup import (
-    FilesystemWorkflowBackupAdapter,
-)
+from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
+from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
+from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
-    FilesystemWorkflowSourceAdapter,
+    FilesystemWorkflowSource,
 )
-from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import (
-    ZipWorkflowArchiveAdapter,
-)
+from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import ZipWorkflowArchive
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
-    LocalGitWorkspaceInspectorAdapter,
+    LocalGitWorkspaceInspector,
 )
-from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
-from generic_ml_wrapper.application.port.inbound.add_environment import AddEnvironmentUseCase
-from generic_ml_wrapper.application.port.inbound.add_role import AddRoleUseCase
-from generic_ml_wrapper.application.port.inbound.application_settings import (
-    ApplicationSettingsUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.bootstrap import BootstrapUseCase
-from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReadyUseCase
-from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdateUseCase
-from generic_ml_wrapper.application.port.inbound.check_launch_location import (
-    CheckLaunchLocationUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.check_store_contract import (
-    CheckStoreContractUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.compose_statusline import ComposeStatuslineUseCase
-from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommandsUseCase
-from generic_ml_wrapper.application.port.inbound.create_job import CreateJobUseCase
-from generic_ml_wrapper.application.port.inbound.create_workflow import CreateWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobsUseCase
-from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessionsUseCase
-from generic_ml_wrapper.application.port.inbound.describe_build import DescribeBuildUseCase
-from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsageUseCase
-from generic_ml_wrapper.application.port.inbound.export_usage_to_file import (
-    ExportUsageToFileUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.find_job import FindJobUseCase
-from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.list_authoring_modes import (
-    ListAuthoringModesUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
-from generic_ml_wrapper.application.port.inbound.list_drafts import ListDraftsUseCase
-from generic_ml_wrapper.application.port.inbound.list_environment_examples import (
-    ListEnvironmentExamplesUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_environments import ListEnvironmentsUseCase
-from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobsUseCase
-from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClientsUseCase
-from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonasUseCase
-from generic_ml_wrapper.application.port.inbound.list_plugins import ListPluginsUseCase
-from generic_ml_wrapper.application.port.inbound.list_role_examples import (
-    ListRoleExamplesUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_roles import ListRolesUseCase
-from generic_ml_wrapper.application.port.inbound.list_rules import ListRulesUseCase
-from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessionsUseCase
-from generic_ml_wrapper.application.port.inbound.list_supported_clients import (
-    ListSupportedClientsUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import (
-    ListWorkflowCatalogUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflowsUseCase
-from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
-from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugsUseCase
-from generic_ml_wrapper.application.port.inbound.resume_create_workflow import (
-    ResumeCreateWorkflowUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.resume_edit_workflow import (
-    ResumeEditWorkflowUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.resume_session_for_job import (
-    ResumeSessionForJobUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.save_init_answers import (
-    SaveInitAnswersUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialUseCase
-from generic_ml_wrapper.application.port.inbound.set_default_environment import (
-    SetDefaultEnvironmentUseCase,
-)
-from generic_ml_wrapper.application.port.inbound.set_default_role import SetDefaultRoleUseCase
-from generic_ml_wrapper.application.port.inbound.start_new_session_for_job import (
-    StartNewSessionForJobUseCase,
-)
+from generic_ml_wrapper.application.domain.service.hook import HookPhase
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
+from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
+from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
+from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
+from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
+from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
+from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs
+from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessions
+from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
+from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
+from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflow
+from generic_ml_wrapper.application.port.inbound.init import Init
+from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
+from generic_ml_wrapper.application.port.inbound.list_drafts import ListDrafts
+from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
+from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClients
+from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
+from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
+from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
+from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
+from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import ListWorkflowCatalog
+from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
+from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
+from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
+from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
+from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
+from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
+from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
+from generic_ml_wrapper.application.port.inbound.start_job import StartJob
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
-from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
+from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
+from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
-from generic_ml_wrapper.application.port.outbound.session_lock import SessionLockPort
-from generic_ml_wrapper.application.port.outbound.store_migration import (
-    StoreMigrationPort,
-)
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-from generic_ml_wrapper.application.usecase.add_environment import AddEnvironmentService
-from generic_ml_wrapper.application.usecase.add_role import AddRoleService
-from generic_ml_wrapper.application.usecase.bootstrap import BootstrapService
-from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyService
-from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateService
-from generic_ml_wrapper.application.usecase.check_launch_location import (
-    CheckLaunchLocationService,
-)
-from generic_ml_wrapper.application.usecase.check_store_contract import (
-    CheckStoreContractService,
-)
-from generic_ml_wrapper.application.usecase.client_arguments_binder import ClientArgumentsBinder
-from generic_ml_wrapper.application.usecase.compose_statusline import ComposeStatuslineService
-from generic_ml_wrapper.application.usecase.create_job import CreateJobService
-from generic_ml_wrapper.application.usecase.create_workflow import CreateWorkflowService
-from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsService
-from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsService
-from generic_ml_wrapper.application.usecase.describe_build import DescribeBuildService
-from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowService
-from generic_ml_wrapper.application.usecase.export_usage import ExportUsageService
-from generic_ml_wrapper.application.usecase.export_usage_to_file import ExportUsageToFileService
-from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowService
-from generic_ml_wrapper.application.usecase.find_job import FindJobService
-from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
-from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowService
-from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
-from generic_ml_wrapper.application.usecase.launch import LaunchSequence
-from generic_ml_wrapper.application.usecase.list_authoring_modes import ListAuthoringModesService
-from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
-from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsService
-from generic_ml_wrapper.application.usecase.list_environment_examples import (
-    ListEnvironmentExamplesService,
-)
-from generic_ml_wrapper.application.usecase.list_environments import ListEnvironmentsService
-from generic_ml_wrapper.application.usecase.list_jobs import ListJobsService
-from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsService
-from generic_ml_wrapper.application.usecase.list_personas import ListPersonasService
-from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsService
-from generic_ml_wrapper.application.usecase.list_role_examples import ListRoleExamplesService
-from generic_ml_wrapper.application.usecase.list_roles import ListRolesService
-from generic_ml_wrapper.application.usecase.list_rules import ListRulesService
-from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsService
-from generic_ml_wrapper.application.usecase.list_supported_clients import (
-    ListSupportedClientsService,
-)
+from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
+from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
+from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
+from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
+from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
+from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsUseCase
+from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
+from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
+from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
+from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
+from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
+from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsUseCase
+from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
+from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
+from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
+from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.list_workflow_catalog import (
-    ListWorkflowCatalogService,
+    ListWorkflowCatalogUseCase,
 )
-from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsService
-from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutService
-from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsService
-from generic_ml_wrapper.application.usecase.read_application_settings import (
-    ReadApplicationSettingsService,
+from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
+from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
+from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
+from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
+from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
+from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
+from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
+from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.common import config, paths
+from generic_ml_wrapper.common.i18n import (
+    SUPPORTED_LANGUAGES,
+    Localizer,
+    active,
+    load_localizer,
+    resolve_language,
 )
-from generic_ml_wrapper.application.usecase.resume_create_workflow import (
-    ResumeCreateWorkflowService,
-)
-from generic_ml_wrapper.application.usecase.resume_edit_workflow import (
-    ResumeEditWorkflowService,
-)
-from generic_ml_wrapper.application.usecase.resume_session_for_job import (
-    ResumeSessionForJobService,
-)
-from generic_ml_wrapper.application.usecase.save_init_answers import SaveInitAnswersService
-from generic_ml_wrapper.application.usecase.set_credential import SetCredentialService
-from generic_ml_wrapper.application.usecase.set_default_environment import (
-    SetDefaultEnvironmentService,
-)
-from generic_ml_wrapper.application.usecase.set_default_role import SetDefaultRoleService
-from generic_ml_wrapper.application.usecase.start_new_session_for_job import (
-    StartNewSessionForJobService,
-)
-from generic_ml_wrapper.application.usecase.update_config import UpdateConfigService
-from generic_ml_wrapper.application.wiring import diagnostics_log as log
-from generic_ml_wrapper.application.wiring.paths import paths
-from generic_ml_wrapper.application.wiring.spec_loader import SpecLoader
+from generic_ml_wrapper.common.spec_loader import load_class
 
 
 def _ledger() -> Ledger:
     """The shared SQLite ledger backing the session/turn/usage stores."""
-    return Ledger(paths.ledger)
-
-
-def _session_locks() -> SessionLockPort:
-    """The locks that mark a session as running and refuse to delete one that is."""
-    return FilesystemSessionLockAdapter(paths.home)
-
-
-def build_store_migration() -> StoreMigrationPort:
-    """Build the store migration, wired to the ledger's database file.
-
-    Returns:
-        A ready-to-run StoreMigrationPort.
-    """
-    return SqliteStoreMigrationAdapter(
-        lambda: sqlite3.connect(paths.ledger, timeout=5.0),
-        paths.ledger.parent,
-    )
+    return Ledger(paths.LEDGER)
 
 
 def _transcript_root() -> Path:
@@ -334,14 +179,14 @@ def _transcript_root() -> Path:
     record into their own would leave behind precisely the files they asked to be rid of.
     """
     settings = config.transcript()
-    return Path(settings.root) if settings.root else paths.transcripts
+    return Path(settings.root) if settings.root else paths.TRANSCRIPTS
 
 
 def _transcript() -> TranscriptPort | None:
     """The transcript store when ``[transcript]`` is enabled, else ``None`` (off)."""
     if not config.transcript().enabled:
         return None
-    return FilesystemTranscriptStoreAdapter(_transcript_root())
+    return FilesystemTranscriptStore(_transcript_root())
 
 
 def _artifact_purge() -> ArtifactPurgePort:
@@ -351,10 +196,10 @@ def _artifact_purge() -> ArtifactPurgePort:
     enabled -- they may have been on when the sessions being deleted ran, and their files
     outlive the setting.
     """
-    return FilesystemArtifactPurgeAdapter(paths.contexts, _transcript_root())
+    return FilesystemArtifactPurge(paths.CONTEXTS, _transcript_root())
 
 
-def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSourceAdapter:
+def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource:
     """Build the filesystem workflow source with the standard ``~/.gmlw`` roots.
 
     Args:
@@ -363,16 +208,16 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
     Returns:
         A workflow source that compiles context from workflows, profile, and rules.
     """
-    return FilesystemWorkflowSourceAdapter(
-        paths.workflows,
-        paths.profile,
-        paths.templates,
+    return FilesystemWorkflowSource(
+        paths.WORKFLOWS,
+        paths.PROFILE,
+        paths.TEMPLATES,
         interceptors,
         personas=build_persona_source(),
-        compressor=CacheBackedContextCompressorAdapter(),
+        compressor=CacheBackedContextCompressor(),
         startup=config.startup,
         companion=lambda: config.companion().persona,
-        environments_root=paths.environments,
+        environments_root=paths.ENVIRONMENTS,
         default_environment=config.default_environment,
         default_role=config.default_role,
         user_name=lambda: config.companion().name,
@@ -380,102 +225,99 @@ def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource
     )
 
 
-def build_persona_source() -> FilesystemPersonaSourceAdapter:
+def build_persona_source() -> FilesystemPersonaSource:
     """Build the filesystem persona source rooted at ``~/.gmlw/personas``.
 
     Returns:
         A persona source that seeds and reads the packaged personas.
     """
-    return FilesystemPersonaSourceAdapter(paths.personas)
+    return FilesystemPersonaSource(paths.PERSONAS)
 
 
-def build_list_personas() -> ListPersonasUseCase:
-    """Build the ListPersonasUseCase use case wired to the persona source.
-
-    Returns:
-        A ready-to-run ListPersonasUseCase.
-    """
-    return ListPersonasService(build_persona_source())
-
-
-def build_list_clients() -> ListClientsUseCase:
-    """Build the ListClientsUseCase use case: PATH detection + version reads + the default setting.
+def build_list_personas() -> ListPersonas:
+    """Build the ListPersonas use case wired to the persona source.
 
     Returns:
-        A ready-to-run ListClientsUseCase.
+        A ready-to-run ListPersonas.
     """
-    return ListClientsService(
-        detector=PathClientDetectorAdapter(),
-        version=HttpClientVersionsAdapter(),
+    return ListPersonasUseCase(build_persona_source())
+
+
+def build_list_clients() -> ListClients:
+    """Build the ListClients use case: PATH detection + version reads + the default setting.
+
+    Returns:
+        A ready-to-run ListClients.
+    """
+    return ListClientsUseCase(
+        detector=PathClientDetector(),
+        version=HttpClientVersions(),
         default_client=config.default_client,
-        catalog=TomlClientCatalogAdapter(),
     )
 
 
-def build_list_launch_clients() -> ListLaunchClientsUseCase:
-    """Build the ListLaunchClientsUseCase use case: PATH, ``[callers]``, and the default.
+def build_list_launch_clients() -> ListLaunchClients:
+    """Build the ListLaunchClients use case: PATH, ``[callers]``, and the default.
 
     No version reads, unlike :func:`build_list_clients` — this one sits between a user
     saying "launch" and the launch happening.
 
     Returns:
-        A ready-to-run ListLaunchClientsUseCase.
+        A ready-to-run ListLaunchClients.
     """
-    return ListLaunchClientsService(
-        detector=PathClientDetectorAdapter(),
+    return ListLaunchClientsUseCase(
+        detector=PathClientDetector(),
         default_client=config.default_client,
         caller_overrides=config.caller_overrides,
-        catalog=TomlClientCatalogAdapter(),
     )
 
 
-def build_plugin_source() -> FilesystemPluginSourceAdapter:
+def build_plugin_source() -> FilesystemPluginSource:
     """Build the filesystem plugin source rooted at ``~/.gmlw/plugins``.
 
     Returns:
         A plugin source that lists plugins and resolves id references.
     """
-    return FilesystemPluginSourceAdapter(paths.plugins)
+    return FilesystemPluginSource(paths.PLUGINS)
 
 
-def build_list_plugins() -> ListPluginsUseCase:
-    """Build the ListPluginsUseCase use case wired to the plugin source.
-
-    Returns:
-        A ready-to-run ListPluginsUseCase.
-    """
-    return ListPluginsService(build_plugin_source())
-
-
-def _persona_greeting() -> str | None:
-    """The selected persona's greeting instruction, or ``None`` when there is none.
-
-    The line is the persona's own text, handed to the client unchanged. gmlw composes
-    nothing: it does not know the hour in the user's words, and it has no business
-    writing prose in a language it picked.
-    """
-    settings = config.companion()
-    if settings.persona is None:
-        return None
-    persona = build_persona_source().get(settings.persona)
-    if persona is None or not persona.greeting.strip():
-        return None
-    return persona.greeting
-
-
-def build_check_for_update() -> CheckForUpdateUseCase:
-    """Build the CheckForUpdateUseCase use case wired to PyPI and its local cache file.
+def build_list_plugins() -> ListPlugins:
+    """Build the ListPlugins use case wired to the plugin source.
 
     Returns:
-        A ready-to-run CheckForUpdateUseCase (free, cached, at most one network call a day).
+        A ready-to-run ListPlugins.
     """
-    return CheckForUpdateService(
-        checker=PypiVersionCheckerAdapter(),
+    return ListPluginsUseCase(build_plugin_source())
+
+
+def build_render_greeting() -> RenderGreeting:
+    """Build the RenderGreeting use case wired to the persona source and live facts.
+
+    Returns:
+        A ready-to-run RenderGreeting (free, local; no metering).
+    """
+    return RenderGreetingUseCase(
+        personas=build_persona_source(),
+        companion=config.companion,
+        workspace=LocalGitWorkspaceInspector(),
+        clock=lambda: datetime.now().astimezone(),
+        username=getpass.getuser,
+    )
+
+
+def build_check_for_update() -> CheckForUpdate:
+    """Build the CheckForUpdate use case wired to PyPI and its local cache file.
+
+    Returns:
+        A ready-to-run CheckForUpdate (free, cached, at most one network call a day).
+    """
+    return CheckForUpdateUseCase(
+        checker=PypiVersionChecker(),
         current_version=__version__,
         package="generic-ml-wrapper",
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
-        cache=FilesystemUpdateCacheAdapter(paths.state / "update-check.json", log.active()),
+        cache_path=paths.STATE / "update-check.json",
     )
 
 
@@ -494,7 +336,7 @@ def _interceptor_chain() -> InterceptorChain:
         # A configured-but-unloadable spec is a config error the user should see -- not a
         # silent no-op that disables an interceptor they asked for. load_class raises
         # SpecLoadError, which the CLI surfaces (nothing configured -> nothing loaded).
-        interceptor_class = SpecLoader().load_class(spec, InterceptorPort)
+        interceptor_class = load_class(spec, InterceptorPort)
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((target, interceptor_class()))  # pyright: ignore[reportAbstractUsage]
@@ -516,24 +358,39 @@ def _hook_runner() -> HookRunner:
     plugins = build_plugin_source()
     loaded: list[tuple[HookPhase, str | None, HookPort]] = []
     for phase, spec, client in config.hooks():
-        hook_class = SpecLoader().load_class(plugins.resolve_hook(spec), HookPort)
+        hook_class = load_class(plugins.resolve_hook(spec), HookPort)
         # load_class guarantees a concrete subclass; the abstract-usage flag is a
         # false positive (the generic loader resolves the exact base type).
         loaded.append((HookPhase(phase), client, hook_class()))  # pyright: ignore[reportAbstractUsage]
-    return HookRunner(loaded, log.active())
+    return HookRunner(loaded)
 
 
-def _launch_sequence() -> LaunchSequence:
-    """Build the bracketed launch sequence shared by every use case that runs a client.
+def build_start_job() -> StartJob:
+    """Build the StartJob use case wired to the filesystem store and default callers.
 
     Returns:
-        The sequence, carrying the configured hooks and where a bad teardown is reported.
+        A ready-to-run StartJob.
     """
-    return LaunchSequence(
-        _hook_runner(),
-        log.active(),
-        _session_locks(),
-        SignalInterruptScopeAdapter(),
+    interceptors = _interceptor_chain()
+    sessions = SqliteSessionStore(_ledger())
+    return StartJobUseCase(
+        store=sessions,
+        workflows=_workflow_source(interceptors),
+        callers=DefaultCliCallerProvider(
+            config.caller_overrides(),
+            metering=SqlitePerTurnStore(_ledger()),
+            transcript=_transcript(),
+            interceptors=interceptors,
+            plugins=build_plugin_source(),
+            sessions=sessions,
+        ),
+        uuid_factory=lambda: str(uuid.uuid4()),
+        cwd_factory=os.getcwd,
+        credentials=FilesystemCredentialsStore(paths.CREDENTIALS),
+        hooks=_hook_runner(),
+        greeting=lambda: build_render_greeting().execute(),
+        capability_card=_capability_card,
+        client_args=config.client_args_for,
     )
 
 
@@ -541,211 +398,119 @@ def _capability_card() -> str | None:
     """The ambient capability card in the active language, or ``None`` when it is off.
 
     Off by default; enabled via ``[ambient] capability_card``. A static, localised "how do
-    I ... in gmlw" card the client can answer from mid-session.
+    I … in gmlw" card the client can answer from mid-session.
     """
     if not config.ambient_capability_card():
         return None
-    return get_active().get_message("ambient.card")
+    return active().t("ambient.card")
 
 
-def _client_arguments_binder() -> ClientArgumentsBinder:
-    """Build the binder that attaches a run's passthrough launch arguments.
+def build_list_jobs() -> ListJobs:
+    """Build the ListJobs use case wired to the filesystem store.
 
     Returns:
-        A binder wired to the configured arguments and the active diagnostics sink.
+        A ready-to-run ListJobs.
     """
-    return ClientArgumentsBinder(
-        configured=config.client_args_for,
-        posix=os.name != "nt",
-        diagnostics=log.active(),
+    return ListJobsUseCase(store=SqliteSessionStore(_ledger()))
+
+
+def build_list_sessions() -> ListSessions:
+    """Build the ListSessions use case wired to the session and usage stores.
+
+    Returns:
+        A ready-to-run ListSessions.
+    """
+    return ListSessionsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+        usage=SqliteUsageStore(_ledger()),
     )
 
 
-def _default_callers(
-    interceptors: InterceptorChain, sessions: SqliteSessionStoreAdapter
-) -> CliCallerProviderPort:
-    """Build the caller provider shared by the start and resume paths.
-
-    Args:
-        interceptors: The interceptor chain the callers run through.
-        sessions: The session store the callers bind observed ids into.
+def build_delete_sessions() -> DeleteSessions:
+    """Build the DeleteSessions use case wired to the stores and both purges.
 
     Returns:
-        A ready caller provider.
+        A ready-to-run DeleteSessions.
     """
-    return DefaultCliCallerProviderAdapter(
-        config.caller_overrides(),
-        metering=SqlitePerTurnStoreAdapter(_ledger()),
-        transcript=_transcript(),
-        interceptors=interceptors,
-        plugins=build_plugin_source(),
-        sessions=sessions,
-    )
-
-
-def build_start_new_session_for_job() -> StartNewSessionForJobUseCase:
-    """Build the StartNewSessionForJobUseCase use case wired to the filesystem store.
-
-    Returns:
-        A ready-to-run StartNewSessionForJobUseCase.
-    """
-    interceptors = _interceptor_chain()
-    sessions = SqliteSessionStoreAdapter(_ledger())
-    return StartNewSessionForJobService(
-        store=sessions,
-        workflows=_workflow_source(interceptors),
-        callers=_default_callers(interceptors, sessions),
-        uuid_factory=lambda: str(uuid.uuid4()),
-        cwd_factory=os.getcwd,
-        credentials=FilesystemCredentialsStoreAdapter(paths.credentials),
-        launch=_launch_sequence(),
-        greeting=_persona_greeting,
-        capability_card=_capability_card,
-        client_arguments=_client_arguments_binder(),
-    )
-
-
-def build_resume_session_for_job() -> ResumeSessionForJobUseCase:
-    """Build the ResumeSessionForJobUseCase use case wired to the default callers.
-
-    Returns:
-        A ready-to-run ResumeSessionForJobUseCase.
-    """
-    interceptors = _interceptor_chain()
-    return ResumeSessionForJobService(
-        callers=_default_callers(interceptors, SqliteSessionStoreAdapter(_ledger())),
-        launch=_launch_sequence(),
-        client_arguments=_client_arguments_binder(),
-    )
-
-
-def build_find_job() -> FindJobUseCase:
-    """Build the FindJobUseCase use case wired to the session store.
-
-    Returns:
-        A ready-to-run FindJobUseCase.
-    """
-    return FindJobService(store=SqliteSessionStoreAdapter(_ledger()))
-
-
-def build_create_job() -> CreateJobUseCase:
-    """Build the CreateJobUseCase use case wired to the session store.
-
-    Returns:
-        A ready-to-run CreateJobUseCase.
-    """
-    return CreateJobService(store=SqliteSessionStoreAdapter(_ledger()))
-
-
-def build_list_jobs() -> ListJobsUseCase:
-    """Build the ListJobsUseCase use case wired to the filesystem store.
-
-    Returns:
-        A ready-to-run ListJobsUseCase.
-    """
-    return ListJobsService(store=SqliteSessionStoreAdapter(_ledger()))
-
-
-def build_list_sessions() -> ListSessionsUseCase:
-    """Build the ListSessionsUseCase use case wired to the session and usage stores.
-
-    Returns:
-        A ready-to-run ListSessionsUseCase.
-    """
-    return ListSessionsService(
-        store=SqliteSessionStoreAdapter(_ledger()),
-        turns=SqlitePerTurnStoreAdapter(_ledger()),
-        usage=SqliteUsageStoreAdapter(_ledger()),
-    )
-
-
-def build_delete_sessions() -> DeleteSessionsUseCase:
-    """Build the DeleteSessionsUseCase use case wired to the stores and both purges.
-
-    Returns:
-        A ready-to-run DeleteSessionsUseCase.
-    """
-    return DeleteSessionsService(
-        store=SqliteSessionStoreAdapter(_ledger()),
-        turns=SqlitePerTurnStoreAdapter(_ledger()),
-        usage=SqliteUsageStoreAdapter(_ledger()),
-        ledger=SqliteLedgerPurgeAdapter(_ledger()),
+    return DeleteSessionsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+        usage=SqliteUsageStore(_ledger()),
+        ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
-        locks=_session_locks(),
-        diagnostics=log.active(),
     )
 
 
-def build_delete_jobs() -> DeleteJobsUseCase:
-    """Build the DeleteJobsUseCase use case wired to the stores and both purges.
+def build_delete_jobs() -> DeleteJobs:
+    """Build the DeleteJobs use case wired to the stores and both purges.
 
     The session store is the default ``work``-scoped one, so ``authoring`` jobs are
     unreachable here exactly as they are unreachable from ``gmlw jobs``.
 
     Returns:
-        A ready-to-run DeleteJobsUseCase.
+        A ready-to-run DeleteJobs.
     """
-    return DeleteJobsService(
-        store=SqliteSessionStoreAdapter(_ledger()),
-        turns=SqlitePerTurnStoreAdapter(_ledger()),
-        usage=SqliteUsageStoreAdapter(_ledger()),
-        ledger=SqliteLedgerPurgeAdapter(_ledger()),
+    return DeleteJobsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
+        usage=SqliteUsageStore(_ledger()),
+        ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
-        locks=_session_locks(),
-        diagnostics=log.active(),
     )
 
 
-def build_export_workflow() -> ExportWorkflowUseCase:
-    """Build the ExportWorkflowUseCase use case wired to the zip archive under ~/.gmlw/exports.
+def build_export_workflow() -> ExportWorkflow:
+    """Build the ExportWorkflow use case wired to the zip archive under ~/.gmlw/exports.
 
     Returns:
-        A ready-to-run ExportWorkflowUseCase.
+        A ready-to-run ExportWorkflow.
     """
-    return ExportWorkflowService(
+    return ExportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchiveAdapter(paths.exports, lambda: datetime.now(UTC)),
+        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
     )
 
 
-def build_import_workflow() -> ImportWorkflowUseCase:
-    """Build the ImportWorkflowUseCase use case wired to the zip archive and the backup root.
+def build_import_workflow() -> ImportWorkflow:
+    """Build the ImportWorkflow use case wired to the zip archive and the backup root.
 
     Returns:
-        A ready-to-run ImportWorkflowUseCase.
+        A ready-to-run ImportWorkflow.
     """
-    return ImportWorkflowService(
+    return ImportWorkflowUseCase(
         workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchiveAdapter(paths.exports, lambda: datetime.now(UTC)),
-        backups=FilesystemWorkflowBackupAdapter(paths.workflow_backups, lambda: datetime.now(UTC)),
+        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
+        backups_root=paths.WORKFLOW_BACKUPS,
+        clock=lambda: datetime.now(UTC),
     )
 
 
-def build_list_workflow_catalog() -> ListWorkflowCatalogUseCase:
-    """Build the ListWorkflowCatalogUseCase use case wired to the filesystem workflow source.
+def build_list_workflow_catalog() -> ListWorkflowCatalog:
+    """Build the ListWorkflowCatalog use case wired to the filesystem workflow source.
 
     Returns:
-        A ready-to-run ListWorkflowCatalogUseCase.
+        A ready-to-run ListWorkflowCatalog.
     """
-    return ListWorkflowCatalogService(workflows=_workflow_source(InterceptorChain(())))
+    return ListWorkflowCatalogUseCase(workflows=_workflow_source(InterceptorChain(())))
 
 
-def build_list_drafts() -> ListDraftsUseCase:
-    """Build the ListDraftsUseCase use case wired to the filesystem workflow source.
+def build_list_drafts() -> ListDrafts:
+    """Build the ListDrafts use case wired to the filesystem workflow source.
 
     Returns:
-        A ready-to-run ListDraftsUseCase.
+        A ready-to-run ListDrafts.
     """
-    return ListDraftsService(workflows=_workflow_source(InterceptorChain(())))
+    return ListDraftsUseCase(workflows=_workflow_source(InterceptorChain(())))
 
 
-def build_list_workflows() -> ListWorkflowsUseCase:
-    """Build the ListWorkflowsUseCase use case wired to the filesystem workflow source.
+def build_list_workflows() -> ListWorkflows:
+    """Build the ListWorkflows use case wired to the filesystem workflow source.
 
     Returns:
-        A ready-to-run ListWorkflowsUseCase.
+        A ready-to-run ListWorkflows.
     """
-    return ListWorkflowsService(workflows=_workflow_source(InterceptorChain(())))
+    return ListWorkflowsUseCase(workflows=_workflow_source(InterceptorChain(())))
 
 
 def build_workflow_chooser() -> TtyWorkflowChooser:
@@ -754,7 +519,7 @@ def build_workflow_chooser() -> TtyWorkflowChooser:
     Returns:
         A terminal chooser that offers the runnable workflows, or declines off a TTY.
     """
-    return TtyWorkflowChooser(get_active())
+    return TtyWorkflowChooser(build_localizer())
 
 
 def build_guided_chooser() -> TtyGuidedChooser:
@@ -763,372 +528,255 @@ def build_guided_chooser() -> TtyGuidedChooser:
     Returns:
         A terminal chooser that asks whether to author with the guided experience.
     """
-    return TtyGuidedChooser(get_active())
+    return TtyGuidedChooser(build_localizer())
 
 
-def build_set_credential() -> SetCredentialUseCase:
-    """Build the SetCredentialUseCase use case wired to the filesystem credentials store.
+def build_set_credential() -> SetCredential:
+    """Build the SetCredential use case wired to the filesystem credentials store.
 
     Returns:
-        A ready-to-run SetCredentialUseCase.
+        A ready-to-run SetCredential.
     """
-    return SetCredentialService(
-        store=FilesystemCredentialsStoreAdapter(paths.credentials),
-        prompt=TtySecretPromptAdapter(),
+    return SetCredentialUseCase(store=FilesystemCredentialsStore(paths.CREDENTIALS))
+
+
+def build_bootstrap() -> Bootstrap:
+    """Build the Bootstrap use case wired to the filesystem layout seeder.
+
+    Returns:
+        A ready-to-run Bootstrap.
+    """
+    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+
+
+def build_config_commands() -> ConfigCommands:
+    """Build the ConfigCommands use case wired to the tomlkit config writer.
+
+    Returns:
+        A ready-to-run ConfigCommands, writing to ``~/.gmlw/config.toml``.
+    """
+    return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
+
+
+def build_create_axis() -> CreateAxis:
+    """Build the CreateAxis use case wired to the filesystem catalog and config writer.
+
+    Returns:
+        A ready-to-run CreateAxis, creating folders under ``~/.gmlw`` and, when asked,
+        pointing ``profile.default_<kind>`` at the new slug in ``config.toml``.
+    """
+    return CreateAxisUseCase(
+        catalog=FilesystemAxisCatalog(paths.HOME),
+        writer=TomlkitConfigWriter(),
+        config_file=config.config_path,
+        clock=lambda: datetime.now(UTC).astimezone(),
     )
 
 
-def build_check_store_contract() -> CheckStoreContractUseCase:
-    """Build the CheckStoreContractUseCase use case wired to the shipped migrations.
+def build_axis_catalog() -> AxisCatalogPort:
+    """Build the role/environment catalog reader over ``~/.gmlw``.
 
     Returns:
-        A ready-to-run CheckStoreContractUseCase.
+        A ready-to-use :class:`AxisCatalogPort` for listing the axis slug-folders.
     """
-    return CheckStoreContractService(migration=build_store_migration())
+    return FilesystemAxisCatalog(paths.HOME)
 
 
-def build_describe_build() -> DescribeBuildUseCase:
-    """Build the DescribeBuildUseCase use case wired to the build stamp.
+def build_list_rules() -> ListRules:
+    """Build the ListRules use case for the TUI's Rules browser.
 
     Returns:
-        A ready-to-run DescribeBuildUseCase.
+        A ready-to-run ListRules over the environment and role rule folders.
     """
-    return DescribeBuildService(build_info=ModuleBuildInfoAdapter())
-
-
-def build_check_launch_location() -> CheckLaunchLocationUseCase:
-    """Build the CheckLaunchLocationUseCase use case wired to the filesystem.
-
-    Returns:
-        A ready-to-run CheckLaunchLocationUseCase.
-    """
-    return CheckLaunchLocationService(folders=FilesystemWorkingFolderAdapter())
-
-
-def build_bootstrap() -> BootstrapUseCase:
-    """Build the BootstrapUseCase use case wired to the filesystem layout seeder.
-
-    Returns:
-        A ready-to-run BootstrapUseCase.
-    """
-    return BootstrapService(seeder=FilesystemLayoutSeederAdapter(paths.home))
-
-
-def build_config_commands() -> ConfigCommandsUseCase:
-    """Build the ConfigCommandsUseCase use case wired to the tomlkit config writer.
-
-    Returns:
-        A ready-to-run ConfigCommandsUseCase, writing to ``~/.gmlw/config.toml``.
-    """
-    return UpdateConfigService(
-        writer=TomlkitConfigWriterAdapter(config.config_path),
-        settings=TomlSettingsCatalogAdapter(config.config_path),
+    return ListRulesUseCase(
+        catalog=FilesystemRuleCatalog(paths.HOME, FilesystemAxisCatalog(paths.HOME))
     )
 
 
-def build_application_settings() -> ApplicationSettingsUseCase:
-    """Build the ApplicationSettingsUseCase use case over the user's configured settings.
-
-    Returns:
-        A ready-to-ask ApplicationSettingsUseCase.
-    """
-    return ReadApplicationSettingsService(TomlRuntimeConfigAdapter())
-
-
-def build_list_supported_clients() -> ListSupportedClientsUseCase:
-    """Build the ListSupportedClientsUseCase use case over the packaged catalogue.
-
-    Returns:
-        A ready-to-run ListSupportedClientsUseCase.
-    """
-    return ListSupportedClientsService(TomlClientCatalogAdapter())
-
-
-def build_role_repository() -> FilesystemRoleRepositoryAdapter:
-    """Build the role repository over ``~/.gmlw/profile/roles``.
-
-    Returns:
-        A ready-to-use repository, reading each role folder with the rules inside it.
-    """
-    return FilesystemRoleRepositoryAdapter(
-        paths.home, FilesystemRuleStore(), clock=lambda: datetime.now(UTC).astimezone()
-    )
-
-
-def build_environment_repository() -> FilesystemEnvironmentRepositoryAdapter:
-    """Build the environment repository over ``~/.gmlw/environments``.
-
-    Returns:
-        A ready-to-use repository, reading each environment folder with the rules inside it.
-    """
-    return FilesystemEnvironmentRepositoryAdapter(
-        paths.home, FilesystemRuleStore(), clock=lambda: datetime.now(UTC).astimezone()
-    )
-
-
-def build_add_role() -> AddRoleUseCase:
-    """Build the AddRoleUseCase use case wired to the role repository.
-
-    Returns:
-        A ready-to-run AddRoleUseCase, creating a folder under ``~/.gmlw/profile/roles``.
-    """
-    return AddRoleService(build_role_repository())
-
-
-def build_add_environment() -> AddEnvironmentUseCase:
-    """Build the AddEnvironmentUseCase use case wired to the environment repository.
-
-    Returns:
-        A ready-to-run AddEnvironmentUseCase, creating a folder under ``~/.gmlw/environments``.
-    """
-    return AddEnvironmentService(build_environment_repository())
-
-
-def build_set_default_role() -> SetDefaultRoleUseCase:
-    """Build the SetDefaultRoleUseCase use case wired to the config writer.
-
-    Returns:
-        A ready-to-run SetDefaultRoleUseCase, pointing ``profile.default_role`` at a code.
-    """
-    return SetDefaultRoleService(TomlkitConfigWriterAdapter(config.config_path))
-
-
-def build_set_default_environment() -> SetDefaultEnvironmentUseCase:
-    """Build the SetDefaultEnvironmentUseCase use case wired to the config writer.
-
-    Returns:
-        A ready-to-run SetDefaultEnvironmentUseCase, pointing ``profile.default_environment``
-        at a code.
-    """
-    return SetDefaultEnvironmentService(TomlkitConfigWriterAdapter(config.config_path))
-
-
-def build_list_roles() -> ListRolesUseCase:
-    """Build the ListRolesUseCase use case over the user's role folders.
-
-    Returns:
-        A ready-to-run ListRolesUseCase, listing every stored role.
-    """
-    return ListRolesService(build_role_repository())
-
-
-def build_list_environments() -> ListEnvironmentsUseCase:
-    """Build the ListEnvironmentsUseCase use case over the user's environment folders.
-
-    Returns:
-        A ready-to-run ListEnvironmentsUseCase, listing every stored environment.
-    """
-    return ListEnvironmentsService(build_environment_repository())
-
-
-def build_list_rules() -> ListRulesUseCase:
-    """Build the ListRulesUseCase use case for the TUI's Rules browser.
-
-    Returns:
-        A ready-to-run ListRulesUseCase over the environment and role folders.
-    """
-    return ListRulesService(build_environment_repository(), build_role_repository())
-
-
-def build_migrate_layout() -> MigrateLayoutUseCase:
-    """Build the MigrateLayoutUseCase use case: wrap the old layout into the active environment.
+def build_migrate_layout() -> MigrateLayout:
+    """Build the MigrateLayout use case: wrap the old layout into the active environment.
 
     Reads the persisted ``default_environment`` at call time, so it runs correctly after
     init has written it (and idempotently on every later run).
 
     Returns:
-        A ready-to-run MigrateLayoutUseCase.
+        A ready-to-run MigrateLayout.
     """
-    return MigrateLayoutService(
-        FilesystemLayoutMigratorAdapter(paths.home),
+    return MigrateLayoutUseCase(
+        FilesystemLayoutMigrator(paths.HOME),
         environment=config.default_environment,
     )
 
 
-def build_migrate_slugs() -> MigrateSlugsUseCase:
-    """Build the MigrateSlugsUseCase use case: rename legacy raw-named role/environment folders.
+def build_migrate_slugs() -> MigrateSlugs:
+    """Build the MigrateSlugs use case: rename legacy raw-named role/environment folders.
 
     Idempotent — a no-op once every folder is already a clean slug.
 
     Returns:
-        A ready-to-run MigrateSlugsUseCase.
+        A ready-to-run MigrateSlugs.
     """
-    return MigrateSlugsService(FilesystemSlugMigratorAdapter(paths.home))
+    return MigrateSlugsUseCase(FilesystemSlugMigrator(paths.HOME))
 
 
-def build_save_init_answers() -> SaveInitAnswersUseCase:
-    """Build the SaveInitAnswersUseCase use case wired to the seeder.
+def build_init() -> Init:
+    """Build the Init use case wired to the ordered-setup ports and step defaults.
 
-    All that is left of the old init use case. The interview itself is the terminal's:
-    it asks the queries what is on offer, converses, and hands the answers back here.
+    The seed localiser (for the language step and as every chooser's fallback) resolves
+    from ``[language] code`` if a prior run set it, else ``$LANG``; the use case rebuilds
+    it in the chosen language once step one completes.
 
     Returns:
-        A ready-to-run SaveInitAnswersUseCase.
+        A ready-to-run Init that runs the forced setup and persists it.
     """
-    return SaveInitAnswersService(
-        seeder=FilesystemLayoutSeederAdapter(paths.home),
-        detector=PathClientDetectorAdapter(),
+    seed_language = resolve_language(config.language() or os.environ.get("LANG"))
+    seed_i18n = load_localizer(seed_language)
+    return InitUseCase(
+        detector=PathClientDetector(),
+        seeder=FilesystemLayoutSeeder(paths.HOME),
+        language_chooser=TtyLanguageChooser(seed_i18n),
+        text_prompt=TtyTextPrompt(seed_i18n),
+        axis_chooser=TtyAxisChooser(seed_i18n),
+        personas=build_persona_source(),
+        persona_chooser=TtyPersonaChooser(seed_i18n),
+        client_setup=TtyClientSetup(
+            seed_i18n,
+            version=HttpClientVersions(),
+            runner=SubprocessCommandRunner(),
+            clipboard=SystemClipboard(),
+        ),
+        localizer_factory=load_localizer,
+        languages=list(SUPPORTED_LANGUAGES),
+        default_language=seed_language,
+        default_name=getpass.getuser(),
         version=__version__,
     )
 
 
-def load_current_language() -> str:
-    available = get_active().available_languages()
-    preferences = (config.language(), OsSystemInfoAdapter().language(), DEFAULT_LANGUAGE)
-    return next((code for code in preferences if code in available), DEFAULT_LANGUAGE)
+def build_localizer() -> Localizer:
+    """Build the localiser for the language the wrapper speaks to the user.
 
-
-def default_user_name() -> str:
-    """The account name, used when the user gives none.
-
-    Asked here rather than in the terminal: reading the operating system is acquiring,
-    and an inbound adapter parses its own channel and nothing else.
-    """
-    return OsSystemInfoAdapter().username()
-
-
-def platform_name() -> str:
-    """The OS name, so an install command is the right one for this machine."""
-    return OsSystemInfoAdapter().platform_name()
-
-
-def build_check_client_ready() -> CheckClientReadyUseCase:
-    """Build the CheckClientReadyUseCase use case wired to config overrides and PATH detection.
+    Prefers the init-chosen ``[language] code``; falls back to ``$LANG`` (English when
+    unset or unsupported) until init has run.
 
     Returns:
-        A ready-to-run CheckClientReadyUseCase.
+        A ready-to-use localiser.
     """
-    return CheckClientReadyService(
+    return load_localizer(resolve_language(config.language() or os.environ.get("LANG")))
+
+
+def build_check_client_ready() -> CheckClientReady:
+    """Build the CheckClientReady use case wired to config overrides and PATH detection.
+
+    Returns:
+        A ready-to-run CheckClientReady.
+    """
+    return CheckClientReadyUseCase(
         overrides=config.caller_overrides(),
-        detector=PathClientDetectorAdapter(),
-        catalog=TomlClientCatalogAdapter(),
-        system=OsSystemInfoAdapter(),
+        detector=PathClientDetector(),
     )
 
 
-def build_export_usage() -> ExportUsageUseCase:
-    """Build the ExportUsageUseCase use case wired to the filesystem usage store.
+def build_export_usage() -> ExportUsage:
+    """Build the ExportUsage use case wired to the filesystem usage store.
 
     Returns:
-        A ready-to-run ExportUsageUseCase.
+        A ready-to-run ExportUsage.
     """
-    return ExportUsageService(
-        usage=SqliteUsageStoreAdapter(_ledger()),
-        turns=SqlitePerTurnStoreAdapter(_ledger()),
+    return ExportUsageUseCase(
+        usage=SqliteUsageStore(_ledger()),
+        turns=SqlitePerTurnStore(_ledger()),
     )
 
 
-def build_export_usage_to_file() -> ExportUsageToFileUseCase:
-    """Build the ExportUsageToFileUseCase use case: the report source plus the JSON writer.
+def build_save_usage_report() -> SaveUsageReport:
+    """Build the SaveUsageReport use case: the report source plus the filesystem JSON writer.
 
     Returns:
-        A ready-to-run ExportUsageToFileUseCase writing to ``~/.gmlw/exports``.
+        A ready-to-run SaveUsageReport writing to ``~/.gmlw/exports``.
     """
-    return ExportUsageToFileService(
+    return SaveUsageReportUseCase(
         export=build_export_usage(),
-        exporter=FilesystemReportExporterAdapter(
-            paths.exports, clock=lambda: datetime.now(UTC).astimezone()
+        exporter=FilesystemReportExporter(
+            paths.EXPORTS, clock=lambda: datetime.now(UTC).astimezone()
         ),
     )
 
 
-def build_compose_statusline() -> ComposeStatuslineUseCase:
-    """Build the ComposeStatuslineUseCase use case.
+def build_render_statusline(client: str | None = None) -> RenderStatusline:
+    """Build the RenderStatusline use case, with the client's own status parser.
 
-    It takes no client: the status line is invoked by a client the wrapper launched, and
-    that launch already announced which one it was. The use case reads that announcement
-    and resolves its own parser, so nothing upstream has to know either.
+    The status line renders for the clients that host one (claude, cursor); each
+    parses its own payload (both are Claude-Code-compatible for model/context, but
+    the allowance block differs -- claude's rate-limit quota vs cursor's plan pools).
+
+    Args:
+        client: The client whose payload is being parsed (from ``GMLW_CLIENT``);
+            selects the parser. Absent/unknown falls back to the Claude parser.
 
     Returns:
-        A ready-to-run ComposeStatuslineUseCase.
+        A ready-to-run RenderStatusline.
     """
-    return ComposeStatuslineService(
-        parsers=CataloguedStatusParsersAdapter(paths.cursor_plan),
-        handoff=EnvironmentRunHandoffAdapter(),
-        usage=SqliteUsageStoreAdapter(_ledger()),
-        workspace=LocalGitWorkspaceInspectorAdapter(),
-        turns=SqlitePerTurnStoreAdapter(_ledger()),
-        diagnostics=log.active(),
+    return RenderStatuslineUseCase(
+        parser=_status_parser(client),
+        usage=SqliteUsageStore(_ledger()),
+        workspace=LocalGitWorkspaceInspector(),
+        turns=SqlitePerTurnStore(_ledger()),
     )
 
 
-def build_create_workflow() -> CreateWorkflowUseCase:
-    """Build the CreateWorkflowUseCase use case wired to its outbound adapters.
+def _status_parser(client: str | None) -> ClientStatusParserPort:
+    """Select the status-payload parser for a client."""
+    if client == "cursor":
+        return CursorStatusParser()
+    return ClaudeStatusParser()
+
+
+def build_new_workflow() -> NewWorkflow:
+    """Build the NewWorkflow use case wired to its outbound adapters.
 
     Returns:
-        A ready-to-run CreateWorkflowUseCase.
+        A ready-to-run NewWorkflow.
     """
     interceptors = _interceptor_chain()
-    sessions = SqliteSessionStoreAdapter(_ledger())
-    return CreateWorkflowService(
+    sessions = SqliteSessionStore(_ledger(), kind="authoring")
+    return NewWorkflowUseCase(
         workflows=_workflow_source(interceptors),
         store=sessions,
-        callers=DefaultCliCallerProviderAdapter(
+        callers=DefaultCliCallerProvider(
             config.caller_overrides(),
-            metering=SqlitePerTurnStoreAdapter(_ledger()),
+            metering=SqlitePerTurnStore(_ledger()),
             transcript=_transcript(),
             interceptors=interceptors,
             plugins=build_plugin_source(),
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
-        launch=_launch_sequence(),
+        hooks=_hook_runner(),
     )
 
 
-def build_edit_workflow() -> EditWorkflowUseCase:
-    """Build the EditWorkflowUseCase use case wired to its outbound adapters.
+def build_edit_workflow() -> EditWorkflow:
+    """Build the EditWorkflow use case wired to its outbound adapters.
 
     Returns:
-        A ready-to-run EditWorkflowUseCase.
+        A ready-to-run EditWorkflow.
     """
     interceptors = _interceptor_chain()
-    sessions = SqliteSessionStoreAdapter(_ledger())
-    return EditWorkflowService(
+    sessions = SqliteSessionStore(_ledger(), kind="authoring")
+    return EditWorkflowUseCase(
         workflows=_workflow_source(interceptors),
         store=sessions,
-        callers=DefaultCliCallerProviderAdapter(
+        callers=DefaultCliCallerProvider(
             config.caller_overrides(),
-            metering=SqlitePerTurnStoreAdapter(_ledger()),
+            metering=SqlitePerTurnStore(_ledger()),
             transcript=_transcript(),
             interceptors=interceptors,
             plugins=build_plugin_source(),
             sessions=sessions,
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
-        launch=_launch_sequence(),
-    )
-
-
-def build_resume_create_workflow() -> ResumeCreateWorkflowUseCase:
-    """Build the ResumeCreateWorkflowUseCase use case wired to the filesystem store.
-
-    Returns:
-        A ready-to-run ResumeCreateWorkflowUseCase.
-    """
-    interceptors = _interceptor_chain()
-    sessions = SqliteSessionStoreAdapter(_ledger())
-    return ResumeCreateWorkflowService(
-        workflows=_workflow_source(interceptors),
-        store=sessions,
-        callers=_default_callers(interceptors, sessions),
-        launch=_launch_sequence(),
-    )
-
-
-def build_resume_edit_workflow() -> ResumeEditWorkflowUseCase:
-    """Build the ResumeEditWorkflowUseCase use case wired to the filesystem store.
-
-    Returns:
-        A ready-to-run ResumeEditWorkflowUseCase.
-    """
-    interceptors = _interceptor_chain()
-    sessions = SqliteSessionStoreAdapter(_ledger())
-    return ResumeEditWorkflowService(
-        workflows=_workflow_source(interceptors),
-        store=sessions,
-        callers=_default_callers(interceptors, sessions),
-        launch=_launch_sequence(),
+        hooks=_hook_runner(),
     )
 
 
@@ -1159,47 +807,20 @@ def build_diagnostics(
         The sink to install with ``log.set_active``.
     """
     if quiet:
-        return NullDiagnosticsAdapter()
+        return NullDiagnostics()
     level = os.environ.get("GMLW_LOG_LEVEL") or config.log_level(path)
     sinks: list[DiagnosticsPort] = []
     if config.log_to_file(path):
         sinks.append(
-            RollingFileDiagnosticsAdapter(
-                paths.log_file,
+            RollingFileDiagnostics(
+                paths.LOG_FILE,
                 level=level,
                 max_bytes=config.log_max_bytes(path),
                 backup_count=config.log_backup_count(path),
             )
         )
     if to_stderr:
-        sinks.append(StderrDiagnosticsAdapter(level=level))
+        sinks.append(StderrDiagnostics(level=level))
     if not sinks:
-        return NullDiagnosticsAdapter()
-    return sinks[0] if len(sinks) == 1 else TeeDiagnosticsAdapter(*sinks)
-
-
-def build_list_authoring_modes() -> ListAuthoringModesUseCase:
-    """Build the ListAuthoringModesUseCase use case.
-
-    Returns:
-        A ready-to-ask ListAuthoringModesUseCase.
-    """
-    return ListAuthoringModesService()
-
-
-def build_list_role_examples() -> ListRoleExamplesUseCase:
-    """Build the ListRoleExamplesUseCase use case over the packaged role examples.
-
-    Returns:
-        A ready-to-ask ListRoleExamplesUseCase.
-    """
-    return ListRoleExamplesService(JsonRoleExamplesRepositoryAdapter())
-
-
-def build_list_environment_examples() -> ListEnvironmentExamplesUseCase:
-    """Build the ListEnvironmentExamplesUseCase use case over the packaged environment examples.
-
-    Returns:
-        A ready-to-ask ListEnvironmentExamplesUseCase.
-    """
-    return ListEnvironmentExamplesService(JsonEnvironmentExamplesRepositoryAdapter())
+        return NullDiagnostics()
+    return sinks[0] if len(sinks) == 1 else TeeDiagnostics(*sinks)

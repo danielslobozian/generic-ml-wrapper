@@ -1,23 +1,22 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ListClientsUseCase use case: the supported clients with their install status and version."""
+"""The ListClients use case: the supported clients with their install status and version."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_clients import ListClientsUseCase
-from generic_ml_wrapper.application.port.inbound.listed_client import ListedClient
+from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus, ListClients
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from generic_ml_wrapper.application.port.outbound.client_catalog import ClientCatalogPort
     from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
     from generic_ml_wrapper.application.port.outbound.client_version import ClientVersionPort
 
 
-class ListClientsService(ListClientsUseCase):
+class ListClientsUseCase(ListClients):
     """Compose the client catalog with PATH detection, versions, and the default setting."""
 
     def __init__(
@@ -25,7 +24,6 @@ class ListClientsService(ListClientsUseCase):
         detector: ClientDetectorPort,
         version: ClientVersionPort,
         default_client: Callable[[], str],
-        catalog: ClientCatalogPort,
     ) -> None:
         """Wire the use case to its data sources.
 
@@ -33,22 +31,20 @@ class ListClientsService(ListClientsUseCase):
             detector: Lists the client names currently on ``PATH``.
             version: Reads a client's installed on-disk version (best-effort).
             default_client: Returns the configured default client id.
-            catalog: The supported clients, in listing order.
         """
         self._detector = detector
         self._version = version
         self._default_client = default_client
-        self._catalog = catalog
 
-    def execute(self) -> list[ListedClient]:
+    def execute(self) -> list[ClientStatus]:
         """Build one status per supported client (versions read only for installed ones)."""
         available = set(self._detector.available())
         default = self._default_client()
-        statuses: list[ListedClient] = []
-        for info in self._catalog.supported():
+        statuses: list[ClientStatus] = []
+        for info in client_catalog.SUPPORTED:
             installed = info.name in available
             statuses.append(
-                ListedClient(
+                ClientStatus(
                     name=info.name,
                     display=info.display,
                     installed=installed,

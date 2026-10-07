@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The outbound port for launching and metering a client — the CliCallerPort seam."""
+"""The outbound port for launching and metering a client — the CliCaller seam."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from generic_ml_wrapper.application.domain.model.run import RunContext
 
 
-class CliCallerPort(ABC):
+class CliCaller(ABC):
     """Launch and meter one client run.
 
     One stateful instance per run: state set up in ``start_metering`` (before
@@ -85,3 +85,18 @@ class CliCallerPort(ABC):
 
     def end_metering(self) -> None:  # noqa: B027  (optional hook; default no-op by design)
         """Tear down metering after the client exits. Default: do nothing."""
+
+
+class CliCallerProvider(ABC):
+    """Resolve the caller to use for a given run."""
+
+    @abstractmethod
+    def for_run(self, run: RunContext) -> CliCaller:
+        """Return the caller instance for a run.
+
+        Args:
+            run: The run to launch.
+
+        Returns:
+            A caller bound to the run.
+        """

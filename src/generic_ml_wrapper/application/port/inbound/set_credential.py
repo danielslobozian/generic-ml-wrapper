@@ -5,11 +5,25 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
-from generic_ml_wrapper.application.port.inbound.set_credential_command import SetCredentialCommand
+
+@dataclass(frozen=True)
+class SetCredentialCommand:
+    """A request to store one credential for a workflow.
+
+    Attributes:
+        workflow: The workflow the credential belongs to.
+        name: The environment-variable name to export at launch.
+        value: The secret value.
+    """
+
+    workflow: str
+    name: str
+    value: str
 
 
-class SetCredentialUseCase(ABC):
+class SetCredential(ABC):
     """Store a single workflow credential in the wrapper's own store."""
 
     @abstractmethod

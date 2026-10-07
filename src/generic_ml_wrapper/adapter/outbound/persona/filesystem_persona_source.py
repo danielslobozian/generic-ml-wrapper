@@ -7,7 +7,7 @@ from __future__ import annotations
 from importlib import resources
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.persona.persona_parser import PersonaParser
+from generic_ml_wrapper.application.domain.service.persona_parser import parse_persona
 from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 _FLOOR = "_floor.md"
 
 
-class FilesystemPersonaSourceAdapter(PersonaSourcePort):
+class FilesystemPersonaSource(PersonaSourcePort):
     """Read personas from ``<root>/<name>.md``; seed the packaged defaults, missing-only.
 
     Reads lazily seed the packaged personas first, so the five defaults (and the
@@ -47,7 +47,7 @@ class FilesystemPersonaSourceAdapter(PersonaSourcePort):
         """Return the selectable personas, sorted by name (the floor excluded)."""
         self.seed()
         personas = [
-            PersonaParser().parse_persona(path.stem, path.read_text(encoding="utf-8"))
+            parse_persona(path.stem, path.read_text(encoding="utf-8"))
             for path in sorted(self._root.glob("*.md"))
             if not path.name.startswith("_")
         ]
@@ -59,7 +59,7 @@ class FilesystemPersonaSourceAdapter(PersonaSourcePort):
         path = self._root / f"{name}.md"
         if not path.is_file() or name.startswith("_"):
             return None
-        return PersonaParser().parse_persona(name, path.read_text(encoding="utf-8"))
+        return parse_persona(name, path.read_text(encoding="utf-8"))
 
     def floor(self) -> str:
         """Return the universal floor composed beneath every persona (or ``""``)."""

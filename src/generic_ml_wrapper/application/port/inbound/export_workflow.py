@@ -7,7 +7,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 
-class ExportWorkflowUseCase(ABC):
+class ExportWorkflow(ABC):
     """Pack an existing workflow into an archive under the exports folder."""
 
     @abstractmethod

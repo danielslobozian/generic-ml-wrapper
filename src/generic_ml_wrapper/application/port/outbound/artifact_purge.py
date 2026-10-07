@@ -5,8 +5,28 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
-from generic_ml_wrapper.application.port.outbound.artifact_counts import ArtifactCounts
+
+@dataclass(frozen=True)
+class ArtifactCounts:
+    """How many files a job or session holds outside the ledger.
+
+    Attributes:
+        contexts: Compiled-context files (one per session that launched fresh).
+        transcript_calls: Recorded transcript files (three per metered call, when the
+            opt-in transcript is on; ``0`` when it never was).
+    """
+
+    contexts: int
+    transcript_calls: int
+
+    def __add__(self, other: ArtifactCounts) -> ArtifactCounts:
+        """Sum two counts, so a job's footprint folds over its sessions'."""
+        return ArtifactCounts(
+            contexts=self.contexts + other.contexts,
+            transcript_calls=self.transcript_calls + other.transcript_calls,
+        )
 
 
 class ArtifactPurgePort(ABC):
@@ -16,13 +36,6 @@ class ArtifactPurgePort(ABC):
     they are written straight to disk by the context writer and the transcript store.
     So this port both counts and removes -- the count is what a user is shown before
     confirming, and it can only be taken here.
-
-    **Removal reports failure.** A caller deletes these files *before* the rows that name
-    them, so that a delete which does not finish leaves a session that still lists and
-    still works, and can simply be asked for again. That only holds if an implementation
-    says when it did not remove something: silently keeping the files while the rows go
-    would strand them where nothing can find them. Finding nothing to remove is not a
-    failure -- transcripts are opt-in.
     """
 
     @abstractmethod
@@ -52,9 +65,6 @@ class ArtifactPurgePort(ABC):
         Args:
             job: The job the session belongs to.
             session: The session's ``<job>_NNN`` id.
-
-        Raises:
-            OSError: If something that is there cannot be removed.
         """
 
     @abstractmethod
@@ -63,7 +73,4 @@ class ArtifactPurgePort(ABC):
 
         Args:
             job: The job to remove.
-
-        Raises:
-            OSError: If something that is there cannot be removed.
         """

@@ -1,21 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The MigrateLayoutUseCase use case: wrap the old layout into the active environment."""
+"""The MigrateLayout use case: wrap the old layout into the active environment."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayoutUseCase
+from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
+    from generic_ml_wrapper.application.domain.model.migration import MigrationReport
     from generic_ml_wrapper.application.port.outbound.layout_migrator import LayoutMigratorPort
 
 
-class MigrateLayoutService(MigrateLayoutUseCase):
+class MigrateLayoutUseCase(MigrateLayout):
     """Migrate into the *active* environment, resolved at call time.
 
     Kept independent of init: init persists ``default_environment`` first, so this reads it

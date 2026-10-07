@@ -5,22 +5,23 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import codex_session_index, context_file
-from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.gateway import openai_responses
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
+    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 BINARY = "codex"
 # Codex's status-line items, chosen to mirror gmlw's own first line block for block
@@ -60,7 +61,7 @@ _UPSTREAM = "https://chatgpt.com"
 _UPSTREAM_PREFIX = "/backend-api/codex"
 
 
-class CodexCliCallerAdapter(CliCallerPort):
+class CodexCliCaller(CliCaller):
     """Launch codex for a run, routed through a per-turn metering relay.
 
     Codex has no status-line hook, so none is installed. It takes its operating
@@ -137,7 +138,7 @@ class CodexCliCallerAdapter(CliCallerPort):
         try:
             relay.start()
         except OSError as error:
-            log.warning(f"metering relay failed to start ({error}); launching codex unmetered")
+            log.warning(i18n.t("log.codex_relay_failed", error=error))
             return
         self._relay = relay
 
@@ -158,8 +159,7 @@ class CodexCliCallerAdapter(CliCallerPort):
             self._sessions.bind_uuid(self.run.job, self.run.session_id, uuid)
         except Exception as error:  # noqa: BLE001  (bookkeeping must never break a turn)
             log.warning(
-                f"could not record the client session id for {self.run.session_id} "
-                f"({error}); it will not be resumable",
+                i18n.t("log.session_bind_failed", session=self.run.session_id, error=error),
                 key="log.session_bind_failed",
             )
             return
@@ -251,7 +251,9 @@ class CodexCliCallerAdapter(CliCallerPort):
             "GMLW_SESSION": self.run.session_id,
             "GMLW_CLIENT": self.run.client,
         }
-        return ChildProcess().run(argv, self.run.cwd, env)
+        # Trusted argv from our resolved run; no shell. The program is PATH-resolved (BINARY).
+        completed = subprocess.run(argv, check=False, cwd=self.run.cwd, env=env)  # noqa: S603
+        return completed.returncode
 
 
 def _codex_path_map(path: str) -> str:

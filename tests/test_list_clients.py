@@ -1,14 +1,12 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ListClientsUseCase use case."""
+"""Tests for the ListClients use case."""
 
 from __future__ import annotations
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
-    TomlClientCatalogAdapter,
-)
-from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
-from generic_ml_wrapper.application.usecase.list_clients import ListClientsService
+from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.domain.model.client_catalog import ClientInfo
+from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 
 
 class _FakeDetector:
@@ -35,19 +33,16 @@ class _FakeVersions:
 def test_list_clients_composes_status_versions_and_default() -> None:
     detector = _FakeDetector(["claude", "cursor"])  # codex/vibe absent
     versions = _FakeVersions({"claude": "1.2.3"})  # cursor installed but version unreadable
-    use_case = ListClientsService(
+    use_case = ListClientsUseCase(
         detector=detector,  # type: ignore[arg-type]
         version=versions,  # type: ignore[arg-type]
         default_client=lambda: "claude",
-        catalog=TomlClientCatalogAdapter(),
     )
 
     statuses = use_case.execute()
 
     by_name = {status.name: status for status in statuses}
-    assert [status.name for status in statuses] == [
-        info.name for info in TomlClientCatalogAdapter().supported()
-    ]
+    assert [status.name for status in statuses] == [info.name for info in client_catalog.SUPPORTED]
     assert by_name["claude"].installed is True
     assert by_name["claude"].version == "1.2.3"
     assert by_name["claude"].is_default is True
@@ -63,11 +58,10 @@ def test_list_clients_composes_status_versions_and_default() -> None:
 
 def test_list_clients_skips_version_probe_for_absent_clients() -> None:
     versions = _FakeVersions({})
-    use_case = ListClientsService(
+    use_case = ListClientsUseCase(
         detector=_FakeDetector(["claude"]),  # type: ignore[arg-type]
         version=versions,  # type: ignore[arg-type]
         default_client=lambda: "claude",
-        catalog=TomlClientCatalogAdapter(),
     )
 
     use_case.execute()
