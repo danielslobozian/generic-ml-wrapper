@@ -1,12 +1,25 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Filesystem locations the wrapper owns, under ``~/.gmlw``."""
+"""Filesystem locations the wrapper owns, under ``~/.gmlw`` (or ``$GMLW_HOME``)."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-HOME = Path.home() / ".gmlw"
+
+def resolve_home() -> Path:
+    """Return the folder gmlw keeps everything in: ``$GMLW_HOME``, else ``~/.gmlw``.
+
+    The override moves gmlw's own folder only -- not ``HOME`` -- so a development build
+    can keep its own ledger, config and workflows while the clients it launches still
+    find their real settings and login under the user's home.
+    """
+    override = os.environ.get("GMLW_HOME")
+    return Path(override).expanduser() if override else Path.home() / ".gmlw"
+
+
+HOME = resolve_home()
 # The single SQLite ledger: jobs, sessions, per-turn metering, session costs.
 LEDGER = HOME / "ledger.db"
 # Durable per-session provenance: the exact compiled context a session launched with,

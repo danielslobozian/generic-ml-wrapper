@@ -7,6 +7,11 @@ to (at most) the `[client] default` chosen from the clients found on your `PATH`
 Every section is optional. Uncomment and edit only what you need. Delete the file
 entirely to fall back to the built-in defaults.
 
+Everything gmlw keeps — this file, the ledger, workflows, profile — lives under
+`~/.gmlw`. Set `GMLW_HOME` to use another folder instead, for example to give a
+development build its own ledger: `GMLW_HOME=~/.gmlw-dev gmlw …`. Only gmlw's folder
+moves; the clients it launches still use their own settings and login.
+
 For the concepts behind the sections below (the four context axes, rules) see
 [CONCEPTS.md](CONCEPTS.md). Related guides: [WORKFLOWS.md](WORKFLOWS.md),
 [CLIENTS.md](CLIENTS.md), [DESIGN.md](DESIGN.md), and the [security model](../SECURITY.md).
