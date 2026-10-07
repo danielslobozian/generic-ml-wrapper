@@ -23,14 +23,15 @@ from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSession
 class _Fixture:
     """A job with three sessions, wired to recording purges."""
 
-    def __init__(self) -> None:
+    def __init__(self, stuck: frozenset[str] = frozenset()) -> None:
         self.store = InMemorySessionStore()
         for index in (1, 2, 3):
             self.store.record(Session(f"alpha_00{index}", "alpha", "claude", f"u-{index}"))
         self.turns = InMemoryPerTurnStore()
         self.usage = InMemoryUsageStore()
-        self.ledger = RecordingLedgerPurge()
-        self.artifacts = RecordingArtifactPurge()
+        self.calls: list[str] = []
+        self.ledger = RecordingLedgerPurge(self.calls)
+        self.artifacts = RecordingArtifactPurge(self.calls, stuck)
 
     def use_case(self) -> DeleteSessionsUseCase:
         return DeleteSessionsUseCase(
@@ -119,3 +120,30 @@ def test_an_empty_request_removes_nothing() -> None:
 
     assert fixture.use_case().execute("alpha", []) == []
     assert fixture.ledger.purged_sessions == []
+
+
+def test_files_go_before_the_rows_that_name_them() -> None:
+    # A row can be asked for again; a file whose row is gone cannot be found by anything.
+    fixture = _Fixture()
+    fixture.use_case().execute("alpha", ["alpha_001", "alpha_002"])
+    assert fixture.calls == [
+        "files alpha_001",
+        "rows alpha_001",
+        "files alpha_002",
+        "rows alpha_002",
+    ]
+
+
+def test_a_session_whose_files_will_not_go_keeps_its_rows_and_is_marked() -> None:
+    fixture = _Fixture(stuck=frozenset({"alpha_002"}))
+
+    outcome = fixture.use_case().execute("alpha", ["alpha_001", "alpha_002", "alpha_003"])
+
+    assert [(footprint.session, footprint.removed) for footprint in outcome] == [
+        ("alpha_001", True),
+        ("alpha_002", False),
+        ("alpha_003", True),
+    ]
+    # Its rows were left alone, so it still lists and the same delete can be retried;
+    # the rest of the batch carried on.
+    assert fixture.ledger.purged_sessions == [("alpha", "alpha_001"), ("alpha", "alpha_003")]

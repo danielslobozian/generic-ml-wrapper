@@ -6,6 +6,7 @@ import io
 import json
 import platform
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -1911,6 +1912,36 @@ def test_sessions_delete_previews_then_deletes_when_confirmed(
     assert app.main(["sessions", "alpha", "delete", "alpha_002"]) == 0
     assert fake.executed == [("alpha", ["alpha_002"])]
     assert "alpha_002" in capsys.readouterr().err
+
+
+def test_jobs_delete_that_leaves_one_behind_says_which_and_exits_1(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stuck = replace(_job_footprint("beta"), removed=False)
+    fake = _FakeDeleteJobs([_job_footprint("alpha"), stuck])
+    monkeypatch.setattr(app, "build_delete_jobs", lambda: fake)
+
+    assert app.main(["jobs", "delete", "alpha", "beta", "--yes"]) == 1
+    err = capsys.readouterr().err
+    assert "beta" in err
+    assert "not removed" in err
+    assert "removed 1 of 2 job(s); 1 still there" in err
+    # The receipt lists only what stayed, under no "this will remove" heading.
+    assert "This will permanently remove" not in err
+
+
+def test_sessions_delete_that_leaves_one_behind_says_which_and_exits_1(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stuck = replace(_session_footprint("alpha_003"), removed=False)
+    fake = _FakeDeleteSessions([_session_footprint("alpha_002"), stuck])
+    monkeypatch.setattr(app, "build_delete_sessions", lambda: fake)
+
+    assert app.main(["sessions", "alpha", "delete", "alpha_002", "alpha_003", "--yes"]) == 1
+    err = capsys.readouterr().err
+    assert "alpha_003" in err
+    assert "not removed" in err
+    assert "removed 1 of 2 session(s) from alpha; 1 still there" in err
 
 
 def test_sessions_delete_reports_an_unknown_session(

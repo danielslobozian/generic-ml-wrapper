@@ -16,15 +16,16 @@ from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
 class _Fixture:
     """Two jobs — ``alpha`` with two sessions, ``beta`` with one."""
 
-    def __init__(self) -> None:
+    def __init__(self, stuck: frozenset[str] = frozenset()) -> None:
         self.store = InMemorySessionStore()
         self.store.record(Session("alpha_001", "alpha", "claude", "u-1"))
         self.store.record(Session("alpha_002", "alpha", "claude", "u-2"))
         self.store.record(Session("beta_001", "beta", "codex", None))
         self.turns = InMemoryPerTurnStore()
         self.usage = InMemoryUsageStore()
-        self.ledger = RecordingLedgerPurge()
-        self.artifacts = RecordingArtifactPurge()
+        self.calls: list[str] = []
+        self.ledger = RecordingLedgerPurge(self.calls)
+        self.artifacts = RecordingArtifactPurge(self.calls, stuck)
 
     def use_case(self) -> DeleteJobsUseCase:
         return DeleteJobsUseCase(self.store, self.turns, self.usage, self.ledger, self.artifacts)
@@ -94,3 +95,21 @@ def test_an_empty_request_removes_nothing() -> None:
 
     assert fixture.use_case().execute([]) == []
     assert fixture.ledger.purged_jobs == []
+
+
+def test_a_jobs_files_go_before_its_rows() -> None:
+    fixture = _Fixture()
+    fixture.use_case().execute(["alpha", "beta"])
+    assert fixture.calls == ["files alpha", "rows alpha", "files beta", "rows beta"]
+
+
+def test_a_job_whose_files_will_not_go_keeps_its_rows_and_is_marked() -> None:
+    fixture = _Fixture(stuck=frozenset({"alpha"}))
+
+    outcome = fixture.use_case().execute(["alpha", "beta"])
+
+    assert [(footprint.job, footprint.removed) for footprint in outcome] == [
+        ("alpha", False),
+        ("beta", True),
+    ]
+    assert fixture.ledger.purged_jobs == ["beta"]

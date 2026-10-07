@@ -20,6 +20,7 @@ they are absent from ``gmlw jobs`` -- no extra guard to remember.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs, JobFootprint
 from generic_ml_wrapper.application.port.inbound.delete_sessions import NoSuchJobError
@@ -28,6 +29,8 @@ from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurg
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.log import log
 
 
 class DeleteJobsUseCase(DeleteJobs):
@@ -68,10 +71,22 @@ class DeleteJobsUseCase(DeleteJobs):
         # Measured before the first removal, and returned afterwards: once the rows and
         # folders are gone there is nothing left to count.
         footprints = [self._footprint(job) for job in jobs]
-        for job in jobs:
-            self._ledger.purge_job(job)
+        return [self._purge(footprint) for footprint in footprints]
+
+    def _purge(self, footprint: JobFootprint) -> JobFootprint:
+        """Remove one job's files and then its rows, or report that it stayed.
+
+        Files first, for the reason the session-level delete gives: a row can be asked for
+        again, a file whose row is gone cannot be found by anything.
+        """
+        job = footprint.job
+        try:
             self._artifacts.purge_job(job)
-        return footprints
+        except OSError as error:
+            log.warning(i18n.t("log.job_not_deleted", job=job, error=error))
+            return replace(footprint, removed=False)
+        self._ledger.purge_job(job)
+        return footprint
 
     def _validate(self, jobs: Sequence[str]) -> None:
         """Reject the whole batch unless every job in it has recorded activity.

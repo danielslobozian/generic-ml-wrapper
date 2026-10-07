@@ -25,6 +25,10 @@ class JobFootprint:
         contexts: Compiled-context files the job holds.
         transcript_calls: Transcript files the job holds (``0`` unless transcripts
             were on).
+        removed: Whether it actually went. ``True`` on a preview, where it means "this is
+            what would go"; on a result it is the receipt, and ``False`` says the job is
+            still there -- its files could not be removed, so its rows were left alone and
+            the same delete can simply be asked for again.
     """
 
     job: str
@@ -33,6 +37,7 @@ class JobFootprint:
     cost_usd: float
     contexts: int
     transcript_calls: int
+    removed: bool = True
 
 
 class DeleteJobs(ABC):
@@ -63,7 +68,9 @@ class DeleteJobs(ABC):
             jobs: The job ids to delete, in the order given.
 
         Returns:
-            One footprint per deleted job -- what was actually removed.
+            One footprint per job asked for, each carrying whether it actually went. A job
+            whose files could not be removed keeps its rows and comes back marked, rather
+            than taking the rest of the batch down with it.
 
         Raises:
             NoSuchJobError: If any job has no recorded activity.
