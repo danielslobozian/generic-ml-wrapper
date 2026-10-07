@@ -31,8 +31,11 @@ class FakeWorkflows(WorkflowSourcePort):
     def __init__(self, root: Path, existing: set[str] | None = None) -> None:
         self._root = root
         self._existing = existing or set()
+        self.seeded = False
 
-    def seed(self) -> None: ...
+    def seed(self) -> None:
+        self.seeded = True
+
     def names(self) -> list[str]:
         return sorted(self._existing)
 
@@ -113,8 +116,11 @@ def test_exporting_packs_the_workflows_own_folder(tmp_path: Path) -> None:
 
 
 def test_exporting_an_unknown_workflow_is_refused(tmp_path: Path) -> None:
+    workflows = FakeWorkflows(tmp_path)
     with pytest.raises(WorkflowNotFoundError):
-        ExportWorkflowUseCase(FakeWorkflows(tmp_path), FakeArchive()).execute("ghost")
+        ExportWorkflowUseCase(workflows, FakeArchive()).execute("ghost")
+    # `gmlw workflow export ghost` on a fresh home used to create ~/.gmlw/workflows.
+    assert workflows.seeded is False
 
 
 @pytest.mark.parametrize("name", ["_common", "create-workflow", "Bad Name"])

@@ -135,7 +135,8 @@ def test_edits_an_existing_workflow_without_creating_it() -> None:
     )
 
     assert exit_code == 0
-    assert workflows.seeded is True
+    # Nothing it would install is editable (both are reserved), so it does not seed.
+    assert workflows.seeded is False
     assert workflows.created is None  # editing never creates/overwrites the folder
     assert len(store.recorded) == 1
     assert store.recorded[0].job == "doc-review"
@@ -167,10 +168,12 @@ def test_rejects_invalid_or_reserved_names(name: str) -> None:
 
 
 def test_refuses_when_the_workflow_does_not_exist() -> None:
+    workflows = FakeWorkflows(existing=False)
     with pytest.raises(WorkflowNotFoundError):
-        _use_case(FakeWorkflows(existing=False), FakeStore(), CapturingProvider()).execute(
+        _use_case(workflows, FakeStore(), CapturingProvider()).execute(
             EditWorkflowCommand(name="missing", client="claude")
         )
+    assert workflows.seeded is False  # a refused command writes nothing
 
 
 # ── reopening an interrupted edit ──

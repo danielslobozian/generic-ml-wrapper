@@ -77,7 +77,8 @@ class EditWorkflowUseCase(EditWorkflow):
             raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
             raise WorkflowNameError("error.workflow.reserved_name", name=name)
-        self._workflows.seed()
+        # No seeding here, for the reason `ExportWorkflowUseCase` gives: everything it
+        # installs is already rejected as reserved above.
         if not self._workflows.exists(name):
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
 
