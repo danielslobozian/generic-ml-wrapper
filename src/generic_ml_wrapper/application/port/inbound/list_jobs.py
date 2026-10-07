@@ -5,16 +5,27 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-
-from generic_ml_wrapper.application.port.inbound.job_summary import JobSummary
-from generic_ml_wrapper.application.port.inbound.list_jobs_query import ListJobsQuery
+from dataclasses import dataclass
 
 
-class ListJobsUseCase(ABC):
+@dataclass(frozen=True)
+class JobSummary:
+    """A one-line summary of a job's recorded activity.
+
+    Attributes:
+        job: The job identifier.
+        session_count: How many sessions have been recorded for the job.
+    """
+
+    job: str
+    session_count: int
+
+
+class ListJobs(ABC):
     """List the jobs that have recorded sessions."""
 
     @abstractmethod
-    def execute(self, query: ListJobsQuery) -> list[JobSummary]:
+    def execute(self) -> list[JobSummary]:
         """List the jobs with recorded activity.
 
         Returns:

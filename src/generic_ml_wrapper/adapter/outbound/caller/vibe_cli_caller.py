@@ -6,29 +6,30 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import context_file, vibe_config
-from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.context_opening import read_first_opening
 from generic_ml_wrapper.adapter.outbound.gateway import openai_chat
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
+    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 BINARY = "vibe"
 _VIBE_CONFIG = Path.home() / ".vibe" / "config.toml"
 
 
-class VibeCliCallerAdapter(CliCallerPort):
+class VibeCliCaller(CliCaller):
     """Launch vibe (Mistral's CLI) for a run, routed through a per-turn metering relay.
 
     vibe mints its own UUID session id and exposes no way to set one at launch, so
@@ -75,11 +76,11 @@ class VibeCliCallerAdapter(CliCallerPort):
         try:
             source_text = _VIBE_CONFIG.read_text(encoding="utf-8")
         except OSError as error:
-            log.warning(f"cannot read {_VIBE_CONFIG} ({error}); launching vibe unmetered")
+            log.warning(i18n.t("log.vibe_config_unreadable", config=_VIBE_CONFIG, error=error))
             return
         upstream = vibe_config.active_upstream(source_text)
         if upstream is None:
-            log.warning("could not resolve vibe's active-model upstream; launching unmetered")
+            log.warning(i18n.t("log.vibe_no_upstream"))
             return
         relay = MeteringRelay(
             job=self.run.job,
@@ -95,7 +96,7 @@ class VibeCliCallerAdapter(CliCallerPort):
         try:
             relay.start()
         except OSError as error:
-            log.warning(f"metering relay failed to start ({error}); launching vibe unmetered")
+            log.warning(i18n.t("log.vibe_relay_failed", error=error))
             return
         self._relay = relay
         home = Path(tempfile.mkdtemp(prefix="gmlw-vibe-"))
@@ -159,7 +160,9 @@ class VibeCliCallerAdapter(CliCallerPort):
             "GMLW_SESSION": self.run.session_id,
             "GMLW_CLIENT": self.run.client,
         }
-        return ChildProcess().run(argv, self.run.cwd, env)
+        # Trusted argv from our resolved run; no shell. The program is PATH-resolved (BINARY).
+        completed = subprocess.run(argv, check=False, cwd=self.run.cwd, env=env)  # noqa: S603
+        return completed.returncode
 
 
 def _vibe_metered(method: str, path: str) -> bool:

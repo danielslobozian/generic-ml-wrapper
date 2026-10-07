@@ -107,29 +107,29 @@ nothing about the filesystem, the client, or HTTP.
 
 | Use case | What it does |
 |---|---|
-| `StartJobUseCase` | validate (workflow/caller/resume), mint or resume a session, launch the client |
-| `ListJobsUseCase` | the jobs with recorded activity (authoring sessions hidden) |
-| `ListSessionsUseCase` | a job's sessions |
-| `ExportUsageUseCase` | per-turn rows + per-model totals + per-session cost for a job |
-| `RenderStatuslineUseCase` | one live status block from the client's native payload |
-| `NewWorkflowUseCase` | author a workflow via the create-workflow interview (an authoring session) |
-| `ListWorkflowsUseCase` | the runnable workflows |
-| `SetCredentialUseCase` | store a per-workflow credential (0600) |
-| `BootstrapUseCase` | first-run self-init of `~/.gmlw` (idempotent) |
+| `StartJob` | validate (workflow/caller/resume), mint or resume a session, launch the client |
+| `ListJobs` | the jobs with recorded activity (authoring sessions hidden) |
+| `ListSessions` | a job's sessions |
+| `ExportUsage` | per-turn rows + per-model totals + per-session cost for a job |
+| `RenderStatusline` | one live status block from the client's native payload |
+| `NewWorkflow` | author a workflow via the create-workflow interview (an authoring session) |
+| `ListWorkflows` | the runnable workflows |
+| `SetCredential` | store a per-workflow credential (0600) |
+| `Bootstrap` | first-run self-init of `~/.gmlw` (idempotent) |
 | `FirstRunInit` | first-run flow: detect installed clients, seed a filled config, choose a default (and persona) |
-| `CheckClientReadyUseCase` | preflight a client — installed and logged in — returning install/login guidance |
-| `ListPersonasUseCase` | the selectable personas (built-in + user-authored) |
-| `ListPluginsUseCase` | the installed plugins under `~/.gmlw/plugins/<id>/` |
-| `RenderGreetingUseCase` | the free, local host greeting voiced at launch |
+| `CheckClientReady` | preflight a client — installed and logged in — returning install/login guidance |
+| `ListPersonas` | the selectable personas (built-in + user-authored) |
+| `ListPlugins` | the installed plugins under `~/.gmlw/plugins/<id>/` |
+| `RenderGreeting` | the free, local host greeting voiced at launch |
 
-`StartJobUseCase` **validates before it persists** — a rejected start (unknown workflow,
+`StartJob` **validates before it persists** — a rejected start (unknown workflow,
 resume unsupported) records no session, so there are no ghost sessions.
 
 ## 6. Outbound ports (what the app needs)
 
 | Port | Contract |
 |---|---|
-| **`CliCallerPort`** + `CliCallerProviderPort` | launch and meter one client run (see §7) |
+| **`CliCaller`** + `CliCallerProvider` | launch and meter one client run (see §7) |
 | `SessionStorePort` | persist/read sessions per job; list jobs |
 | `PerTurnMeteringPort` | append/read per-turn `TurnUsage` for a job |
 | `UsageStorePort` | record/read a session's cumulative cost (monotonic) |
@@ -147,10 +147,10 @@ resume unsupported) records no session, so there are no ghost sessions.
 | `ClientDetectorPort` | detect which client binaries are installed |
 | `ClientChooserPort` / `PersonaChooserPort` | first-run interactive pickers (TTY) |
 
-## 7. The `CliCallerPort` seam — the four clients
+## 7. The `CliCaller` seam — the four clients
 
 A single port, one **stateful instance per run** (state set up before launch, torn
-down after). `CliCallerProviderPort.for_run(run)` resolves the caller, honouring
+down after). `CliCallerProvider.for_run(run)` resolves the caller, honouring
 `[callers]` overrides first, then the four built-ins by name.
 
 ```python
@@ -174,7 +174,7 @@ teardown always runs in `finally`. Capability flags let the use case adapt per c
 | **vibe** | `vibe` | ✅ (Mistral / Chat Completions) | ❌ | ❌ | throwaway `VIBE_HOME` repointed at the relay |
 
 Status-line **rendering** parses both Claude's and Cursor's native payload formats
-(`ClaudeStatusParserAdapter`, `CursorStatusParserAdapter`); the seam is client-agnostic and further
+(`ClaudeStatusParser`, `CursorStatusParser`); the seam is client-agnostic and further
 parsers can be added.
 
 ## 8. The metering relay
@@ -205,37 +205,19 @@ into a standalone project later without change to the ports.
 Everything lives under `~/.gmlw`, owner-only, on your machine.
 
 **The ledger** — a single SQLite file, `~/.gmlw/ledger.db` (WAL; one connection per
-operation). Its schema is an **ordered lineage of migration files**,
-`store/migrations/NNNN.name.sql`, each named for the version it brings a store *to*, and
-applied by `SqliteStoreMigrationAdapter` behind `StoreMigrationPort` — the Flyway/Liquibase
-model, not a create-from-final-state script. A database created today runs the same
-lineage an existing one did, so a fresh install and an upgraded machine end in the same
-shape rather than drifting apart.
-
-Each file is applied inside its own transaction together with the version bump that
-records it, so a crash part-way leaves the store at the last version that applied
-cleanly. The applied version lives in a `schema_version` table built to hold exactly one
-row; stores predating it kept their version in `PRAGMA user_version`, which is read once
-to seed the table and never touched again. Migrations run with foreign keys off, because
-changing a column in SQLite means rebuilding the table. The whole sequence is serialized
-by an exclusive lock on `~/.gmlw/store.lock`, so two commands meeting a brand-new
-database cannot both create it. At startup the CLI checks that the shipped lineage can
-reach the version the code expects, and refuses to run if it cannot — the failure a
-missing `.sql` file in a built package would otherwise cause silently. Tables:
+operation; `PRAGMA user_version` schema versioning). Pre-1.0 the schema is *created
+from its final state* (`SCHEMA_VERSION = 1`, one create step, no migrations — a schema
+change is a full store reset). Tables:
 
 | Table | Holds |
 |---|---|
-| `jobs` | `job`, `created_at` |
+| `jobs` | `job`, `kind` (`work` \| `authoring`), `created_at` |
 | `sessions` | `session_id` (`<job>_NNN`), `job`, `client`, `uuid` |
 | `turns` | one row per metered turn: tokens (incl. cache), `cost_usd`, `model`, timing |
 | `session_costs` | per-session cumulative cost (monotonic upsert — highest wins) |
 
-A job's name is its identity and the only thing that identifies it — there is no kind,
-no second table, and no rule about who may hold which name. Authoring is an ordinary job
-called `create-workflow`; creating and editing workflows both file under it, and the
-listing use case leaves that one name out because the system chose it rather than the
-user. It is not protected: `gmlw jobs delete create-workflow` removes its history like
-any other, and the workflows it produced are not stored under it.
+Authoring sessions share the DB but are tagged `kind = 'authoring'`, so they never
+appear in `gmlw jobs` and their spend is its own bucket.
 
 **Context** — the exact compiled context a session launched with is written to
 `~/.gmlw/contexts/<job>/<session>.context.md` (atomic write). A durable, inspectable
@@ -272,13 +254,13 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
 - **Rule capture (always-on):** the `rules` stage leads with a fixed capture directive
   (gmlw's voice, verbatim) whenever the source is active — on by default in every mode,
   including a plain start — so a demanded correction becomes a rule in any session, filed
-  on the environment or the role, deduped against the existing rules, and, when
+  on the environment or role axis, deduped against the existing rules, and, when
   mechanically enforceable, offered as a script rather than a reminder.
 - **Rule cleaning (always, lossless):** drop each rule's YAML frontmatter and the
   human-only `Origin` / `Notes` sections; skip rules the user has switched off with
   `status: draft`.
 - **Compression (optional, off):** each source can be compressed through its *typed*
-  prompt by the `CacheBackedContextCompressorAdapter` (the `ContextCompressorPort`), which
+  prompt by the `CacheBackedContextCompressor` (the `ContextCompressorPort`), which
   records through `generic-ml-cache` so the same source replays for free — the lossy
   lever for large contexts, gated by `[compress]` + a source's `compression = true`,
   non-destructive on failure. The repo ships no prompt, so it is inert until configured.

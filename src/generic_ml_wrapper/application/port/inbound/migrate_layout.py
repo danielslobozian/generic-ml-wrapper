@@ -8,10 +8,10 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.migration_report import MigrationReport
+    from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 
 
-class MigrateLayoutUseCase(ABC):
+class MigrateLayout(ABC):
     """Migrate the old ``profile/company`` layout into the active environment, if present."""
 
     @abstractmethod

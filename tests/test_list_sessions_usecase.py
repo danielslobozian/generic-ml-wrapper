@@ -1,21 +1,17 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the ListSessionsUseCase use case, driven by a fake store."""
+"""Tests for the ListSessions use case, driven by a fake store."""
 
 from _conformance import InMemoryPerTurnStore, InMemoryUsageStore
 
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.model.session_cost import SessionCost
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.inbound.session_summary import SessionSummary
+from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
-from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsService
+from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 
 
 class FakeStore(SessionStorePort):
-    def create_job(self, job: str) -> None:
-        pass
-
     def __init__(self, sessions: list[Session]) -> None:
         self._sessions = sessions
 
@@ -42,9 +38,9 @@ def _use_case(
     store: SessionStorePort,
     turns: InMemoryPerTurnStore | None = None,
     usage: InMemoryUsageStore | None = None,
-) -> ListSessionsService:
+) -> ListSessionsUseCase:
     """The use case with empty usage stores unless a test supplies its own."""
-    return ListSessionsService(
+    return ListSessionsUseCase(
         store, turns or InMemoryPerTurnStore(), usage or InMemoryUsageStore()
     )
 
@@ -97,8 +93,8 @@ def test_each_session_carries_its_own_turn_count_and_cost() -> None:
     for session in ("JOB-1_001", "JOB-1_001", "JOB-1_002"):
         turns.record("JOB-1", TurnUsage(session, 10, 5, 0.01, "sonnet"))
     usage = InMemoryUsageStore()
-    usage.record_session_cost("JOB-1", SessionCost("JOB-1_001", 1.25))
-    usage.record_session_cost("JOB-1", SessionCost("JOB-1_002", 0.50))
+    usage.record_session_cost("JOB-1", "JOB-1_001", 1.25)
+    usage.record_session_cost("JOB-1", "JOB-1_002", 0.50)
 
     first, second = _use_case(store, turns, usage).execute("JOB-1")
 

@@ -18,10 +18,9 @@ from generic_ml_cache_core.application.usecase.select_adapter_for_execution_serv
     SelectAdapterForExecutionService,
 )
 
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
 from generic_ml_wrapper.application.port.outbound.context_compressor import ContextCompressorPort
-from generic_ml_wrapper.application.wiring.diagnostics_log import log
-from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.common import config, i18n, paths
+from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
     from generic_ml_cache_core.application.domain.model.execution.ml_execution import MlExecution
@@ -36,7 +35,7 @@ if TYPE_CHECKING:
     )
 
 
-class CacheBackedContextCompressorAdapter(ContextCompressorPort):
+class CacheBackedContextCompressor(ContextCompressorPort):
     """Compress a source through the generic-ml-cache record/replay cache.
 
     The prompt is chosen per source — a key-level override, else the source's kind
@@ -65,12 +64,14 @@ class CacheBackedContextCompressorAdapter(ContextCompressorPort):
         try:
             prompt = Path(prompt_path).read_text(encoding="utf-8")
         except OSError as error:
-            log.warning(f"cannot read compress prompt {prompt_path!r} ({error}); skipping")
+            log.warning(
+                i18n.t("log.compress_prompt_unreadable", path=repr(prompt_path), error=error)
+            )
             return text
         try:
             execution = self._compress(text, prompt, settings)
         except Exception as error:  # noqa: BLE001  (a compile must never die on the cache/LLM)
-            log.warning(f"compression failed for {source_key!r} ({error}); leaving it uncompressed")
+            log.warning(i18n.t("log.compress_failed", source=repr(source_key), error=error))
             return text
         return _stdout(execution) or text
 
@@ -96,8 +97,8 @@ class CacheBackedContextCompressorAdapter(ContextCompressorPort):
             client = resolver.resolve_local_client(descriptor.adapter_id)
             return {settings.adapter: cast("RegisteredAdapterPort", client)}
 
-        paths.compress_cache.mkdir(parents=True, exist_ok=True)
-        api = build_application_api(paths.compress_cache, runners)
+        paths.COMPRESS_CACHE.mkdir(parents=True, exist_ok=True)
+        api = build_application_api(paths.COMPRESS_CACHE, runners)
         return api.run_ml.execute(command)
 
 

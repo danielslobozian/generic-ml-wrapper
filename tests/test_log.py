@@ -6,21 +6,19 @@ from collections.abc import Iterator
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import (
-    StderrDiagnosticsAdapter,
-)
-from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-from generic_ml_wrapper.application.wiring.diagnostics_log import Log, active, set_active
+from generic_ml_wrapper.adapter.outbound.diagnostics.stderr_diagnostics import StderrDiagnostics
+from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
+from generic_ml_wrapper.common.log import Log, active, set_active
 
 
 @pytest.fixture(autouse=True)
 def _restore_sink() -> Iterator[None]:
-    previous = set_active(StderrDiagnosticsAdapter(level="warning"))
+    previous = set_active(StderrDiagnostics(level="warning"))
     yield
     set_active(previous)
 
 
-class _Recorder(DiagnosticsPort):
+class _Recorder(Diagnostics):
     """A sink that keeps what it was handed, for asserting on the call, not the format."""
 
     def __init__(self) -> None:
@@ -48,7 +46,7 @@ def test_messages_below_threshold_are_dropped(capsys: pytest.CaptureFixture[str]
 
 
 def test_a_lower_threshold_lets_debug_through(capsys: pytest.CaptureFixture[str]) -> None:
-    set_active(StderrDiagnosticsAdapter(level="debug"))
+    set_active(StderrDiagnostics(level="debug"))
     Log().debug("now visible")
     assert "gmlw DEBUG now visible" in capsys.readouterr().err
 
@@ -65,9 +63,7 @@ def test_empty_labels_are_ignored() -> None:
 def test_the_default_sink_is_silent(capsys: pytest.CaptureFixture[str]) -> None:
     # Nothing may be written before the composition root installs a sink: the domain
     # imports this module, so it can hold no adapter to fall back on.
-    from generic_ml_wrapper.application.wiring.diagnostics_log import (  # noqa: PLC0415
-        _NoDiagnostics,
-    )
+    from generic_ml_wrapper.common.log import _NoDiagnostics  # noqa: PLC0415
 
     set_active(_NoDiagnostics())
     Log().error("into the void")

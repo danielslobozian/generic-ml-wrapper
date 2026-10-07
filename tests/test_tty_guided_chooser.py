@@ -6,24 +6,15 @@ import io
 
 import pytest
 
-from generic_ml_wrapper.adapter.inbound.cli.setup import tty_prompt
-from generic_ml_wrapper.adapter.inbound.cli.setup.tty_guided_chooser import TtyGuidedChooser
-from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
-    JsonCatalogMessageSource,
+from generic_ml_wrapper.adapter.outbound.bootstrap import tty_prompt
+from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import (
+    GUIDED,
+    QUICK,
+    TtyGuidedChooser,
 )
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    MessageSourceAccessor,
-)
-from generic_ml_wrapper.application.domain.model.authoring_mode import AuthoringMode
+from generic_ml_wrapper.common.i18n import load_localizer
 
-
-def _accessor(language: str) -> MessageSourceAccessor:
-    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
-
-
-_MODES = [AuthoringMode.GUIDED, AuthoringMode.QUICK]
-
-_I18N = _accessor("en")
+_I18N = load_localizer("en")
 
 
 class _Tty(io.StringIO):
@@ -41,19 +32,19 @@ def _wire(monkeypatch: pytest.MonkeyPatch, *, stdin: str, tty: bool = True) -> i
 
 def test_declines_when_not_a_terminal(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="1\n", tty=False)
-    assert TtyGuidedChooser(_I18N).choose(_MODES) is None  # caller falls back to lean
+    assert TtyGuidedChooser(_I18N).choose() is None  # caller falls back to lean
 
 
 def test_enter_picks_the_guided_experience(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="\n")  # empty line takes the default (index 0)
-    assert TtyGuidedChooser(_I18N).choose(_MODES) == AuthoringMode.GUIDED
+    assert TtyGuidedChooser(_I18N).choose() == GUIDED
 
 
 def test_picks_quick_when_chosen(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="2\n")
-    assert TtyGuidedChooser(_I18N).choose(_MODES) == AuthoringMode.QUICK
+    assert TtyGuidedChooser(_I18N).choose() == QUICK
 
 
 def test_picks_guided_when_chosen(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="1\n")
-    assert TtyGuidedChooser(_I18N).choose(_MODES) == AuthoringMode.GUIDED
+    assert TtyGuidedChooser(_I18N).choose() == GUIDED

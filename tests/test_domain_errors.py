@@ -3,7 +3,7 @@
 """Every :class:`DomainError` subclass renders through the catalogue, in every language.
 
 0.9.1 closed a gap where a domain exception's message was a raw English literal,
-interpolated verbatim into an otherwise-localised shell (``get_message("error.generic",
+interpolated verbatim into an otherwise-localised shell (``i18n.t("error.generic",
 error=error)``). This guards the fix: each user-facing exception must render to real,
 language-specific text — never the raw catalogue key, and never the same string in both
 languages (the one case a same-string check would miss silently is a key whose template
@@ -15,45 +15,30 @@ from __future__ import annotations
 
 import pytest
 
-from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
-    JsonCatalogMessageSource,
+from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
+from generic_ml_wrapper.application.port.inbound.create_axis import (
+    AxisExistsError,
+    AxisLabelError,
 )
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    MessageSourceAccessor,
-)
-from generic_ml_wrapper.adapter.outbound.config.settings_registry import InvalidSettingValueError
-from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
-    ArchiveUnreadableError,
-)
-from generic_ml_wrapper.application.domain.model.domain_error import DomainError
-from generic_ml_wrapper.application.domain.model.environment_code_already_exists_error import (
-    EnvironmentCodeAlreadyExistsError,
-)
-from generic_ml_wrapper.application.domain.model.identifier_error import IdentifierError
-from generic_ml_wrapper.application.domain.model.no_edit_to_resume_error import NoEditToResumeError
-from generic_ml_wrapper.application.domain.model.no_such_draft_error import NoSuchDraftError
-from generic_ml_wrapper.application.domain.model.resume_not_supported_error import (
-    ResumeNotSupportedError,
-)
-from generic_ml_wrapper.application.domain.model.role_code_already_exists_error import (
-    RoleCodeAlreadyExistsError,
-)
-from generic_ml_wrapper.application.domain.model.uncodable_role_label_error import (
-    UncodableRoleLabelError,
-)
-from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
-from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
-from generic_ml_wrapper.application.domain.model.workflow_not_found_error import (
+from generic_ml_wrapper.application.port.inbound.edit_workflow import (
+    NoEditToResumeError,
     WorkflowNotFoundError,
 )
+from generic_ml_wrapper.application.port.inbound.import_workflow import ArchiveUnreadableError
+from generic_ml_wrapper.application.port.inbound.new_workflow import (
+    NoSuchDraftError,
+    WorkflowNameError,
+)
+from generic_ml_wrapper.application.port.inbound.start_job import (
+    ResumeNotSupportedError,
+    UnknownWorkflowError,
+)
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.errors import DomainError
+from generic_ml_wrapper.common.settings_registry import InvalidSettingValueError
 
-
-def _accessor(language: str) -> MessageSourceAccessor:
-    return MessageSourceAccessor(JsonCatalogMessageSource(), language)
-
-
-_EN = _accessor("en")
-_FR = _accessor("fr")
+_EN = i18n.load_localizer("en")
+_FR = i18n.load_localizer("fr")
 
 _CASES: list[DomainError] = [
     IdentifierError("error.identifier.job_id", value="bad id"),
@@ -72,9 +57,9 @@ _CASES: list[DomainError] = [
     NoSuchDraftError("error.draft.no_session", key="abc123"),
     NoSuchDraftError("error.draft.resume_unsupported", client="codex", session_id="abc123"),
     NoSuchDraftError("error.draft.none_unfinished"),
-    UncodableRoleLabelError("error.role.label.invalid", label="???"),
-    RoleCodeAlreadyExistsError("error.role.exists", code="qa"),
-    EnvironmentCodeAlreadyExistsError("error.environment.exists", code="work"),
+    AxisLabelError("error.axis.label_invalid", label="???"),
+    AxisExistsError("error.axis.exists.role", slug="qa"),
+    AxisExistsError("error.axis.exists.environment", slug="work"),
     ArchiveUnreadableError("error.archive.not_found", archive="missing.zip"),
     ArchiveUnreadableError("error.archive.no_workflow", archive="bad.zip", steps="workflow.md"),
     InvalidSettingValueError("companion.persona", "loud", None),
@@ -84,10 +69,8 @@ _CASES: list[DomainError] = [
 
 @pytest.mark.parametrize("error", _CASES, ids=lambda error: error.catalogue_key)
 def test_domain_error_renders_in_every_language(error: DomainError) -> None:
-    # Rendered the way a caller renders it: the error carries the key and the params, and
-    # whoever caught it holds the message_source. The error itself never reaches for one.
-    rendered_en = _EN.get_message(error.catalogue_key, **error.params)
-    rendered_fr = _FR.get_message(error.catalogue_key, **error.params)
+    rendered_en = error.localized(_EN)
+    rendered_fr = error.localized(_FR)
     assert rendered_en != error.catalogue_key, "no English template for this key"
     assert rendered_fr != error.catalogue_key, "no French template for this key"
     assert rendered_en != rendered_fr, "French falls back to the English template"

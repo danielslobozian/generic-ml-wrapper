@@ -17,10 +17,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 from generic_ml_wrapper import __version__
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    get_message,
-)
-from generic_ml_wrapper.application.wiring.composition import build_list_supported_clients
+from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.common import i18n
 
 # The wordmark, coloured letter-by-letter (cyan → indigo). One colour per character.
 _WORDMARK = "gmlw"
@@ -29,7 +27,7 @@ _GRADIENT = ("#22d3ee", "#46bff2", "#64a6f5", "#818cf8")
 
 def _clients_line() -> str:
     """The supported clients, joined for the banner's footer (e.g. ``claude · cursor``)."""
-    return " · ".join(info.name for info in build_list_supported_clients().execute())
+    return " · ".join(info.name for info in client_catalog.SUPPORTED)
 
 
 def _wordmark() -> Text:
@@ -48,7 +46,7 @@ def boxed_banner() -> Panel:
     """
     title = _wordmark()
     title.append("  ")
-    title.append(get_message("banner.tagline"), style="dim italic")
+    title.append(i18n.t("banner.tagline"), style="dim italic")
     body = Text()
     body.append(_clients_line(), style="cyan")
     body.append("   ·   ", style="dim")

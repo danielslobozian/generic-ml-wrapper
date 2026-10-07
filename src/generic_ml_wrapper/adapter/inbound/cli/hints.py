@@ -12,14 +12,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.wiring.composition import build_application_settings
-from generic_ml_wrapper.application.wiring.diagnostics_log import log
-from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.common import config, i18n, paths
+from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-        MessageSourceAccessor,
-    )
+    from generic_ml_wrapper.common.i18n import Localizer
+
 # The tips, in reveal order. Each is (stable id, catalogue key). The id is what's recorded
 # as seen, so reordering or rewording a tip never re-shows an already-seen one.
 TIPS: tuple[tuple[str, str], ...] = (
@@ -33,7 +31,7 @@ TIPS: tuple[tuple[str, str], ...] = (
 def _read_seen() -> set[str]:
     """Return the set of tip ids already shown (empty on any read error)."""
     try:
-        text = (paths.state / "hints-seen").read_text(encoding="utf-8")
+        text = (paths.STATE / "hints-seen").read_text(encoding="utf-8")
     except OSError:
         return set()
     return {line.strip() for line in text.splitlines() if line.strip()}
@@ -42,27 +40,27 @@ def _read_seen() -> set[str]:
 def _mark_seen(hint_id: str) -> None:
     """Record ``hint_id`` as shown (best-effort; a write error is logged, not raised)."""
     try:
-        paths.state.mkdir(parents=True, exist_ok=True)
-        with (paths.state / "hints-seen").open("a", encoding="utf-8") as handle:
+        paths.STATE.mkdir(parents=True, exist_ok=True)
+        with (paths.STATE / "hints-seen").open("a", encoding="utf-8") as handle:
             handle.write(f"{hint_id}\n")
     except OSError as error:
-        log.debug(f"could not record hint {hint_id} as seen: {error}")
+        log.debug(i18n.t("log.hint_not_recorded", hint=hint_id, error=error))
 
 
-def next_hint(message_source: MessageSourceAccessor) -> str | None:
+def next_hint(loc: Localizer) -> str | None:
     """Return the next unseen tip's text (marking it seen), or ``None``.
 
     Args:
-        message_source: The message source to render the tip through.
+        loc: The localiser to render the tip through.
 
     Returns:
         The localised tip, or ``None`` when hints are off or every tip has been shown.
     """
-    if not build_application_settings().hints_enabled():
+    if not config.hints_show():
         return None
     seen = _read_seen()
     for hint_id, key in TIPS:
         if hint_id not in seen:
             _mark_seen(hint_id)
-            return message_source.get_message(key)
+            return loc.t(key)
     return None

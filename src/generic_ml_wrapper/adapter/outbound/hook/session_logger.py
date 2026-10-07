@@ -6,18 +6,19 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
+from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
-from generic_ml_wrapper.application.wiring.paths import paths
+from generic_ml_wrapper.common import paths
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from generic_ml_wrapper.application.domain.model.hook_context import HookContext
+    from generic_ml_wrapper.application.domain.service.hook import HookContext
+
 _LOG = "sessions.log"
 
 
-class SessionLoggerAdapter(HookPort):
+class SessionLogger(HookPort):
     """Append one line to ``~/.gmlw/sessions.log`` at each seam; the simplest hook.
 
     A reference hook and the simplest example of the lifecycle-hook contract: at
@@ -47,7 +48,7 @@ class SessionLoggerAdapter(HookPort):
 
     def _path(self) -> Path:
         """The session log location (``~/.gmlw/sessions.log``)."""
-        return paths.home / _LOG
+        return paths.HOME / _LOG
 
     @staticmethod
     def _line(context: HookContext) -> str:

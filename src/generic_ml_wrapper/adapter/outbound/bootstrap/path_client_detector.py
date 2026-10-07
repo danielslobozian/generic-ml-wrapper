@@ -6,13 +6,11 @@ from __future__ import annotations
 
 import shutil
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
-    TomlClientCatalogAdapter,
-)
+from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.port.outbound.client_detector import ClientDetectorPort
 
 
-class PathClientDetectorAdapter(ClientDetectorPort):
+class PathClientDetector(ClientDetectorPort):
     """Detect installed clients by resolving each one's command on ``PATH``."""
 
     def available(self) -> list[str]:
@@ -22,7 +20,5 @@ class PathClientDetectorAdapter(ClientDetectorPort):
             The installed client names in canonical order (empty when none are).
         """
         return [
-            info.name
-            for info in TomlClientCatalogAdapter().supported()
-            if shutil.which(info.binary) is not None
+            info.name for info in client_catalog.SUPPORTED if shutil.which(info.binary) is not None
         ]

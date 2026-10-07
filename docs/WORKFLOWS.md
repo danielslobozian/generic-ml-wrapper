@@ -16,10 +16,8 @@ If you have never authored one, you can ignore this file entirely and use
     gmlw workflow new <name>     # or seed a name up front (optional)
 
 This runs the shipped `create-workflow` meta-workflow as a metered **authoring**
-session. Authoring files under a job called `create-workflow` — creating and editing
-alike — and `gmlw jobs` leaves that one name out, since you never chose it. The job is
-otherwise ordinary: its spend is metered and its history can be deleted like any
-other's. The name is decided at the **end** of the interview, not the
+session (kind `authoring`, so it stays hidden from `gmlw jobs`; sessions accumulate
+under `create-workflow`). The name is decided at the **end** of the interview, not the
 start — a name given up front is only a seed you can change (though it lets a known name
 fail fast if it is already taken). It is a warm, one-question-at-a-time interview, not a
 form.
@@ -118,7 +116,7 @@ rule, and any rule the user has switched off with `status: draft` is skipped ent
 ## Rules
 
 See [CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (the environment
-vs role, `status: draft`, `Precedence`, always-on capture). The one thing specific
+vs role axis, `status: draft`, `Precedence`, always-on capture). The one thing specific
 to workflows: there is **no per-workflow rule tier**. A workflow that behaves wrongly
 is fixed in the workflow's own `workflow.md`, not patched by a rule beside it — rules
 describe the user, not a procedure.

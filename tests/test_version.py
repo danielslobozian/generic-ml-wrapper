@@ -19,6 +19,6 @@ def test_version_string_is_a_single_line() -> None:
 
 def test_version_flag_prints_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exit_info:
-        app.cli_main(["--version"])
+        app.main(["--version"])
     assert exit_info.value.code == 0
     assert f"gmlw {__version__}" in capsys.readouterr().out

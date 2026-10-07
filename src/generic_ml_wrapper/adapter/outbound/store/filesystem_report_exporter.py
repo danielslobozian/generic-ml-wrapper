@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-class FilesystemReportExporterAdapter(ReportExportPort):
+class FilesystemReportExporter(ReportExportPort):
     """Write each export to ``<root>/<job>-<timestamp>.json``, creating the root as needed."""
 
     def __init__(self, root: Path, clock: Callable[[], datetime]) -> None:
@@ -27,10 +27,10 @@ class FilesystemReportExporterAdapter(ReportExportPort):
         self._root = root
         self._clock = clock
 
-    def write(self, job: str, content: str) -> str:
-        """Write ``content`` to a timestamped file under the root, returning where."""
+    def write(self, job: str, content: str) -> Path:
+        """Write ``content`` to a timestamped file under the root, returning its path."""
         self._root.mkdir(parents=True, exist_ok=True)
         stamp = self._clock().strftime("%Y%m%d-%H%M%S")
         path = self._root / f"{job}-{stamp}.json"
         path.write_text(content, encoding="utf-8")
-        return str(path)
+        return path

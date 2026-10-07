@@ -8,15 +8,13 @@ that followed, because nothing failed when they did. Key parity
 with *each other* — it cannot see a string that never reached the catalogue at all.
 This closes that half:
 
-1. **No literal at a message call site.** ``print``, argparse help/metavar, and Textual
-   key bindings must resolve their text through ``t``. Diagnostics are excluded on
-   purpose: logs are written for whoever debugs the problem, in one language, and
-   carry a ``key=`` rather than a translation.
-2. **Every key used exists.** A ``get_message("...")`` call naming a key no catalogue defines
+1. **No literal at a message call site.** ``print``, ``log.*``, argparse help/metavar,
+   and Textual key bindings must resolve their text through ``i18n.t``.
+2. **Every key used exists.** A ``t("...")`` call naming a key no catalogue defines
    renders as the raw key to the user — silent, and invisible to parity. The same check
-   covers a :class:`DomainError` subclass raised with a
-   literal catalogue key (0.9.1): the key is exactly as checkable as a ``get_message()`` call, since
-   whoever catches the error renders it as ``get_message(error.catalogue_key, **error.params)``.
+   covers a :class:`~generic_ml_wrapper.common.errors.DomainError` subclass raised with a
+   literal catalogue key (0.9.1): the key is exactly as checkable as a ``t()`` call, since
+   :meth:`DomainError.localized` is just ``loc.t(self.catalogue_key, **self.params)``.
 3. **Every setting is described.** A new registry field must arrive with its
    ``setting.<key>`` entry, since its description is a key resolved at render time.
 
@@ -35,13 +33,9 @@ from pathlib import Path
 
 import generic_ml_wrapper
 import generic_ml_wrapper.adapter.inbound.cli.app  # pyright: ignore[reportUnusedImport]
-from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
-    CATALOG_FOLDER,
-    CATALOG_SUFFIX,
-    JsonCatalogMessageSource,
-)
-from generic_ml_wrapper.adapter.outbound.config import settings_registry
-from generic_ml_wrapper.application.domain.model.domain_error import DomainError
+from generic_ml_wrapper.common import settings_registry
+from generic_ml_wrapper.common.errors import DomainError
+from generic_ml_wrapper.common.i18n import SUPPORTED_LANGUAGES
 
 SRC = Path(generic_ml_wrapper.__file__).parent
 
@@ -57,15 +51,8 @@ ALLOWED: dict[tuple[str, str], str] = {
 }
 
 
-SHIPPED_LANGUAGES = JsonCatalogMessageSource().available_languages()
-
-ERRORS_WHOSE_FIRST_ARGUMENT_IS_NOT_A_CATALOGUE_KEY = frozenset({"InvalidSettingValueError"})
-
-
 def _catalogue(lang: str) -> dict[str, str]:
-    path = resources.files("generic_ml_wrapper").joinpath(
-        "resources", CATALOG_FOLDER, f"{lang}{CATALOG_SUFFIX}"
-    )
+    path = resources.files("generic_ml_wrapper").joinpath("resources", "i18n", f"{lang}.json")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -87,15 +74,15 @@ def _domain_error_subclass_names() -> frozenset[str]:
     return frozenset(cls.__name__ for cls in _all(DomainError))
 
 
-def _literals_outside_get_message(node: ast.AST) -> list[str]:
-    """Return literal strings under *node* that are not arguments to a ``get_message(...)`` call."""
+def _literals_outside_t(node: ast.AST) -> list[str]:
+    """Return literal strings under *node* that are not arguments to a ``t(...)`` call."""
     found: list[str] = []
 
     def walk(current: ast.AST, inside_t: bool) -> None:
         if isinstance(current, ast.Call):
             func = current.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-            if name in {"get_message", "_key"}:
+            if name in {"t", "_key"}:
                 inside_t = True
         # Punctuation, separators and layout scaffolding carry no meaning to translate.
         if (
@@ -118,11 +105,10 @@ def _message_arguments(call: ast.Call) -> Sequence[ast.AST]:
     name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
     if name == "print":
         return list(call.args)
-    # Diagnostics are deliberately absent. A log line is read by whoever is fixing the
-    # problem, not by the person who chose the language -- a French traceback in a bug
-    # report is unusable by the team receiving it, and the operator's locale is not the
-    # user's. Log messages are English literals by design; the `key=` passed alongside is
-    # what keeps them greppable across versions.
+    if name in {"debug", "info", "warning", "error"} and isinstance(func, ast.Attribute):
+        base = func.value
+        is_logger = getattr(base, "id", "") == "log" or getattr(base, "attr", "") == "log"
+        return call.args[:1] if is_logger else []
     if name in PARSER_CALLS:
         return [kw.value for kw in call.keywords if kw.arg in MESSAGE_KEYWORDS]
     if name == "Binding":
@@ -140,7 +126,7 @@ def _violations() -> list[str]:
             if not isinstance(node, ast.Call):
                 continue
             for argument in _message_arguments(node):
-                for text in _literals_outside_get_message(argument):
+                for text in _literals_outside_t(argument):
                     if any(
                         _rel(path).endswith(suffix) and text == allowed
                         for suffix, allowed in ALLOWED
@@ -154,8 +140,7 @@ def test_no_user_facing_literal_at_a_message_call_site() -> None:
     violations = _violations()
     assert not violations, (
         "user-facing text must be a catalogue key, not a literal — add it to "
-        "resources/i18n/{en,fr}.json and render it with get_message():\n  "
-        + "\n  ".join(violations)
+        "resources/i18n/{en,fr}.json and render it with i18n.t():\n  " + "\n  ".join(violations)
     )
 
 
@@ -173,9 +158,7 @@ def test_every_key_used_in_the_code_exists_in_the_catalogue() -> None:
                 continue
             func = node.func
             name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
-            if (name != "get_message" and name not in domain_errors) or not node.args:
-                continue
-            if name in ERRORS_WHOSE_FIRST_ARGUMENT_IS_NOT_A_CATALOGUE_KEY:
+            if (name != "t" and name not in domain_errors) or not node.args:
                 continue
             first = node.args[0]
             # Only literal keys are checkable; a computed key is checked by its callers.
@@ -186,14 +169,14 @@ def test_every_key_used_in_the_code_exists_in_the_catalogue() -> None:
             ):
                 unknown.append(f"{_rel(path)}:{node.lineno}  {first.value!r}")
     assert not unknown, (
-        "get_message()/DomainError raised with keys absent from en.json:\n  " + "\n  ".join(unknown)
+        "i18n.t()/DomainError raised with keys absent from en.json:\n  " + "\n  ".join(unknown)
     )
 
 
 def test_every_setting_has_a_localised_description() -> None:
     # A registry field's `description` holds a catalogue key, so a new setting that
     # forgets its entry would render its own key as the description in `config list`.
-    for lang in SHIPPED_LANGUAGES:
+    for lang in SUPPORTED_LANGUAGES:
         catalogue = _catalogue(lang)
         missing = [
             f"setting.{row.key}"

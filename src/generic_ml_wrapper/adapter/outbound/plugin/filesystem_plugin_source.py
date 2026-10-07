@@ -8,8 +8,10 @@ import tomllib
 from typing import TYPE_CHECKING, cast
 
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
-from generic_ml_wrapper.application.domain.model.plugin_error import PluginError
-from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
+from generic_ml_wrapper.application.port.outbound.plugin_source import (
+    PluginError,
+    PluginSourcePort,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -17,7 +19,7 @@ if TYPE_CHECKING:
 _MANIFEST = "plugin.toml"
 
 
-class FilesystemPluginSourceAdapter(PluginSourcePort):
+class FilesystemPluginSource(PluginSourcePort):
     """Discover plugins by their ``plugin.toml`` manifest and resolve id references.
 
     A plugin is a folder ``<root>/<id>/`` with a ``plugin.toml``::

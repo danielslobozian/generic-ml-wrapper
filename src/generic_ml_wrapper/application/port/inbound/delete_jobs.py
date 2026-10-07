@@ -6,11 +6,36 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from dataclasses import dataclass
 
-from generic_ml_wrapper.application.port.inbound.job_footprint import JobFootprint
+
+@dataclass(frozen=True)
+class JobFootprint:
+    """Everything one job holds -- what a delete would take with it.
+
+    The same shape as a :class:`~generic_ml_wrapper.application.port.inbound
+    .delete_sessions.SessionFootprint`, one level up: a job's footprint is the fold of
+    its sessions' footprints, plus the job's own row.
+
+    Attributes:
+        job: The job identifier.
+        sessions: How many sessions are recorded for it.
+        turns: Metered turns across all of them.
+        cost_usd: Their combined recorded cost.
+        contexts: Compiled-context files the job holds.
+        transcript_calls: Transcript files the job holds (``0`` unless transcripts
+            were on).
+    """
+
+    job: str
+    sessions: int
+    turns: int
+    cost_usd: float
+    contexts: int
+    transcript_calls: int
 
 
-class DeleteJobsUseCase(ABC):
+class DeleteJobs(ABC):
     """Remove whole jobs: their sessions, their usage, and their files."""
 
     @abstractmethod

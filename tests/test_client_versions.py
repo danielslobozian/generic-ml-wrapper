@@ -7,11 +7,8 @@ from __future__ import annotations
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.bootstrap import http_client_versions as hcv
-from generic_ml_wrapper.adapter.outbound.bootstrap.toml_client_catalog import (
-    TomlClientCatalogAdapter,
-)
-from generic_ml_wrapper.application.domain.model.client_info import ClientInfo
-from generic_ml_wrapper.application.domain.model.version_probe import VersionProbe
+from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.domain.model.client_catalog import VersionProbe
 
 
 def test_parse_version_pulls_a_token_out_of_noise() -> None:
@@ -58,7 +55,7 @@ def test_installed_parses_the_version_flag_output(monkeypatch: pytest.MonkeyPatc
         return _Completed()
 
     monkeypatch.setattr(hcv.subprocess, "run", _run)
-    assert hcv.HttpClientVersionsAdapter().installed(_client("claude")) == "2.1.215"
+    assert hcv.HttpClientVersions().installed(client_catalog.CLAUDE) == "2.1.215"
 
 
 def test_installed_is_none_when_the_client_is_absent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -66,17 +63,17 @@ def test_installed_is_none_when_the_client_is_absent(monkeypatch: pytest.MonkeyP
         raise FileNotFoundError
 
     monkeypatch.setattr(hcv.subprocess, "run", _missing)
-    assert hcv.HttpClientVersionsAdapter().installed(_client("claude")) is None
+    assert hcv.HttpClientVersions().installed(client_catalog.CLAUDE) is None
 
 
 def test_latest_uses_the_primary_channel(monkeypatch: pytest.MonkeyPatch) -> None:
-    versions = hcv.HttpClientVersionsAdapter()
+    versions = hcv.HttpClientVersions()
 
     def _fetch(_url: str) -> str | None:
         return '{"version":"0.144.6"}'
 
     monkeypatch.setattr(versions, "_fetch", _fetch)
-    assert versions.latest(_client("codex")) == "0.144.6"
+    assert versions.latest(client_catalog.CODEX) == "0.144.6"
 
 
 def test_latest_falls_back_when_the_primary_fails(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,23 +84,16 @@ def test_latest_falls_back_when_the_primary_fails(monkeypatch: pytest.MonkeyPatc
             return '{"tag_name":"rust-v0.144.6"}'
         return None
 
-    versions = hcv.HttpClientVersionsAdapter()
+    versions = hcv.HttpClientVersions()
     monkeypatch.setattr(versions, "_fetch", _fetch)
-    assert versions.latest(_client("codex")) == "0.144.6"
+    assert versions.latest(client_catalog.CODEX) == "0.144.6"
 
 
 def test_latest_is_none_when_offline(monkeypatch: pytest.MonkeyPatch) -> None:
-    versions = hcv.HttpClientVersionsAdapter()
+    versions = hcv.HttpClientVersions()
 
     def _fetch(_url: str) -> str | None:
         return None
 
     monkeypatch.setattr(versions, "_fetch", _fetch)
-    assert versions.latest(_client("vibe")) is None
-
-
-def _client(name: str) -> ClientInfo:
-    """The packaged catalogue entry for *name* — these tests assume it exists."""
-    info = TomlClientCatalogAdapter().by_name(name)
-    assert info is not None
-    return info
+    assert versions.latest(client_catalog.VIBE) is None

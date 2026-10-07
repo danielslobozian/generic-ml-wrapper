@@ -1,119 +1,107 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The ImportWorkflowUseCase use case: install a shared workflow, displacing any it replaces.
-
-Replacing is reversible on purpose, and the order is what makes it so. The archive is
-asked what it is *before* anything moves, so a file that is not a workflow is refused with
-the installed one still in place; and if unpacking fails after the old one has been moved
-aside, it is put back. Neither step touches the filesystem here -- what a backup is called
-and where it lives belongs to the adapter that owns the disk.
-"""
+"""The ImportWorkflow use case: install a shared workflow, displacing any it replaces."""
 
 from __future__ import annotations
 
+import shutil
+from pathlib import Path
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
-from generic_ml_wrapper.application.domain.model.archive_unreadable_error import (
+from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError, WorkflowName
+from generic_ml_wrapper.application.port.inbound.import_workflow import (
     ArchiveUnreadableError,
+    ImportOutcome,
+    ImportWorkflow,
+    ImportWorkflowResult,
 )
-from generic_ml_wrapper.application.domain.model.workflow_name import WorkflowName
-from generic_ml_wrapper.application.domain.model.workflow_name_error import WorkflowNameError
-from generic_ml_wrapper.application.port.inbound.import_outcome import ImportOutcome
-from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflowUseCase
-from generic_ml_wrapper.application.port.inbound.import_workflow_result import ImportWorkflowResult
+from generic_ml_wrapper.application.port.inbound.new_workflow import WorkflowNameError
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.workflow_backup import WorkflowBackup
+    from collections.abc import Callable
+    from datetime import datetime
+
     from generic_ml_wrapper.application.port.outbound.workflow_archive import WorkflowArchivePort
-    from generic_ml_wrapper.application.port.outbound.workflow_backup import WorkflowBackupPort
     from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 
 _RESERVED = frozenset({"create-workflow", "_common"})
 _STEPS = "workflow.md"
+_TIME_DIGITS = 6  # the HHMMSS half of an export stamp: <slug>-YYYYMMDD-HHMMSS
 
 
-class ImportWorkflowService(ImportWorkflowUseCase):
+class ImportWorkflowUseCase(ImportWorkflow):
     """Unpack an archive into the workflows root, backing up anything it displaces."""
 
     def __init__(
         self,
         workflows: WorkflowSourcePort,
         archive: WorkflowArchivePort,
-        backups: WorkflowBackupPort,
+        backups_root: Path,
+        clock: Callable[[], datetime],
     ) -> None:
-        """Wire the use case to its ports.
+        """Wire the use case to its ports and the backup root.
 
         Args:
             workflows: Resolves workflow folders and reports which names are taken.
-            archive: Reports what an archive is, and unpacks it.
-            backups: Moves a displaced workflow aside, and puts it back if the
-                replacement never arrives.
+            archive: Unpacks the archive, and decides what a shared workflow consists of.
+            backups_root: Where a displaced workflow is moved. Deliberately *outside* the
+                workflows folder: a backup that lived beside the workflows would be
+                listed as one, and keeping it out makes that impossible by construction
+                rather than by a filter someone must remember.
+            clock: Returns "now", for the backup's timestamped name.
         """
         self._workflows = workflows
         self._archive = archive
-        self._backups = backups
+        self._backups_root = backups_root
+        self._clock = clock
 
     def execute(self, archive: str, *, replace: bool = False) -> ImportWorkflowResult:
         """Import a workflow from an archive."""
-        # Asked first, and answered without touching anything: an archive that is not a
-        # workflow is refused while the installed one is still where the user left it.
-        # Checking afterwards is what used to leave them with neither.
-        self._refuse_unusable(archive)
-        name = self._named(archive)
-        self._workflows.seed()
-        target = self._workflows.folder(name)
-
-        if self._workflows.find(name) is not None and not replace:
-            # Reported rather than overwritten, so the caller can ask the user first.
-            return ImportWorkflowResult(ImportOutcome.REFUSED, name, target)
-
-        backup = self._install(archive, name, target)
-        if backup is None:
-            return ImportWorkflowResult(ImportOutcome.IMPORTED, name, target)
-        return ImportWorkflowResult(ImportOutcome.REPLACED, name, target, backup.location)
-
-    def _refuse_unusable(self, archive: str) -> None:
-        """Reject an archive that cannot be imported, before anything has been moved.
-
-        Raises:
-            ArchiveUnreadableError: If there is nothing readable there, or what is there
-                carries no workflow.
-        """
-        status = self._archive.inspect(archive)
-        if status is ArchiveStatus.MISSING:
+        source = Path(archive)
+        if not source.is_file():
             raise ArchiveUnreadableError("error.archive.not_found", archive=archive)
-        if status is ArchiveStatus.INCOMPLETE:
+        name = self._name_from(source)
+        self._workflows.seed()
+        target = Path(self._workflows.folder(name))
+
+        if self._workflows.exists(name) and not replace:
+            # Reported rather than overwritten, so the caller can ask the user first.
+            return ImportWorkflowResult(ImportOutcome.REFUSED, name, str(target))
+
+        backup = self._displace(name, target) if target.exists() else None
+        self._archive.unpack(source, target)
+        if not (target / _STEPS).is_file():
             raise ArchiveUnreadableError("error.archive.no_workflow", archive=archive, steps=_STEPS)
+        outcome = ImportOutcome.REPLACED if backup else ImportOutcome.IMPORTED
+        return ImportWorkflowResult(outcome, name, str(target), backup)
 
-    def _install(self, source: str, name: str, target: str) -> WorkflowBackup | None:
-        """Clear the folder, unpack into it, and undo the clearing if that fails.
+    def _name_from(self, archive: Path) -> str:
+        """Derive the workflow's slug from the archive's filename.
 
-        Displacing is asked for unconditionally: whether anything was there is a question
-        about the disk, and answering it here would mean reaching for the disk. The reply
-        says which of the two outcomes happened.
-
-        The two moves cannot be one: a folder cannot be renamed onto a folder that is not
-        empty, so there is a moment when neither is at the target path. Putting the old one
-        back is what makes that moment survivable rather than merely brief.
+        The archive is named ``<slug>-<timestamp>.zip`` on export, but it is a file a
+        user can rename, so the stem is taken as the intended name and validated like
+        any other. A trailing export timestamp is dropped when one is present.
         """
-        backup = self._backups.displace(name, target)
+        stem = archive.stem
+        head, separator, tail = stem.rpartition("-")
+        if separator and len(tail) == _TIME_DIGITS and tail.isdigit():  # <slug>-<date>-<time>
+            stem = head.rpartition("-")[0] or head
         try:
-            self._archive.unpack(source, target)
-        except Exception:
-            if backup is not None:
-                self._backups.restore(backup, target)
-            raise
-        return backup
+            WorkflowName(stem)
+        except IdentifierError as error:
+            raise WorkflowNameError(error.catalogue_key, **error.params) from error
+        if stem in _RESERVED:
+            raise WorkflowNameError("error.workflow.reserved_name", name=stem)
+        return stem
 
-    def _named(self, archive: str) -> str:
-        """The workflow the archive says it carries, refused if the name is reserved.
+    def _displace(self, name: str, target: Path) -> str:
+        """Move an existing workflow aside, returning where it went.
 
-        What a filename yields is :class:`WorkflowName`'s own rule. What may not be
-        installed over is this use case's, because *reserved* means reserved by what the
-        application seeds -- a fact about the application, not about names.
+        Moved rather than deleted so replacing is never a one-way door — the user is
+        told where the old one went, and can put it back.
         """
-        name = WorkflowName.from_archive_filename(archive)
-        if name in _RESERVED:
-            raise WorkflowNameError("error.workflow.reserved_name", name=name)
-        return name
+        stamp = self._clock().strftime("%Y%m%d-%H%M%S")
+        backup = self._backups_root / name / stamp
+        backup.parent.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(target), str(backup))
+        return str(backup)

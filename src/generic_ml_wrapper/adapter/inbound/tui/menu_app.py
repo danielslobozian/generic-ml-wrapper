@@ -15,7 +15,7 @@ verbs are placeholders that update the detail panel until they are built out.
 **Import timing matters here.** Textual reads ``BINDINGS`` as a class attribute, so a
 footer label is resolved when this module is *imported*, not when a screen is shown. That
 is fine because the module is imported lazily from the ``tui`` command, which runs after
-the active message source is installed -- so the labels come out in the user's language. Import
+the active localiser is installed -- so the labels come out in the user's language. Import
 it any earlier and they would freeze in English. :func:`_key` marks every such label.
 """
 
@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import ClassVar, cast
 
 from textual import work
@@ -34,27 +35,10 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
 from textual.worker import Worker, WorkerState
 
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    get_active,
-)
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
-from generic_ml_wrapper.adapter.inbound.tui.view.client_choice import ClientChoice
-from generic_ml_wrapper.adapter.inbound.tui.view.client_row import ClientRow
-from generic_ml_wrapper.adapter.inbound.tui.view.config_set_result import ConfigSetResult
-from generic_ml_wrapper.adapter.inbound.tui.view.config_setting import ConfigSetting
-from generic_ml_wrapper.adapter.inbound.tui.view.create_outcome import CreateOutcome
-from generic_ml_wrapper.adapter.inbound.tui.view.import_attempt import ImportAttempt
-from generic_ml_wrapper.adapter.inbound.tui.view.item import Item
-from generic_ml_wrapper.adapter.inbound.tui.view.job_choice import JobChoice
-from generic_ml_wrapper.adapter.inbound.tui.view.menu_choice import MenuChoice
-from generic_ml_wrapper.adapter.inbound.tui.view.session_choice import SessionChoice
-from generic_ml_wrapper.adapter.inbound.tui.view.switch_choice import SwitchChoice
-from generic_ml_wrapper.adapter.inbound.tui.view.usage_view import UsageView
-from generic_ml_wrapper.application.domain.model.environment import Environment
-from generic_ml_wrapper.application.domain.model.role import Role
-from generic_ml_wrapper.application.domain.model.rule import Rule
+from generic_ml_wrapper.application.domain.model.rule_catalog import RuleAxis, RuleGroup
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.port.inbound.list_rules_result import ListRulesResult
+from generic_ml_wrapper.common import i18n
 
 
 def _key(key: str, action: str, label: str, **options: object) -> Binding:
@@ -69,7 +53,7 @@ def _key(key: str, action: str, label: str, **options: object) -> Binding:
     Returns:
         The binding, with its description already localised.
     """
-    return Binding(key, action, get_active().get_message(label), **options)  # type: ignore[arg-type]
+    return Binding(key, action, i18n.active().t(label), **options)  # type: ignore[arg-type]
 
 
 def _accept_any_job(_name: str) -> str | None:
@@ -97,14 +81,69 @@ def _no_clients() -> list[ClientChoice]:
     return []
 
 
-def _no_rules() -> ListRulesResult:
-    """Default rule listing when the app runs unwired (tests): the user has none."""
-    return ListRulesResult(environments=(), roles=())
+def _no_rules() -> tuple[RuleGroup, ...]:
+    """Default rule catalogue when the app runs unwired (tests): the user has none."""
+    return ()
 
 
 def _no_save(_job: str) -> str:
     """Default report saver when the app runs unwired (tests): no file written."""
     return ""
+
+
+@dataclass(frozen=True)
+class MenuChoice:
+    """What the user asked the app to do, handed back to the wiring on exit.
+
+    Job launchers use ``job`` (and, for ``"resume"``, the specific ``session``). Workflow
+    launchers use ``workflow``: ``"run"`` runs it, ``"workflow_new"`` / ``"workflow_edit"``
+    open an authoring session at the chosen ``guided`` depth (``workflow`` is ``None`` for a
+    new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
+    ``archive`` to install from. ``client`` is the one this launch was pointed at, or
+    ``None`` to use the configured default -- a per-launch choice, exactly like ``--client``
+    on the CLI, and never a change to the default itself. A ``None`` return means "do
+    nothing".
+
+    Only things that need the terminal come back this way. Deleting does not -- it happens
+    in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
+    question is a round trip that ends somewhere other than where it started.
+    """
+
+    action: str
+    job: str | None = None
+    session: str | None = None
+    workflow: str | None = None
+    guided: bool = False
+    archive: str | None = None
+    client: str | None = None
+
+
+@dataclass(frozen=True)
+class JobChoice:
+    """A job the user can resume, plus how many sessions it has (for display)."""
+
+    job: str
+    session_count: int
+
+
+@dataclass(frozen=True)
+class SessionChoice:
+    """A recorded session the resume picker shows: what it was and whether it can resume.
+
+    ``client`` is the client that made it (a resume relaunches on it, not the current
+    default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
+    marks the newest; ``usage`` is its already-rendered turn/cost cell (the word for
+    "empty" when it never ran a turn), formatted by the wiring so the CLI listing and this
+    app cannot describe the same session two different ways.
+    """
+
+    session_id: str
+    client: str
+    cwd: str | None
+    resumable: bool
+    date: str
+    is_latest: bool
+    usage: str = ""
 
 
 @dataclass(frozen=True)
@@ -128,6 +167,39 @@ class Deleter:
 
 
 @dataclass(frozen=True)
+class ClientChoice:
+    """One client a launch can be pointed at, as the picker shows it.
+
+    Every row here is launchable -- the wiring only offers what is actually available, so
+    unlike the resume picker there is nothing to disable. ``custom`` marks a client that
+    came from the user's own ``[callers]`` config rather than the built-in catalog.
+    """
+
+    name: str
+    display: str
+    is_default: bool
+    custom: bool = False
+
+
+@dataclass(frozen=True)
+class ImportAttempt:
+    """What came back from trying to install an archive.
+
+    ``needs_confirmation`` is the use case reporting a name clash rather than resolving it
+    — the same answer the CLI turns into its replace prompt. Here it becomes a confirmation
+    screen, and a yes re-runs the install with ``replace``.
+
+    Attributes:
+        message: The line to show — the outcome, the clash, or the error.
+        needs_confirmation: Whether a workflow of that name already exists and the user
+            has to say whether to displace it.
+    """
+
+    message: str
+    needs_confirmation: bool = False
+
+
+@dataclass(frozen=True)
 class Archiver:
     """Sharing a workflow out and installing one in, as injected closures.
 
@@ -142,6 +214,32 @@ class Archiver:
     reload_workflows: Callable[[], list[Workflow]]
 
 
+@dataclass(frozen=True)
+class SwitchChoice:
+    """One option in a switcher: the config ``value`` written, plus what the user sees.
+
+    For personas ``value`` and ``label`` are both the persona name; for the folder-backed
+    axes ``value`` is the slug (what's stored) and ``label`` is the human name (what's shown).
+    """
+
+    value: str
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
+class CreateOutcome:
+    """The result of a create-from-label attempt handed back by the injected ``create``.
+
+    On success ``choice`` is the new option to add and select; on failure it is ``None``
+    (a bad label or a collision) and ``message`` explains why. Either way ``message`` is
+    shown in the panel.
+    """
+
+    choice: SwitchChoice | None
+    message: str
+
+
 @dataclass
 class Switcher:
     """A "pick one, set a config key" screen's data: its rows, current value, and setters.
@@ -149,15 +247,47 @@ class Switcher:
     Mutable because ``current`` moves as the user switches. ``apply`` persists the chosen
     value; ``create`` (when set) creates a new option from a typed label and makes it
     current. Both are the only outbound calls, injected by the wiring so the app stays free
-    of use-case imports. ``create`` is ``None`` for options that cannot be created.
+    of use-case imports. ``create`` is ``None`` for axes that cannot be created (personas).
     """
 
-    key: str
     crumb: str
     choices: list[SwitchChoice]
     current: str | None
     apply: Callable[[str], str]
     create: Callable[[str], CreateOutcome] | None = None
+
+
+@dataclass
+class ConfigSetting:
+    """One setting the Config Get/Set browsers show: what it is and its current value.
+
+    All display fields are pre-rendered by the wiring (``value``/``default`` already read
+    through the CLI's ``_setting_value``), so the app stays free of formatting concerns.
+    ``value`` is mutable: a successful set patches it in place so the picker reflects the
+    change without a re-read. ``type_name`` (``str`` / ``str?`` / ``bool`` / ``choice``) and
+    ``choices`` pick which value editor Set opens.
+    """
+
+    key: str
+    value: str
+    default: str
+    type_name: str
+    choices: tuple[str, ...] | None
+    description: str
+
+
+@dataclass(frozen=True)
+class ConfigSetResult:
+    """The outcome of a set attempt handed back by the injected ``apply``.
+
+    ``ok`` is ``False`` for a rejected value (the editor keeps the screen and shows
+    ``message``); on success ``value`` is the new rendered value the catalog is patched with.
+    Either way ``message`` is the localised line shown to the user.
+    """
+
+    ok: bool
+    message: str
+    value: str = ""
 
 
 @dataclass
@@ -174,7 +304,62 @@ class ConfigCatalog:
     apply: Callable[[str, str], ConfigSetResult]
 
 
-# The object-first menu tree, built through the active message_source. Each entry is
+@dataclass(frozen=True)
+class UsageView:
+    """A job's usage, pre-rendered for the Export summary view.
+
+    Structured so the screen can lay it out as tables without any formatting logic: ``summary``
+    is the totals line (already localised), and ``model_rows``/``session_rows`` are the cells of
+    the by-model and by-session-cost tables (all values pre-rendered to strings by the wiring).
+    ``empty`` means the job has no recorded usage. The full per-turn detail is deliberately not
+    here -- that is what the JSON file export carries.
+    """
+
+    job: str
+    empty: bool
+    summary: str
+    model_rows: tuple[tuple[str, ...], ...]
+    session_rows: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
+class ClientRow:
+    """One supported client's row for the Config Clients table, pre-rendered by the wiring.
+
+    All cells are display strings (``version`` reads "not installed" when absent, ``default``
+    is a marker or empty) so the screen only fills the table. Two fields are not cells:
+    ``name`` is the client *id* the screen writes when the row is made the default, and
+    ``note`` is the caveat on the resumable cell (codex resumes only once its id is bound),
+    shown in the detail line rather than crammed into the column.
+    """
+
+    client: str
+    version: str
+    resumable: str
+    default: str
+    name: str = ""
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class _Item:
+    """One menu row: an icon, a bold title, a dim subtitle, and what it does.
+
+    ``action`` drives the screen's ``handle``; ``example`` is the equivalent CLI shown in
+    the detail panel; ``payload`` carries data a dynamic row needs (e.g. a job id).
+    """
+
+    icon: str
+    title: str
+    subtitle: str
+    action: str
+    example: str = ""
+    payload: str = ""
+    note: str = ""  # an extra plain detail line (no "$" prefix), e.g. a resume caveat
+    disabled: bool = False  # shown but not selectable (e.g. a non-resumable session)
+
+
+# The object-first menu tree, built through the active localiser. Each entry is
 # (icon, title-key, action, example); the subtitle key is the title key + ".d". The
 # ``example`` commands stay literal (they are commands, not prose).
 _JOB_MENU = (
@@ -219,33 +404,8 @@ _TOP_MENU = (
     ("📏", "tui.rules", "menu:rules", ""),
     ("🚪", "tui.quit", "quit", ""),
 )
-# The icons, so a row reads as a place or a craft at a glance.
-_ENVIRONMENT_ICON = "🌍"
-_ROLE_ICON = "🎓"
-
-
-def _rule_rows(rules: tuple[Rule, ...]) -> list[Item]:
-    """One row per rule: its code, the instruction itself, and its status."""
-    message_source = get_active()
-    rows: list[Item] = []
-    for rule in rules:
-        status = (
-            message_source.get_message("tui.rules.draft")
-            if rule.draft
-            else message_source.get_message("tui.rules.active")
-        )
-        if rule.strength:
-            status = f"{status} · {rule.strength}"
-        rows.append(
-            Item(
-                "📝" if rule.draft else "📏",
-                rule.code,
-                rule.rule or message_source.get_message("tui.rules.norule"),
-                "rules:rule",
-                note=f"{status}\n{rule.when}" if rule.when else status,
-            )
-        )
-    return rows
+# The icon per rule axis, so a group reads as a place or a craft at a glance.
+_AXIS_ICON = {RuleAxis.ENVIRONMENT: "🌍", RuleAxis.ROLE: "🎓"}
 
 
 def _wf_display(flow: Workflow) -> tuple[str, str]:
@@ -260,18 +420,11 @@ def _wf_display(flow: Workflow) -> tuple[str, str]:
     return flow.label, flow.slug
 
 
-def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[Item]:
+def _menu(rows: tuple[tuple[str, str, str, str], ...]) -> list[_Item]:
     """Resolve a menu spec into localised rows (subtitle key = title key + ``.d``)."""
-    message_source = get_active()
+    t = i18n.active().t
     return [
-        Item(
-            icon,
-            message_source.get_message(key),
-            message_source.get_message(f"{key}.d"),
-            action,
-            example,
-        )
-        for icon, key, action, example in rows
+        _Item(icon, t(key), t(f"{key}.d"), action, example) for icon, key, action, example in rows
     ]
 
 
@@ -283,13 +436,13 @@ class _Row(ListItem):
     up to the whole viewport.
     """
 
-    def __init__(self, item: Item) -> None:
+    def __init__(self, item: _Item) -> None:
         self._label = Label(self._markup(item.icon, item))
         super().__init__(self._label, disabled=item.disabled)
         self.item = item
 
     @staticmethod
-    def _markup(icon: str, item: Item) -> str:
+    def _markup(icon: str, item: _Item) -> str:
         return f"{icon}  [b]{item.title}[/b]\n    [dim]{item.subtitle}[/dim]"
 
     def set_icon(self, icon: str) -> None:
@@ -331,7 +484,7 @@ class _MenuScreen(Screen[None]):
         """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
         return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The rows for this screen (overridden by dynamic screens like the job picker)."""
         return []
 
@@ -353,10 +506,10 @@ class _MenuScreen(Screen[None]):
         if items:
             yield ListView(*(_Row(i) for i in items), id="menu", initial_index=self.initial_index())
         else:
-            yield Static(get_active().get_message(self.empty_key), id="empty")
+            yield Static(i18n.active().t(self.empty_key), id="empty")
         with Container(id="status"):
             yield Static("", id="detail")
-            yield Static(get_active().get_message(self.keys_key), id="keys")
+            yield Static(i18n.active().t(self.keys_key), id="keys")
 
     def on_mount(self) -> None:
         """Prime the detail panel; a pending flash confirmation wins after the mount settles."""
@@ -381,7 +534,7 @@ class _MenuScreen(Screen[None]):
             lines.append(item.note)
         self.query_one("#detail", Static).update("\n".join(lines))
 
-    def _highlighted(self) -> Item | None:
+    def _highlighted(self) -> _Item | None:
         try:
             row = self.query_one("#menu", ListView).highlighted_child
         except Exception:  # noqa: BLE001  no list on this screen (empty state)
@@ -394,14 +547,12 @@ class _MenuScreen(Screen[None]):
         if isinstance(event.item, _Row):
             self.handle(event.item.item)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Act on a selected row. Base behaviour: flag it as not wired, and beep."""
         self._stub(item)
 
-    def _stub(self, item: Item) -> None:
-        self.query_one("#detail", Static).update(
-            get_active().get_message("tui.stub", title=item.title)
-        )
+    def _stub(self, item: _Item) -> None:
+        self.query_one("#detail", Static).update(i18n.active().t("tui.stub", title=item.title))
         self.menu_app.bell()
 
     def action_back(self) -> None:
@@ -444,24 +595,24 @@ class ClientPickerScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: the launch being set up, what it targets, then Client."""
-        message_source = get_active()
+        t = i18n.active().t
         obj, verb = self._CRUMBS.get(self._pending.action, ("tui.client.crumb", ""))
-        parts = ["gmlw", message_source.get_message(obj)]
+        parts = ["gmlw", t(obj)]
         if verb:
-            parts.append(message_source.get_message(verb))
+            parts.append(t(verb))
         target = self._pending.job or self._pending.workflow
         if target:
             parts.append(target)
-        parts.append(message_source.get_message("tui.client.crumb"))
+        parts.append(t("tui.client.crumb"))
         return " > ".join(parts)
 
     def _choices(self) -> list[ClientChoice]:
         return self.menu_app.launch_clients()
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per launchable client, the default marked and your own callers flagged."""
-        message_source = get_active()
-        items: list[Item] = []
+        t = i18n.active().t
+        items: list[_Item] = []
         for choice in self._choices():
             if choice.is_default:
                 icon = "●"
@@ -470,15 +621,13 @@ class ClientPickerScreen(_MenuScreen):
             else:
                 icon = "○"
             items.append(
-                Item(
+                _Item(
                     icon,
                     choice.display,
-                    message_source.get_message("tui.client.default")
-                    if choice.is_default
-                    else message_source.get_message("tui.client.once"),
+                    t("tui.client.default") if choice.is_default else t("tui.client.once"),
                     "client:pick",
                     payload=choice.name,
-                    note=message_source.get_message("tui.client.custom") if choice.custom else "",
+                    note=t("tui.client.custom") if choice.custom else "",
                 )
             )
         return items
@@ -491,7 +640,7 @@ class ClientPickerScreen(_MenuScreen):
         """
         return next((i for i, c in enumerate(self._choices()) if c.is_default), 0)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Exit with the pending launch, now carrying the chosen client."""
         if item.action == "client:pick":
             self.menu_app.exit(replace(self._pending, client=item.payload))
@@ -548,32 +697,18 @@ class ConfirmScreen(Screen[bool]):
 
     def compose(self) -> ComposeResult:
         """Breadcrumb, the consequences, the two answers, then the docked hints."""
-        message_source = get_active()
+        t = i18n.active().t
         yield Static(self._crumb, id="crumb")
         yield Static(self._consequences, id="consequences")
         yield ListView(
-            _Row(
-                Item(
-                    "↩",
-                    message_source.get_message(self._no_key),
-                    message_source.get_message(f"{self._no_key}.d"),
-                    "no",
-                )
-            ),
-            _Row(
-                Item(
-                    self._yes_icon,
-                    message_source.get_message(self._yes_key),
-                    message_source.get_message(f"{self._yes_key}.d"),
-                    "yes",
-                )
-            ),
+            _Row(_Item("↩", t(self._no_key), t(f"{self._no_key}.d"), "no")),
+            _Row(_Item(self._yes_icon, t(self._yes_key), t(f"{self._yes_key}.d"), "yes")),
             id="menu",
             initial_index=0,  # the safe answer is the one ⏎ lands on
         )
         with Container(id="status"):
-            yield Static(message_source.get_message(self._warning_key), id="detail")
-            yield Static(message_source.get_message("tui.keys.confirm"), id="keys")
+            yield Static(t(self._warning_key), id="detail")
+            yield Static(t("tui.keys.confirm"), id="keys")
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         """Answer with the chosen row."""
@@ -637,12 +772,10 @@ class _MultiSelectScreen(_MenuScreen):
             row.set_icon(self.ticked)
         self._sync_detail()
 
-    def handle(self, item: Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
+    def handle(self, item: _Item) -> None:  # noqa: ARG002  (⏎ acts on the ticks, not the row)
         """``⏎``: ask about the ticked rows, or explain how to tick one when none are."""
         if not self._selected:
-            self.query_one("#detail", Static).update(
-                get_active().get_message("tui.del.none_selected")
-            )
+            self.query_one("#detail", Static).update(i18n.active().t("tui.del.none_selected"))
             self.menu_app.bell()
             return
         selected = tuple(i.payload for i in self.menu_items() if i.payload in self._selected)
@@ -676,12 +809,12 @@ class _MultiSelectScreen(_MenuScreen):
     def _sync_detail(self) -> None:
         """Show the highlighted row's description with the running tick count under it."""
         item = self._highlighted()
-        message_source = get_active()
+        loc = i18n.active()
         lines = [] if item is None else [item.subtitle]
         lines.append(
-            message_source.get_message("tui.del.selected", count=len(self._selected))
+            loc.t("tui.del.selected", count=len(self._selected))
             if self._selected
-            else message_source.get_message("tui.del.none_selected")
+            else loc.t("tui.del.none_selected")
         )
         self.query_one("#detail", Static).update("\n".join(lines))
 
@@ -691,11 +824,11 @@ class TopMenuScreen(_MenuScreen):
 
     show_banner = True
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The object rows: Job, Workflow, Config, Rules, Quit."""
         return _menu(_TOP_MENU)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Quit, or open the Job/Workflow/Config/Rules sub-menu."""
         if item.action == "quit":
             self.menu_app.exit(None)
@@ -718,13 +851,13 @@ class JobMenuScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job (localised)."""
-        return f"gmlw > {get_active().get_message('tui.job')}"
+        return f"gmlw > {i18n.active().t('tui.job')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The Job verbs."""
         return _menu(_JOB_MENU)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """New and Resume launch, List and Export browse; any other Job verb is stubbed."""
         if item.action == "job:resume":
             self.menu_app.push_screen(JobPickerScreen())
@@ -745,20 +878,20 @@ class WorkflowMenuScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Workflow (localised)."""
-        return f"gmlw > {get_active().get_message('tui.workflow')}"
+        return f"gmlw > {i18n.active().t('tui.workflow')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The Workflow verbs."""
         return _menu(_WORKFLOW_MENU)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Each Workflow verb: Run/Edit pick a workflow, Create names one, List browses."""
         if item.action == "wf:run":
             self.menu_app.push_screen(WorkflowPickerScreen("run"))
         elif item.action == "wf:edit":
             self.menu_app.push_screen(WorkflowPickerScreen("edit"))
         elif item.action == "wf:create":
-            self.menu_app.push_screen(CreateWorkflowScreen())
+            self.menu_app.push_screen(NewWorkflowScreen())
         elif item.action == "wf:list":
             self.menu_app.push_screen(WorkflowListScreen())
         elif item.action == "wf:export":
@@ -776,20 +909,17 @@ class WorkflowListScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Workflow > List."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.workflow')} > "
-            f"{message_source.get_message('tui.wf.list')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.workflow')} > {t('tui.wf.list')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per workflow; the detail panel shows how to run it."""
         return [
-            Item("📄", *_wf_display(flow), "wf:listrow", example=f"gmlw run {flow.slug}")
+            _Item("📄", *_wf_display(flow), "wf:listrow", example=f"gmlw run {flow.slug}")
             for flow in self.menu_app.workflows
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Read-only: selecting a workflow does nothing (the detail panel is the view)."""
 
 
@@ -809,18 +939,18 @@ class WorkflowPickerScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Workflow > Run|Edit|Export."""
-        message_source = get_active()
-        verb = message_source.get_message(f"tui.wf.{self._mode}")
-        return f"gmlw > {message_source.get_message('tui.workflow')} > {verb}"
+        t = i18n.active().t
+        verb = t(f"tui.wf.{self._mode}")
+        return f"gmlw > {t('tui.workflow')} > {verb}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per workflow: its label to read, its slug carried as the payload."""
         return [
-            Item("⏵", *_wf_display(flow), "wf:pick", payload=flow.slug)
+            _Item("⏵", *_wf_display(flow), "wf:pick", payload=flow.slug)
             for flow in self.menu_app.workflows
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Run exits with the choice; Export packs in place; Edit picks a depth first."""
         if item.action != "wf:pick":
             return
@@ -838,7 +968,7 @@ class WorkflowPickerScreen(_MenuScreen):
             self.menu_app.push_screen(GuidedChoiceScreen("workflow_edit", item.payload))
 
 
-class CreateWorkflowScreen(Screen[None]):
+class NewWorkflowScreen(Screen[None]):
     """Name a new workflow (optional), then choose the authoring depth — a text-entry launcher.
 
     Unlike :class:`NewJobScreen`, an empty name is accepted: the authoring session proposes one
@@ -855,18 +985,12 @@ class CreateWorkflowScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the (optional) name input, a status line, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.workflow')} > "
-                f"{message_source.get_message('tui.wf.create')}"
-            ),
-            id="crumb",
-        )
-        yield Input(placeholder=message_source.get_message("tui.wf.new.placeholder"), id="name")
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.workflow')} > {t('tui.wf.create')}", id="crumb")
+        yield Input(placeholder=t("tui.wf.new.placeholder"), id="name")
         with Container(id="status"):
-            yield Static(message_source.get_message("tui.wf.new.hint"), id="detail")
-            yield Static(message_source.get_message("tui.wf.new.keys"), id="keys")
+            yield Static(t("tui.wf.new.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can just start typing (or press Enter to skip naming)."""
@@ -908,36 +1032,29 @@ class ImportWorkflowScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the archive-path input, a status line, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.workflow')} > "
-                f"{message_source.get_message('tui.wf.import')}"
-            ),
-            id="crumb",
-        )
-        yield Input(
-            placeholder=message_source.get_message("tui.wf.import.placeholder"), id="archive"
-        )
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.workflow')} > {t('tui.wf.import')}", id="crumb")
+        yield Input(placeholder=t("tui.wf.import.placeholder"), id="archive")
         with Container(id="status"):
-            yield Static(message_source.get_message("tui.wf.import.hint"), id="detail")
-            yield Static(message_source.get_message("tui.wf.new.keys"), id="keys")
+            yield Static(t("tui.wf.import.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can paste straight away."""
         self.query_one("#archive", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Hand the typed path to the import, and show whatever comes back.
-
-        Whether there is a file there, and what ``~`` means, are not this screen's
-        questions -- the import answers both, and refuses with a message of its own. Asking
-        first only made two places responsible for the same answer.
-        """
+        """Check the archive is there, then install it."""
         raw = event.value.strip()
         if not raw:
             return
-        self._install(raw, replace=False)
+        archive = Path(raw).expanduser()
+        if not archive.is_file():
+            self.query_one("#detail", Static).update(
+                f"✗ {i18n.active().t('tui.wf.import.missing')}"
+            )
+            return
+        self._install(str(archive), replace=False)
 
     def _install(self, archive: str, *, replace: bool) -> None:
         """Install the archive, asking about a name clash if the use case reports one."""
@@ -948,8 +1065,8 @@ class ImportWorkflowScreen(Screen[None]):
         if attempt.needs_confirmation:
             self.menu_app.push_screen(
                 ConfirmScreen(
-                    f"gmlw > {get_active().get_message('tui.workflow')} > "
-                    f"{get_active().get_message('tui.wf.import')}",
+                    f"gmlw > {i18n.active().t('tui.workflow')} > "
+                    f"{i18n.active().t('tui.wf.import')}",
                     attempt.message,
                     yes_key="tui.confirm.replace",
                     no_key="tui.confirm.keep_existing",
@@ -996,33 +1113,19 @@ class GuidedChoiceScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Workflow > Create|Edit."""
-        message_source = get_active()
-        verb = (
-            message_source.get_message("tui.wf.create")
-            if self._action == "workflow_new"
-            else message_source.get_message("tui.wf.edit")
-        )
-        return f"gmlw > {message_source.get_message('tui.workflow')} > {verb}"
+        t = i18n.active().t
+        verb = t("tui.wf.create") if self._action == "workflow_new" else t("tui.wf.edit")
+        return f"gmlw > {t('tui.workflow')} > {verb}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """Two rows: the guided (facilitative) experience or the quick (lean) interview."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
-                "✨",
-                message_source.get_message("tui.wf.guided"),
-                message_source.get_message("tui.wf.guided.d"),
-                "guided:yes",
-            ),
-            Item(
-                "⏩",
-                message_source.get_message("tui.wf.quick"),
-                message_source.get_message("tui.wf.quick.d"),
-                "guided:no",
-            ),
+            _Item("✨", t("tui.wf.guided"), t("tui.wf.guided.d"), "guided:yes"),
+            _Item("⏩", t("tui.wf.quick"), t("tui.wf.quick.d"), "guided:no"),
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Move on to the client step with the authoring choice at the picked depth."""
         if item.action in ("guided:yes", "guided:no"):
             self.menu_app.launch(
@@ -1046,16 +1149,16 @@ class ConfigMenuScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Config (localised)."""
-        return f"gmlw > {get_active().get_message('tui.config')}"
+        return f"gmlw > {i18n.active().t('tui.config')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The Config verbs."""
         return _menu(_CONFIG_MENU)
 
     # Config verb -> the mode its type-to-filter settings picker opens in.
     _PICKERS: ClassVar[dict[str, str]] = {"cfg:get": "get", "cfg:set": "set"}
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """A switcher verb opens its picker, Get/Set the settings picker; the rest are stubs."""
         key = self._SWITCHERS.get(item.action)
         mode = self._PICKERS.get(item.action)
@@ -1079,7 +1182,7 @@ class SwitcherScreen(_MenuScreen):
     A *browser* -- unlike the launchers, it stays in the TUI. Selecting a row calls the
     switcher's injected ``apply`` (which persists the config key), moves the dot in place,
     and confirms in the detail panel. No client is launched; no terminal hand-off. It shows
-    each option's ``label`` but sets its ``value`` (the code for the folder-backed ones).
+    each option's ``label`` but sets its ``value`` (slug for the folder-backed axes).
     """
 
     def __init__(self, key: str) -> None:
@@ -1095,11 +1198,11 @@ class SwitcherScreen(_MenuScreen):
         """The switcher's own breadcrumb (e.g. ``gmlw > Config > Environment``)."""
         return self._switcher.crumb
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per option (active one dotted), then a "New…" row when creatable."""
         current = self._switcher.current
         items = [
-            Item(
+            _Item(
                 "●" if c.value == current else "○",
                 c.label,
                 c.description,
@@ -1109,13 +1212,8 @@ class SwitcherScreen(_MenuScreen):
             for c in self._switcher.choices
         ]
         if self._switcher.create is not None:
-            message_source = get_active()
-            new_row = Item(
-                "➕",  # noqa: RUF001
-                message_source.get_message("tui.new"),
-                message_source.get_message("tui.new.d"),
-                "switch:new",
-            )
+            t = i18n.active().t
+            new_row = _Item("➕", t("tui.new"), t("tui.new.d"), "switch:new")  # noqa: RUF001
             items.append(new_row)
         return items
 
@@ -1125,7 +1223,7 @@ class SwitcherScreen(_MenuScreen):
         current = self._switcher.current
         return values.index(current) if current in values else 0
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Set the picked value, or open the create form for the "New…" row."""
         if item.action == "switch:new":
             self.menu_app.push_screen(CreateAxisScreen(self._key), self._on_created)
@@ -1152,7 +1250,7 @@ class SwitcherScreen(_MenuScreen):
         switcher.current = choice.value
         self.menu_app.pop_screen()
         reopened = SwitcherScreen(self._key)
-        reopened.pending_message = get_active().get_message("tui.create.done", label=choice.label)
+        reopened.pending_message = i18n.active().t("tui.create.done", label=choice.label)
         self.menu_app.push_screen(reopened)
 
     def _mark_current(self) -> None:
@@ -1184,14 +1282,12 @@ class CreateAxisScreen(Screen["SwitchChoice | None"]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the name input, a status line, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            f"{self._switcher.crumb} > {message_source.get_message('tui.new')}", id="crumb"
-        )
-        yield Input(placeholder=message_source.get_message("tui.create.placeholder"), id="name")
+        t = i18n.active().t
+        yield Static(f"{self._switcher.crumb} > {t('tui.new')}", id="crumb")
+        yield Input(placeholder=t("tui.create.placeholder"), id="name")
         with Container(id="status"):
-            yield Static(message_source.get_message("tui.create.hint"), id="detail")
-            yield Static(message_source.get_message("tui.create.keys"), id="keys")
+            yield Static(t("tui.create.hint"), id="detail")
+            yield Static(t("tui.create.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can just start typing."""
@@ -1245,25 +1341,19 @@ class ConfigPickerScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Config > Get|Set."""
-        message_source = get_active()
-        verb = (
-            message_source.get_message("tui.cfg.get")
-            if self._mode == "get"
-            else message_source.get_message("tui.cfg.set")
-        )
+        t = i18n.active().t
+        verb = t("tui.cfg.get") if self._mode == "get" else t("tui.cfg.set")
         return f"{self._config.crumb} > {verb}"
 
     def compose(self) -> ComposeResult:
         """Header, the filter input, the (live) settings list, then detail + key bar."""
-        message_source = get_active()
+        t = i18n.active().t
         yield Static(self.header_text(), id="crumb")
-        yield Input(
-            placeholder=message_source.get_message("tui.cfg.filter.placeholder"), id="filter"
-        )
+        yield Input(placeholder=t("tui.cfg.filter.placeholder"), id="filter")
         yield ListView(*(_Row(i) for i in self.menu_items()), id="menu")
         with Container(id="status"):
             yield Static("", id="detail")
-            yield Static(message_source.get_message("tui.cfg.filter.keys"), id="keys")
+            yield Static(t("tui.cfg.filter.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Highlight the first match, prime the detail, and focus the filter for typing."""
@@ -1273,11 +1363,11 @@ class ConfigPickerScreen(_MenuScreen):
         self._sync_detail()
         self.query_one("#filter", Input).focus()
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per setting whose key contains the filter (case-insensitive; empty = all)."""
         needle = self._filter.lower()
         return [
-            Item("🔧", s.key, s.description, "cfg:pick", payload=s.key, note=self._note(s))
+            _Item("🔧", s.key, s.description, "cfg:pick", payload=s.key, note=self._note(s))
             for s in self._config.settings
             if needle in s.key.lower()
         ]
@@ -1285,14 +1375,10 @@ class ConfigPickerScreen(_MenuScreen):
     @staticmethod
     def _note(setting: ConfigSetting) -> str:
         """The detail line for a setting: current value, default, and any allowed values."""
-        message_source = get_active()
-        note = message_source.get_message(
-            "tui.cfg.setting", value=setting.value, default=setting.default
-        )
+        t = i18n.active().t
+        note = t("tui.cfg.setting", value=setting.value, default=setting.default)
         if setting.choices:
-            note += message_source.get_message(
-                "tui.cfg.setting.allowed", choices=", ".join(setting.choices)
-            )
+            note += t("tui.cfg.setting.allowed", choices=", ".join(setting.choices))
         return note
 
     async def on_input_changed(self, event: Input.Changed) -> None:
@@ -1339,7 +1425,7 @@ class ConfigPickerScreen(_MenuScreen):
         if item is not None:
             self.handle(item)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Get: no-op (detail is the read). Set: open the value editor for the setting's type."""
         if item.action != "cfg:pick" or self._mode == "get":
             return
@@ -1378,13 +1464,13 @@ class ConfigChoiceScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Config > Set > <key>."""
-        return f"{self._config.crumb} > {get_active().get_message('tui.cfg.set')} > {self._key}"
+        return f"{self._config.crumb} > {i18n.active().t('tui.cfg.set')} > {self._key}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per allowed value, the current one dotted."""
         current = self._setting().value
         return [
-            Item("●" if value == current else "○", value, "", "choice:set", payload=value)
+            _Item("●" if value == current else "○", value, "", "choice:set", payload=value)
             for value in self._options()
         ]
 
@@ -1394,16 +1480,13 @@ class ConfigChoiceScreen(_MenuScreen):
         current = self._setting().value
         return options.index(current) if current in options else 0
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Apply the picked value; on success confirm on the picker and pop, else explain."""
         if item.action != "choice:set":
             return
         result = self._config.apply(self._key, item.payload)
         if not result.ok:
             self.query_one("#detail", Static).update(f"✗ {result.message}")
-            return
-        if result.language_changed:
-            self.menu_app.exit(MenuChoice(action="reload-for-language"))
             return
         self._setting().value = result.value
         below = self.menu_app.screen_stack[-2]
@@ -1442,21 +1525,15 @@ class ConfigInputScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the value input, a status line (current/default hint), and key hints."""
-        message_source = get_active()
+        t = i18n.active().t
         setting = self._setting()
-        yield Static(
-            f"{self._config.crumb} > {message_source.get_message('tui.cfg.set')} > {self._key}",
-            id="crumb",
-        )
-        yield Input(placeholder=message_source.get_message("tui.cfg.value.placeholder"), id="value")
+        yield Static(f"{self._config.crumb} > {t('tui.cfg.set')} > {self._key}", id="crumb")
+        yield Input(placeholder=t("tui.cfg.value.placeholder"), id="value")
         optional = setting.type_name == "str?"
         hint_key = "tui.cfg.value.hint.optional" if optional else "tui.cfg.value.hint"
         with Container(id="status"):
-            yield Static(
-                message_source.get_message(hint_key, value=setting.value, default=setting.default),
-                id="detail",
-            )
-            yield Static(message_source.get_message("tui.cfg.value.keys"), id="keys")
+            yield Static(t(hint_key, value=setting.value, default=setting.default), id="detail")
+            yield Static(t("tui.cfg.value.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can just start typing."""
@@ -1467,9 +1544,6 @@ class ConfigInputScreen(Screen[None]):
         result = self._config.apply(self._key, event.value)
         if not result.ok:
             self.query_one("#detail", Static).update(f"✗ {result.message}")
-            return
-        if result.language_changed:
-            self.menu_app.exit(MenuChoice(action="reload-for-language"))
             return
         self._setting().value = result.value
         below = self.menu_app.screen_stack[-2]
@@ -1500,29 +1574,26 @@ class NewSessionScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > New."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.new')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.new')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The type-a-name row, then one row per job already recorded."""
-        message_source = get_active()
+        t = i18n.active().t
         rows = [
-            Item(
+            _Item(
                 "✏️",
-                message_source.get_message("tui.newsession.type"),
-                message_source.get_message("tui.newsession.type.d"),
+                t("tui.newsession.type"),
+                t("tui.newsession.type.d"),
                 "session:type",
                 "gmlw start <job>",
             )
         ]
         rows += [
-            Item(
+            _Item(
                 "🗂",
                 job.job,
-                message_source.get_message("tui.sessions", count=job.session_count),
+                t("tui.sessions", count=job.session_count),
                 "session:job",
                 f"gmlw start {job.job}",
                 payload=job.job,
@@ -1531,7 +1602,7 @@ class NewSessionScreen(_MenuScreen):
         ]
         return rows
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Typing opens the name form; an existing job goes on to the client step."""
         if item.action == "session:type":
             self.menu_app.push_screen(NewJobScreen())
@@ -1557,18 +1628,12 @@ class NewJobScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the name input, a status line, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.job')} > "
-                f"{message_source.get_message('tui.job.new')}"
-            ),
-            id="crumb",
-        )
-        yield Input(placeholder=message_source.get_message("tui.newjob.placeholder"), id="name")
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.new')}", id="crumb")
+        yield Input(placeholder=t("tui.newjob.placeholder"), id="name")
         with Container(id="status"):
-            yield Static(message_source.get_message("tui.newjob.hint"), id="detail")
-            yield Static(message_source.get_message("tui.newjob.keys"), id="keys")
+            yield Static(t("tui.newjob.hint"), id="detail")
+            yield Static(t("tui.newjob.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Focus the input so the user can just start typing."""
@@ -1578,9 +1643,7 @@ class NewJobScreen(Screen[None]):
         """Validate the typed name; launch on success, explain and stay on failure."""
         name = event.value.strip()
         error = (
-            get_active().get_message("tui.newjob.empty")
-            if not name
-            else self.menu_app.validate_job(name)
+            i18n.active().t("tui.newjob.empty") if not name else self.menu_app.validate_job(name)
         )
         if error is not None:
             self.query_one("#detail", Static).update(f"✗ {error}")
@@ -1597,27 +1660,18 @@ class JobPickerScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Resume (localised)."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.resume')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per resumable job, carrying the job id as payload."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
-                "⏵",
-                j.job,
-                message_source.get_message("tui.sessions", count=j.session_count),
-                "pick",
-                payload=j.job,
-            )
+            _Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Picking a job opens its session picker (choose which session to resume)."""
         if item.action == "pick":
             self.menu_app.push_screen(SessionPickerScreen(item.payload))
@@ -1639,16 +1693,13 @@ class SessionPickerScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Resume > <job>."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.resume')} > {self._job}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')} > {self._job}"
 
     def _sessions(self) -> list[SessionChoice]:
         return self.menu_app.sessions_for(self._job)
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per session (newest last); non-resumable rows are disabled.
 
         Three leading icons make the state glanceable: ``▶`` resume on your current client,
@@ -1656,29 +1707,22 @@ class SessionPickerScreen(_MenuScreen):
         client is emphasised in-row (broken out of the dim subtitle) so it is seen without
         reading the footer; the detail panel still spells it out.
         """
-        message_source = get_active()
+        t = i18n.active().t
         current = self.menu_app.current_client
-        items: list[Item] = []
+        items: list[_Item] = []
         for s in self._sessions():
-            folder = s.cwd if s.cwd else message_source.get_message("tui.resume.no_folder")
-            title = (
-                f"{s.session_id}  ·  {message_source.get_message('tui.resume.latest')}"
-                if s.is_latest
-                else s.session_id
-            )
+            folder = s.cwd if s.cwd else t("tui.resume.no_folder")
+            title = f"{s.session_id}  ·  {t('tui.resume.latest')}" if s.is_latest else s.session_id
             client = s.client
             if not s.resumable:
-                icon, note = "🔒", message_source.get_message("tui.resume.cannot", client=s.client)
+                icon, note = "🔒", t("tui.resume.cannot", client=s.client)
             elif s.client != current:
-                icon, note = (
-                    "↪",
-                    message_source.get_message("tui.resume.will_launch", client=s.client),
-                )
+                icon, note = "↪", t("tui.resume.will_launch", client=s.client)
                 client = f"↪ [b]{s.client}[/b]"  # in-row: mark + bold the client it switches to
             else:
                 icon, note = "▶", ""
             items.append(
-                Item(
+                _Item(
                     icon,
                     title,
                     f"{s.date} · {client} · {folder}",
@@ -1698,7 +1742,7 @@ class SessionPickerScreen(_MenuScreen):
                 return i
         return 0
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """A picked session exits the app with a resume choice carrying its id."""
         if item.action == "resume:pick":
             self.menu_app.exit(MenuChoice(action="resume", job=self._job, session=item.payload))
@@ -1713,27 +1757,20 @@ class JobListScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > List."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.list')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per job, carrying the job id as payload (empty -> the base empty state)."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
-                "🗂",
-                j.job,
-                message_source.get_message("tui.sessions", count=j.session_count),
-                "joblist:job",
-                payload=j.job,
+            _Item(
+                "🗂", j.job, t("tui.sessions", count=j.session_count), "joblist:job", payload=j.job
             )
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Selecting a job opens its (read-only) session list."""
         if item.action == "joblist:job":
             self.menu_app.push_screen(SessionListScreen(item.payload))
@@ -1761,41 +1798,27 @@ class SessionListScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the sessions table, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.job')} > "
-                f"{message_source.get_message('tui.job.list')} > {self._job}"
-            ),
-            id="crumb",
-        )
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {self._job}", id="crumb")
         with Container(id="report"):
             yield DataTable(id="session_table", cursor_type="row", zebra_stripes=True)
-        yield Static(message_source.get_message("tui.export.keys"), id="keys")
+        yield Static(t("tui.export.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Fill the sessions table (newest last), latest marked, resumable as yes/no."""
-        message_source = get_active()
+        t = i18n.active().t
         table = cast("DataTable[str]", self.query_one("#session_table", DataTable))
         table.add_columns(
-            message_source.get_message("tui.joblist.col.session"),
-            message_source.get_message("tui.joblist.col.date"),
-            message_source.get_message("tui.joblist.col.client"),
-            message_source.get_message("tui.joblist.col.folder"),
-            message_source.get_message("tui.joblist.col.resumable"),
+            t("tui.joblist.col.session"),
+            t("tui.joblist.col.date"),
+            t("tui.joblist.col.client"),
+            t("tui.joblist.col.folder"),
+            t("tui.joblist.col.resumable"),
         )
         for s in self.menu_app.sessions_for(self._job):
-            session = (
-                f"{s.session_id} · {message_source.get_message('tui.resume.latest')}"
-                if s.is_latest
-                else s.session_id
-            )
-            folder = s.cwd if s.cwd else message_source.get_message("tui.resume.no_folder")
-            resumable = (
-                message_source.get_message("clients.yes")
-                if s.resumable
-                else message_source.get_message("clients.no")
-            )
+            session = f"{s.session_id} · {t('tui.resume.latest')}" if s.is_latest else s.session_id
+            folder = s.cwd if s.cwd else t("tui.resume.no_folder")
+            resumable = t("clients.yes") if s.resumable else t("clients.no")
             table.add_row(session, s.date, s.client, folder, resumable)
 
     def action_back(self) -> None:
@@ -1808,17 +1831,14 @@ class DeleteMenuScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Delete."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.delete')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """The two delete grains."""
         return _menu(_DELETE_MENU)
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Jobs ticks jobs directly; Sessions picks a job first, then ticks its sessions."""
         if item.action == "del:jobs":
             self.menu_app.push_screen(JobDeleteScreen())
@@ -1838,21 +1858,17 @@ class JobDeleteScreen(_MultiSelectScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Delete > Jobs."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.delete')} > "
-            f"{message_source.get_message('tui.del.jobs')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.jobs')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One tickable row per job, carrying the job id as payload."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
+            _Item(
                 self.ticked if j.job in self._selected else self.unticked,
                 j.job,
-                message_source.get_message("tui.sessions", count=j.session_count),
+                t("tui.sessions", count=j.session_count),
                 "del:job",
                 payload=j.job,
             )
@@ -1885,28 +1901,18 @@ class DeleteJobPickerScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Delete > Sessions."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.delete')} > "
-            f"{message_source.get_message('tui.del.sessions')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per job, carrying the job id as payload."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
-                "🗂",
-                j.job,
-                message_source.get_message("tui.sessions", count=j.session_count),
-                "del:pick",
-                payload=j.job,
-            )
+            _Item("🗂", j.job, t("tui.sessions", count=j.session_count), "del:pick", payload=j.job)
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Selecting a job opens its session-delete list."""
         if item.action == "del:pick":
             self.menu_app.push_screen(SessionDeleteScreen(item.payload))
@@ -1928,23 +1934,19 @@ class SessionDeleteScreen(_MultiSelectScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Delete > Sessions > <job>."""
-        message_source = get_active()
+        t = i18n.active().t
         return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.delete')} > "
-            f"{message_source.get_message('tui.del.sessions')} > {self._job}"
+            f"gmlw > {t('tui.job')} > {t('tui.job.delete')} > {t('tui.del.sessions')} > {self._job}"
         )
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One tickable row per session: date, client, and what it actually used."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
+            _Item(
                 self.ticked if s.session_id in self._selected else self.unticked,
                 s.session_id,
-                message_source.get_message(
-                    "tui.del.session.row", date=s.date, client=s.client, usage=s.usage
-                ),
+                t("tui.del.session.row", date=s.date, client=s.client, usage=s.usage),
                 "del:session",
                 payload=s.session_id,
             )
@@ -1979,27 +1981,20 @@ class JobExportScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Export."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.export')}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.export')}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """One row per job, carrying the job id as payload (empty -> the base empty state)."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
-                "📊",
-                j.job,
-                message_source.get_message("tui.sessions", count=j.session_count),
-                "export:job",
-                payload=j.job,
+            _Item(
+                "📊", j.job, t("tui.sessions", count=j.session_count), "export:job", payload=j.job
             )
             for j in self.menu_app.jobs
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Selecting a job opens the destination chooser (view here / save to file)."""
         if item.action == "export:job":
             self.menu_app.push_screen(ExportDestScreen(item.payload))
@@ -2019,31 +2014,18 @@ class ExportDestScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Job > Export > <job>."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.job')} > "
-            f"{message_source.get_message('tui.job.export')} > {self._job}"
-        )
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}"
 
-    def menu_items(self) -> list[Item]:
+    def menu_items(self) -> list[_Item]:
         """Two destinations: view a summary here, or save the full JSON report to a file."""
-        message_source = get_active()
+        t = i18n.active().t
         return [
-            Item(
-                "📈",
-                message_source.get_message("export.dest.view"),
-                message_source.get_message("export.dest.view.d"),
-                "export:view",
-            ),
-            Item(
-                "💾",
-                message_source.get_message("export.dest.file"),
-                message_source.get_message("export.dest.file.d"),
-                "export:file",
-            ),
+            _Item("📈", t("export.dest.view"), t("export.dest.view.d"), "export:view"),
+            _Item("💾", t("export.dest.file"), t("export.dest.file.d"), "export:file"),
         ]
 
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Open the summary view, or the save-to-file screen."""
         if item.action == "export:view":
             self.menu_app.push_screen(UsageSummaryScreen(self._job))
@@ -2074,21 +2056,15 @@ class UsageSummaryScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the (initially loading) report area, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.job')} > "
-                f"{message_source.get_message('tui.job.export')} > {self._job}"
-            ),
-            id="crumb",
-        )
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
         with VerticalScroll(id="report"):
             yield Static("", id="summary")
-            yield Static(message_source.get_message("export.by_model"), classes="section")
+            yield Static(t("export.by_model"), classes="section")
             yield DataTable(id="models", cursor_type="row", zebra_stripes=True)
-            yield Static(message_source.get_message("export.by_session"), classes="section")
+            yield Static(t("export.by_session"), classes="section")
             yield DataTable(id="sessions", cursor_type="row", zebra_stripes=True)
-        yield Static(message_source.get_message("tui.export.keys"), id="keys")
+        yield Static(t("tui.export.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Show the spinner and kick the read onto a worker thread."""
@@ -2106,29 +2082,26 @@ class UsageSummaryScreen(Screen[None]):
             result = cast("UsageView", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
             self._populate(result)
         elif event.state is WorkerState.ERROR:
-            self.query_one("#summary", Static).update(get_active().get_message("export.failed"))
+            self.query_one("#summary", Static).update(i18n.active().t("export.failed"))
             self.query_one("#report", VerticalScroll).loading = False
 
     def _populate(self, view: UsageView) -> None:
         """Fill the summary line and the two tables from the loaded view."""
-        message_source = get_active()
+        t = i18n.active().t
         self.query_one("#summary", Static).update(view.summary)
         if not view.empty:
             models = cast("DataTable[str]", self.query_one("#models", DataTable))
             models.add_columns(
-                message_source.get_message("export.col.model"),
-                message_source.get_message("export.col.calls"),
-                message_source.get_message("export.col.input"),
-                message_source.get_message("export.col.output"),
-                message_source.get_message("export.col.cache"),
-                message_source.get_message("export.col.duration"),
+                t("export.col.model"),
+                t("export.col.calls"),
+                t("export.col.input"),
+                t("export.col.output"),
+                t("export.col.cache"),
+                t("export.col.duration"),
             )
             models.add_rows(view.model_rows)
             sessions = cast("DataTable[str]", self.query_one("#sessions", DataTable))
-            sessions.add_columns(
-                message_source.get_message("export.col.session"),
-                message_source.get_message("export.col.cost"),
-            )
+            sessions.add_columns(t("export.col.session"), t("export.col.cost"))
             sessions.add_rows(view.session_rows)
         self.query_one("#report", VerticalScroll).loading = False
 
@@ -2158,17 +2131,11 @@ class SaveReportScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the status line (spinner, then the saved path), and the key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.job')} > "
-                f"{message_source.get_message('tui.job.export')} > {self._job}"
-            ),
-            id="crumb",
-        )
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
         with Container(id="report"):
-            yield Static(message_source.get_message("export.saving"), id="status_line")
-        yield Static(message_source.get_message("tui.export.keys"), id="keys")
+            yield Static(t("export.saving"), id="status_line")
+        yield Static(t("tui.export.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Show the spinner and kick the save onto a worker thread."""
@@ -2185,10 +2152,10 @@ class SaveReportScreen(Screen[None]):
         status = self.query_one("#status_line", Static)
         if event.state is WorkerState.SUCCESS:
             path = cast("str", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
-            status.update(get_active().get_message("export.saved", path=path))
+            status.update(i18n.active().t("export.saved", path=path))
             self.query_one("#report", Container).loading = False
         elif event.state is WorkerState.ERROR:
-            status.update(get_active().get_message("export.save_failed"))
+            status.update(i18n.active().t("export.save_failed"))
             self.query_one("#report", Container).loading = False
 
     def action_back(self) -> None:
@@ -2227,20 +2194,14 @@ class ClientsScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the (initially loading) clients table, then detail + key hints."""
-        message_source = get_active()
-        yield Static(
-            (
-                f"gmlw > {message_source.get_message('tui.config')} > "
-                f"{message_source.get_message('tui.cfg.clients')}"
-            ),
-            id="crumb",
-        )
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.config')} > {t('tui.cfg.clients')}", id="crumb")
         with Container(id="report"):
             yield DataTable(id="clients", cursor_type="row", zebra_stripes=True)
         with Container(id="status"):
             yield Static("", id="detail")
             keys = "tui.clients.keys" if self.menu_app.set_default_client else "tui.export.keys"
-            yield Static(message_source.get_message(keys), id="keys")
+            yield Static(t(keys), id="keys")
 
     def on_mount(self) -> None:
         """Show the spinner and kick the version reads onto a worker thread."""
@@ -2262,14 +2223,14 @@ class ClientsScreen(Screen[None]):
 
     def _populate(self, rows: list[ClientRow]) -> None:
         """Fill the clients DataTable from the loaded rows."""
-        message_source = get_active()
+        t = i18n.active().t
         self._rows = rows
         table = cast("DataTable[str]", self.query_one("#clients", DataTable))
         table.add_columns(
-            message_source.get_message("clients.col.client"),
-            message_source.get_message("clients.col.version"),
-            message_source.get_message("clients.col.resumable"),
-            message_source.get_message("clients.col.default"),
+            t("clients.col.client"),
+            t("clients.col.version"),
+            t("clients.col.resumable"),
+            t("clients.col.default"),
         )
         table.add_rows((row.client, row.version, row.resumable, row.default) for row in rows)
         self.query_one("#report", Container).loading = False
@@ -2302,7 +2263,7 @@ class ClientsScreen(Screen[None]):
 
     def _mark_default(self, name: str) -> None:
         """Move the default marker onto the newly chosen client's row (in place)."""
-        marker = get_active().get_message("clients.default_marker")
+        marker = i18n.active().t("clients.default_marker")
         table = cast("DataTable[str]", self.query_one("#clients", DataTable))
         for index, row in enumerate(self._rows):
             value = marker if row.name == name else ""
@@ -2333,23 +2294,21 @@ class ConfigListScreen(Screen[None]):
 
     def compose(self) -> ComposeResult:
         """A breadcrumb, the settings table, and the key hints."""
-        message_source = get_active()
-        yield Static(
-            f"{self._config.crumb} > {message_source.get_message('tui.cfg.list')}", id="crumb"
-        )
+        t = i18n.active().t
+        yield Static(f"{self._config.crumb} > {t('tui.cfg.list')}", id="crumb")
         with Container(id="report"):
             yield DataTable(id="settings", cursor_type="row", zebra_stripes=True)
-        yield Static(message_source.get_message("tui.export.keys"), id="keys")
+        yield Static(t("tui.export.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Fill the settings table from the injected config catalog."""
-        message_source = get_active()
+        t = i18n.active().t
         table = cast("DataTable[str]", self.query_one("#settings", DataTable))
         table.add_columns(
-            message_source.get_message("tui.cfg.col.key"),
-            message_source.get_message("tui.cfg.col.value"),
-            message_source.get_message("tui.cfg.col.default"),
-            message_source.get_message("tui.cfg.col.type"),
+            t("tui.cfg.col.key"),
+            t("tui.cfg.col.value"),
+            t("tui.cfg.col.default"),
+            t("tui.cfg.col.type"),
         )
         for setting in self._config.settings:
             table.add_row(setting.key, setting.value, setting.default, setting.type_name)
@@ -2360,7 +2319,7 @@ class ConfigListScreen(Screen[None]):
 
 
 class RulesMenuScreen(_MenuScreen):
-    """The two sides that actually hold rules — nothing to walk into that would be empty.
+    """The rule axes that actually hold rules — nothing to walk into that would be empty.
 
     A user with no rules yet sees the empty hint rather than two barren branches, because
     rules are not authored here: they are captured mid-session, active immediately, and land
@@ -2371,129 +2330,81 @@ class RulesMenuScreen(_MenuScreen):
 
     def header_text(self) -> str:
         """Breadcrumb: gmlw > Rules (localised)."""
-        return f"gmlw > {get_active().get_message('tui.rules')}"
+        return f"gmlw > {i18n.active().t('tui.rules')}"
 
-    def menu_items(self) -> list[Item]:
-        """One row for the environments and one for the roles, when either holds rules."""
-        message_source = get_active()
-        found = self.menu_app.list_rules()
-        rows: list[Item] = []
-        if found.environments:
-            drafts = sum(e.draft_count for e in found.environments)
+    def menu_items(self) -> list[_Item]:
+        """One row per axis holding at least one populated group."""
+        t = i18n.active().t
+        rows: list[_Item] = []
+        for axis in RuleAxis:
+            groups = [g for g in self.menu_app.rule_groups() if g.axis is axis]
+            if not groups:
+                continue
+            drafts = sum(g.draft_count for g in groups)
             rows.append(
-                Item(
-                    _ENVIRONMENT_ICON,
-                    message_source.get_message("tui.rules.environment.label"),
-                    message_source.get_message("tui.rules.environment.description"),
-                    "rules:environments",
-                    note=message_source.get_message("tui.rules.drafts", count=drafts)
-                    if drafts
-                    else "",
-                )
-            )
-        if found.roles:
-            drafts = sum(r.draft_count for r in found.roles)
-            rows.append(
-                Item(
-                    _ROLE_ICON,
-                    message_source.get_message("tui.rules.role.label"),
-                    message_source.get_message("tui.rules.role.description"),
-                    "rules:roles",
-                    note=message_source.get_message("tui.rules.drafts", count=drafts)
-                    if drafts
-                    else "",
+                _Item(
+                    _AXIS_ICON[axis],
+                    t(f"tui.rules.axis.{axis.value}"),
+                    t(f"tui.rules.axis.{axis.value}.d"),
+                    f"rules:axis:{axis.value}",
+                    note=t("tui.rules.drafts", count=drafts) if drafts else "",
                 )
             )
         return rows
 
-    def handle(self, item: Item) -> None:
-        """Open the environments or the roles."""
-        if item.action == "rules:environments":
-            self.menu_app.push_screen(EnvironmentRulesScreen())
-        elif item.action == "rules:roles":
-            self.menu_app.push_screen(RoleRulesScreen())
+    def handle(self, item: _Item) -> None:
+        """Open the chosen axis's groups."""
+        _, _, value = item.action.rpartition(":")
+        self.menu_app.push_screen(RuleAxisScreen(RuleAxis(value)))
 
 
-class EnvironmentRulesScreen(_MenuScreen):
-    """The environments that hold rules."""
+class RuleAxisScreen(_MenuScreen):
+    """The environments (or roles) on one axis that hold rules."""
 
     empty_key = "tui.rules.none"
 
-    def header_text(self) -> str:
-        """Breadcrumb: gmlw > Rules > Environment."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.rules')} > "
-            f"{message_source.get_message('tui.rules.environment.label')}"
-        )
+    def __init__(self, axis: RuleAxis) -> None:
+        """Bind the screen to the axis whose groups it lists.
 
-    def menu_items(self) -> list[Item]:
-        """One row per environment holding rules, labelled as the user named it."""
-        message_source = get_active()
-        return [
-            Item(
-                _ENVIRONMENT_ICON,
-                environment.label,
-                message_source.get_message("tui.rules.count", count=len(environment.rules)),
-                f"rules:environment:{environment.code}",
-                note=(
-                    message_source.get_message("tui.rules.drafts", count=environment.draft_count)
-                    if environment.draft_count
-                    else ""
-                ),
-            )
-            for environment in self.menu_app.list_rules().environments
-        ]
-
-    def handle(self, item: Item) -> None:
-        """Open the chosen environment's rules."""
-        _, _, code = item.action.rpartition(":")
-        environment = next(
-            (e for e in self.menu_app.list_rules().environments if e.code == code), None
-        )
-        if environment is not None:
-            self.menu_app.push_screen(EnvironmentRuleListScreen(environment))
-
-
-class RoleRulesScreen(_MenuScreen):
-    """The roles that hold rules."""
-
-    empty_key = "tui.rules.none"
+        Args:
+            axis: The axis to browse.
+        """
+        super().__init__()
+        self._axis = axis
 
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Rules > Role."""
-        message_source = get_active()
-        return (
-            f"gmlw > {message_source.get_message('tui.rules')} > "
-            f"{message_source.get_message('tui.rules.role.label')}"
-        )
+        """Breadcrumb: gmlw > Rules > <axis>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.rules')} > {t(f'tui.rules.axis.{self._axis.value}')}"
 
-    def menu_items(self) -> list[Item]:
-        """One row per role holding rules, labelled as the user named it."""
-        message_source = get_active()
+    def menu_items(self) -> list[_Item]:
+        """One row per populated group on this axis, labelled as the user named it."""
+        t = i18n.active().t
         return [
-            Item(
-                _ROLE_ICON,
-                role.label,
-                message_source.get_message("tui.rules.count", count=len(role.rules)),
-                f"rules:role:{role.code}",
-                note=message_source.get_message("tui.rules.drafts", count=role.draft_count)
-                if role.draft_count
-                else "",
+            _Item(
+                _AXIS_ICON[group.axis],
+                group.label,
+                t("tui.rules.count", count=len(group.rules)),
+                f"rules:group:{group.slug}",
+                note=t("tui.rules.drafts", count=group.draft_count) if group.draft_count else "",
             )
-            for role in self.menu_app.list_rules().roles
+            for group in self.menu_app.rule_groups()
+            if group.axis is self._axis
         ]
 
-    def handle(self, item: Item) -> None:
-        """Open the chosen role's rules."""
-        _, _, code = item.action.rpartition(":")
-        role = next((r for r in self.menu_app.list_rules().roles if r.code == code), None)
-        if role is not None:
-            self.menu_app.push_screen(RoleRuleListScreen(role))
+    def handle(self, item: _Item) -> None:
+        """Open the chosen group's rules."""
+        _, _, slug = item.action.rpartition(":")
+        group = next(
+            (g for g in self.menu_app.rule_groups() if g.axis is self._axis and g.slug == slug),
+            None,
+        )
+        if group is not None:
+            self.menu_app.push_screen(RuleListScreen(group))
 
 
-class EnvironmentRuleListScreen(_MenuScreen):
-    """One environment's rules. Read-only: the detail panel shows the highlighted rule.
+class RuleListScreen(_MenuScreen):
+    """One group's rules. Read-only: the detail panel shows the highlighted rule.
 
     A rule is active from creation; a draft is one the user has since switched off, and it
     is injected into no session. Both are listed and distinguished, because "which of these
@@ -2502,61 +2413,41 @@ class EnvironmentRuleListScreen(_MenuScreen):
 
     empty_key = "tui.rules.none"
 
-    def __init__(self, environment: Environment) -> None:
-        """Bind the screen to the environment whose rules it lists.
+    def __init__(self, group: RuleGroup) -> None:
+        """Bind the screen to the group whose rules it lists.
 
         Args:
-            environment: The environment to browse.
+            group: The environment or role to browse.
         """
         super().__init__()
-        self._environment = environment
+        self._group = group
 
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Rules > Environment > <label>."""
-        message_source = get_active()
-        side = message_source.get_message("tui.rules.environment.label")
-        return (
-            f"gmlw > {message_source.get_message('tui.rules')} > {side} > {self._environment.label}"
-        )
+        """Breadcrumb: gmlw > Rules > <axis> > <group label>."""
+        t = i18n.active().t
+        axis = t(f"tui.rules.axis.{self._group.axis.value}")
+        return f"gmlw > {t('tui.rules')} > {axis} > {self._group.label}"
 
-    def menu_items(self) -> list[Item]:
-        """One row per rule: its code, the instruction itself, and its status."""
-        return _rule_rows(self._environment.rules)
+    def menu_items(self) -> list[_Item]:
+        """One row per rule: its slug, the instruction itself, and its status."""
+        t = i18n.active().t
+        rows: list[_Item] = []
+        for rule in self._group.rules:
+            status = t("tui.rules.draft") if rule.draft else t("tui.rules.active")
+            if rule.strength:
+                status = f"{status} · {rule.strength}"
+            rows.append(
+                _Item(
+                    "📝" if rule.draft else "📏",
+                    rule.slug,
+                    rule.rule or t("tui.rules.norule"),
+                    "rules:rule",
+                    note=f"{status}\n{rule.when}" if rule.when else status,
+                )
+            )
+        return rows
 
-    def handle(self, item: Item) -> None:
-        """Rules are read-only here; the detail panel already shows the selection."""
-
-
-class RoleRuleListScreen(_MenuScreen):
-    """One role's rules. Read-only: the detail panel shows the highlighted rule.
-
-    A rule is active from creation; a draft is one the user has since switched off, and it
-    is injected into no session. Both are listed and distinguished, because "which of these
-    is actually live" is the question this screen exists to answer.
-    """
-
-    empty_key = "tui.rules.none"
-
-    def __init__(self, role: Role) -> None:
-        """Bind the screen to the role whose rules it lists.
-
-        Args:
-            role: The role to browse.
-        """
-        super().__init__()
-        self._role = role
-
-    def header_text(self) -> str:
-        """Breadcrumb: gmlw > Rules > Role > <label>."""
-        message_source = get_active()
-        side = message_source.get_message("tui.rules.role.label")
-        return f"gmlw > {message_source.get_message('tui.rules')} > {side} > {self._role.label}"
-
-    def menu_items(self) -> list[Item]:
-        """One row per rule: its code, the instruction itself, and its status."""
-        return _rule_rows(self._role.rules)
-
-    def handle(self, item: Item) -> None:
+    def handle(self, item: _Item) -> None:
         """Rules are read-only here; the detail panel already shows the selection."""
 
 
@@ -2608,7 +2499,7 @@ class MenuApp(App[MenuChoice | None]):
         usage_view: Callable[[str], UsageView] | None = None,
         save_usage: Callable[[str], str] | None = None,
         workflows: list[Workflow] | None = None,
-        rules: Callable[[], ListRulesResult] | None = None,
+        rules: Callable[[], tuple[RuleGroup, ...]] | None = None,
         clients: Callable[[], list[ClientRow]] | None = None,
         set_default_client: Callable[[str], ConfigSetResult] | None = None,
         config: ConfigCatalog | None = None,
@@ -2672,7 +2563,7 @@ class MenuApp(App[MenuChoice | None]):
         self.save_usage = save_usage or _no_save
         self.workflows = workflows or []
         self.rules = rules or _no_rules
-        self._rule_cache: ListRulesResult | None = None
+        self._rule_cache: tuple[RuleGroup, ...] | None = None
         self.clients = clients
         self.set_default_client = set_default_client
         self.config = config
@@ -2692,12 +2583,12 @@ class MenuApp(App[MenuChoice | None]):
         if self.archiver is not None:
             self.workflows = self.archiver.reload_workflows()
 
-    def list_rules(self) -> ListRulesResult:
-        """The environments and roles holding rules, read once and cached for the app's life.
+    def rule_groups(self) -> tuple[RuleGroup, ...]:
+        """The populated rule groups, read once and cached for the app's lifetime.
 
-        Cached because every screen in the Rules tree asks for the whole listing to filter
-        it, and re-walking the rule folders on each cursor move would put disk I/O on the
-        keystroke path.
+        Cached because every screen in the Rules tree asks for the whole catalogue to
+        filter it, and re-walking the rule folders on each cursor move would put disk I/O
+        on the keystroke path.
 
         Returns:
             Every environment and role holding at least one rule.

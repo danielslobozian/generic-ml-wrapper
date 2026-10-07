@@ -6,12 +6,10 @@ from __future__ import annotations
 
 import sys
 
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    get_message,
-)
+from generic_ml_wrapper.common import i18n
 
 # The product name is not translated; the two lines of prose around it are, and are
-# resolved per call rather than at import so they follow the active message_source.
+# resolved per call rather than at import so they follow the active localiser.
 _TITLE = "gmlw"
 
 _BOLD_CYAN = "\033[1;36m"
@@ -25,8 +23,8 @@ def banner() -> str:
     Returns:
         The two-line banner (title + subtitle), no trailing newline.
     """
-    tagline = get_message("cli.banner.tagline")
-    subtitle_text = get_message("cli.banner.subtitle")
+    tagline = i18n.t("cli.banner.tagline")
+    subtitle_text = i18n.t("cli.banner.subtitle")
     if sys.stdout.isatty():
         title = f"{_BOLD_CYAN}{_TITLE}{_RESET} {_DIM}· {tagline}{_RESET}"
         subtitle = f"{_DIM}{subtitle_text}{_RESET}"

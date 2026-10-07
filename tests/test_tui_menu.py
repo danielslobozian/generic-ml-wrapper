@@ -35,10 +35,12 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     UsageView,
     _Row,
 )
-from generic_ml_wrapper.application.domain.model.role import Role
-from generic_ml_wrapper.application.domain.model.rule import Rule
+from generic_ml_wrapper.application.domain.model.rule_catalog import (
+    RuleAxis,
+    RuleGroup,
+    RuleSummary,
+)
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.port.inbound.list_rules_result import ListRulesResult
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
 
@@ -54,7 +56,6 @@ def _persona_switcher(
     """A fresh persona switcher (mentor/coach) for one test -- never share the mutable state."""
     return {
         "persona": Switcher(
-            key="companion.persona",
             crumb="gmlw > Config > Persona",
             choices=[
                 SwitchChoice("mentor", "mentor", "steady and instructive"),
@@ -229,7 +230,6 @@ def _env_switcher(
     """An environment switcher (one option + a create callback) for the create tests."""
     return {
         "environment": Switcher(
-            key="profile.default_environment",
             crumb="gmlw > Config > Environment",
             choices=[SwitchChoice("work", "work", "the day job")],
             current=current,
@@ -416,7 +416,6 @@ _SETTINGS = [
     ),
     ConfigSetting("hints.show", "true", "true", "bool", None, "show usage hints"),
     ConfigSetting("companion.name", "(unset)", "(unset)", "str?", None, "your name"),
-    ConfigSetting("language.code", "en", "en", "choice", ("en", "fr"), "the language"),
 ]
 
 
@@ -1075,9 +1074,9 @@ def test_config_setup_exits_with_the_init_choice() -> None:
     assert result["value"] == MenuChoice(action="init")
 
 
-def _rules_app(found: ListRulesResult) -> MenuApp:
-    """A menu app whose Rules browser reads a fixture listing."""
-    return MenuApp(_JOBS, rules=lambda: found)
+def _rules_app(groups: tuple[RuleGroup, ...]) -> MenuApp:
+    """A menu app whose Rules browser reads a fixture catalogue."""
+    return MenuApp(_JOBS, rules=lambda: groups)
 
 
 async def _open_rules(pilot: Pilot[MenuChoice | None]) -> None:
@@ -1088,7 +1087,7 @@ async def _open_rules(pilot: Pilot[MenuChoice | None]) -> None:
 def test_rules_menu_is_empty_until_a_rule_exists() -> None:
     """With no rules the browser explains where they come from rather than showing branches."""
     text: dict[str, object] = {}
-    app = _rules_app(ListRulesResult(environments=(), roles=()))
+    app = _rules_app(())
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
@@ -1099,21 +1098,18 @@ def test_rules_menu_is_empty_until_a_rule_exists() -> None:
     assert "captured during a session" in str(text["empty"])
 
 
-def test_rules_menu_lists_only_the_side_that_holds_rules() -> None:
+def test_rules_menu_lists_only_axes_that_hold_rules() -> None:
     """A role rule exists and no environment rule does, so only Role is offered."""
-    found = ListRulesResult(
-        environments=(),
-        roles=(
-            Role(
-                "software-engineer",
-                "Software engineer",
-                "",
-                (Rule(code="no-transactional", rule="No @Transactional."),),
-            ),
+    groups = (
+        RuleGroup(
+            axis=RuleAxis.ROLE,
+            slug="software-engineer",
+            label="Software engineer",
+            rules=(RuleSummary(slug="no-transactional", rule="No @Transactional."),),
         ),
     )
     titles: dict[str, object] = {}
-    app = _rules_app(found)
+    app = _rules_app(groups)
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
@@ -1127,32 +1123,29 @@ def test_rules_menu_lists_only_the_side_that_holds_rules() -> None:
 
 def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
     """Rules > Role > Software engineer lists the rule; the detail panel shows it."""
-    found = ListRulesResult(
-        environments=(),
-        roles=(
-            Role(
-                "software-engineer",
-                "Software engineer",
-                "",
-                (
-                    Rule(
-                        code="no-transactional",
-                        rule="No @Transactional in a use case.",
-                        strength="hard",
-                        draft=True,
-                    ),
+    groups = (
+        RuleGroup(
+            axis=RuleAxis.ROLE,
+            slug="software-engineer",
+            label="Software engineer",
+            rules=(
+                RuleSummary(
+                    slug="no-transactional",
+                    rule="No @Transactional in a use case.",
+                    strength="hard",
+                    draft=True,
                 ),
             ),
         ),
     )
     seen: dict[str, object] = {}
-    app = _rules_app(found)
+    app = _rules_app(groups)
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _open_rules(pilot)
-            await pilot.press("enter")  # the Role row
-            await pilot.press("enter")  # the Software engineer role
+            await pilot.press("enter")  # the Role axis
+            await pilot.press("enter")  # the Software engineer group
             rows = app.screen.query_one("#menu", ListView).query(_Row)
             seen["titles"] = [r.item.title for r in rows]
             seen["detail"] = str(app.screen.query_one("#detail", Static).render())
@@ -1197,10 +1190,6 @@ class _RecordingArchiver:
         self.installed.append((archive, replace))
         if self._clash and not replace:
             return ImportAttempt("a workflow named 'doc-review' already exists.", True)
-        if not Path(archive).expanduser().is_file():
-            # What the real closure renders when the import refuses an unreadable archive.
-            # The form used to check this itself; the import answers it now.
-            return ImportAttempt("✗ no file there")
         self.catalogue = [
             *_ARCHIVE_WORKFLOWS,
             Workflow(slug="fresh", label="Fresh", description=""),
@@ -1354,8 +1343,8 @@ def test_declining_a_clash_leaves_the_existing_workflow_alone(tmp_path: Path) ->
 
 
 def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:
-    # A typo is corrected here rather than tearing the menu down. The check itself is the
-    # import's; what this pins is that its refusal leaves the form standing.
+    # Checked in-form so a typo is fixed here rather than tearing the menu down to fail
+    # at the prompt.
     app = _workflow_app()
 
     async def scenario() -> None:
@@ -2359,51 +2348,3 @@ def test_resume_is_unchanged_and_still_reopens_a_session() -> None:
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(action="resume", job="alpha", session="alpha_003")
-
-
-def test_changing_the_language_ends_the_menu_so_it_rebuilds_in_the_new_one() -> None:
-    """A language change cannot be patched into a mounted screen: Textual bakes every string
-    into its widgets at compose time, and the crumbs and pick-lists below are built before the
-    app starts. The menu exits with the reload action instead, and the loop that already
-    rebuilds it each turn brings it back speaking the new language."""
-
-    def apply(key: str, raw: str) -> ConfigSetResult:
-        return ConfigSetResult(
-            ok=True, message="ok", value=raw, language_changed=key == "language.code"
-        )
-
-    async def scenario() -> MenuChoice | None:
-        app = MenuApp(_JOBS, config=_config_catalog(apply))
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_config_set(pilot)
-            await pilot.press("l", "a", "n", "g")  # filter → language.code
-            await pilot.pause()
-            await pilot.press("enter")  # open the choice screen
-            await pilot.pause()
-            await pilot.press("down", "enter")  # en (row 0) → fr (row 1)
-            await pilot.pause()
-        return app.return_value
-
-    assert asyncio.run(scenario()) == MenuChoice(action="reload-for-language")
-
-
-def test_changing_another_setting_leaves_the_menu_running() -> None:
-    """The counterpart: only a language change ends the menu. Everything else stays put."""
-
-    def apply(key: str, raw: str) -> ConfigSetResult:
-        return ConfigSetResult(ok=True, message="ok", value=raw, language_changed=False)
-
-    async def scenario() -> MenuChoice | None:
-        app = MenuApp(_JOBS, config=_config_catalog(apply))
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_config_set(pilot)
-            await pilot.press("l", "o", "g")  # filter → logging.level
-            await pilot.pause()
-            await pilot.press("enter")
-            await pilot.pause()
-            await pilot.press("up", "up", "enter")
-            await pilot.pause()
-            running = app.is_running
-        return None if running else MenuChoice(action="ended")
-
-    assert asyncio.run(scenario()) is None

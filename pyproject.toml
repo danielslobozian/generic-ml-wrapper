@@ -7,7 +7,7 @@ name = "generic-ml-wrapper"
 version = "0.11.0"
 description = "A wrapper around an ML coding CLI: enter at a job, get a named resumable session, optionally driven by a workflow."
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 authors = [{ name = "Daniel Slobozian" }]
@@ -18,6 +18,7 @@ classifiers = [
   "License :: OSI Approved :: Apache Software License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
@@ -47,13 +48,6 @@ dependencies = [
   # A deliberate exception to the thin-dep rule, like pydantic above: it is used only by the
   # opt-in tui adapter, imported lazily, and never on the flag-CLI / statusline hot paths.
   "textual>=0.60",
-  # python-iso639 (Apache-2.0, the project's own licence) answers one question: is this
-  # two-letter code a real language? Python has no stdlib equivalent of java.util.Locale,
-  # and the alternative is maintaining an ISO 639-1 table by hand. Chosen over pycountry
-  # (LGPL, and carries countries/currencies/scripts) and iso-639 (AGPL). Install name and
-  # import name differ: `python-iso639` installs, `iso639` imports. Data comes from SIL's
-  # tables, which carry their own terms on top of the licence.
-  "python-iso639>=2024.4.27",
 ]
 
 [project.urls]
@@ -85,7 +79,7 @@ dev = ["nox>=2026.4.10", "pre-commit>=4.6.0"]
 required-version = "==0.11.32"
 
 [project.scripts]
-gmlw = "generic_ml_wrapper.main:main"
+gmlw = "generic_ml_wrapper.adapter.inbound.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/generic_ml_wrapper"]
@@ -103,12 +97,14 @@ addopts = "-ra"
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 # Demo-tape helpers are throwaway scripts for regenerating the README GIFs, not
 # shipped API — exempt from the strict lint the package is held to.
 extend-exclude = ["docs/tapes"]
 
 [tool.ruff.lint]
+# Strict from line one. ANN (mandatory annotations) and D (docstrings) are the
+# aggressive ones, kept on because the package is public and the bar is set now.
 select = [
   "E", "W", "F",   # pycodestyle + pyflakes
   "I",             # import sorting
@@ -128,11 +124,16 @@ select = [
   "TRY",           # tryceratops
   "RUF",           # ruff-specific
   "ANN",           # flake8-annotations
+  "D",             # pydocstyle
   "S",             # flake8-bandit
 ]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 # Tests: asserts are the point; fakes implement port methods with unused args;
 # magic values, one-line lambdas, placeholder paths, and inline exception
 # messages are idiomatic in test setup.
-"tests/*" = ["S101", "ANN", "ARG", "PLR2004", "PLW0108", "S108", "TRY003"]
+"tests/*" = ["S101", "D", "ANN", "ARG", "PLR2004", "PLW0108", "S108", "TRY003"]
+"noxfile.py" = ["D"]               # task file, not shipped API

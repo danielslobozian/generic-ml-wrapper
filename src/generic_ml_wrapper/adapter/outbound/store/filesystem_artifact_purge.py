@@ -5,7 +5,7 @@
 Two roots, mirroring the two writers::
 
     <contexts>/<job>/<session>.context.md          context_file.write
-    <transcripts>/<job>/<session>/call_NNN.*       FilesystemTranscriptStoreAdapter.record
+    <transcripts>/<job>/<session>/call_NNN.*       FilesystemTranscriptStore.record
 
 The transcript root is configurable (``[transcript] root``), so it is injected rather
 than read from ``paths`` -- deleting from the default root while the user records into
@@ -14,11 +14,6 @@ their own would leave exactly the files they wanted gone.
 Every path here is built from a ``JobId``-validated job and a ``<job>_NNN`` session id,
 both single safe path segments, so no argument can escape its root. A missing folder is
 not an error: transcripts are opt-in, and a job that never had them simply counts zero.
-
-A folder that *is* there and cannot be removed is a different matter, and it raises. The
-files are deleted before the rows that name them, so a purge that failed silently would
-strand them: nothing would list them, and the delete could not be retried because the
-session it belonged to would be gone.
 """
 
 from __future__ import annotations
@@ -26,14 +21,16 @@ from __future__ import annotations
 import shutil
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.outbound.artifact_counts import ArtifactCounts
-from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
+from generic_ml_wrapper.application.port.outbound.artifact_purge import (
+    ArtifactCounts,
+    ArtifactPurgePort,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
-class FilesystemArtifactPurgeAdapter(ArtifactPurgePort):
+class FilesystemArtifactPurge(ArtifactPurgePort):
     """Count and remove a session's or a job's files under the two artifact roots."""
 
     def __init__(self, contexts_root: Path, transcripts_root: Path) -> None:
@@ -62,42 +59,17 @@ class FilesystemArtifactPurgeAdapter(ArtifactPurgePort):
         )
 
     def purge_session(self, job: str, session: str) -> None:
-        """Remove one session's context file and transcript folder.
-
-        Raises:
-            OSError: If something that is there cannot be removed.
-        """
+        """Remove one session's context file and transcript folder."""
         self._context_file(job, session).unlink(missing_ok=True)
-        _remove_tree(self._transcripts / job / session)
+        shutil.rmtree(self._transcripts / job / session, ignore_errors=True)
 
     def purge_job(self, job: str) -> None:
-        """Remove the job's whole context and transcript folders.
-
-        Raises:
-            OSError: If something that is there cannot be removed.
-        """
-        _remove_tree(self._contexts / job)
-        _remove_tree(self._transcripts / job)
+        """Remove the job's whole context and transcript folders."""
+        shutil.rmtree(self._contexts / job, ignore_errors=True)
+        shutil.rmtree(self._transcripts / job, ignore_errors=True)
 
     def _context_file(self, job: str, session: str) -> Path:
         return self._contexts / job / f"{session}.context.md"
-
-
-def _remove_tree(directory: Path) -> None:
-    """Remove a directory and everything under it; absence is not a failure.
-
-    The distinction the previous ``ignore_errors=True`` collapsed: a job that never
-    recorded transcripts has no folder and has nothing to answer for, but a folder that is
-    there and will not go is the caller's business. Swallowing both meant a delete could
-    report files removed that are still on disk, with the rows that named them already
-    gone -- and nothing left that could ever find them again.
-
-    Raises:
-        OSError: If the directory exists and cannot be removed.
-    """
-    if not directory.exists():
-        return
-    shutil.rmtree(directory)
 
 
 def _files_in(directory: Path) -> int:

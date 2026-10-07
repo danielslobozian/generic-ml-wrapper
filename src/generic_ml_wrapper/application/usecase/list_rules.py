@@ -1,41 +1,33 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""List the user's rules, by the environment or role that holds them."""
+"""List the user's rules, grouped by the axis they live on."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.application.port.inbound.list_rules import ListRulesUseCase
-from generic_ml_wrapper.application.port.inbound.list_rules_result import ListRulesResult
+from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.port.outbound.environment_repository import (
-        EnvironmentRepositoryPort,
-    )
-    from generic_ml_wrapper.application.port.outbound.role_repository import RoleRepositoryPort
+    from generic_ml_wrapper.application.domain.model.rule_catalog import RuleGroup
+    from generic_ml_wrapper.application.port.outbound.rule_catalog import RuleCatalogPort
 
 
-class ListRulesService(ListRulesUseCase):
-    """Read both repositories for the Rules browser, keeping only what holds rules."""
+class ListRulesUseCase(ListRules):
+    """Read the rule catalogue for the Rules browser."""
 
-    def __init__(self, environments: EnvironmentRepositoryPort, roles: RoleRepositoryPort) -> None:
-        """Bind the use case to the two repositories it reads.
+    def __init__(self, catalog: RuleCatalogPort) -> None:
+        """Bind the use case to the catalogue it reads.
 
         Args:
-            environments: Supplies the user's environments and the rules they hold.
-            roles: Supplies the user's roles and the rules they hold.
+            catalog: Supplies the populated rule groups.
         """
-        self._environments = environments
-        self._roles = roles
+        self._catalog = catalog
 
-    def execute(self) -> ListRulesResult:
-        """Return the environments and roles holding at least one rule.
+    def execute(self) -> tuple[RuleGroup, ...]:
+        """Return the populated rule groups.
 
         Returns:
-            The populated environments and roles, each sorted by code.
+            Every environment and role holding at least one rule, environments first.
         """
-        return ListRulesResult(
-            environments=tuple(e for e in self._environments.find_all() if e.rules),
-            roles=tuple(r for r in self._roles.find_all() if r.rules),
-        )
+        return self._catalog.groups()

@@ -8,14 +8,14 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.bootstrap.about import write_about
-from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import (
-    TomlkitConfigWriterAdapter,
-)
+from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
 from generic_ml_wrapper.application.domain.model.learned import NOTEBOOK_TEMPLATE
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE
-from generic_ml_wrapper.application.port.outbound.init_persist import InitPersist
-from generic_ml_wrapper.application.port.outbound.init_selections import InitSelections
-from generic_ml_wrapper.application.port.outbound.layout_seeder import LayoutSeederPort
+from generic_ml_wrapper.application.port.outbound.layout_seeder import (
+    InitPersist,
+    InitSelections,
+    LayoutSeederPort,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -26,8 +26,8 @@ if TYPE_CHECKING:
 # (created by `initialize` for the chosen env); the old profile/company is migrated into it.
 _DIRS = ("profile/me", "templates")
 _ENVIRONMENTS = "environments"
-# Rules are a projection of the user, so they live on the two things that describe one: the
-# environment (the place) and the role (the craft). InitUseCase seeds an empty rules/ drop-zone in
+# Rules are a projection of the user, so they live on the two axes that describe one: the
+# environment (the place) and the role (the craft). Init seeds an empty rules/ drop-zone in
 # each of the chosen folders. There is no global tier and no per-workflow tier.
 _ROLES = "profile/roles"
 _CONFIG = "config.toml"
@@ -125,7 +125,7 @@ _CONFIG_TEMPLATE = """\
 # gmlw configuration. Every setting is optional; delete this file to fall back to
 # the built-in defaults. Uncomment and edit what you need.
 
-# InitUseCase marker. `gmlw init` writes this once; while it is absent, gmlw funnels you
+# Init marker. `gmlw init` writes this once; while it is absent, gmlw funnels you
 # through the forced first-run setup before any command runs.
 __INIT_MARKER__
 
@@ -135,7 +135,7 @@ __INIT_MARKER__
 __LANGUAGE_CODE__
 
 [profile]
-# The role and environment chosen at init: the role you play (a lens over `me`, not a copy of
+# The movie-set axes chosen at init: the role you play (a lens over `me`, not a copy of
 # it) and the environment the work happens in. Changeable later via the config commands.
 __DEFAULT_ROLE__
 __DEFAULT_ENVIRONMENT__
@@ -173,14 +173,14 @@ __CLIENT_DEFAULT__
 # a target. Compile-time targets: "profile" | "rules" | "workflow" | "context". Wire
 # targets (metered clients only): "request" (outbound body) | "response" (captured
 # reply, observe-only). A target may have many; one spec may appear under several.
-# The built-in MessageSizeLoggerAdapter logs each message's size — put it on request and
+# The built-in MessageSizeLogger logs each message's size — put it on request and
 # response to trace sizes in and out:
 # [[interceptors]]
 # target = "request"
-# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
+# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
 # [[interceptors]]
 # target = "response"
-# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLoggerAdapter"
+# spec = "generic_ml_wrapper.adapter.outbound.interceptor.size_logger:MessageSizeLogger"
 
 # Hooks (0..N, ordered), each an action (HookPort) run at a lifecycle seam bracketing the
 # client run — not a content transform (that is an interceptor) but a side effect. Phases:
@@ -189,13 +189,13 @@ __CLIENT_DEFAULT__
 # "post-session" (after the client exits, with its exit code — for cleanup, notification,
 # archival). Each spec is a "module:Class" / "/path.py:Class" or a plugin id; an optional
 # client scopes the hook to one client. Best-effort: a failing hook never breaks a launch.
-# The built-in SessionLoggerAdapter appends a line at each seam — a template for your own hooks:
+# The built-in SessionLogger appends a line at each seam — a template for your own hooks:
 # [[hooks]]
 # phase = "pre-launch"
-# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
+# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
 # [[hooks]]
 # phase = "post-session"
-# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLoggerAdapter"
+# spec = "generic_ml_wrapper.adapter.outbound.hook.session_logger:SessionLogger"
 # client = "claude"   # optional; omit to run for every client
 
 # Context packaging. On every run gmlw composes an operating context from a fixed set of
@@ -237,7 +237,7 @@ __COMPANION_PERSONA__
 # (record/replay — the same source replays for free). The prompt is chosen by the source's
 # data type; each is your IP (the repo ships none), so a source stays verbatim until a
 # prompt resolves for it. Kinds: human-touch (me.user + me.learned), technical (workflow
-# base + steps), rules (role and environment); company/persona are verbatim.
+# base + steps), rules (both rule axes); company/persona are verbatim.
 # adapter = "cursor"   # any generic-ml-cache client adapter / model / effort
 # model = "gpt-5.4"
 # effort = "low"
@@ -272,7 +272,7 @@ def _render_config(  # noqa: PLR0913  (one keyword per config placeholder; all o
     )
 
 
-class FilesystemLayoutSeederAdapter(LayoutSeederPort):
+class FilesystemLayoutSeeder(LayoutSeederPort):
     """Create the ``~/.gmlw`` profile/rules directories and seed a default config."""
 
     def __init__(self, home: Path, *, clock: Callable[[], datetime] | None = None) -> None:
@@ -327,9 +327,9 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         """
         self._ensure_dirs()
         created = self._clock().isoformat()
-        # The chosen environment's folder — the movie set the migration wraps company
-        # into — with its .about.toml recording the human label the code came from.
-        env_dir = self._home / _ENVIRONMENTS / selections.environment.code
+        # The chosen environment's slug-folder — the movie set the migration wraps company
+        # into — with its .about.toml recording the human label the slug came from.
+        env_dir = self._home / _ENVIRONMENTS / selections.environment.slug
         # ...with an empty rules/ drop-zone: the place's own standards and processes.
         (env_dir / "rules").mkdir(parents=True, exist_ok=True)
         write_about(
@@ -337,7 +337,7 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         )
         # The chosen role's slug-folder, with an empty rules/ drop-zone: reflexes about the
         # craft, correct wherever the user is working.
-        role_dir = self._home / _ROLES / selections.role.code
+        role_dir = self._home / _ROLES / selections.role.slug
         (role_dir / "rules").mkdir(parents=True, exist_ok=True)
         write_about(role_dir, selections.role.label, selections.role.description, created)
         config = self._home / _CONFIG
@@ -348,8 +348,8 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
                 init_version=selections.version,
                 language=selections.language,
                 name=selections.name,
-                role=selections.role.code,
-                environment=selections.environment.code,
+                role=selections.role.slug,
+                environment=selections.environment.slug,
                 client=selections.client,
                 persona=selections.persona,
             ),
@@ -376,7 +376,7 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         """Merge every captured answer into an existing config, preserving the rest.
 
         A legacy config already carries the user's settings and comments. The shared
-        :class:`TomlkitConfigWriterAdapter` does a round-trip edit: each captured value is set
+        :class:`TomlkitConfigWriter` does a round-trip edit: each captured value is set
         into its table (created if missing) while every other key, comment, and the file's
         formatting are kept exactly. The persona and client are written only when one was
         chosen (``None`` values are dropped here, never passed as a clear), so a decline
@@ -395,11 +395,11 @@ class FilesystemLayoutSeederAdapter(LayoutSeederPort):
         settings: tuple[tuple[str, str, str | None], ...] = (
             ("init", "version", selections.version),
             ("language", "code", selections.language),
-            ("profile", "default_role", selections.role.code),
-            ("profile", "default_environment", selections.environment.code),
+            ("profile", "default_role", selections.role.slug),
+            ("profile", "default_environment", selections.environment.slug),
             ("companion", "name", selections.name),
             ("companion", "persona", selections.persona),
             ("client", "default", selections.client),
         )
         entries = [(table, key, value) for table, key, value in settings if value is not None]
-        return TomlkitConfigWriterAdapter(lambda: config).merge(entries)
+        return TomlkitConfigWriter().merge(config, entries)

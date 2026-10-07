@@ -8,12 +8,10 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.slug_migration_report import (
-        SlugMigrationReport,
-    )
+    from generic_ml_wrapper.application.domain.model.migration import SlugMigrationReport
 
 
-class MigrateSlugsUseCase(ABC):
+class MigrateSlugs(ABC):
     """Rename legacy raw-named role/environment folders to clean slugs, once."""
 
     @abstractmethod

@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from generic_ml_wrapper.adapter.outbound.config import settings_registry
-from generic_ml_wrapper.adapter.outbound.config import toml_config_reader as config
+from generic_ml_wrapper.common import config, settings_registry
 
 
 def _write(tmp_path: Path, body: str) -> Path:

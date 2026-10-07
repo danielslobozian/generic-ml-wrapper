@@ -1,64 +1,32 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Tests for the StartJobUseCase use case, driven by fakes for its outbound ports."""
+"""Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
 import os
-from collections.abc import Generator
-from contextlib import contextmanager
-from pathlib import Path
 
 import pytest
-from _delete_doubles import FakeSessionLock
 
-from generic_ml_wrapper.adapter.inbound.common.i18n.json_catalog_message_source import (
-    JsonCatalogMessageSource,
-)
-from generic_ml_wrapper.adapter.inbound.common.i18n.message_source_accessor import (
-    MessageSourceAccessor,
-)
-from generic_ml_wrapper.adapter.outbound.diagnostics.null_diagnostics import NullDiagnosticsAdapter
-from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
-    FilesystemWorkflowSourceAdapter,
-)
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
-from generic_ml_wrapper.application.domain.model.hook_context import HookContext
-from generic_ml_wrapper.application.domain.model.hook_phase import HookPhase
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.model.unknown_workflow_error import UnknownWorkflowError
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
-from generic_ml_wrapper.application.port.inbound.start_new_session_command import (
-    StartNewSessionCommand,
+from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
+from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
+from generic_ml_wrapper.application.port.inbound.start_job import (
+    ResumeNotSupportedError,
+    StartJobCommand,
+    UnknownWorkflowError,
 )
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.port.outbound.cli_caller_provider import CliCallerProviderPort
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
-from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
-from generic_ml_wrapper.application.port.outbound.hook import HookPort
-from generic_ml_wrapper.application.port.outbound.interrupt_scope import InterruptScopePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
-from generic_ml_wrapper.application.usecase.client_arguments_binder import (
-    ClientArgumentsBinder,
-)
-from generic_ml_wrapper.application.usecase.hook_runner import HookRunner
-from generic_ml_wrapper.application.usecase.launch import LaunchSequence
-from generic_ml_wrapper.application.usecase.start_new_session_for_job import (
-    StartNewSessionForJobService,
-)
+from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 
 # A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
-# the quotes stay inside the token there. See ``ClientArguments`` for why.
+# the quotes stay inside the token there. See ``common.client_args`` for why.
 QUOTED_PATH = "/two words" if os.name != "nt" else '"/two words"'
-
-
-class _NoInterrupts(InterruptScopePort):
-    """The wrapper keeps the interrupt in tests: nothing here launches a real client."""
-
-    @contextmanager
-    def client_owns_interrupts(self) -> Generator[None]:
-        yield
 
 
 class FakeStore(SessionStorePort):
@@ -73,13 +41,9 @@ class FakeStore(SessionStorePort):
         self._latest = latest
         self._ids = ids or []
         self._sessions = sessions or []
-        self._jobs: set[str] = {"JOB-1"}  # every fixture starts against an existing job
-
-    def create_job(self, job: str) -> None:
-        self._jobs.add(job)
 
     def jobs(self) -> list[str]:
-        return sorted({session.job for session in self.recorded} | set(self._jobs))
+        return []
 
     def bind_uuid(self, job: str, session_id: str, uuid: str) -> None:
         self.bound.append((job, session_id, uuid))
@@ -110,8 +74,8 @@ class FakeWorkflows(WorkflowSourcePort):
     def names(self) -> list[str]:
         return []
 
-    def find(self, name: str) -> Workflow | None:
-        return Workflow(name, name, "") if name == self._present else None
+    def exists(self, name: str) -> bool:
+        return name == self._present
 
     def catalog(self) -> list[Workflow]:
         return []
@@ -146,7 +110,7 @@ class FakeWorkflows(WorkflowSourcePort):
         return f"CONTEXT<{name}>"
 
 
-class RecordingCaller(CliCallerPort):
+class RecordingCaller(CliCaller):
     def __init__(self, run: RunContext, log: list[str], *, can_resume: bool = True) -> None:
         super().__init__(run)
         self._log = log
@@ -177,18 +141,18 @@ class FakeCredentials(CredentialsStorePort):
         raise NotImplementedError
 
 
-class FakeProvider(CliCallerProviderPort):
+class FakeProvider(CliCallerProvider):
     def __init__(self, log: list[str] | None = None, *, can_resume: bool = True) -> None:
         self.log = log if log is not None else []
         self.run: RunContext | None = None
         self._can_resume = can_resume
 
-    def for_run(self, run: RunContext) -> CliCallerPort:
+    def for_run(self, run: RunContext) -> CliCaller:
         self.run = run
         return RecordingCaller(run, self.log, can_resume=self._can_resume)
 
 
-class RecordingHook(HookPort):
+class RecordingHook(Hook):
     """A hook that appends ``<phase>:<client>:<exit>`` to a shared log when it runs."""
 
     def __init__(self, log: list[str]) -> None:
@@ -201,35 +165,25 @@ class RecordingHook(HookPort):
 def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set, plus the greeting)
     store: FakeStore,
     provider: FakeProvider,
-    workflows: WorkflowSourcePort | None = None,  # the fake, or the real source
+    workflows: FakeWorkflows | None = None,
     credentials: FakeCredentials | None = None,
     hooks: HookRunner | None = None,
     greeting: str | None = None,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
-    diagnostics: DiagnosticsPort | None = None,
-) -> StartNewSessionForJobService:
-    return StartNewSessionForJobService(
+) -> StartJobUseCase:
+    return StartJobUseCase(
         store=store,
         workflows=workflows or FakeWorkflows(),
         callers=provider,
         uuid_factory=lambda: "fixed-uuid",
         cwd_factory=lambda: "/work/svc-a",
         credentials=credentials or FakeCredentials(),
-        launch=LaunchSequence(
-            hooks or HookRunner((), NullDiagnosticsAdapter()),
-            NullDiagnosticsAdapter(),
-            FakeSessionLock(),
-            _NoInterrupts(),
-        ),
+        hooks=hooks or HookRunner(()),
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
-        client_arguments=ClientArgumentsBinder(
-            # configured per client; a client with no entry has no arguments
-            configured=lambda client: (client_args or {}).get(client, ""),
-            posix=os.name != "nt",
-            diagnostics=diagnostics or NullDiagnosticsAdapter(),
-        ),
+        # configured per client; a client with no entry has no arguments
+        client_args=lambda client: (client_args or {}).get(client, ""),
     )
 
 
@@ -238,7 +192,7 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     provider = FakeProvider()
     workflows = FakeWorkflows()
     result = _use_case(store, provider, workflows).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
 
     assert result.exit_code == 0
@@ -257,7 +211,7 @@ def test_new_session_is_minted_recorded_and_run() -> None:
 def test_host_greeting_is_prepended_to_a_new_session_context() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, greeting="Good evening, Dan.").execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.context is not None
@@ -273,7 +227,7 @@ def test_greeting_becomes_the_context_when_the_baseline_is_empty() -> None:
         provider,
         workflows=FakeWorkflows(baseline=""),
         greeting="Hi, Dan.",
-    ).execute(StartNewSessionCommand(job="JOB-1", client="claude"))
+    ).execute(StartJobCommand(job="JOB-1", client="claude"))
     assert provider.run is not None
     assert provider.run.context is not None
     assert "Hi, Dan." in provider.run.context
@@ -282,7 +236,7 @@ def test_greeting_becomes_the_context_when_the_baseline_is_empty() -> None:
 def test_no_greeting_leaves_the_context_untouched() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, greeting=None).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.context == "BASELINE"  # companion off → no greeting section
@@ -291,7 +245,7 @@ def test_no_greeting_leaves_the_context_untouched() -> None:
 def test_capability_card_is_appended_when_enabled() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, capability_card="HOW-TO-CARD").execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.context is not None
@@ -302,7 +256,7 @@ def test_capability_card_is_appended_when_enabled() -> None:
 def test_capability_card_off_by_default_leaves_context_untouched() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, capability_card=None).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.context == "BASELINE"
@@ -314,12 +268,11 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
         [
             (HookPhase.PRE_LAUNCH, None, RecordingHook(shared)),
             (HookPhase.POST_SESSION, None, RecordingHook(shared)),
-        ],
-        NullDiagnosticsAdapter(),
+        ]
     )
     provider = FakeProvider(log=shared)
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, hooks=hooks).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
 
     # pre-launch runs before metering (exit unknown); post-session runs after teardown
@@ -336,10 +289,77 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
 def test_plain_start_with_empty_baseline_injects_no_context() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider, FakeWorkflows(baseline="")).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.context is None  # nothing to inject on a fresh install
+
+
+def test_resume_latest_reuses_the_recorded_session() -> None:
+    latest = Session("JOB-1_003", "JOB-1", "claude", "uuid-3")
+    provider = FakeProvider()
+    _use_case(FakeStore(latest=latest), provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True)
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is True
+    assert provider.run.session_id == "JOB-1_003"
+
+
+def test_resume_session_reopens_the_named_session_in_its_folder() -> None:
+    sessions = [
+        Session("JOB-1_001", "JOB-1", "claude", "uuid-1", cwd="/work/svc-a"),
+        Session("JOB-1_002", "JOB-1", "cursor", "uuid-2", cwd="/work/svc-b"),
+    ]
+    provider = FakeProvider()
+    _use_case(FakeStore(sessions=sessions), provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_session="JOB-1_002")
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is True
+    assert provider.run.session_id == "JOB-1_002"
+    assert provider.run.client == "cursor"  # the session's client, not the command's
+    assert provider.run.cwd == "/work/svc-b"  # relaunch in the session's folder
+
+
+def test_resume_session_wins_over_resume_latest() -> None:
+    sessions = [Session("JOB-1_001", "JOB-1", "claude", "u1", cwd="/a")]
+    latest = Session("JOB-1_009", "JOB-1", "claude", "u9", cwd="/z")
+    provider = FakeProvider()
+    _use_case(FakeStore(latest=latest, sessions=sessions), provider).execute(
+        StartJobCommand(
+            job="JOB-1", client="claude", resume_latest=True, resume_session="JOB-1_001"
+        )
+    )
+
+    assert provider.run is not None
+    assert provider.run.session_id == "JOB-1_001"  # specific id beats "latest"
+
+
+def test_resume_session_unknown_id_falls_back_to_a_new_session() -> None:
+    provider = FakeProvider()
+    store = FakeStore(sessions=[Session("JOB-1_001", "JOB-1", "claude", "u1")])
+    _use_case(store, provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_session="JOB-1_404")
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is False  # unknown id -> mint a new session
+    assert len(store.recorded) == 1
+
+
+def test_resume_latest_falls_back_to_new_when_none_exists() -> None:
+    store = FakeStore(latest=None)
+    provider = FakeProvider()
+    _use_case(store, provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True)
+    )
+
+    assert len(store.recorded) == 1
+    assert provider.run is not None
+    assert provider.run.resume is False
 
 
 def test_workflow_context_is_compiled_and_injected() -> None:
@@ -348,7 +368,7 @@ def test_workflow_context_is_compiled_and_injected() -> None:
     workflows = FakeWorkflows(present="doc-review")
 
     _use_case(store, provider, workflows).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude", workflow="doc-review")
+        StartJobCommand(job="JOB-1", client="claude", workflow="doc-review")
     )
 
     assert workflows.seeded is True
@@ -364,7 +384,7 @@ def test_workflow_credentials_are_resolved_into_the_run_env() -> None:
     credentials = FakeCredentials({"doc-review": {"GITHUB_TOKEN": "ghp_x"}})
 
     _use_case(FakeStore(), provider, workflows, credentials).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude", workflow="doc-review")
+        StartJobCommand(job="JOB-1", client="claude", workflow="doc-review")
     )
 
     assert provider.run is not None
@@ -374,7 +394,7 @@ def test_workflow_credentials_are_resolved_into_the_run_env() -> None:
 def test_no_workflow_means_no_injected_env() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.env == ()
@@ -384,36 +404,7 @@ def test_unknown_workflow_is_rejected() -> None:
     workflows = FakeWorkflows(present=None)
     with pytest.raises(UnknownWorkflowError):
         _use_case(FakeStore(), FakeProvider(), workflows).execute(
-            StartNewSessionCommand(job="JOB-1", client="claude", workflow="missing")
-        )
-
-
-def test_a_run_named_for_an_unknown_workflow_seeds_nothing() -> None:
-    """The refusal comes first; nothing is installed on the way to it."""
-    workflows = FakeWorkflows(present=None)
-
-    with pytest.raises(UnknownWorkflowError):
-        _use_case(FakeStore(), FakeProvider(), workflows).execute(
-            StartNewSessionCommand(job="JOB-1", client="claude", workflow="missing")
-        )
-
-    assert workflows.seeded is False
-
-
-def test_the_meta_workflow_cannot_be_run_as_a_workflow(tmp_path: Path) -> None:
-    """Against the real source: ``--workflow create-workflow`` used to be accepted.
-
-    Asking "does a workflow.md exist there" said yes, because seeding had just installed
-    the meta-workflow. Asking the source for the *workflow* says no — it is hidden from
-    that the same way it is hidden from the listing — so the run is refused, and authoring
-    stays reachable only through the command built for it.
-    """
-    source = FilesystemWorkflowSourceAdapter(tmp_path / "workflows")
-    source.seed()
-
-    with pytest.raises(UnknownWorkflowError):
-        _use_case(FakeStore(), FakeProvider(), source).execute(
-            StartNewSessionCommand(job="JOB-1", client="claude", workflow="create-workflow")
+            StartJobCommand(job="JOB-1", client="claude", workflow="missing")
         )
 
 
@@ -421,9 +412,34 @@ def test_rejected_start_records_no_ghost_session() -> None:
     store = FakeStore()
     with pytest.raises(UnknownWorkflowError):
         _use_case(store, FakeProvider(), FakeWorkflows(present=None)).execute(
-            StartNewSessionCommand(job="JOB-1", client="claude", workflow="missing")
+            StartJobCommand(job="JOB-1", client="claude", workflow="missing")
         )
     assert store.recorded == []  # validation happens before the session is persisted
+
+
+def test_resume_on_client_that_cannot_resume_is_rejected() -> None:
+    latest = Session("JOB-1_003", "JOB-1", "codex", "uuid-3")
+    provider = FakeProvider(can_resume=False)
+    use_case = _use_case(FakeStore(latest=latest), provider)
+
+    with pytest.raises(ResumeNotSupportedError) as excinfo:
+        use_case.execute(StartJobCommand(job="JOB-1", client="codex", resume_latest=True))
+
+    assert excinfo.value.params["client"] == "codex"
+    assert provider.log == []  # refused before the client was launched
+
+
+def test_workflow_is_not_injected_when_resuming() -> None:
+    latest = Session("JOB-1_003", "JOB-1", "claude", "uuid-3")
+    provider = FakeProvider()
+    workflows = FakeWorkflows(present="doc-review")
+
+    _use_case(FakeStore(latest=latest), provider, workflows).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True, workflow="doc-review")
+    )
+
+    assert provider.run is not None
+    assert provider.run.context is None
 
 
 # ── passthrough launch arguments ──
@@ -431,7 +447,7 @@ def test_configured_args_reach_the_run_split_into_tokens() -> None:
     store = FakeStore(ids=[])
     provider = FakeProvider()
     _use_case(store, provider, client_args={"claude": '--yolo --add-dir "/two words"'}).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     # Quoting survives per platform — see QUOTED_PATH's note in test_client_args.
@@ -442,7 +458,7 @@ def test_a_client_with_no_configured_args_gets_none() -> None:
     store = FakeStore(ids=[])
     provider = FakeProvider()
     _use_case(store, provider, client_args={"codex": "--profile work"}).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
+        StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.client_args == ()
@@ -454,7 +470,7 @@ def test_an_explicit_override_replaces_the_configured_value() -> None:
     store = FakeStore(ids=[])
     provider = FakeProvider()
     _use_case(store, provider, client_args={"claude": "--yolo"}).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude", client_args="--verbose")
+        StartJobCommand(job="JOB-1", client="claude", client_args="--verbose")
     )
     assert provider.run is not None
     assert provider.run.client_args == ("--verbose",)
@@ -464,10 +480,25 @@ def test_an_empty_override_launches_with_no_arguments() -> None:
     store = FakeStore(ids=[])
     provider = FakeProvider()
     _use_case(store, provider, client_args={"claude": "--yolo"}).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude", client_args="")
+        StartJobCommand(job="JOB-1", client="claude", client_args="")
     )
     assert provider.run is not None
     assert provider.run.client_args == ()
+
+
+def test_a_resume_takes_the_arguments_of_the_sessions_own_client() -> None:
+    # The decisive case for keying the table by client: the run's client on a resume comes
+    # from the stored session, not the command, so a resumed codex session must never be
+    # handed the flags configured for claude.
+    recorded = Session("JOB-1_001", "JOB-1", "codex", "u-1", cwd="/work/svc-a")
+    store = FakeStore(latest=recorded, sessions=[recorded])
+    provider = FakeProvider()
+    _use_case(
+        store, provider, client_args={"claude": "--dangerously-skip-permissions", "codex": "--ask"}
+    ).execute(StartJobCommand(job="JOB-1", client="claude", resume_latest=True))
+    assert provider.run is not None
+    assert provider.run.client == "codex"
+    assert provider.run.client_args == ("--ask",)
 
 
 # ── the recorded `resumable` comes from the caller, not from the client's name ──
@@ -477,14 +508,14 @@ def test_a_session_is_recorded_resumable_when_its_caller_says_so() -> None:
     # even though the adapter could reopen the session perfectly well.
     store = FakeStore(ids=[])
     provider = FakeProvider(can_resume=True)
-    _use_case(store, provider).execute(StartNewSessionCommand(job="JOB-1", client="cursor-mitm"))
+    _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="cursor-mitm"))
     assert store.recorded[0].resumable is True
 
 
 def test_a_session_is_recorded_unresumable_when_its_caller_says_so() -> None:
     store = FakeStore(ids=[])
     provider = FakeProvider(can_resume=False)
-    _use_case(store, provider).execute(StartNewSessionCommand(job="JOB-1", client="cursor-mitm"))
+    _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="cursor-mitm"))
     assert store.recorded[0].resumable is False
 
 
@@ -494,52 +525,5 @@ def test_the_recorded_flag_matches_what_the_resume_gate_will_ask() -> None:
     for declared in (True, False):
         store = FakeStore(ids=[])
         provider = FakeProvider(can_resume=declared)
-        _use_case(store, provider).execute(StartNewSessionCommand(job="JOB-1", client="anything"))
+        _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="anything"))
         assert store.recorded[0].resumable is declared
-
-
-class _Recording(DiagnosticsPort):
-    """A sink that keeps what it was handed, so a test can assert the drop was reported."""
-
-    def __init__(self) -> None:
-        self.records: list[tuple[str, dict[str, object]]] = []
-
-    def debug(self, message: str, **context: object) -> None:
-        self.records.append(("debug", context))
-
-    def info(self, message: str, **context: object) -> None:
-        self.records.append(("info", context))
-
-    def warning(self, message: str, **context: object) -> None:
-        self.records.append(("warning", context))
-
-    def error(self, message: str, exc: BaseException | None = None, **context: object) -> None:
-        self.records.append(("error", context))
-
-    def keys(self, level: str) -> list[object]:
-        """The catalogue keys logged at *level* — asserted on rather than rendered text."""
-        return [context.get("key") for name, context in self.records if name == level]
-
-
-def test_unparseable_configured_args_are_dropped_but_reported(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    # A typo must not take down the launch -- but it must not pass unmentioned either:
-    # silently dropping the flags starts the client without them and looks like success.
-    store = FakeStore(ids=[])
-    provider = FakeProvider()
-    sink = _Recording()
-    _use_case(store, provider, client_args={"claude": '--foo "unclosed'}, diagnostics=sink).execute(
-        StartNewSessionCommand(job="JOB-1", client="claude")
-    )
-    assert provider.run is not None
-    assert provider.run.client_args == ()
-    assert "log.client_args_unparseable" in sink.keys("warning"), (
-        "the dropped arguments must be reported"
-    )
-    assert capsys.readouterr().err == "", "and not by dumping a traceback on the client's screen"
-
-
-def _message_source() -> MessageSourceAccessor:
-    """The real English catalogue: these tests assert behaviour, not translations."""
-    return MessageSourceAccessor(JsonCatalogMessageSource(), "en")

@@ -59,10 +59,6 @@ prints its own help, then exits 0.
 
 ### Environment variables
 
-- `GMLW_HOME` — the root of the tree the wrapper reads and writes, replacing the default
-  `~/.gmlw` entirely (nothing is appended). Everything moves with it: the ledger, config,
-  workflows, contexts, and logs. Set it to give a development build its own world so it
-  cannot read, write, or migrate the one your installed `gmlw` uses.
 - `GMLW_LOG_LEVEL` — overrides the configured `[logging] level` for the run
   (`debug|info|warning|error`; default `warning`). See [CONFIGURATION.md](CONFIGURATION.md).
 - `GMLW_CLIENT`, `GMLW_JOB`, `GMLW_SESSION` — exported by the launching caller and read
@@ -337,7 +333,7 @@ already have, or type a new name — either way you get a *fresh session*, which
 List, Export, and Import; **Config** covers listing/getting/setting a value, the
 **Clients** switcher (selecting a row also sets it as the default — the
 `gmlw config set client.default` path), and re-running **Setup**; **Rules** browses the
-environment and role rule sources.
+environment and role rule axes.
 
 **Every launch ends with a client step** — Job → New, Workflow → Run, Create, and Edit all
 ask which client to run on before starting, the menu's equivalent of `--client`. It opens

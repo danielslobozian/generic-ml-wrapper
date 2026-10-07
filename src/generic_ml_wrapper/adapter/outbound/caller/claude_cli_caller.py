@@ -1,25 +1,26 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""``ClaudeCliCallerAdapter``: launch Claude Code, install the status line, meter the run."""
+"""``ClaudeCliCaller``: launch Claude Code, install the status line, meter the run."""
 
 from __future__ import annotations
 
 import os
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import context_file, status_line_config
-from generic_ml_wrapper.adapter.outbound.caller.child_process import ChildProcess
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import StatusLineSnapshot
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.domain.model.run import RunContext
-from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPort
-from generic_ml_wrapper.application.wiring.diagnostics_log import log
+from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.log import log
 
 if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
-    from generic_ml_wrapper.application.usecase.interceptor_chain import InterceptorChain
 
 BINARY = "claude"
 _SETTINGS = Path.home() / ".claude" / "settings.json"
@@ -30,7 +31,7 @@ _STATUSLINE: dict[str, object] = {
 }
 
 
-class ClaudeCliCallerAdapter(CliCallerPort):
+class ClaudeCliCaller(CliCaller):
     """Launch Claude Code for a run, metered via the status line and a local relay.
 
     ``start_metering`` points Claude Code's ``statusLine`` at ``gmlw statusline`` and
@@ -91,7 +92,7 @@ class ClaudeCliCallerAdapter(CliCallerPort):
         try:
             relay.start()
         except OSError as error:
-            log.warning(f"metering relay failed to start ({error}); launching unmetered")
+            log.warning(i18n.t("log.relay_failed", error=error))
             return
         self._relay = relay
 
@@ -158,4 +159,6 @@ class ClaudeCliCallerAdapter(CliCallerPort):
             "GMLW_SESSION": self.run.session_id,
             "GMLW_CLIENT": self.run.client,
         }
-        return ChildProcess().run(argv, self.run.cwd, env)
+        # Trusted argv from our resolved run; no shell. The program is PATH-resolved (BINARY).
+        completed = subprocess.run(argv, check=False, cwd=self.run.cwd, env=env)  # noqa: S603
+        return completed.returncode
