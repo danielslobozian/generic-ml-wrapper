@@ -7,6 +7,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Connection incidents are recorded, and `gmlw health` shows them.** Every time the
+  relay loses the connection to the client's API — a request that fails and is retried,
+  or an answer cut off part way — it is recorded against the session it happened in,
+  with the time and the cause in one line.
+  - `gmlw health [--days N] [--job J]` lists the last days one line each (quiet days
+    included, so a bad one stands out), then the latest incidents.
+  - `gmlw export <job>` gains a connection incidents section, and `gmlw sessions <job>`
+    marks a session that had any (`⚠ 3 incident(s)`). Both `--json` outputs carry them.
+  - Recording an incident can never break a session: if it cannot be written, it is
+    skipped. Incidents start with this version; earlier ones are only in the log.
 - **Jobs can be tagged, and listed by tag.** A tag is your own grouping — put the sprint
   on each ticket's job, and `gmlw jobs --tag sprint-42` shows that sprint's work. A job
   can carry several tags; one carried over into the next sprint gets that sprint's tag too.

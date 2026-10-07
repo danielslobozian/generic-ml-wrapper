@@ -23,6 +23,8 @@ class SessionSummary:
             other, and this is what distinguishes it.
         cost_usd: Its recorded cumulative cost, or ``0.0`` if none was ever metered.
         workflow: The workflow it was started with, or ``None`` for a plain session.
+        incidents: How many connection incidents it suffered (lost connections and
+            cut-off answers).
     """
 
     session_id: str
@@ -33,6 +35,7 @@ class SessionSummary:
     turn_count: int = 0
     cost_usd: float = 0.0
     workflow: str | None = None
+    incidents: int = 0
 
 
 class ListSessions(ABC):

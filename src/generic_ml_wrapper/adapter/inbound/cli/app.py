@@ -42,6 +42,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     JobId,
     WorkflowName,
 )
+from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.migration import (
     MigrationReport,
     SlugMigrationReport,
@@ -88,6 +89,7 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
     WorkflowNameError,
     WorkflowOutcome,
 )
+from generic_ml_wrapper.application.port.inbound.report_health import HealthReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredentialCommand
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
@@ -126,6 +128,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_migrate_slugs,
     build_new_workflow,
     build_render_statusline,
+    build_report_health,
     build_save_usage_report,
     build_set_credential,
     build_start_job,
@@ -227,6 +230,7 @@ _COMMANDS = frozenset(
         "jobs",
         "sessions",
         "export",
+        "health",
         "clients",
         "statusline",
         "tui",
@@ -416,6 +420,11 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     export = sub.add_parser("export", help=i18n.t("cli.cmd.export"))
     export.add_argument("job", help=i18n.t("cli.arg.job"))
     _add_json_flag(export)
+
+    health = sub.add_parser("health", help=i18n.t("cli.cmd.health"))
+    health.add_argument("--days", type=int, default=7, help=i18n.t("cli.flag.health_days"))
+    health.add_argument("--job", default=None, help=i18n.t("cli.flag.health_job"))
+    _add_json_flag(health)
 
     clients = sub.add_parser("clients", help=i18n.t("cli.cmd.clients"))
     _add_json_flag(clients)
@@ -629,6 +638,7 @@ def format_sessions(
                 workflow=f"{workflow:<{workflow_width}}",
                 folder=session.cwd or loc.t("sessions.no_folder"),
             )
+            + (loc.t("sessions.incidents", count=session.incidents) if session.incidents else "")
         )
     return "\n".join(lines)
 
@@ -743,7 +753,9 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
         The text to print (no trailing newline).
     """
     loc = loc or i18n.active()
-    if report.turn_count == 0 and not report.session_costs:
+    # A session can lose its connection before a single turn is metered; its incidents
+    # are still worth showing.
+    if report.turn_count == 0 and not report.session_costs and not report.incidents:
         return loc.t("usage.none", job=repr(report.job))
     width = max(
         (len(model.model) for model in report.models),
@@ -773,6 +785,18 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
             )
             for model in report.models
         ]
+    if report.incidents:
+        lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
+        lines += [
+            "",
+            loc.t(
+                "usage.incidents",
+                count=len(report.incidents),
+                lost=lost,
+                cut=len(report.incidents) - lost,
+            ),
+        ]
+        lines += [format_incident(incident, loc) for incident in report.incidents]
     if report.session_costs:
         lines += ["", loc.t("usage.cost_by_session")]
         lines += [
@@ -1077,6 +1101,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _jobs_delete(args)
         if args.command == "jobs" and args.jobs_command in ("tag", "untag"):
             return _jobs_tag(args)
+        if args.command == "health":
+            return _health(args)
         if args.command == "sessions" and args.sessions_command == "delete":
             return _sessions_delete(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
@@ -1321,6 +1347,65 @@ def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
 def _jobs_partial(count: int, kept: int) -> str:
     """The summary of a job delete that removed some of what it was asked to, not all."""
     return i18n.t("delete.jobs.partial", removed=count - kept, count=count, kept=kept)
+
+
+def _health(args: argparse.Namespace) -> int:
+    """Show the connection incidents of recent sessions — ``gmlw health``."""
+    job = None if args.job is None else JobId(args.job)
+    report = build_report_health().execute(days=int(args.days), job=job)
+    print(_as_json(asdict(report)) if bool(args.json) else format_health(report))
+    return 0
+
+
+def format_health(
+    report: HealthReport, loc: i18n.Localizer | None = None, *, latest: int = 20
+) -> str:
+    """Render the connection health: one line per day, then the latest incidents.
+
+    Args:
+        report: The health report to render.
+        loc: The localiser to render through; defaults to the active language.
+        latest: How many of the most recent incidents to list.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    scope = report.job if report.job is not None else loc.t("health.all_jobs")
+    lines = [loc.t("health.header", days=report.days, scope=scope), ""]
+    if not report.incidents:
+        lines.append(loc.t("health.none"))
+        return "\n".join(lines)
+    lines += [
+        loc.t(
+            "health.day_row",
+            day=day.day,
+            lost=day.connection_lost,
+            cut=day.stream_interrupted,
+        )
+        for day in report.by_day
+    ]
+    lines += ["", loc.t("health.latest", count=min(latest, len(report.incidents)))]
+    lines += [format_incident(incident, loc) for incident in report.incidents[:latest]]
+    return "\n".join(lines)
+
+
+def format_incident(incident: Incident, loc: i18n.Localizer | None = None) -> str:
+    """One incident on one line: when, which session, what kind, and the cause."""
+    loc = loc or i18n.active()
+    return loc.t(
+        "health.incident_row",
+        when=_when(incident.occurred_at),
+        job=incident.job,
+        session=incident.session_id,
+        kind=loc.t(f"health.kind.{incident.kind.value}"),
+        cause=incident.cause,
+    )
+
+
+def _when(timestamp: float) -> str:
+    """Render an epoch timestamp as a local ``YYYY-MM-DD HH:MM:SS``."""
+    return datetime.fromtimestamp(timestamp).astimezone().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _jobs_tag(args: argparse.Namespace) -> int:

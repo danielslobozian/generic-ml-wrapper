@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from _conformance import (
+    IncidentLogConformance,
+    InMemoryIncidentLog,
     InMemoryJobTagStore,
     InMemoryPerTurnStore,
     InMemorySessionStore,
@@ -30,10 +32,12 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
     FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_incident_log import SqliteIncidentLog
 from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
 from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
@@ -118,3 +122,16 @@ class TestSqliteJobTagStore(JobTagStoreConformance):
 class TestInMemoryJobTagStore(JobTagStoreConformance):
     def make_store(self, tmp_path: Path) -> JobTagStorePort:
         return InMemoryJobTagStore()
+
+
+# -- IncidentLogPort -------------------------------------------------------- #
+
+
+class TestSqliteIncidentLog(IncidentLogConformance):
+    def make_log(self, tmp_path: Path) -> IncidentLogPort:
+        return SqliteIncidentLog(Ledger(tmp_path / "ledger.db"))
+
+
+class TestInMemoryIncidentLog(IncidentLogConformance):
+    def make_log(self, tmp_path: Path) -> IncidentLogPort:
+        return InMemoryIncidentLog()

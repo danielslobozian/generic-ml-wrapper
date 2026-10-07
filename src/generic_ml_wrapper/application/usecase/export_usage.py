@@ -13,6 +13,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     TurnRow,
     UsageReport,
 )
+from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
@@ -25,15 +26,19 @@ _UNKNOWN_MODEL = "(unknown)"
 class ExportUsageUseCase(ExportUsage):
     """Assemble a job's usage report from the per-turn store and the session-cost store."""
 
-    def __init__(self, usage: UsageStorePort, turns: PerTurnMeteringPort) -> None:
+    def __init__(
+        self, usage: UsageStorePort, turns: PerTurnMeteringPort, incidents: IncidentLogPort
+    ) -> None:
         """Wire the use case to its usage stores.
 
         Args:
             usage: The per-session cost store (from the status line).
             turns: The per-turn token store (from a metering gateway).
+            incidents: The connection incidents the gateway recorded.
         """
         self._usage = usage
         self._turns = turns
+        self._incidents = incidents
 
     def execute(self, job: str) -> UsageReport:
         """Build a job's usage report.
@@ -61,6 +66,7 @@ class ExportUsageUseCase(ExportUsage):
             cache_tokens=sum(model.cache_tokens for model in models),
             duration_s=round(sum(model.duration_s for model in models), 1),
             total_usd=round(sum(cost.cost_usd for cost in session_costs), 2),
+            incidents=tuple(self._incidents.incidents(job=job)),
         )
 
 

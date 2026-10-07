@@ -20,6 +20,8 @@ gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything 
 gmlw sessions <job> [--json]
 gmlw sessions <job> delete <session> [...] [--yes]
 gmlw export <job> [--json]
+gmlw health [--days N] [--job J] [--json]   # connection incidents of recent sessions
+gmlw health [--days N] [--job J] [--json]
 gmlw clients [--json]                    # supported clients + installed versions
 gmlw statusline                          # called by the client, not by hand
 gmlw workflow new [name] [--client X] [--guided|--quick]   # name optional; asks depth if unset
@@ -291,7 +293,8 @@ gmlw sessions billing-api delete billing-api_002
 ## export
 
 Report a job's recorded usage: per-turn tokens and timing, totals by model, cost by
-session, and grand totals.
+session, and grand totals — then the job's connection incidents, if it had any (see
+[health](#health)).
 
 ```
 gmlw export <job> [--json]
@@ -305,6 +308,29 @@ Example:
 ```
 gmlw export billing-api --json
 ```
+
+## health
+
+Show the connection incidents of recent sessions: one line per day, then the latest
+incidents, each with its time, session, kind and cause. An incident is recorded whenever
+the relay loses the connection to the client's API:
+
+- **connection lost** — a request could not be completed; the client was sent a `502`
+  and retried on its own.
+- **stream cut** — an answer was cut off part way; what had arrived was kept.
+
+```
+gmlw health [--days N] [--job J] [--json]
+```
+
+- `--days N` — how many days back, today included (default: 7). Quiet days are listed
+  too, so a bad day stands out.
+- `--job J` — only this job's incidents.
+- `--json` — output as JSON instead of text.
+
+`gmlw sessions <job>` marks a session that had incidents (`⚠ 3 incident(s)`), and
+`gmlw export <job>` lists them. Incidents are recorded from this version on; earlier
+ones are only in `~/.gmlw/logs/gmlw.log`.
 
 ## clients
 

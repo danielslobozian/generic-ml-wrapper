@@ -82,6 +82,10 @@ Now such a failure returns a clean `502` to the client (which retries), and the
 traceback goes to `~/.gmlw/logs/gmlw.log`. If you still see one, it is a bug worth
 reporting — please include the log file's tail.
 
+A lost connection is logged as one warning line rather than a traceback, and recorded
+as an incident against its session: `gmlw health` shows how often it happens, day by
+day, and which sessions it hit.
+
 ## How are client status-line settings restored after exit or crash?
 
 The wrapper snapshots your client status-line settings before launch and restores them

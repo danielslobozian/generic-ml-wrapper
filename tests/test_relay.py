@@ -9,6 +9,7 @@ import ssl
 from collections.abc import Iterator, Mapping
 
 import pytest
+from _conformance import InMemoryIncidentLog
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
 from generic_ml_wrapper.adapter.outbound.gateway.relay import (
@@ -18,6 +19,7 @@ from generic_ml_wrapper.adapter.outbound.gateway.relay import (
     _RelayServer,
     _tee,
 )
+from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
@@ -733,3 +735,55 @@ def test_a_failing_sink_never_costs_the_client_its_turn(
         set_active(previous)
     assert body == _SSE, "the client still gets its full turn"
     assert capsys.readouterr().err == "", "and no traceback lands on its screen"
+
+
+def _run_once(forwarder: object, incidents: object) -> int:
+    relay = MeteringRelay(
+        job="PAY-1",
+        session="PAY-1_003",
+        metering=_FakeStore(),
+        forwarder=forwarder,  # type: ignore[arg-type]  # the module's forwarder shapes
+        incidents=incidents,  # type: ignore[arg-type]  # a log, or one that fails
+        clock=lambda: 1_700_000_000.0,
+    )
+    previous = set_active(_Recording())  # keep log lines off the captured stderr
+    relay.start()
+    try:
+        status, _ = _post_status(relay)
+    finally:
+        relay.stop()
+        set_active(previous)
+    return status
+
+
+def test_a_lost_connection_is_recorded_against_its_session() -> None:
+    incidents = InMemoryIncidentLog()
+    assert _run_once(_exploding_forwarder, incidents) == 502
+    assert incidents.recorded == [
+        Incident(
+            "PAY-1",
+            "PAY-1_003",
+            IncidentKind.CONNECTION_LOST,
+            f"SSLError: {ssl.SSLError('EOF occurred in violation of protocol')}",
+            1_700_000_000.0,
+        )
+    ]
+
+
+def test_a_cut_off_answer_is_recorded_as_interrupted() -> None:
+    incidents = InMemoryIncidentLog()
+    _run_once(_dying_forwarder, incidents)
+    assert [i.kind for i in incidents.recorded] == [IncidentKind.STREAM_INTERRUPTED]
+
+
+class _BrokenLog(InMemoryIncidentLog):
+    def record(self, incident: Incident) -> None:
+        message = "database is locked"
+        raise OSError(message)
+
+
+def test_an_incident_that_cannot_be_recorded_does_not_become_a_second_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert _run_once(_exploding_forwarder, _BrokenLog()) == 502
+    assert capsys.readouterr().err == ""

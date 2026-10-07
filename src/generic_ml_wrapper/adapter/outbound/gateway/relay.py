@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, cast
 from urllib.parse import urlsplit
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage as _anthropic_usage
+from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
@@ -40,6 +41,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
     from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
+    from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
@@ -101,6 +103,7 @@ class MeteringRelay:
         session_id_reader: SessionIdReader | None = None,
         session_id_sink: SessionIdSink | None = None,
         interceptors: InterceptorChain | None = None,
+        incidents: IncidentLogPort | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
         """Bind the relay to a run and its metering store.
@@ -128,6 +131,9 @@ class MeteringRelay:
                 learns which client-side session its named session actually became.
             interceptors: The interceptor chain applied to the wire — ``request`` to
                 the outbound body, ``response`` to the captured reply; empty when ``None``.
+            incidents: Where a lost connection or a cut-off answer is recorded, so a
+                session's connection trouble can be looked at later; ``None`` keeps
+                them in the log only.
             clock: Returns the current time (epoch seconds); injectable for tests.
                 Used to stamp each turn's timestamp and duration.
         """
@@ -152,6 +158,7 @@ class MeteringRelay:
         # on its current id.
         self._seen_session_id: str | None = None
         self._interceptors = interceptors or InterceptorChain(())
+        self._incidents = incidents
         self._clock = clock
         self._server: ThreadingHTTPServer | None = None
         # A thread-safe capture counter: the server is threaded, so two concurrent turns
@@ -235,6 +242,21 @@ class MeteringRelay:
     def now(self) -> float:
         """The current time, from the injected clock."""
         return self._clock()
+
+    def record_incident(self, kind: IncidentKind, error: BaseException) -> None:
+        """Record a connection failure against this session; never raises.
+
+        Called from the request boundary, where nothing may escape: a ledger that cannot
+        be written right now (the disk, a lock) must not turn a dropped connection into
+        a second failure. The log line already written stands either way.
+        """
+        if self._incidents is None:
+            return
+        incident = Incident(self._job, self._session, kind, _describe(error), self._clock())
+        try:
+            self._incidents.record(incident)
+        except Exception as failure:  # noqa: BLE001  (recording must never break a turn)
+            log.debug(i18n.t("log.incident_not_recorded", error=failure))
 
     def is_metered(self, method: str, path: str) -> bool:
         """Whether a request to ``path`` is a metered turn for this client."""
@@ -386,6 +408,9 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             self._exchange()
         except _CONNECTION_ERRORS as error:
+            cast("_RelayServer", self.server).relay.record_incident(
+                IncidentKind.CONNECTION_LOST, error
+            )
             log.warning(
                 i18n.t(
                     "log.gateway_connection_lost",
@@ -459,11 +484,14 @@ class _Handler(BaseHTTPRequestHandler):
             # longer be sent, so a later failure must not try to.
             self._responded = True
 
+        def interrupted(error: BaseException) -> None:
+            relay.record_incident(IncidentKind.STREAM_INTERRUPTED, error)
+
         if relay.wants_body(self.command, upstream_path):
-            captured = _tee(response.body, self._write_chunk)
+            captured = _tee(response.body, self._write_chunk, interrupted)
             self._bookkeep(relay, upstream_path, body, captured, started_at)
         else:
-            _stream(response.body, self._write_chunk)
+            _stream(response.body, self._write_chunk, interrupted)
 
     def _bookkeep(
         self,
@@ -496,7 +524,9 @@ class _Handler(BaseHTTPRequestHandler):
         self.wfile.flush()
 
 
-def _drain(chunks: Iterable[bytes]) -> Iterable[bytes]:
+def _drain(
+    chunks: Iterable[bytes], interrupted: Callable[[BaseException], None] | None = None
+) -> Iterable[bytes]:
     """Yield ``chunks``, ending the stream cleanly if the *upstream* read fails.
 
     The two directions fail independently and were not guarded alike. A write to the
@@ -511,6 +541,8 @@ def _drain(chunks: Iterable[bytes]) -> Iterable[bytes]:
 
     Args:
         chunks: The upstream response body chunks.
+        interrupted: Told of the failure when the stream ends early, so it can be
+            recorded as an incident; ``None`` when nothing records them.
 
     Yields:
         Each chunk read successfully, stopping at the first read failure.
@@ -526,6 +558,8 @@ def _drain(chunks: Iterable[bytes]) -> Iterable[bytes]:
                 i18n.t("log.gateway_stream_interrupted", error=error),
                 key="log.gateway_stream_interrupted",
             )
+            if interrupted is not None:
+                interrupted(error)
             return
         yield chunk
 
@@ -543,16 +577,24 @@ def _describe(error: BaseException) -> str:
     return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
-def _stream(chunks: Iterable[bytes], sink: Callable[[bytes], None]) -> None:
+def _stream(
+    chunks: Iterable[bytes],
+    sink: Callable[[bytes], None],
+    interrupted: Callable[[BaseException], None] | None = None,
+) -> None:
     """Stream ``chunks`` to the client without buffering (nothing consumes the body)."""
-    for chunk in _drain(chunks):
+    for chunk in _drain(chunks, interrupted):
         try:
             sink(chunk)
         except OSError:
             return  # client hung up; no body to record or capture, so stop
 
 
-def _tee(chunks: Iterable[bytes], sink: Callable[[bytes], None]) -> bytes:
+def _tee(
+    chunks: Iterable[bytes],
+    sink: Callable[[bytes], None],
+    interrupted: Callable[[BaseException], None] | None = None,
+) -> bytes:
     """Stream ``chunks`` to ``sink`` while capturing them all for usage extraction.
 
     If the client hangs up mid-stream (e.g. it exits or cancels), writes raise and
@@ -563,13 +605,14 @@ def _tee(chunks: Iterable[bytes], sink: Callable[[bytes], None]) -> bytes:
     Args:
         chunks: The upstream response body chunks.
         sink: Writes a chunk to the client (may raise ``OSError`` once it hangs up).
+        interrupted: Told of the failure when the upstream stream ends early.
 
     Returns:
         The captured body (complete, or as much of it as arrived).
     """
     captured = bytearray()
     client_gone = False
-    for chunk in _drain(chunks):
+    for chunk in _drain(chunks, interrupted):
         captured.extend(chunk)
         if not client_gone:
             try:

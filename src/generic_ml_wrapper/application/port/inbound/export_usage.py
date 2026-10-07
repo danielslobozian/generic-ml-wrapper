@@ -6,6 +6,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.model.incident import Incident
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,7 @@ class UsageReport:
         cache_tokens: The job's total cache prompt tokens.
         duration_s: The job's total metered duration, in seconds.
         total_usd: The job's total cost across its sessions.
+        incidents: The connection incidents seen in its sessions, chronological.
     """
 
     job: str
@@ -92,6 +97,7 @@ class UsageReport:
     cache_tokens: int = 0
     duration_s: float = 0.0
     total_usd: float = 0.0
+    incidents: tuple[Incident, ...] = ()
 
 
 class ExportUsage(ABC):

@@ -15,11 +15,13 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_incident_log import SqliteIncidentLog
 from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
@@ -143,3 +145,25 @@ def test_purging_a_job_takes_its_tags_and_leaves_the_others(tmp_path: Path) -> N
 
     # A job recreated under the same name later must not inherit the old one's tags.
     assert tags.tags_by_job() == {"beta": ("sprint-42",)}
+
+
+def _incidents(ledger: Ledger) -> SqliteIncidentLog:
+    log = SqliteIncidentLog(ledger)
+    for job in ("alpha", "beta"):
+        for session in (f"{job}_001", f"{job}_002"):
+            log.record(Incident(job, session, IncidentKind.CONNECTION_LOST, "TimeoutError", 1.0))
+    return log
+
+
+def test_purging_a_session_takes_its_incidents(tmp_path: Path) -> None:
+    ledger = _seed(tmp_path)
+    log = _incidents(ledger)
+    SqliteLedgerPurge(ledger).purge_session("alpha", "alpha_001")
+    assert [i.session_id for i in log.incidents()] == ["alpha_002", "beta_001", "beta_002"]
+
+
+def test_purging_a_job_takes_its_incidents(tmp_path: Path) -> None:
+    ledger = _seed(tmp_path)
+    log = _incidents(ledger)
+    SqliteLedgerPurge(ledger).purge_job("alpha")
+    assert {i.job for i in log.incidents()} == {"beta"}

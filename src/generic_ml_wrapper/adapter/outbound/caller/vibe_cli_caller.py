@@ -22,6 +22,7 @@ from generic_ml_wrapper.common.log import log
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
     from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+    from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
@@ -47,6 +48,8 @@ class VibeCliCaller(CliCaller):
         metering: PerTurnMeteringPort,
         interceptors: InterceptorChain | None = None,
         transcript: TranscriptPort | None = None,
+        *,
+        incidents: IncidentLogPort | None = None,
     ) -> None:
         """Bind the caller to a run, its metering store, and the interceptor chain.
 
@@ -55,10 +58,12 @@ class VibeCliCaller(CliCaller):
             metering: Where the relay records per-turn usage.
             interceptors: The interceptor chain the relay applies to wire traffic.
             transcript: Where the relay records each call's transcript, or ``None``.
+            incidents: Where the relay records a lost connection, or ``None``.
         """
         super().__init__(run)
         self._metering = metering
         self._interceptors = interceptors
+        self._incidents = incidents
         self._transcript = transcript
         self._relay: MeteringRelay | None = None
         self._vibe_home: str | None = None
@@ -92,6 +97,7 @@ class VibeCliCaller(CliCaller):
             usage_reader=openai_chat.read_usage,
             is_metered=_vibe_metered,
             interceptors=self._interceptors,
+            incidents=self._incidents,
         )
         try:
             relay.start()

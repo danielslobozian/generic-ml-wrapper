@@ -34,6 +34,7 @@ _GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
             ("gmlw jobs", "index.desc.jobs"),
             ("gmlw sessions <job>", "index.desc.sessions"),
             ("gmlw export <job>", "index.desc.export"),
+            ("gmlw health", "index.desc.health"),
             ("gmlw config list", "index.desc.config"),
         ),
     ),
