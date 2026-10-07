@@ -2386,3 +2386,62 @@ def test_the_menu_is_given_the_clients_a_launch_can_use(monkeypatch: pytest.Monk
 
 def test_build_list_launch_clients_is_wired() -> None:
     assert isinstance(composition.build_list_launch_clients(), ListLaunchClients)
+
+
+# --------------------------------------------------------------------------- #
+# One place per setting                                                        #
+# --------------------------------------------------------------------------- #
+def _captured_menu(monkeypatch: pytest.MonkeyPatch) -> dict[str, object]:
+    """Everything `_run_menu` hands the app, captured without opening the menu."""
+    captured: dict[str, object] = {}
+
+    class _Capture:
+        def __init__(self, _jobs: object, **kwargs: object) -> None:
+            captured.update(kwargs)
+
+        def run(self) -> tui.MenuChoice | None:
+            return None
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(tui, "MenuApp", _Capture)
+    app._run_menu()
+    return captured
+
+
+def test_a_setting_with_its_own_menu_is_not_offered_in_the_config_views(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One place per setting: persona, role, environment and the default client are changed
+    # on their own screens, so offering them again under Config → Get/Set/List gave two
+    # readers of one value that could disagree the moment either wrote.
+    captured = _captured_menu(monkeypatch)
+    switchers = cast("dict[str, tui.Switcher]", captured["switchers"])
+    config = cast("tui.ConfigCatalog", captured["config"])
+    offered = {setting.key for setting in config.settings}
+    for switcher in switchers.values():
+        assert switcher.key not in offered, f"{switcher.key} is offered in two places"
+    assert app.CLIENT_DEFAULT_KEY not in offered
+
+
+def test_every_setting_hidden_from_the_config_views_has_a_menu_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The failure that would ship in silence: hide a key with no dedicated screen behind it
+    # and the setting becomes unreachable in the TUI, with nothing to say so.
+    captured = _captured_menu(monkeypatch)
+    switchers = cast("dict[str, tui.Switcher]", captured["switchers"])
+    config = cast("tui.ConfigCatalog", captured["config"])
+    hidden = {view.key for view in composition.build_config_commands().list()} - {
+        setting.key for setting in config.settings
+    }
+    reachable = {switcher.key for switcher in switchers.values()} | {app.CLIENT_DEFAULT_KEY}
+    assert hidden == reachable
+
+
+def test_a_setting_without_its_own_menu_is_still_offered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _captured_menu(monkeypatch)
+    config = cast("tui.ConfigCatalog", captured["config"])
+    assert "logging.level" in {setting.key for setting in config.settings}

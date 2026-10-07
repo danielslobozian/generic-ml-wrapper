@@ -7,6 +7,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **In the menu, persona, role, environment and the default client could each be set in
+  two places that disagreed.** Each had its own screen, and was offered again under
+  Config → Get/Set/List. Both read a value captured before the menu opened and neither
+  saw the other's writes, so changing the persona on its screen left Config → Set showing
+  the old one, and the other way round. A setting with a screen of its own is now changed
+  there only; Get/Set/List keep the settings that have nowhere else to go. `gmlw config
+  set` still reaches every key.
 - **A workflow command that failed still wrote to your home.** Five commands installed
   the packaged workflows into `~/.gmlw/workflows` *before* checking whether they could
   proceed, so `gmlw workflow export ghost` printed `unknown workflow` and still created
