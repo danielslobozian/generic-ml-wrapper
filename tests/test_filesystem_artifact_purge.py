@@ -6,6 +6,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
+from generic_ml_wrapper.adapter.outbound.store import filesystem_artifact_purge
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
     FilesystemArtifactPurge,
 )
@@ -118,3 +121,31 @@ def test_roots_that_do_not_exist_are_handled(tmp_path: Path) -> None:
     assert purge.counts_for_job("alpha") == ArtifactCounts(contexts=0, transcript_calls=0)
     purge.purge_job("alpha")
     purge.purge_session("alpha", "alpha_001")
+
+
+def _refuse(path: object) -> None:
+    raise PermissionError(f"cannot remove {path}")
+
+
+def test_a_folder_that_is_there_and_will_not_go_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The caller deletes files before rows, so a silent failure here would strand the
+    # files where nothing can find them. Absence is still fine; refusal is not.
+    purge = _seed(tmp_path)
+    monkeypatch.setattr(filesystem_artifact_purge.shutil, "rmtree", _refuse)
+
+    with pytest.raises(PermissionError):
+        purge.purge_session("alpha", "alpha_001")
+    with pytest.raises(PermissionError):
+        purge.purge_job("alpha")
+
+
+def test_a_refusal_is_not_raised_for_what_is_not_there(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    purge = _seed(tmp_path)
+    monkeypatch.setattr(filesystem_artifact_purge.shutil, "rmtree", _refuse)
+
+    purge.purge_session("beta", "beta_001")  # beta never recorded transcripts
+    purge.purge_job("gamma")

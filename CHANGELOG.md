@@ -7,6 +7,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **A delete that could not remove a session's files said it had, and could not be retried.**
+  The recorded rows were removed and committed first, then the files — with every file
+  error discarded. A permission error or a read-only mount left the files on disk, the
+  rows gone, and a receipt reporting both as removed. With the rows gone, asking again was
+  refused, so those files were stranded where nothing in gmlw could find them.
+  - Files now go first and rows last. A session or job whose files will not go keeps its
+    rows: it still lists, still resumes, and the same delete can simply be asked for again.
+  - A folder that is missing is still fine (transcripts are opt-in); one that is there and
+    will not go is now reported, in the log with the reason.
+  - One stuck item no longer takes the batch with it. `gmlw jobs delete` and
+    `gmlw sessions <job> delete` list what stayed, marked `✗ not removed`, print
+    `removed N of M`, and exit `1`. The menu shows the same summary.
 - **Replacing a workflow by import could leave you with neither the old one nor the new.**
   The installed workflow was moved aside first, and only then was the archive unpacked and
   checked. An archive that was not a workflow — the wrong file, a truncated download —

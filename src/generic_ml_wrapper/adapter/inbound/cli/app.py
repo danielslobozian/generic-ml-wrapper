@@ -615,21 +615,25 @@ def format_session_usage(session: SessionSummary, loc: i18n.Localizer | None = N
     return loc.t("sessions.usage", turns=session.turn_count, cost=f"{session.cost_usd:.2f}")
 
 
-def format_job_footprints(footprints: list[JobFootprint], loc: i18n.Localizer | None = None) -> str:
-    """Render what deleting these jobs would remove.
+def format_job_footprints(
+    footprints: list[JobFootprint], loc: i18n.Localizer | None = None, *, heading: bool = True
+) -> str:
+    """Render what deleting these jobs would remove, or what a delete left behind.
 
     Shown before the confirmation, so "delete them?" is answered against the actual
-    contents rather than a count of names.
+    contents rather than a count of names. Reused after a delete for the rows that stayed,
+    each marked, without the "this will remove" heading that no longer holds.
 
     Args:
         footprints: One footprint per job, in the order they were asked for.
         loc: The localiser to render through; defaults to the active language.
+        heading: Whether to open with the preview's heading.
 
     Returns:
         The text to print (no trailing newline).
     """
     loc = loc or i18n.active()
-    lines = [loc.t("delete.jobs.preview", count=len(footprints)), ""]
+    lines = [loc.t("delete.jobs.preview", count=len(footprints)), ""] if heading else []
     width = max(len(footprint.job) for footprint in footprints)
     lines += [
         loc.t(
@@ -641,26 +645,39 @@ def format_job_footprints(footprints: list[JobFootprint], loc: i18n.Localizer | 
             contexts=footprint.contexts,
             transcripts=footprint.transcript_calls,
         )
+        + _kept_marker(footprint.removed, loc)
         for footprint in footprints
     ]
     return "\n".join(lines)
 
 
+def _kept_marker(removed: bool, loc: i18n.Localizer) -> str:
+    """The tail a row carries when it did not go. Empty on a preview, where all go."""
+    return "" if removed else loc.t("delete.row.kept")
+
+
 def format_session_footprints(
-    job: str, footprints: list[SessionFootprint], loc: i18n.Localizer | None = None
+    job: str,
+    footprints: list[SessionFootprint],
+    loc: i18n.Localizer | None = None,
+    *,
+    heading: bool = True,
 ) -> str:
-    """Render what deleting these sessions would remove.
+    """Render what deleting these sessions would remove, or what a delete left behind.
 
     Args:
         job: The job the sessions belong to.
         footprints: One footprint per session, in the order they were asked for.
         loc: The localiser to render through; defaults to the active language.
+        heading: Whether to open with the preview's heading.
 
     Returns:
         The text to print (no trailing newline).
     """
     loc = loc or i18n.active()
-    lines = [loc.t("delete.sessions.preview", count=len(footprints), job=job), ""]
+    lines = (
+        [loc.t("delete.sessions.preview", count=len(footprints), job=job), ""] if heading else []
+    )
     width = max(len(footprint.session) for footprint in footprints)
     lines += [
         loc.t(
@@ -671,6 +688,7 @@ def format_session_footprints(
             contexts=footprint.contexts,
             transcripts=footprint.transcript_calls,
         )
+        + _kept_marker(footprint.removed, loc)
         for footprint in footprints
     ]
     return "\n".join(lines)
@@ -1229,7 +1247,8 @@ def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
 
     Returns:
         The process exit code: ``2`` when a job is unknown or the delete was declined,
-        matching ``workflow import``'s "nothing happened, and you asked for something".
+        matching ``workflow import``'s "nothing happened, and you asked for something";
+        ``1`` when some of the jobs could not be removed.
     """
     if not jobs:
         return 0
@@ -1242,9 +1261,20 @@ def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
     if not _confirm_delete(format_job_footprints(footprints), assume_yes=assume_yes):
         print(i18n.t("delete.cancelled"), file=sys.stderr)
         return 2
-    removed = delete.execute(jobs)
-    print(i18n.t("delete.jobs.done", count=len(removed)), file=sys.stderr)
-    return 0
+    outcome = delete.execute(jobs)
+    kept = [footprint for footprint in outcome if not footprint.removed]
+    if not kept:
+        print(i18n.t("delete.jobs.done", count=len(outcome)), file=sys.stderr)
+        return 0
+    # The receipt: only what stayed, in the rows the user already read before confirming.
+    print(format_job_footprints(kept, heading=False), file=sys.stderr)
+    print(_jobs_partial(len(outcome), len(kept)), file=sys.stderr)
+    return 1
+
+
+def _jobs_partial(count: int, kept: int) -> str:
+    """The summary of a job delete that removed some of what it was asked to, not all."""
+    return i18n.t("delete.jobs.partial", removed=count - kept, count=count, kept=kept)
 
 
 def _sessions_delete(args: argparse.Namespace) -> int:
@@ -1261,7 +1291,8 @@ def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> 
         assume_yes: Skip the confirmation (``--yes``).
 
     Returns:
-        The process exit code (``2`` when an id is unknown or the delete was declined).
+        The process exit code (``2`` when an id is unknown or the delete was declined,
+        ``1`` when some of the sessions could not be removed).
     """
     if not sessions:
         return 0
@@ -1274,9 +1305,19 @@ def _delete_sessions(job: str, sessions: Sequence[str], *, assume_yes: bool) -> 
     if not _confirm_delete(format_session_footprints(job, footprints), assume_yes=assume_yes):
         print(i18n.t("delete.cancelled"), file=sys.stderr)
         return 2
-    removed = delete.execute(job, sessions)
-    print(i18n.t("delete.sessions.done", count=len(removed), job=job), file=sys.stderr)
-    return 0
+    outcome = delete.execute(job, sessions)
+    kept = [footprint for footprint in outcome if not footprint.removed]
+    if not kept:
+        print(i18n.t("delete.sessions.done", count=len(outcome), job=job), file=sys.stderr)
+        return 0
+    print(format_session_footprints(job, kept, heading=False), file=sys.stderr)
+    print(_sessions_partial(job, len(outcome), len(kept)), file=sys.stderr)
+    return 1
+
+
+def _sessions_partial(job: str, count: int, kept: int) -> str:
+    """The summary of a session delete that removed some of what it was asked to, not all."""
+    return i18n.t("delete.sessions.partial", removed=count - kept, count=count, kept=kept, job=job)
 
 
 def _client(raw: str | None) -> str:
@@ -1566,10 +1607,13 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _delete_jobs_in_app(selected: tuple[str, ...]) -> str:
         try:
-            removed = build_delete_jobs().execute(list(selected))
+            outcome = build_delete_jobs().execute(list(selected))
         except NoSuchJobError as error:
             return _render_error(error)
-        return i18n.t("delete.jobs.done", count=len(removed))
+        kept = sum(1 for footprint in outcome if not footprint.removed)
+        if not kept:
+            return i18n.t("delete.jobs.done", count=len(outcome))
+        return _jobs_partial(len(outcome), kept)
 
     def _preview_sessions(job: str, selected: tuple[str, ...]) -> str:
         try:
@@ -1581,10 +1625,13 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _delete_sessions_in_app(job: str, selected: tuple[str, ...]) -> str:
         try:
-            removed = build_delete_sessions().execute(job, list(selected))
+            outcome = build_delete_sessions().execute(job, list(selected))
         except (NoSuchJobError, NoSuchSessionError) as error:
             return _render_error(error)
-        return i18n.t("delete.sessions.done", count=len(removed), job=job)
+        kept = sum(1 for footprint in outcome if not footprint.removed)
+        if not kept:
+            return i18n.t("delete.sessions.done", count=len(outcome), job=job)
+        return _sessions_partial(job, len(outcome), kept)
 
     # Deleting is the one write the menu does without leaving: it asks in-app and calls
     # these, so the user stays on the list they are clearing instead of being returned to

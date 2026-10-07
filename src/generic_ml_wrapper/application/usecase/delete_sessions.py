@@ -15,6 +15,7 @@ a job safe.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 from generic_ml_wrapper.application.port.inbound.delete_sessions import (
     DeleteSessions,
@@ -27,6 +28,8 @@ from generic_ml_wrapper.application.port.outbound.ledger_purge import LedgerPurg
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
+from generic_ml_wrapper.common import i18n
+from generic_ml_wrapper.common.log import log
 
 
 class DeleteSessionsUseCase(DeleteSessions):
@@ -70,10 +73,25 @@ class DeleteSessionsUseCase(DeleteSessions):
         # Measured before the first removal, and returned afterwards: once the rows are
         # gone there is nothing left to count, so "what went" has to be taken up front.
         footprints = self._footprints(job, sessions)
-        for session in sessions:
-            self._ledger.purge_session(job, session)
+        return [self._purge(footprint) for footprint in footprints]
+
+    def _purge(self, footprint: SessionFootprint) -> SessionFootprint:
+        """Remove one session's files and then its rows, or report that it stayed.
+
+        The files go first. They are what nothing else can find again: a row names its
+        session and can be asked for a second time, while a file whose row is gone is
+        invisible to every listing the tool has. So a failure here leaves a session that
+        still lists, still resumes, and still deletes on the next attempt -- which is why
+        the rows are only reached once the files are actually gone.
+        """
+        job, session = footprint.job, footprint.session
+        try:
             self._artifacts.purge_session(job, session)
-        return footprints
+        except OSError as error:
+            log.warning(i18n.t("log.session_not_deleted", session=session, error=error))
+            return replace(footprint, removed=False)
+        self._ledger.purge_session(job, session)
+        return footprint
 
     def _validate(self, job: str, sessions: Sequence[str]) -> None:
         """Reject the whole batch unless every id in it is recorded.
