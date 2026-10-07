@@ -146,6 +146,10 @@ if TYPE_CHECKING:
     # the post-menu handler can be typed without pulling Textual in at CLI startup.
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice
 
+# Set from the Clients screen, which is not a `Switcher`, so it is named here rather than
+# read off one.
+CLIENT_DEFAULT_KEY = "client.default"
+
 
 class LocalizedHelpFormatter(argparse.RawDescriptionHelpFormatter):
     """Argparse's own chrome, rendered through our catalogue.
@@ -1782,6 +1786,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             return CreateOutcome(SwitchChoice(result.slug, result.label, ""), "")
 
         return Switcher(
+            key=key,
             crumb=crumb,
             choices=choices,
             current=current if isinstance(current, str) else None,
@@ -1810,6 +1815,12 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     # uses (values/defaults pre-rendered through _setting_value so the app stays format-free).
     loc = i18n.active()
 
+    # A setting with a screen of its own is changed there, and only there. Offering it again
+    # under Get/Set/List gave two readers of one value, each a snapshot taken before the
+    # app starts, which disagreed the moment either wrote. Derived from the menus rather
+    # than listed beside them, so adding a switcher drops its key here on its own.
+    dedicated_menu_keys = {switcher.key for switcher in switchers.values()} | {CLIENT_DEFAULT_KEY}
+
     def _config_settings() -> list[ConfigSetting]:
         return [
             ConfigSetting(
@@ -1821,6 +1832,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
                 description=view.description,
             )
             for view in config_commands.list()
+            if view.key not in dedicated_menu_keys
         ]
 
     def _apply_setting(key: str, raw: str) -> ConfigSetResult:
@@ -1833,7 +1845,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         )
 
     def _set_default_client(name: str) -> ConfigSetResult:  # Config → Clients: pick the default
-        return _apply_setting("client.default", name)
+        return _apply_setting(CLIENT_DEFAULT_KEY, name)
 
     config_catalog = ConfigCatalog(
         crumb=f"gmlw > {t('tui.config')}",

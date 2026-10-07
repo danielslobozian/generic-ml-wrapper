@@ -248,8 +248,11 @@ class Switcher:
     value; ``create`` (when set) creates a new option from a typed label and makes it
     current. Both are the only outbound calls, injected by the wiring so the app stays free
     of use-case imports. ``create`` is ``None`` for axes that cannot be created (personas).
+    ``key`` is the config key ``apply`` writes, so the wiring can tell which settings
+    already have a screen of their own.
     """
 
+    key: str
     crumb: str
     choices: list[SwitchChoice]
     current: str | None
