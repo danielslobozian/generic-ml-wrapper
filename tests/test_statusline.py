@@ -8,11 +8,13 @@ import pytest
 
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
     format_age,
     render_statusline,
+    render_tokens,
     render_usage_row,
 )
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
@@ -175,29 +177,31 @@ def test_render_git_without_repo_name() -> None:
 
 
 # ── usage footer rows ──
+_TOKENS = TokenCounts(input=182_000, output=96_400, cache_read=8_600_000, cache_write=240_000)
+
+
 def test_render_usage_row_with_turns() -> None:
     assert (
-        render_usage_row("job", "JOB-1", 3, 45194, 0.43)
-        == "  job JOB-1 · 3 turns · 45.2k tok · $0.43"
+        render_usage_row("job", "JOB-1", 3, _TOKENS, 0.43)
+        == "  job JOB-1 · 3 turns · ↑ 182k  ↓ 96.4k  ⟲ 8.6M  ✎ 240k · $0.43"
     )
 
 
-def test_render_usage_row_compacts_large_totals_to_k_m_g() -> None:
-    # A heavy job's cache-dominated total stays scannable: k -> M -> G.
-    assert "45.2k tok" in render_usage_row("job", "J", 3, 45_194, 1.0)
-    assert "487M tok" in render_usage_row("job", "J", 900, 487_000_000, 1.0)
-    assert "8.5G tok" in render_usage_row("job", "wrapper", 3251, 8_472_936_150, 663.70)
-    assert "999 tok" in render_usage_row("job", "J", 1, 999, 1.0)  # below 1000 stays exact
+def test_each_token_count_compacts_to_k_m_g() -> None:
+    # A long session's cache read runs to millions and must stay scannable.
+    assert render_tokens(TokenCounts(999, 45_194, 487_000_000, 8_472_936_150)) == (
+        "↑ 999  ↓ 45.2k  ⟲ 487M  ✎ 8.5G"
+    )
 
 
 def test_render_usage_row_without_turns_shows_only_cost() -> None:
-    assert render_usage_row("job", "JOB-1", 0, 0, 0.43) == "  job JOB-1 · $0.43"
+    assert render_usage_row("job", "JOB-1", 0, TokenCounts(), 0.43) == "  job JOB-1 · $0.43"
 
 
 def test_render_usage_row_session_label() -> None:
     assert (
-        render_usage_row("session", "JOB-1_002", 2, 100, 0.10)
-        == "  session JOB-1_002 · 2 turns · 100 tok · $0.10"
+        render_usage_row("session", "JOB-1_002", 2, TokenCounts(80, 20), 0.10)
+        == "  session JOB-1_002 · 2 turns · ↑ 80  ↓ 20  ⟲ 0  ✎ 0 · $0.10"
     )
 
 
@@ -235,7 +239,7 @@ def test_use_case_shows_only_the_session_row_for_a_single_session() -> None:
     )
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
     # one session → just the current-session row (no separate job total)
-    assert out == "  session JOB-1_001 · 1 turns · 45.2k tok · $0.00"
+    assert out == "  session JOB-1_001 · 1 turns · ↑ 3.1k  ↓ 7  ⟲ 0  ✎ 42.1k · $0.00"
 
 
 def test_use_case_shows_session_then_job_row_across_sessions() -> None:
@@ -249,7 +253,8 @@ def test_use_case_shows_session_then_job_row_across_sessions() -> None:
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
     # current session first, then the job total across both sessions
     assert out == (
-        "  session JOB-1_002 · 2 turns · 355 tok · $0.00\n  job JOB-1 · 3 turns · 475 tok · $0.00"
+        "  session JOB-1_002 · 2 turns · ↑ 310  ↓ 45  ⟲ 0  ✎ 0 · $0.00\n"
+        "  job JOB-1 · 3 turns · ↑ 410  ↓ 65  ⟲ 0  ✎ 0 · $0.00"
     )
 
 
@@ -295,13 +300,16 @@ def test_format_age_uses_two_significant_units(seconds: int, rendered: str) -> N
 def test_the_age_is_bound_to_the_name_not_added_as_a_field() -> None:
     # Layout B: the dot separators read as a list of measurements -- turns, tokens,
     # dollars -- and the age is a property of the thing measured, not one more of them.
-    row = render_usage_row("session", "JOB-1_002", 3, 45194, 0.43, 6300)
+    row = render_usage_row("session", "JOB-1_002", 3, _TOKENS, 0.43, 6300)
     assert row.startswith("  session JOB-1_002 (1h45m) · ")
 
 
 def test_a_row_without_an_age_is_unchanged() -> None:
     # A session launched but never prompted has no first turn, so it has no age.
-    assert render_usage_row("session", "JOB-1_002", 0, 0, 0.0) == "  session JOB-1_002 · $0.00"
+    assert (
+        render_usage_row("session", "JOB-1_002", 0, TokenCounts(), 0.0)
+        == "  session JOB-1_002 · $0.00"
+    )
 
 
 _EPOCH = 1_700_000_000.0  # a real wall-clock, not the 0.0 that means "not recorded"
@@ -346,3 +354,11 @@ def test_a_turn_with_no_recorded_time_does_not_anchor_the_age() -> None:
         "{}", "JOB-1", "JOB-1_002"
     )
     assert "(2h)" in line
+
+
+def test_token_counts_sum_each_kind_over_the_turns() -> None:
+    turns = [
+        TurnUsage("S", 10, 2, None, "m", cache_creation_tokens=100, cache_read_tokens=1_000),
+        TurnUsage("S", 5, 3, None, "m", cache_creation_tokens=0, cache_read_tokens=1_200),
+    ]
+    assert TokenCounts.of(turns) == TokenCounts(15, 5, 2_200, 100)

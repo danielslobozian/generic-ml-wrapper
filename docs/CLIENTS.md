@@ -41,6 +41,17 @@ and cost to the ledger. `gmlw export <job>` reports it.
 `gmlw statusline`, whose output is produced by the Claude status parser. You do not run
 `gmlw statusline` by hand.
 
+Below the live line, the status line shows the session's usage (and the whole job's, once
+it spans several sessions), with the tokens broken down by kind:
+
+```
+  session PAY-1_003 (57m) · 86 turns · ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k · $2.50
+```
+
+`↑` input, `↓` output, `⟲` cache read, `✎` cache write. They do not overlap. A cache read
+far larger than the input is caching doing its job; a large cache write turn after turn
+means the cache keeps being rebuilt.
+
 **Context delivery:** Native. Compiled context (workflow blob or startup context) is written
 to a context file and passed with `--append-system-prompt-file`, leaving a durable
 provenance artifact under `~/.gmlw/contexts/`.

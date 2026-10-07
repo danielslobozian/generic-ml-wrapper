@@ -7,6 +7,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The status line breaks tokens down by kind.** The single `9.1M tok` total — almost
+  all of it cache reads in a long session — becomes `↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k`:
+  input, output, cache read, cache write. A cache read far above the input is the cache
+  working; a cache write that keeps growing is the cache being rebuilt. Read from the
+  turns already recorded, so it covers past sessions too.
 - **Connection incidents are recorded, and `gmlw health` shows them.** Every time the
   relay loses the connection to the client's API — a request that fails and is retried,
   or an answer cut off part way — it is recorded against the session it happened in,
