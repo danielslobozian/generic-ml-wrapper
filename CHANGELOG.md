@@ -7,6 +7,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Fixed
+- **A workflow command that failed still wrote to your home.** Five commands installed
+  the packaged workflows into `~/.gmlw/workflows` *before* checking whether they could
+  proceed, so `gmlw workflow export ghost` printed `unknown workflow` and still created
+  `_common/` and `create-workflow/`. Each command now checks first: `export` and `edit` no
+  longer install anything (what they would install is reserved and refused anyway),
+  `new` validates the name before installing, and `start --workflow` refuses an unknown
+  workflow before installing. `import` already validated first.
 - **A delete that could not remove a session's files said it had, and could not be retried.**
   The recorded rows were removed and committed first, then the files — with every file
   error discarded. A permission error or a read-only mount left the files on disk, the

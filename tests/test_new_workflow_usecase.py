@@ -207,10 +207,21 @@ def test_a_label_with_spaces_and_capitals_is_now_fine(label: str, slug: str) -> 
 
 
 def test_a_taken_seed_name_fails_fast() -> None:
+    workflows = FakeWorkflows(existing=True)
     with pytest.raises(WorkflowExistsError):
-        _use_case(FakeWorkflows(existing=True), FakeStore(), CapturingProvider()).execute(
+        _use_case(workflows, FakeStore(), CapturingProvider()).execute(
             NewWorkflowCommand(label="doc-review", client="claude")
         )
+    assert workflows.seeded is False  # refused before anything was installed
+
+
+def test_a_rejected_seed_name_installs_nothing() -> None:
+    workflows = FakeWorkflows()
+    with pytest.raises(WorkflowNameError):
+        _use_case(workflows, FakeStore(), CapturingProvider()).execute(
+            NewWorkflowCommand(label="create-workflow", client="claude")
+        )
+    assert workflows.seeded is False
 
 
 def test_a_taken_name_at_deploy_keeps_the_draft() -> None:

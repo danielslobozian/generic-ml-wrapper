@@ -406,6 +406,7 @@ def test_unknown_workflow_is_rejected() -> None:
         _use_case(FakeStore(), FakeProvider(), workflows).execute(
             StartJobCommand(job="JOB-1", client="claude", workflow="missing")
         )
+    assert workflows.seeded is False  # refused before the shared base was installed
 
 
 def test_rejected_start_records_no_ghost_session() -> None:

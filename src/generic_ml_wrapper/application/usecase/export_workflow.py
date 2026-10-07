@@ -40,7 +40,9 @@ class ExportWorkflowUseCase(ExportWorkflow):
             raise WorkflowNameError(error.catalogue_key, **error.params) from error
         if name in _RESERVED:
             raise WorkflowNameError("error.workflow.reserved_name", name=name)
-        self._workflows.seed()
+        # No seeding here. What seeding installs is the shared base and the
+        # meta-workflow, both rejected as reserved above, so it could never change the
+        # answer below -- it only wrote to the user's home on the way to a refusal.
         if not self._workflows.exists(name):
             raise WorkflowNotFoundError("error.workflow.not_found", name=name)
         return str(self._archive.pack(Path(self._workflows.folder(name)), name))
