@@ -1735,6 +1735,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         ConfigSetting,
         CreateOutcome,
         Deleter,
+        HealthDayView,
         ImportAttempt,
         JobChoice,
         MenuApp,
@@ -1891,6 +1892,33 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
             job=job, empty=False, summary=summary, model_rows=model_rows, session_rows=session_rows
         )
 
+    def _health_days() -> list[HealthDayView]:  # the Health screen: the last two weeks
+        report = build_report_health().execute(days=14)
+        per_day: dict[str, list[Incident]] = {}
+        for incident in report.incidents:
+            day = datetime.fromtimestamp(incident.occurred_at).astimezone().date().isoformat()
+            per_day.setdefault(day, []).append(incident)
+        return [
+            HealthDayView(
+                day=day.day,
+                summary=loc.t(
+                    "health.day_summary", lost=day.connection_lost, cut=day.stream_interrupted
+                ),
+                count=day.connection_lost + day.stream_interrupted,
+                rows=tuple(
+                    (
+                        _clock(incident.occurred_at),
+                        incident.job,
+                        incident.session_id,
+                        loc.t(f"health.kind.{incident.kind.value}"),
+                        incident.cause,
+                    )
+                    for incident in per_day.get(day.day, [])
+                ),
+            )
+            for day in report.by_day
+        ]
+
     def _save_usage(job: str) -> str:  # writes the full JSON report; returns the file path
         return str(build_save_usage_report().execute(JobId(job)))
 
@@ -2034,6 +2062,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         validate_workflow=_validate_workflow,
         sessions_for=_sessions_for,
         usage_view=_usage_view,
+        health=_health_days,
         save_usage=_save_usage,
         workflows=build_list_workflow_catalog().execute(),
         rules=build_list_rules().execute,

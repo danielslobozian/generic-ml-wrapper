@@ -311,6 +311,22 @@ class ConfigCatalog:
 
 
 @dataclass(frozen=True)
+class HealthDayView:
+    """One day of connection health, pre-rendered for the Health screens.
+
+    ``summary`` is the day's counts as one localised line; ``rows`` are the cells of its
+    incidents table (time, job, session, kind, cause), already rendered by the wiring.
+    ``count`` is how many incidents the day had -- zero for a quiet day, which is listed
+    all the same so a bad one stands out.
+    """
+
+    day: str
+    summary: str
+    count: int
+    rows: tuple[tuple[str, ...], ...] = ()
+
+
+@dataclass(frozen=True)
 class UsageView:
     """A job's usage, pre-rendered for the Export summary view.
 
@@ -408,6 +424,7 @@ _TOP_MENU = (
     ("⚙", "tui.workflow", "menu:workflow", ""),
     ("🎛", "tui.config", "menu:config", ""),
     ("📏", "tui.rules", "menu:rules", ""),
+    ("🩺", "tui.health", "menu:health", "gmlw health"),
     ("🚪", "tui.quit", "quit", ""),
 )
 # The icon per rule axis, so a group reads as a place or a craft at a glance.
@@ -865,12 +882,12 @@ class _MultiSelectScreen(_MenuScreen):
 
 
 class TopMenuScreen(_MenuScreen):
-    """The front door: Job · Workflow · Config · Rules · Quit, under the banner."""
+    """The front door: Job · Workflow · Config · Rules · Health · Quit, under the banner."""
 
     show_banner = True
 
     def menu_items(self) -> list[_Item]:
-        """The object rows: Job, Workflow, Config, Rules, Quit."""
+        """The object rows: Job, Workflow, Config, Rules, Health, Quit."""
         return _menu(_TOP_MENU)
 
     def handle(self, item: _Item) -> None:
@@ -885,6 +902,8 @@ class TopMenuScreen(_MenuScreen):
             self.menu_app.push_screen(ConfigMenuScreen())
         elif item.action == "menu:rules":
             self.menu_app.push_screen(RulesMenuScreen())
+        elif item.action == "menu:health":
+            self.menu_app.push_screen(HealthScreen())
 
     def action_back(self) -> None:
         """At the front door, Back leaves gmlw (there is nothing to pop to)."""
@@ -1954,6 +1973,96 @@ class JobTagsScreen(Screen[None]):
         self.menu_app.pop_screen()
 
 
+class HealthScreen(_MenuScreen):
+    """Connection health, one row per recent day; a day with incidents opens its list.
+
+    The same window as ``gmlw health``: every day is a row, quiet ones marked ✅, so the
+    days the connection kept dropping stand out at a glance. Read once when opened.
+    """
+
+    empty_key = "tui.health.unwired"
+
+    def __init__(self) -> None:
+        """Start with the days not yet read (they are read when the screen is built)."""
+        super().__init__()
+        self._days: list[HealthDayView] | None = None
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Health."""
+        return f"gmlw > {i18n.active().t('tui.health')}"
+
+    def _health(self) -> list[HealthDayView]:
+        if self._days is None:
+            self._days = self.menu_app.health()
+        return self._days
+
+    def menu_items(self) -> list[_Item]:
+        """One row per day, newest first: ✅ for a quiet day, ⚠ for one with incidents."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "⚠" if day.count else "✅",
+                day.day,
+                day.summary,
+                "health:day",
+                payload=day.day,
+                note="" if day.count else t("tui.health.quiet"),
+            )
+            for day in self._health()
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """A day with incidents opens their list; a quiet day has nothing to open."""
+        if item.action != "health:day":
+            return
+        day = next((d for d in self._health() if d.day == item.payload), None)
+        if day is not None and day.count:
+            self.menu_app.push_screen(HealthDayScreen(day))
+
+
+class HealthDayScreen(Screen[None]):
+    """One day's connection incidents as a table: time · job · session · kind · cause."""
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
+
+    def __init__(self, day: HealthDayView) -> None:
+        """Bind the table to the day it lists."""
+        super().__init__()
+        self._day = day
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the day's summary, the incidents table, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.health')} > {self._day.day}", id="crumb")
+        yield Static(self._day.summary, id="detail")
+        with Container(id="report"):
+            yield DataTable(id="incident_table", cursor_type="row", zebra_stripes=True)
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Fill the table, newest first."""
+        t = i18n.active().t
+        table = cast("DataTable[str]", self.query_one("#incident_table", DataTable))
+        table.add_columns(
+            t("tui.health.col.time"),
+            t("tui.health.col.job"),
+            t("tui.health.col.session"),
+            t("tui.health.col.kind"),
+            t("tui.health.col.cause"),
+        )
+        for row in self._day.rows:
+            table.add_row(*row)
+
+    def action_back(self) -> None:
+        """Pop back to the days."""
+        self.menu_app.pop_screen()
+
+
 class SessionListScreen(Screen[None]):
     """Read-only table of a job's sessions: session · date · client · folder · resumable.
 
@@ -2675,6 +2784,7 @@ class MenuApp(App[MenuChoice | None]):
         validate_workflow: Callable[[str], str | None] | None = None,
         sessions_for: Callable[[str], list[SessionChoice]] | None = None,
         usage_view: Callable[[str], UsageView] | None = None,
+        health: Callable[[], list[HealthDayView]] | None = None,
         save_usage: Callable[[str], str] | None = None,
         workflows: list[Workflow] | None = None,
         rules: Callable[[], tuple[RuleGroup, ...]] | None = None,
@@ -2703,6 +2813,8 @@ class MenuApp(App[MenuChoice | None]):
                 defaults to none.
             usage_view: Builds a job's usage summary (totals + by-model + by-session rows) for
                 the Export view (lazily, per job, on a worker thread); defaults to empty.
+            health: Reads the recent days of connection health for the Health screen;
+                defaults to none (the screen then says it is not wired).
             save_usage: Writes a job's full report to a file and returns the path, for the
                 save-to-file Export destination (lazily, per job); defaults to a no-op.
             workflows: The runnable workflows (slug + label + description), for the Workflow
@@ -2742,6 +2854,7 @@ class MenuApp(App[MenuChoice | None]):
         self.validate_workflow = validate_workflow or _accept_any_workflow
         self.sessions_for = sessions_for or _no_sessions
         self.usage_view = usage_view or _no_usage_view
+        self.health: Callable[[], list[HealthDayView]] = health or list
         self.save_usage = save_usage or _no_save
         self.workflows = workflows or []
         self.rules = rules or _no_rules
