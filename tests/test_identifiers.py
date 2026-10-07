@@ -10,6 +10,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
     IdentifierError,
     JobId,
+    TagName,
     WorkflowName,
 )
 
@@ -61,3 +62,22 @@ def test_env_var_name_accepts_valid(value: str) -> None:
 def test_env_var_name_rejects_invalid(value: str) -> None:
     with pytest.raises(IdentifierError):
         EnvVarName(value)
+
+
+@pytest.mark.parametrize(
+    ("value", "stored"),
+    [
+        ("sprint-42", "sprint-42"),
+        ("Sprint-42", "sprint-42"),
+        ("v1.2", "v1.2"),
+        ("q3_okr", "q3_okr"),
+    ],
+)
+def test_tag_name_accepts_and_lowercases(value: str, stored: str) -> None:
+    assert TagName(value) == stored
+
+
+@pytest.mark.parametrize("value", ["", "-lead", "has space", "#sprint", "a" * 41, "sprint/42"])
+def test_tag_name_rejects(value: str) -> None:
+    with pytest.raises(IdentifierError):
+        TagName(value)

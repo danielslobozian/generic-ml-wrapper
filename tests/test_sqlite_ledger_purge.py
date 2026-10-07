@@ -15,6 +15,7 @@ import sqlite3
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
@@ -130,3 +131,15 @@ def test_purging_does_not_leave_a_transaction_open(tmp_path: Path) -> None:
         assert connection.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
     finally:
         connection.close()
+
+
+def test_purging_a_job_takes_its_tags_and_leaves_the_others(tmp_path: Path) -> None:
+    ledger = _seed(tmp_path)
+    tags = SqliteJobTagStore(ledger)
+    tags.add("alpha", ["sprint-42"])
+    tags.add("beta", ["sprint-42"])
+
+    SqliteLedgerPurge(ledger).purge_job("alpha")
+
+    # A job recreated under the same name later must not inherit the old one's tags.
+    assert tags.tags_by_job() == {"beta": ("sprint-42",)}

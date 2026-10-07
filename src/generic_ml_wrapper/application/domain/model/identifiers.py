@@ -22,6 +22,10 @@ _JOB_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 # A workflow name is lowercase kebab: the same rule new_workflow used, now shared.
 _WORKFLOW_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 
+# A tag groups jobs (a sprint, an epic). Compared case-insensitively, so it is stored
+# lowercased; '.' is allowed for versions ("v1.2"). Short, because it is shown on every row.
+_TAG_NAME = re.compile(r"\A[a-z0-9][a-z0-9._-]{0,39}\Z")
+
 # An environment-variable name: POSIX portable (letters, digits, '_'; not a leading digit).
 _ENV_VAR_NAME = re.compile(r"\A[A-Za-z_][A-Za-z0-9_]*\Z")
 
@@ -52,6 +56,19 @@ class WorkflowName(str):
         if not _WORKFLOW_NAME.match(value):
             raise IdentifierError("error.identifier.workflow_name", value=value)
         return super().__new__(cls, value)
+
+
+class TagName(str):
+    """A validated job tag, lowercased (letters, digits, ``.``, ``_``, ``-``; up to 40)."""
+
+    __slots__ = ()
+
+    def __new__(cls, value: str) -> TagName:
+        """Return the validated tag, lowercased, or raise :class:`IdentifierError`."""
+        folded = value.strip().lower()
+        if not _TAG_NAME.match(folded):
+            raise IdentifierError("error.identifier.tag_name", value=value)
+        return super().__new__(cls, folded)
 
 
 class EnvVarName(str):

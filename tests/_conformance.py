@@ -22,12 +22,14 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
     from pathlib import Path
 
 # A transcript trio as read back from a store: (request, response, usage-dict).
@@ -339,3 +341,54 @@ def read_transcript_files(tmp_path: Path, job: str, session: str, seq: int) -> T
         (directory / f"{stem}.usage.json").read_text(encoding="utf-8")
     )
     return request, response, usage
+
+
+# -- JobTagStorePort -------------------------------------------------------- #
+
+
+class InMemoryJobTagStore(JobTagStorePort):
+    """A set-backed reference ``JobTagStorePort``."""
+
+    def __init__(self) -> None:
+        self._tags: dict[str, set[str]] = {}
+
+    def tags_by_job(self) -> dict[str, tuple[str, ...]]:
+        return {job: tuple(sorted(tags)) for job, tags in sorted(self._tags.items()) if tags}
+
+    def add(self, job: str, tags: Iterable[str]) -> None:
+        self._tags.setdefault(job, set()).update(tags)
+
+    def remove(self, job: str, tags: Iterable[str]) -> None:
+        self._tags.get(job, set()).difference_update(tags)
+
+
+class JobTagStoreConformance:
+    """The behavioral contract for a ``JobTagStorePort``."""
+
+    def make_store(self, tmp_path: Path) -> JobTagStorePort:
+        raise NotImplementedError
+
+    def test_starts_empty(self, tmp_path: Path) -> None:
+        assert self.make_store(tmp_path).tags_by_job() == {}
+
+    def test_tags_are_kept_once_and_sorted(self, tmp_path: Path) -> None:
+        store = self.make_store(tmp_path)
+        store.add("JOB-1", ["sprint-42", "payments"])
+        store.add("JOB-1", ["sprint-42"])
+        store.add("JOB-2", ["sprint-42"])
+        assert store.tags_by_job() == {
+            "JOB-1": ("payments", "sprint-42"),
+            "JOB-2": ("sprint-42",),
+        }
+
+    def test_removing_a_tag_leaves_the_others(self, tmp_path: Path) -> None:
+        store = self.make_store(tmp_path)
+        store.add("JOB-1", ["sprint-41", "sprint-42"])
+        store.remove("JOB-1", ["sprint-41", "never-there"])
+        assert store.tags_by_job() == {"JOB-1": ("sprint-42",)}
+
+    def test_a_job_without_tags_is_absent(self, tmp_path: Path) -> None:
+        store = self.make_store(tmp_path)
+        store.add("JOB-1", ["sprint-42"])
+        store.remove("JOB-1", ["sprint-42"])
+        assert store.tags_by_job() == {}

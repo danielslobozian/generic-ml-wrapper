@@ -120,10 +120,11 @@ class MenuChoice:
 
 @dataclass(frozen=True)
 class JobChoice:
-    """A job the user can resume, plus how many sessions it has (for display)."""
+    """A job the user can resume, how many sessions it has, and the tags it carries."""
 
     job: str
     session_count: int
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1798,27 +1799,159 @@ class JobListScreen(_MenuScreen):
 
     A read-only *browser* (a sibling of :class:`JobPickerScreen` without the launch): selecting
     a job opens its :class:`SessionListScreen`. Reuses the injected ``jobs`` -- no new wiring.
+
+    Jobs show their tags, and the list can be narrowed to one tag (a sprint, say): the first
+    row filters, or clears the filter. ``t`` edits the highlighted job's tags in place.
     """
 
+    BINDINGS: ClassVar[list[Binding]] = [
+        *_MenuScreen.BINDINGS,
+        _key("t", "edit_tags", "tui.key.tags"),
+    ]
+    keys_key = "tui.keys.joblist"
+
+    def __init__(self, tag: str | None = None) -> None:
+        """Bind the list to the tag it is narrowed to, or ``None`` for every job."""
+        super().__init__()
+        self._tag = tag
+
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Job > List."""
+        """Breadcrumb: gmlw > Job > List, then the tag when the list is filtered."""
         t = i18n.active().t
-        return f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
+        crumb = f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
+        return crumb if self._tag is None else f"{crumb} > #{self._tag}"
 
     def menu_items(self) -> list[_Item]:
-        """One row per job, carrying the job id as payload (empty -> the base empty state)."""
+        """The filter row (when there are tags), then one row per job, tags in its subtitle."""
         t = i18n.active().t
-        return [
-            _Item(
-                "🗂", j.job, t("tui.sessions", count=j.session_count), "joblist:job", payload=j.job
+        items: list[_Item] = []
+        if self._tag is not None:
+            items.append(
+                _Item(
+                    "🏷",
+                    t("tui.joblist.showing", tag=f"#{self._tag}"),
+                    t("tui.joblist.show_all"),
+                    "joblist:all",
+                )
             )
-            for j in self.menu_app.jobs
+        elif any(j.tags for j in self.menu_app.jobs):
+            items.append(
+                _Item("🏷", t("tui.joblist.filter"), t("tui.joblist.filter.d"), "joblist:filter")
+            )
+        for j in self.menu_app.jobs:
+            if self._tag is not None and self._tag not in j.tags:
+                continue
+            sessions = t("tui.sessions", count=j.session_count)
+            tags = " ".join(f"#{tag}" for tag in j.tags)
+            subtitle = f"{sessions} · {tags}" if tags else sessions
+            items.append(_Item("🗂", j.job, subtitle, "joblist:job", payload=j.job))
+        return items
+
+    def handle(self, item: _Item) -> None:
+        """A job opens its sessions; the first row filters by a tag, or clears the filter."""
+        if item.action == "joblist:job":
+            self.menu_app.push_screen(SessionListScreen(item.payload))
+        elif item.action == "joblist:filter":
+            self.menu_app.push_screen(TagFilterScreen())
+        elif item.action == "joblist:all":
+            self.menu_app.pop_screen()
+            self.menu_app.push_screen(JobListScreen())
+
+    def action_edit_tags(self) -> None:
+        """Edit the highlighted job's tags (a no-op on the filter row, or when unwired)."""
+        item = self._highlighted()
+        if item is None or item.action != "joblist:job" or self.menu_app.retag_job is None:
+            return
+        self.menu_app.push_screen(JobTagsScreen(item.payload, self._tag))
+
+
+class TagFilterScreen(_MenuScreen):
+    """Pick the tag to narrow the job list to: every tag in use, with how many jobs carry it."""
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > List > Tag."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {t('tui.joblist.tag')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per tag in use, alphabetically."""
+        t = i18n.active().t
+        counts: dict[str, int] = {}
+        for job in self.menu_app.jobs:
+            for tag in job.tags:
+                counts[tag] = counts.get(tag, 0) + 1
+        return [
+            _Item("🏷", f"#{tag}", t("tui.joblist.tag.count", count=count), "tag:pick", payload=tag)
+            for tag, count in sorted(counts.items())
         ]
 
     def handle(self, item: _Item) -> None:
-        """Selecting a job opens its (read-only) session list."""
-        if item.action == "joblist:job":
-            self.menu_app.push_screen(SessionListScreen(item.payload))
+        """Replace the job list underneath with one narrowed to the chosen tag."""
+        if item.action == "tag:pick":
+            self.menu_app.pop_screen()  # this picker
+            self.menu_app.pop_screen()  # the unfiltered list
+            self.menu_app.push_screen(JobListScreen(item.payload))
+
+
+class JobTagsScreen(Screen[None]):
+    """Edit one job's tags as a line of words: what is typed becomes exactly its tags.
+
+    Pre-filled with the current tags, so adding one is typing it at the end and removing
+    one is deleting it; an empty line clears them. The line is checked by the wiring
+    (``retag_job``) and only a valid one is kept -- an invalid tag stays on screen with
+    the reason. Esc leaves the tags as they were.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
+
+    def __init__(self, job: str, list_tag: str | None) -> None:
+        """Bind the form to the job it edits and the filter of the list it came from."""
+        super().__init__()
+        self._job = job
+        self._list_tag = list_tag
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the tags input, a status line, and the key hints."""
+        t = i18n.active().t
+        current = next((j.tags for j in self.menu_app.jobs if j.job == self._job), ())
+        yield Static(
+            f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {self._job} > {t('tui.joblist.tag')}",
+            id="crumb",
+        )
+        yield Input(" ".join(current), placeholder=t("tui.tags.placeholder"), id="tags")
+        with Container(id="status"):
+            yield Static(t("tui.tags.hint"), id="detail")
+            yield Static(t("tui.tags.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input, cursor at the end, so a new tag is just typed."""
+        self.query_one("#tags", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Keep the typed tags, or explain why not and stay."""
+        retag = self.menu_app.retag_job
+        if retag is None:
+            return
+        error = retag(self._job, event.value)
+        if error is not None:
+            self.query_one("#detail", Static).update(f"✗ {error}")
+            return
+        self.menu_app.refresh_jobs()
+        self.menu_app.pop_screen()  # this form
+        # The list underneath was drawn from the jobs as they were; draw it again.
+        self.menu_app.pop_screen()
+        listing = JobListScreen(self._list_tag)
+        listing.pending_message = i18n.active().t("tui.tags.saved", job=self._job)
+        self.menu_app.push_screen(listing)
+
+    def action_cancel(self) -> None:
+        """Leave the tags as they were."""
+        self.menu_app.pop_screen()
 
 
 class SessionListScreen(Screen[None]):
@@ -2551,6 +2684,7 @@ class MenuApp(App[MenuChoice | None]):
         current_client: str = "",
         deleter: Deleter | None = None,
         reload_jobs: Callable[[], list[JobChoice]] | None = None,
+        retag_job: Callable[[str, str], str | None] | None = None,
         archiver: Archiver | None = None,
         launch_clients: Callable[[], list[ClientChoice]] | None = None,
     ) -> None:
@@ -2591,6 +2725,9 @@ class MenuApp(App[MenuChoice | None]):
                 list needs this -- sessions are already read per job through
                 ``sessions_for``, so they refresh on their own. Defaults to keeping the
                 list as-is.
+            retag_job: Replaces a job's tags with the words of a typed line, returning an
+                error message (an invalid tag) or ``None`` once kept; ``None`` hides the
+                tag editor.
             archiver: Exports a workflow and installs one from an archive; ``None`` leaves
                 both verbs read-only, so the app runs unwired in tests.
             launch_clients: The clients a launch can be pointed at, re-read each time the
@@ -2615,6 +2752,7 @@ class MenuApp(App[MenuChoice | None]):
         self.current_client = current_client
         self.deleter = deleter
         self._reload_jobs = reload_jobs
+        self.retag_job = retag_job
         self.archiver = archiver
         self.launch_clients = launch_clients or _no_clients
 

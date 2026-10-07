@@ -71,6 +71,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
     FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
@@ -116,6 +117,7 @@ from generic_ml_wrapper.application.port.inbound.render_statusline import Render
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
+from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
@@ -154,6 +156,7 @@ from generic_ml_wrapper.application.usecase.render_statusline import RenderStatu
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.application.usecase.tag_jobs import TagJobsUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.i18n import (
@@ -390,6 +393,7 @@ def build_start_job() -> StartJob:
         hooks=_hook_runner(),
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
+        tags=SqliteJobTagStore(_ledger()),
         client_args=config.client_args_for,
     )
 
@@ -411,7 +415,16 @@ def build_list_jobs() -> ListJobs:
     Returns:
         A ready-to-run ListJobs.
     """
-    return ListJobsUseCase(store=SqliteSessionStore(_ledger()))
+    return ListJobsUseCase(store=SqliteSessionStore(_ledger()), tags=SqliteJobTagStore(_ledger()))
+
+
+def build_tag_jobs() -> TagJobs:
+    """Build the TagJobs use case over the work jobs and the ledger's tags.
+
+    Returns:
+        A ready-to-run TagJobs.
+    """
+    return TagJobsUseCase(store=SqliteSessionStore(_ledger()), tags=SqliteJobTagStore(_ledger()))
 
 
 def build_list_sessions() -> ListSessions:

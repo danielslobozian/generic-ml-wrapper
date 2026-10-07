@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
+from generic_ml_wrapper.application.domain.model.identifiers import TagName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.service.greeting import greeting_context
@@ -22,6 +23,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
 )
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
+from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
@@ -42,6 +44,7 @@ class StartJobUseCase(StartJob):
         hooks: HookRunner,
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],
+        tags: JobTagStorePort,
         client_args: Callable[[str], str] = lambda _client: "",
     ) -> None:
         """Wire the use case to its outbound ports.
@@ -60,6 +63,7 @@ class StartJobUseCase(StartJob):
             capability_card: Renders the ambient "how do I …" card, or ``None`` when the
                 (off-by-default) ambient card is disabled — appended to a new session's
                 context so the client can answer gmlw questions mid-session.
+            tags: Where a start's ``--tag`` values are put on the job.
             client_args: Returns the configured passthrough launch arguments for a client.
                 Consulted with the *run's* client, which on a resume comes from the stored
                 session rather than the command — so a resumed codex session never receives
@@ -75,6 +79,7 @@ class StartJobUseCase(StartJob):
         self._greeting = greeting
         self._capability_card = capability_card
         self._client_args = client_args
+        self._tags = tags
 
     def execute(self, command: StartJobCommand) -> StartJobResult:
         """Resolve the session, optionally inject a workflow, run the client.
@@ -89,7 +94,10 @@ class StartJobUseCase(StartJob):
             UnknownWorkflowError: If a workflow was requested but does not exist.
             ResumeNotSupportedError: If resume was requested for a client whose
                 caller cannot resume a session.
+            IdentifierError: If a requested tag is not a valid tag name.
         """
+        # Checked before anything happens, so a typo in a tag never costs a session.
+        tags = sorted({TagName(tag) for tag in command.tags})
         run, session = self._resolve(command)
         run = self._with_client_args(run, command.client_args)
         if not run.resume:
@@ -125,6 +133,9 @@ class StartJobUseCase(StartJob):
             self._store.record(
                 replace(session, resumable=caller.can_resume(), workflow=command.workflow)
             )
+        # After the record, so the job exists to be tagged (a resumed one already does).
+        if tags:
+            self._tags.add(run.job, tags)
         exit_code = run_with_hooks(caller, run, self._hooks)
         return StartJobResult(exit_code=exit_code, job=run.job, session_id=run.session_id)
 

@@ -15,18 +15,24 @@ class JobSummary:
     Attributes:
         job: The job identifier.
         session_count: How many sessions have been recorded for the job.
+        tags: The tags the user put on it, sorted (empty when none).
     """
 
     job: str
     session_count: int
+    tags: tuple[str, ...] = ()
 
 
 class ListJobs(ABC):
     """List the jobs that have recorded sessions."""
 
     @abstractmethod
-    def execute(self) -> list[JobSummary]:
+    def execute(self, tag: str | None = None) -> list[JobSummary]:
         """List the jobs with recorded activity.
+
+        Args:
+            tag: Only the jobs carrying this tag (compared case-insensitively), or
+                ``None`` for every job.
 
         Returns:
             One summary per job, sorted by job id.

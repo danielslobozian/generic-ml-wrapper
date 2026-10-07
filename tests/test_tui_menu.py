@@ -2454,3 +2454,104 @@ def test_the_resume_picker_shows_the_workflow_a_session_ran() -> None:
         "2026-07-24 09:00 · claude · /work/a",
         "2026-07-25 10:00 · claude · mr-review · /work/b",
     ]
+
+
+# ── Job tags ──
+_TAGGED_JOBS = [
+    JobChoice(job="alpha", session_count=3, tags=("payments", "sprint-42")),
+    JobChoice(job="beta", session_count=1, tags=("sprint-41",)),
+    JobChoice(job="gamma", session_count=2),
+]
+
+
+def test_the_job_list_shows_tags_and_offers_a_filter() -> None:
+    seen: list[tuple[str, str]] = []
+
+    async def scenario() -> None:
+        app = MenuApp(list(_TAGGED_JOBS))
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_job_list(pilot)
+            seen.extend((r.item.title, r.item.subtitle) for r in app.screen.query(_Row))
+
+    asyncio.run(scenario())
+    assert seen[0][0] == "Filter by tag…"
+    assert seen[1:] == [
+        ("alpha", "3 sessions · #payments #sprint-42"),
+        ("beta", "1 sessions · #sprint-41"),
+        ("gamma", "2 sessions"),
+    ]
+
+
+def test_no_filter_row_when_nothing_is_tagged() -> None:
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_job_list(pilot)
+            seen.extend(r.item.title for r in app.screen.query(_Row))
+
+    asyncio.run(scenario())
+    assert seen == ["alpha", "beta"]
+
+
+def test_filtering_by_a_tag_narrows_the_list_and_can_be_cleared() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(list(_TAGGED_JOBS))
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_job_list(pilot)
+            await pilot.press("enter")  # Filter by tag…
+            await pilot.pause()
+            seen["tags"] = [r.item.title for r in app.screen.query(_Row)]
+            await pilot.press("down", "down", "enter")  # #sprint-42
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["filtered"] = [r.item.title for r in app.screen.query(_Row)]
+            await pilot.press("enter")  # the first row clears the filter
+            await pilot.pause()
+            seen["cleared"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["tags"] == ["#payments", "#sprint-41", "#sprint-42"]
+    assert str(seen["crumb"]).endswith("List > #sprint-42")
+    assert seen["filtered"] == ["Showing #sprint-42", "alpha"]
+    assert seen["cleared"] == ["Filter by tag…", "alpha", "beta", "gamma"]
+
+
+def test_t_edits_the_highlighted_jobs_tags() -> None:
+    jobs = list(_TAGGED_JOBS)
+    kept: list[tuple[str, str]] = []
+
+    def _retag(job: str, line: str) -> str | None:
+        if "!" in line:
+            return "invalid tag"
+        kept.append((job, line))
+        jobs[0] = JobChoice(job="alpha", session_count=3, tags=tuple(sorted(line.split())))
+        return None
+
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(jobs, retag_job=_retag, reload_jobs=lambda: list(jobs))
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_job_list(pilot)
+            await pilot.press("down", "t")  # onto alpha, edit its tags
+            await pilot.pause()
+            box = app.screen.query_one("#tags", Input)
+            seen["prefilled"] = box.value
+            box.value = "sprint-42 oops!"
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["error"] = str(app.screen.query_one("#detail", Static).render())
+            box.value = "sprint-43"
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["rows"] = [(r.item.title, r.item.subtitle) for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["prefilled"] == "payments sprint-42"
+    assert "invalid tag" in str(seen["error"])
+    assert kept == [("alpha", "sprint-43")]
+    assert ("alpha", "3 sessions · #sprint-43") in cast("list[tuple[str, str]]", seen["rows"])

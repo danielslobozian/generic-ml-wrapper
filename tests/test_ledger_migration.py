@@ -79,3 +79,23 @@ def test_v2_gains_the_workflow_column_and_keeps_its_sessions(tmp_path: Path) -> 
         ("T-1_001", None),
         ("T-1_002", None),
     ]
+
+
+def test_v3_gains_the_job_tags_table(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+    connection = sqlite3.connect(db)
+    connection.execute("ALTER TABLE sessions ADD COLUMN cwd TEXT")
+    connection.execute("ALTER TABLE sessions ADD COLUMN resumable INTEGER NOT NULL DEFAULT 1")
+    connection.execute("ALTER TABLE sessions ADD COLUMN workflow TEXT")
+    connection.execute("PRAGMA user_version = 3")
+    connection.commit()
+    connection.close()
+
+    with Ledger(db).connect() as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        connection.execute("INSERT INTO job_tags (job, tag) VALUES ('T-1', 'sprint-42')")
+        tags = connection.execute("SELECT job, tag FROM job_tags").fetchall()
+
+    assert version == SCHEMA_VERSION
+    assert [(r["job"], r["tag"]) for r in tags] == [("T-1", "sprint-42")]
