@@ -376,10 +376,26 @@ class _Handler(BaseHTTPRequestHandler):
 
         With it, the client gets a clean ``502`` it can retry, and the traceback goes to
         the log file where it can actually be read.
+
+        A lost connection -- a timeout, a reset, a TLS EOF, a name that will not resolve
+        -- is the network, not a bug: it is logged as one warning line naming the cause,
+        without a traceback that would say nothing more. Anything else keeps the full
+        traceback, because that one is worth reading.
         """
         self._responded = False
         try:
             self._exchange()
+        except _CONNECTION_ERRORS as error:
+            log.warning(
+                i18n.t(
+                    "log.gateway_connection_lost",
+                    method=self.command,
+                    path=self.path,
+                    error=_describe(error),
+                ),
+                key="log.gateway_connection_lost",
+            )
+            self._fail()
         except Exception as error:  # noqa: BLE001  (the boundary: nothing may escape)
             log.error(
                 i18n.t("log.gateway_request_failed", method=self.command, path=self.path),
@@ -512,6 +528,19 @@ def _drain(chunks: Iterable[bytes]) -> Iterable[bytes]:
             )
             return
         yield chunk
+
+
+# What a dropped network looks like from here: every socket and TLS failure is an
+# ``OSError`` (``TimeoutError``, ``ConnectionResetError``, ``ssl.SSLEOFError``,
+# ``socket.gaierror``...), and a peer that hangs up mid-response is an ``HTTPException``
+# (``RemoteDisconnected``, ``IncompleteRead``). The same pair ``_drain`` treats as an early end.
+_CONNECTION_ERRORS = (OSError, http.client.HTTPException)
+
+
+def _describe(error: BaseException) -> str:
+    """Name a connection failure in one line: its type, and its message when it has one."""
+    message = str(error)
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
 def _stream(chunks: Iterable[bytes], sink: Callable[[bytes], None]) -> None:

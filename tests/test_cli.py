@@ -2592,3 +2592,24 @@ def test_start_passes_its_tags_on(monkeypatch: pytest.MonkeyPatch) -> None:
         ["start", "PAY-1", "--tag", "sprint-42", "--tag", "payments"]
     )
     assert parsed.tag == ["sprint-42", "payments"]
+
+
+@pytest.mark.parametrize(
+    ("argv", "hands_over"),
+    [
+        ([], True),  # bare `gmlw`: the menu, and the usual way into a session
+        (["tui"], True),
+        (["start", "PAY-1"], True),
+        (["PAY-1"], True),  # shorthand for start
+        (["workflow", "new"], True),
+        (["jobs"], False),
+        (["workflow", "list"], False),
+    ],
+)
+def test_a_command_that_hands_the_terminal_over_logs_nothing_to_it(
+    argv: list[str], hands_over: bool
+) -> None:
+    # While a client owns the screen, stderr is its display: a log line written there is
+    # drawn over it and lost on the next redraw. Such a command logs to the file only.
+    args = app.build_parser().parse_args(app._implicit_start(argv))
+    assert app._hands_over_the_terminal(args) is hands_over

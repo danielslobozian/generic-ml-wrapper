@@ -998,7 +998,10 @@ def _hands_over_the_terminal(args: argparse.Namespace) -> bool:
     Returns:
         True when a client (or the full-screen menu) will own the screen.
     """
-    if args.command in _HANDOVER_COMMANDS:
+    # Bare `gmlw` opens the menu, the usual way in, and a job launched from it hands the
+    # terminal to the client. Missing it here left stderr logging on for every session
+    # started that way, so a dropped connection printed a traceback over the client.
+    if args.command is None or args.command in _HANDOVER_COMMANDS:
         return True
     return args.command == "workflow" and (
         getattr(args, "workflow_command", None) in _HANDOVER_WORKFLOW_ACTIONS
