@@ -619,6 +619,19 @@ def test_format_sessions_lists_each() -> None:
     assert "yes" in text  # resumable
 
 
+def test_format_sessions_shows_the_workflow_a_session_ran() -> None:
+    text = app.format_sessions(
+        "JOB-1",
+        [
+            SessionSummary("JOB-1_001", "claude", cwd="/work/a", workflow="feature"),
+            SessionSummary("JOB-1_002", "claude", cwd="/work/a"),
+        ],
+    )
+    first, second = text.splitlines()[2:]
+    assert "feature" in first
+    assert "—" in second  # a plain session says so rather than leaving a gap
+
+
 def test_format_sessions_shows_folder_fallback_and_not_resumable() -> None:
     text = app.format_sessions(
         "JOB-1", [SessionSummary("JOB-1_002", "codex", cwd=None, resumable=False)]
@@ -657,6 +670,7 @@ def test_sessions_command_json_output(
             "created_at": None,
             "turn_count": 0,
             "cost_usd": 0.0,
+            "workflow": None,
         }
     ]
 
@@ -1705,7 +1719,13 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
     launched: list[str] = []
 
     def _record_launch(
-        _job: str, _resume: bool, _session: str | None, _cwd: str | None, client: str
+        _job: str,
+        _resume: bool,
+        _session: str | None,
+        _cwd: str | None,
+        client: str,
+        *,
+        workflow: str | None = None,
     ) -> int:
         launched.append(client)
         return 0
@@ -2051,7 +2071,13 @@ def test_a_launch_ends_gmlw_rather_than_returning(monkeypatch: pytest.MonkeyPatc
     """A client owned the terminal; when it is done, so is gmlw."""
 
     def _launch(
-        _job: str, _resume: bool, _session: str | None, _cwd: str | None, _client: str
+        _job: str,
+        _resume: bool,
+        _session: str | None,
+        _cwd: str | None,
+        _client: str,
+        *,
+        workflow: str | None = None,
     ) -> int:
         return 7
 
@@ -2286,7 +2312,13 @@ def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) ->
     seen: list[str] = []
 
     def _launch(
-        _job: str, _resume: bool, _session: str | None, _cwd: str | None, client: str
+        _job: str,
+        _resume: bool,
+        _session: str | None,
+        _cwd: str | None,
+        client: str,
+        *,
+        workflow: str | None = None,
     ) -> int:
         seen.append(client)
         return 0
@@ -2314,6 +2346,31 @@ def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) ->
 def test_a_job_launches_on_the_client_the_menu_picked(monkeypatch: pytest.MonkeyPatch) -> None:
     choice = tui.MenuChoice(action="start", job="alpha", client="cursor")
     assert _launched_client(monkeypatch, choice) == "cursor"
+
+
+def test_a_job_launches_with_the_workflow_the_menu_attached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[str | None] = []
+
+    def _launch(
+        _job: str,
+        _resume: bool,
+        _session: str | None,
+        _cwd: str | None,
+        _client: str,
+        *,
+        workflow: str | None = None,
+    ) -> int:
+        seen.append(workflow)
+        return 0
+
+    monkeypatch.setattr(app, "_tui_launch_job", _launch)
+    app._act_on_tui_choice(
+        tui.MenuChoice(action="start", job="alpha", client="claude", workflow="mr-review")
+    )
+    app._act_on_tui_choice(tui.MenuChoice(action="start", job="alpha", client="claude"))
+    assert seen == ["mr-review", None]
 
 
 def test_a_workflow_run_launches_on_the_client_the_menu_picked(

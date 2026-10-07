@@ -119,7 +119,12 @@ class StartJobUseCase(StartJob):
             # of its name: a caller supplied through `[callers]` or a plugin is absent
             # from the built-in catalog, and deciding from that list alone recorded every
             # such session as unresumable however capable its adapter was.
-            self._store.record(replace(session, resumable=caller.can_resume()))
+            #
+            # The workflow is recorded with it: it belongs to this session, not the job, so
+            # one job can carry a feature session, then a review session, then a plain one.
+            self._store.record(
+                replace(session, resumable=caller.can_resume(), workflow=command.workflow)
+            )
         exit_code = run_with_hooks(caller, run, self._hooks)
         return StartJobResult(exit_code=exit_code, job=run.job, session_id=run.session_id)
 

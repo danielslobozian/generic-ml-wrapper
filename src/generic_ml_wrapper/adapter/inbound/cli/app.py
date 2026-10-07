@@ -583,7 +583,9 @@ def format_sessions(
     client_width = max(len(session.client) for session in sessions)
     usages = [format_session_usage(session, loc) for session in sessions]
     usage_width = max(len(usage) for usage in usages)
-    for session, usage in zip(sessions, usages, strict=True):
+    workflows = [session.workflow or loc.t("sessions.no_workflow") for session in sessions]
+    workflow_width = max(len(workflow) for workflow in workflows)
+    for session, usage, workflow in zip(sessions, usages, workflows, strict=True):
         resumable = loc.t("clients.yes") if session.resumable else loc.t("clients.no")
         lines.append(
             loc.t(
@@ -593,6 +595,7 @@ def format_sessions(
                 client=f"{session.client:<{client_width}}",
                 resumable=f"{resumable:<3}",
                 usage=f"{usage:<{usage_width}}",
+                workflow=f"{workflow:<{workflow_width}}",
                 folder=session.cwd or loc.t("sessions.no_folder"),
             )
         )
@@ -1696,6 +1699,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
                 date=(s.created_at or "")[:16],  # "YYYY-MM-DD HH:MM"
                 is_latest=(i == len(summaries) - 1),
                 usage=format_session_usage(s),  # rendered here: the app holds no formatter
+                workflow=s.workflow,
             )
             for i, s in enumerate(summaries)
         ]
@@ -1936,11 +1940,19 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:
         recorded = build_list_sessions().execute(choice.job)
         picked = next((s for s in recorded if s.session_id == choice.session), None)
         picked_cwd = picked.cwd if picked is not None else None
-    return _tui_launch_job(choice.job, resume, choice.session, picked_cwd, client)
+    return _tui_launch_job(
+        choice.job, resume, choice.session, picked_cwd, client, workflow=choice.workflow
+    )
 
 
-def _tui_launch_job(
-    job: str, resume: bool, session: str | None, picked_cwd: str | None, client: str
+def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; workflow keyword-only)
+    job: str,
+    resume: bool,
+    session: str | None,
+    picked_cwd: str | None,
+    client: str,
+    *,
+    workflow: str | None = None,
 ) -> int:
     """Launch (or resume) a job from the TUI's choice — the hand-off after ``run()`` returns.
 
@@ -1950,6 +1962,7 @@ def _tui_launch_job(
         session: The specific session id to resume, or ``None`` for the latest / a new one.
         picked_cwd: A resumed session's stored folder to relaunch in, or ``None``.
         client: The resolved client to wrap.
+        workflow: The workflow to attach to a new session, or ``None`` for a plain one.
 
     Returns:
         The process exit code.
@@ -1959,7 +1972,7 @@ def _tui_launch_job(
         client=client,
         resume_latest=resume and session is None,  # a picked session wins over "latest"
         resume_session=session,
-        workflow=None,
+        workflow=workflow,
     )
     # Guard the folder the launch will actually use: a resumed session's stored folder, or
     # the current directory for a new start (or a pre-folder resume, whose cwd is ``None``).

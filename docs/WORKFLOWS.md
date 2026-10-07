@@ -208,6 +208,13 @@ steps compiled in, orients itself, and waits for you to confirm before running s
 one. It is metered and recorded like any other job (`gmlw sessions DOCS-1`,
 `gmlw export DOCS-1`).
 
+A workflow belongs to the **session**, not the job. Each new session of a job can run a
+different one, or none: `-w feature` while building, later `-w mr-review` to work through
+the review comments, then a plain session. `gmlw sessions DOCS-1` shows which workflow
+each session ran, and a resumed session continues with the one it started with. In
+`gmlw tui`, Job → New asks the same question after the client step, opening on
+**No workflow** so a plain start is still `⏎`.
+
 ---
 
 See also: [CONCEPTS.md](CONCEPTS.md) · [USER_GUIDE.md](USER_GUIDE.md) · [CLI.md](CLI.md) ·

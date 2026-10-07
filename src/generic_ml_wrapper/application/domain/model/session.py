@@ -28,6 +28,9 @@ class Session:
         created_at: When the session was first recorded (ISO string), populated on read
             from the store; ``None`` for a freshly-minted, not-yet-persisted session.
             Excluded from equality, being store-assigned rather than app-provided.
+        workflow: The workflow the session was started with, or ``None`` for a plain one.
+            A job can run a different workflow in each of its sessions (a feature, then
+            an MR review), so it is recorded here rather than on the job.
     """
 
     session_id: str
@@ -37,3 +40,4 @@ class Session:
     cwd: str | None = None
     resumable: bool = True
     created_at: str | None = field(default=None, compare=False)
+    workflow: str | None = None

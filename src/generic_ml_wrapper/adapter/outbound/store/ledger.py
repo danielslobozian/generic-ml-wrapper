@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -39,6 +39,7 @@ CREATE TABLE sessions (
     uuid       TEXT,
     cwd        TEXT,                            -- the folder it was launched in (resume there)
     resumable  INTEGER NOT NULL DEFAULT 1,      -- 0/1: snapshot of the client's resumability
+    workflow   TEXT,                            -- the workflow it was started with, if any
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_sessions_job ON sessions(job);
@@ -110,6 +111,8 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         # client_catalog.resumable). Everything else keeps the DEFAULT 1.
         "UPDATE sessions SET resumable = 0 WHERE client IN ('codex', 'vibe')",
     ),
+    # Which workflow a session ran. Unknown for existing sessions, which stay NULL.
+    3: ("ALTER TABLE sessions ADD COLUMN workflow TEXT",),
 }
 
 
