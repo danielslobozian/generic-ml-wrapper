@@ -5,6 +5,7 @@
 from pathlib import Path
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
     FilesystemWorkflowSource,
@@ -39,7 +40,12 @@ def test_authoring_is_hidden_from_work_jobs(tmp_path: Path) -> None:
     new_workflow.execute(NewWorkflowCommand(label="doc-review", client="claude"))
 
     # `gmlw jobs` reads the work kind only -- untouched by authoring.
-    assert ListJobsUseCase(SqliteSessionStore(ledger, kind="work")).execute() == []
+    assert (
+        ListJobsUseCase(
+            SqliteSessionStore(ledger, kind="work"), SqliteJobTagStore(ledger)
+        ).execute()
+        == []
+    )
     # The authoring session landed under the authoring kind, always as create-workflow
     # (the target name is a seed, decided at the end -- sessions accumulate here).
     assert SqliteSessionStore(ledger, kind="authoring").jobs() == ["create-workflow"]

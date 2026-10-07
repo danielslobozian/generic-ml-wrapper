@@ -11,9 +11,11 @@ cross-links to [CONFIGURATION.md](CONFIGURATION.md), [WORKFLOWS.md](WORKFLOWS.md
 ```
 gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
-gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME]
+gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME] [--tag T]...
 gmlw run [workflow] [--client X] [--client-args ARGS]   # run a workflow directly (job named after it)
-gmlw jobs [--json]
+gmlw jobs [--tag T] [--json]
+gmlw jobs tag <job> <tag> [<tag>...]           # e.g. the sprint it belongs to
+gmlw jobs untag <job> <tag> [<tag>...]
 gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything under it
 gmlw sessions <job> [--json]
 gmlw sessions <job> delete <session> [...] [--yes]
@@ -118,6 +120,8 @@ gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest] [--wor
   [CONFIGURATION.md](CONFIGURATION.md).
 - `--resume-latest` — resume the job's most recent session instead of starting a new one.
   Not every client supports resume; unsupported clients report an error.
+- `--tag T` — tag the job, e.g. with its sprint; repeat for several. Kept with any tags
+  it already has. See [jobs tag](#jobs-tag-and-untag).
 - `--workflow NAME`, `-w NAME` — run a workflow on the job (list them with
   `gmlw workflow list`). It applies to the new session only, and is recorded with it:
   `gmlw sessions <job>` shows which workflow each session ran. Ignored on a resume, which
@@ -170,16 +174,38 @@ gmlw run nightly-etl
 List the jobs with recorded activity. Authoring sessions (`workflow new`) are hidden.
 
 ```
-gmlw jobs [--json]
+gmlw jobs [--tag T] [--json]
 ```
 
-- `--json` — output as JSON instead of text.
+- `--tag T` — list only the jobs carrying tag `T` (see [jobs tag](#jobs-tag-and-untag)).
+- `--json` — output as JSON instead of text; each job carries its `tags`.
 
 Example:
 
 ```
 gmlw jobs
+gmlw jobs --tag sprint-42
 ```
+
+### jobs tag and untag
+
+Tags are your own grouping of jobs: put the sprint on each ticket's job, and
+`gmlw jobs --tag sprint-42` shows that sprint's work. A job can carry several tags, and
+a ticket carried over to the next sprint simply gets the next sprint's tag too (or loses
+the old one, if you would rather it did not count there).
+
+```
+gmlw jobs tag <job> <tag> [<tag>...]
+gmlw jobs untag <job> <tag> [<tag>...]
+```
+
+- `job` (positional) — a job with recorded activity.
+- `tag` (positional, one or more) — letters, digits, `.`, `_` and `-`, up to 40
+  characters. Case does not matter: `Sprint-42` and `sprint-42` are the same tag.
+
+Each prints the job's tags as they now stand. A new job can be tagged as it starts, with
+`gmlw start <job> --tag sprint-42`. In `gmlw tui`, Job → List shows each job's tags,
+filters by one, and `t` edits the highlighted job's tags.
 
 ### jobs delete
 

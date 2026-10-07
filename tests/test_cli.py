@@ -94,6 +94,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
     UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
 from generic_ml_wrapper.application.wiring import composition
 from generic_ml_wrapper.common import paths
 from generic_ml_wrapper.common.i18n import load_localizer
@@ -511,7 +512,7 @@ def test_jobs_command_prints_the_summaries(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobs):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
@@ -525,12 +526,12 @@ def test_jobs_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobs):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
     assert app.main(["jobs", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3}]
+    assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3, "tags": []}]
 
 
 class _FakeListClients(ListClients):
@@ -582,7 +583,7 @@ def test_jobs_command_json_empty_is_an_empty_array(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobs):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
@@ -824,7 +825,7 @@ def test_main_self_initializes_on_a_real_command(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
     class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
@@ -882,7 +883,7 @@ def _fresh_outcome(
 
 def _stub_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
@@ -2187,7 +2188,7 @@ def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatc
             return None
 
     class _Jobs(ListJobs):
-        def execute(self) -> list[JobSummary]:
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
             return [JobSummary(job="beta", session_count=1)]
 
     monkeypatch.setattr(app.sys, "stdin", _Tty())
@@ -2502,3 +2503,92 @@ def test_a_setting_without_its_own_menu_is_still_offered(
     captured = _captured_menu(monkeypatch)
     config = cast("tui.ConfigCatalog", captured["config"])
     assert "logging.level" in {setting.key for setting in config.settings}
+
+
+# --------------------------------------------------------------------------- #
+# Job tags                                                                     #
+# --------------------------------------------------------------------------- #
+class _RecordingTagJobs(TagJobs):
+    """Records what it was asked to do; answers with the tags a test set up."""
+
+    def __init__(self, result: tuple[str, ...] = (), error: Exception | None = None) -> None:
+        self._result = result
+        self._error = error
+        self.calls: list[tuple[str, str, list[str]]] = []
+
+    def _answer(self, verb: str, job: str, tags: Sequence[str]) -> tuple[str, ...]:
+        if self._error is not None:
+            raise self._error
+        self.calls.append((verb, job, list(tags)))
+        return self._result
+
+    def add(self, job: str, tags: Sequence[str]) -> tuple[str, ...]:
+        return self._answer("add", job, tags)
+
+    def remove(self, job: str, tags: Sequence[str]) -> tuple[str, ...]:
+        return self._answer("remove", job, tags)
+
+    def replace(self, job: str, tags: Sequence[str]) -> tuple[str, ...]:
+        return self._answer("replace", job, tags)
+
+
+def test_jobs_tag_adds_and_prints_the_tags_now_held(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tagger = _RecordingTagJobs(("payments", "sprint-42"))
+    monkeypatch.setattr(app, "build_tag_jobs", lambda: tagger)
+    assert app.main(["jobs", "tag", "PAY-1", "sprint-42", "payments"]) == 0
+    assert tagger.calls == [("add", "PAY-1", ["sprint-42", "payments"])]
+    assert "PAY-1: #payments #sprint-42" in capsys.readouterr().out
+
+
+def test_jobs_untag_removes_and_says_when_none_are_left(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    tagger = _RecordingTagJobs(())
+    monkeypatch.setattr(app, "build_tag_jobs", lambda: tagger)
+    assert app.main(["jobs", "untag", "PAY-1", "sprint-42"]) == 0
+    assert tagger.calls == [("remove", "PAY-1", ["sprint-42"])]
+    assert "PAY-1: no tags" in capsys.readouterr().out
+
+
+def test_tagging_an_unknown_job_is_refused(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    error = NoSuchJobError("error.job.not_found", job="ghost")
+    monkeypatch.setattr(app, "build_tag_jobs", lambda: _RecordingTagJobs(error=error))
+    assert app.main(["jobs", "tag", "ghost", "sprint-42"]) == 2
+    assert "unknown job" in capsys.readouterr().err
+
+
+def test_jobs_tag_filter_reaches_the_use_case(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    asked: list[str | None] = []
+
+    class _Jobs(ListJobs):
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
+            asked.append(tag)
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    assert app.main(["jobs", "--tag", "sprint-42"]) == 0
+    assert asked == ["sprint-42"]
+    # An empty filtered list says no job carries the tag, not that there are no jobs.
+    assert "No job is tagged #sprint-42" in capsys.readouterr().out
+
+
+def test_format_jobs_shows_each_jobs_tags() -> None:
+    text = app.format_jobs(
+        [JobSummary("PAY-1", 3, ("payments", "sprint-42")), JobSummary("PAY-2", 1)]
+    )
+    first, second = text.splitlines()[2:]
+    assert first.endswith("#payments #sprint-42")
+    assert second.endswith("1 session(s)")  # no trailing gap for an untagged job
+
+
+def test_start_passes_its_tags_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    parsed = app.build_parser().parse_args(
+        ["start", "PAY-1", "--tag", "sprint-42", "--tag", "payments"]
+    )
+    assert parsed.tag == ["sprint-42", "payments"]

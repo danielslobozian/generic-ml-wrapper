@@ -129,6 +129,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_save_usage_report,
     build_set_credential,
     build_start_job,
+    build_tag_jobs,
     build_workflow_chooser,
 )
 from generic_ml_wrapper.common import config, i18n, paths, settings_registry
@@ -359,6 +360,12 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         default=None,
         help=i18n.t("cli.flag.client_args"),
     )
+    start.add_argument(
+        "--tag",
+        action="append",
+        default=None,
+        help=i18n.t("cli.flag.start_tag"),
+    )
 
     run = sub.add_parser("run", help=i18n.t("cli.cmd.run"))
     run.add_argument(
@@ -383,10 +390,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     # command with no action print its help, which is right for `workflow` and wrong here.
     jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
     _add_json_flag(jobs)
+    jobs.add_argument("--tag", default=None, help=i18n.t("cli.flag.jobs_tag"))
     jobs_sub = jobs.add_subparsers(dest="jobs_command", metavar=i18n.t("cli.metavar.action"))
     jobs_delete = jobs_sub.add_parser("delete", help=i18n.t("cli.cmd.jobs_delete"))
     jobs_delete.add_argument("job", nargs="+", help=i18n.t("cli.arg.delete_jobs"))
     _add_yes_flag(jobs_delete)
+    for verb in ("tag", "untag"):
+        jobs_tag = jobs_sub.add_parser(verb, help=i18n.t(f"cli.cmd.jobs_{verb}"))
+        jobs_tag.add_argument("job", help=i18n.t("cli.arg.job"))
+        # `tags`, not `tag`: the `jobs --tag` filter already owns that destination.
+        jobs_tag.add_argument(
+            "tags", nargs="+", metavar=i18n.t("cli.metavar.tag"), help=i18n.t("cli.arg.tags")
+        )
 
     sessions = sub.add_parser("sessions", help=i18n.t("cli.cmd.sessions"))
     sessions.add_argument("job", help=i18n.t("cli.arg.job"))
@@ -540,26 +555,42 @@ def _add_help_parser(sub: _SubParsers) -> None:
     )
 
 
-def format_jobs(summaries: list[JobSummary], loc: i18n.Localizer | None = None) -> str:
+def format_jobs(
+    summaries: list[JobSummary], loc: i18n.Localizer | None = None, *, tag: str | None = None
+) -> str:
     """Render the job summaries as human-readable lines.
 
     Args:
         summaries: The job summaries to render.
         loc: The localiser to render through; defaults to the active language.
+        tag: The tag the list was filtered on, if any -- so an empty result says that no
+            job carries it, rather than that there are no jobs at all.
 
     Returns:
         The text to print (no trailing newline).
     """
     loc = loc or i18n.active()
     if not summaries:
-        return loc.t("jobs.none")
+        return loc.t("jobs.none") if tag is None else loc.t("jobs.none_tagged", tag=tag)
     lines = [loc.t("jobs.count", count=len(summaries)), ""]
     width = max(len(summary.job) for summary in summaries)
+    counts = [loc.t("jobs.sessions", count=summary.session_count) for summary in summaries]
+    count_width = max(len(count) for count in counts)
     lines += [
-        loc.t("jobs.row", job=f"{summary.job:<{width}}", count=summary.session_count)
-        for summary in summaries
+        loc.t(
+            "jobs.row",
+            job=f"{summary.job:<{width}}",
+            sessions=f"{count:<{count_width}}",
+            tags=format_tags(summary.tags),
+        ).rstrip()
+        for summary, count in zip(summaries, counts, strict=True)
     ]
     return "\n".join(lines)
+
+
+def format_tags(tags: Sequence[str]) -> str:
+    """Render tags the way every listing shows them: ``#sprint-42 #payments``."""
+    return " ".join(f"#{tag}" for tag in tags)
 
 
 def format_sessions(
@@ -1041,6 +1072,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         # reads: these write, and answer with an exit code rather than a rendered view.
         if args.command == "jobs" and args.jobs_command == "delete":
             return _jobs_delete(args)
+        if args.command == "jobs" and args.jobs_command in ("tag", "untag"):
+            return _jobs_tag(args)
         if args.command == "sessions" and args.sessions_command == "delete":
             return _sessions_delete(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
@@ -1190,8 +1223,11 @@ def _view(args: argparse.Namespace) -> str | None:
     """Render a read-only command's output, or ``None`` if it isn't one."""
     as_json = bool(getattr(args, "json", False))
     if args.command == "jobs":
-        summaries = build_list_jobs().execute()
-        return _as_json([asdict(s) for s in summaries]) if as_json else format_jobs(summaries)
+        tag = None if args.tag is None else str(args.tag)
+        summaries = build_list_jobs().execute(tag)
+        return (
+            _as_json([asdict(s) for s in summaries]) if as_json else format_jobs(summaries, tag=tag)
+        )
     if args.command == "sessions":
         job = JobId(args.job)
         sessions = build_list_sessions().execute(job)
@@ -1282,6 +1318,25 @@ def _delete_jobs(jobs: Sequence[str], *, assume_yes: bool) -> int:
 def _jobs_partial(count: int, kept: int) -> str:
     """The summary of a job delete that removed some of what it was asked to, not all."""
     return i18n.t("delete.jobs.partial", removed=count - kept, count=count, kept=kept)
+
+
+def _jobs_tag(args: argparse.Namespace) -> int:
+    """Put tags on a job, or take them off — ``gmlw jobs tag|untag <job> <tag>...``."""
+    job = JobId(args.job)
+    tagger = build_tag_jobs()
+    try:
+        if args.jobs_command == "tag":
+            tags = tagger.add(job, list(args.tags))
+        else:
+            tags = tagger.remove(job, list(args.tags))
+    except NoSuchJobError as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    if tags:
+        print(i18n.t("jobs.tags.now", job=job, tags=format_tags(tags)))
+    else:
+        print(i18n.t("jobs.tags.none", job=job))
+    return 0
 
 
 def _sessions_delete(args: argparse.Namespace) -> int:
@@ -1603,8 +1658,16 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
 
     def _job_choices() -> list[JobChoice]:
         return [
-            JobChoice(job=s.job, session_count=s.session_count) for s in build_list_jobs().execute()
+            JobChoice(job=s.job, session_count=s.session_count, tags=s.tags)
+            for s in build_list_jobs().execute()
         ]
+
+    def _retag_job(job: str, line: str) -> str | None:  # the menu's tag editor: words in, kept
+        try:
+            build_tag_jobs().replace(job, line.split())
+        except (IdentifierError, NoSuchJobError) as error:
+            return _render_error(error)
+        return None
 
     def _preview_jobs(selected: tuple[str, ...]) -> str:
         try:
@@ -1892,6 +1955,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         current_client=_client(None),
         deleter=deleter,
         reload_jobs=_job_choices,
+        retag_job=_retag_job,
         archiver=archiver,
         launch_clients=_launch_clients,
     ).run()  # blocks; terminal restored on return
@@ -2007,6 +2071,7 @@ def _start(args: argparse.Namespace) -> int:
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
         client_args=args.client_args,
+        tags=tuple(getattr(args, "tag", None) or ()),
     )
     if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2

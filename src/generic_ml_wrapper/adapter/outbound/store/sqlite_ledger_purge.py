@@ -52,4 +52,5 @@ class SqliteLedgerPurge(LedgerPurgePort):
             connection.execute("DELETE FROM turns WHERE job = ?", (job,))
             connection.execute("DELETE FROM session_costs WHERE job = ?", (job,))
             connection.execute("DELETE FROM sessions WHERE job = ?", (job,))
+            connection.execute("DELETE FROM job_tags WHERE job = ?", (job,))
             connection.execute("DELETE FROM jobs WHERE job = ?", (job,))

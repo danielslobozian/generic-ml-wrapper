@@ -7,6 +7,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Jobs can be tagged, and listed by tag.** A tag is your own grouping — put the sprint
+  on each ticket's job, and `gmlw jobs --tag sprint-42` shows that sprint's work. A job
+  can carry several tags; one carried over into the next sprint gets that sprint's tag too.
+  - `gmlw jobs tag <job> <tag>...` and `gmlw jobs untag <job> <tag>...`, or
+    `gmlw start <job> --tag <tag>` to tag a job as it starts.
+  - `gmlw jobs` shows each job's tags (`--json` gains a `tags` field).
+  - In the menu, Job → List shows the tags, filters by one, and `t` edits a job's tags.
+  - Tags are case-insensitive and kept lowercase. Deleting a job deletes its tags.
 - **A new session can be started with a workflow from the menu, and every session
   remembers which workflow it ran.** `gmlw start <job> --workflow NAME` could always do
   this on the command line, but the menu could only run a workflow under a job named after

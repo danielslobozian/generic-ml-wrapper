@@ -23,6 +23,8 @@ class StartJobCommand:
         workflow: A workflow to run on the job, or ``None`` for the plain wrapper.
         client_args: Passthrough launch arguments for this call, replacing whatever
             is configured for the client; ``None`` means "use the configured value".
+        tags: Tags to put on the job once its session is recorded (kept with any it
+            already has), e.g. the sprint it belongs to.
     """
 
     job: str
@@ -31,6 +33,7 @@ class StartJobCommand:
     resume_session: str | None = None
     workflow: str | None = None
     client_args: str | None = None
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

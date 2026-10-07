@@ -12,10 +12,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from _conformance import (
+    InMemoryJobTagStore,
     InMemoryPerTurnStore,
     InMemorySessionStore,
     InMemoryTranscriptStore,
     InMemoryUsageStore,
+    JobTagStoreConformance,
     PerTurnMeteringConformance,
     SessionStoreConformance,
     TranscriptStoreConformance,
@@ -28,9 +30,11 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
     FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
@@ -101,3 +105,16 @@ class TestInMemoryTranscriptStore(TranscriptStoreConformance):
     ) -> Trio:
         assert isinstance(store, InMemoryTranscriptStore)
         return store.read_trio(job, session, seq)
+
+
+# -- JobTagStorePort -------------------------------------------------------- #
+
+
+class TestSqliteJobTagStore(JobTagStoreConformance):
+    def make_store(self, tmp_path: Path) -> JobTagStorePort:
+        return SqliteJobTagStore(Ledger(tmp_path / "ledger.db"))
+
+
+class TestInMemoryJobTagStore(JobTagStoreConformance):
+    def make_store(self, tmp_path: Path) -> JobTagStorePort:
+        return InMemoryJobTagStore()

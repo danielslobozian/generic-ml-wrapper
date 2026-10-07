@@ -5,9 +5,11 @@
 import os
 
 import pytest
+from _conformance import InMemoryJobTagStore
 
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
+from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
@@ -171,6 +173,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
     greeting: str | None = None,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
+    tags: InMemoryJobTagStore | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -182,6 +185,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         hooks=hooks or HookRunner(()),
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
+        tags=tags or InMemoryJobTagStore(),
         # configured per client; a client with no entry has no arguments
         client_args=lambda client: (client_args or {}).get(client, ""),
     )
@@ -542,3 +546,22 @@ def test_a_plain_start_records_no_workflow() -> None:
     store = FakeStore()
     _use_case(store, FakeProvider()).execute(StartJobCommand(job="JOB-1", client="claude"))
     assert [session.workflow for session in store.recorded] == [None]
+
+
+def test_start_tags_the_job_once_its_session_is_recorded() -> None:
+    tags = InMemoryJobTagStore()
+    _use_case(FakeStore(), FakeProvider(), tags=tags).execute(
+        StartJobCommand(job="PAY-1", client="claude", tags=("Sprint-42", "payments"))
+    )
+    assert tags.tags_by_job() == {"PAY-1": ("payments", "sprint-42")}
+
+
+def test_an_invalid_tag_is_refused_before_a_session_is_spent() -> None:
+    store = FakeStore()
+    provider = FakeProvider()
+    with pytest.raises(IdentifierError):
+        _use_case(store, provider).execute(
+            StartJobCommand(job="PAY-1", client="claude", tags=("not a tag",))
+        )
+    assert store.recorded == []
+    assert provider.run is None

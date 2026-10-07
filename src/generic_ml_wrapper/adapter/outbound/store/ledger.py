@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -59,6 +59,13 @@ CREATE TABLE turns (
     duration_s            REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX idx_turns_job ON turns(job);
+
+CREATE TABLE job_tags (
+    job TEXT NOT NULL,
+    tag TEXT NOT NULL,                            -- lowercased; the user's own grouping
+    PRIMARY KEY (job, tag)
+);
+CREATE INDEX idx_job_tags_tag ON job_tags(tag);
 
 CREATE TABLE session_costs (
     session_id TEXT PRIMARY KEY,
@@ -113,6 +120,11 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
     ),
     # Which workflow a session ran. Unknown for existing sessions, which stay NULL.
     3: ("ALTER TABLE sessions ADD COLUMN workflow TEXT",),
+    # The tags a user puts on jobs (a sprint, an epic). Starts empty.
+    4: (
+        "CREATE TABLE job_tags (job TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (job, tag))",
+        "CREATE INDEX idx_job_tags_tag ON job_tags(tag)",
+    ),
 }
 
 
