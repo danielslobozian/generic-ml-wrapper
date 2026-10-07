@@ -1980,6 +1980,12 @@ async def _new_job(pilot: Pilot[MenuChoice | None], name: str = "PROJ-1") -> Non
     await pilot.pause()
 
 
+async def _no_workflow(pilot: Pilot[MenuChoice | None]) -> None:
+    """Past the workflow step a new session asks after the client: take "No workflow"."""
+    await pilot.pause()
+    await pilot.press("enter")
+
+
 def test_starting_a_job_asks_which_client_first() -> None:
     app = _launch_app()
     seen: dict[str, object] = {}
@@ -1991,6 +1997,7 @@ def test_starting_a_job_asks_which_client_first() -> None:
             seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
             seen["running"] = app.is_running
             await pilot.press("enter")  # take the default
+            await _no_workflow(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2015,6 +2022,7 @@ def test_the_picker_opens_on_the_configured_default() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
             await pilot.press("enter")
+            await _no_workflow(pilot)
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client="cursor")
@@ -2027,6 +2035,7 @@ def test_a_different_client_can_be_picked_for_one_launch() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
             await pilot.press("down", "enter")  # onto Cursor
+            await _no_workflow(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2059,6 +2068,7 @@ def test_a_custom_caller_can_be_launched_on_like_any_other() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
             await pilot.press("down", "down", "enter")  # onto cursor-mitm
+            await _no_workflow(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2267,6 +2277,7 @@ def test_an_existing_job_still_goes_through_the_client_step() -> None:
             await pilot.press("down", "enter")  # alpha
             await pilot.pause()
             await pilot.press("down", "enter")  # a different client
+            await _no_workflow(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2350,3 +2361,96 @@ def test_resume_is_unchanged_and_still_reopens_a_session() -> None:
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(action="resume", job="alpha", session="alpha_003")
+
+
+# ── Attaching a workflow to a new session ──
+def test_a_new_session_can_be_started_with_a_workflow() -> None:
+    app = _launch_app()
+    seen: dict[str, object] = {}
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("enter")  # the default client
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+            await pilot.press("down", "down", "enter")  # Nightly ETL
+        return app.return_value
+
+    choice = asyncio.run(scenario())
+    assert str(seen["crumb"]).endswith("PROJ-1 > Workflow")
+    # "No workflow" first, so a plain start stays one keypress.
+    assert seen["titles"] == ["No workflow", "Doc Review", "Nightly ETL"]
+    assert choice == MenuChoice(
+        action="start", job="PROJ-1", client="claude", workflow="nightly-etl"
+    )
+
+
+def test_no_workflow_is_offered_when_none_is_installed() -> None:
+    app = MenuApp(_JOBS, launch_clients=lambda: list(_LAUNCH_CLIENTS), current_client="claude")
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("enter")  # the client is the last step
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client="claude")
+
+
+def test_the_workflow_step_follows_even_without_a_client_choice() -> None:
+    app = MenuApp(_JOBS, workflows=list(_ARCHIVE_WORKFLOWS), current_client="claude")
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _new_job(pilot)
+            await pilot.press("down", "enter")  # Doc Review
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(
+        action="start", job="PROJ-1", workflow="doc-review"
+    )
+
+
+def test_a_workflow_run_is_not_asked_for_a_second_workflow() -> None:
+    app = _launch_app()
+
+    async def scenario() -> MenuChoice | None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.launch(MenuChoice(action="run", workflow="doc-review"))
+            await pilot.pause()
+            await pilot.press("enter")  # the client; the run already names its workflow
+        return app.return_value
+
+    assert asyncio.run(scenario()) == MenuChoice(
+        action="run", workflow="doc-review", client="claude"
+    )
+
+
+def test_the_resume_picker_shows_the_workflow_a_session_ran() -> None:
+    sessions = [
+        SessionChoice("alpha_001", "claude", "/work/a", True, "2026-07-24 09:00", False),
+        SessionChoice(
+            "alpha_002",
+            "claude",
+            "/work/b",
+            True,
+            "2026-07-25 10:00",
+            True,
+            workflow="mr-review",
+        ),
+    ]
+    app = MenuApp(_JOBS, sessions_for=lambda _job: sessions, current_client="claude")
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _open_session_picker(pilot)
+            seen.extend(r.item.subtitle for r in app.screen.query(_Row))
+
+    asyncio.run(scenario())
+    assert seen == [
+        "2026-07-24 09:00 · claude · /work/a",
+        "2026-07-25 10:00 · claude · mr-review · /work/b",
+    ]

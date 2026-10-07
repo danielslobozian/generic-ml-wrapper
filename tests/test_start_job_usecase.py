@@ -528,3 +528,17 @@ def test_the_recorded_flag_matches_what_the_resume_gate_will_ask() -> None:
         provider = FakeProvider(can_resume=declared)
         _use_case(store, provider).execute(StartJobCommand(job="JOB-1", client="anything"))
         assert store.recorded[0].resumable is declared
+
+
+def test_the_workflow_is_recorded_on_the_session_it_started() -> None:
+    store = FakeStore()
+    _use_case(store, FakeProvider(), FakeWorkflows(present="doc-review")).execute(
+        StartJobCommand(job="JOB-1", client="claude", workflow="doc-review")
+    )
+    assert [session.workflow for session in store.recorded] == ["doc-review"]
+
+
+def test_a_plain_start_records_no_workflow() -> None:
+    store = FakeStore()
+    _use_case(store, FakeProvider()).execute(StartJobCommand(job="JOB-1", client="claude"))
+    assert [session.workflow for session in store.recorded] == [None]

@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **A new session can be started with a workflow from the menu, and every session
+  remembers which workflow it ran.** `gmlw start <job> --workflow NAME` could always do
+  this on the command line, but the menu could only run a workflow under a job named after
+  it. Job → New now asks, after the client, whether to attach a workflow: it opens on
+  **No workflow**, so a plain start is still `⏎`.
+  - A workflow belongs to the session, not the job, so one job can run a feature workflow
+    in one session and an MR-review workflow in the next.
+  - The workflow a session started with is now recorded. `gmlw sessions <job>` shows it in
+    its own column (`--json` gains a `workflow` field), and the resume picker shows it
+    next to the folder. Sessions recorded before this release show none.
+  - The ledger gains one column; existing databases are upgraded in place on first use.
+
 ### Fixed
 - **In the menu, persona, role, environment and the default client could each be set in
   two places that disagreed.** Each had its own screen, and was offered again under

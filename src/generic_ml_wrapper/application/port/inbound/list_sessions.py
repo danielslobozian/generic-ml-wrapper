@@ -22,6 +22,7 @@ class SessionSummary:
             got going -- one started and abandoned at the prompt is recorded like any
             other, and this is what distinguishes it.
         cost_usd: Its recorded cumulative cost, or ``0.0`` if none was ever metered.
+        workflow: The workflow it was started with, or ``None`` for a plain session.
     """
 
     session_id: str
@@ -31,6 +32,7 @@ class SessionSummary:
     created_at: str | None = None
     turn_count: int = 0
     cost_usd: float = 0.0
+    workflow: str | None = None
 
 
 class ListSessions(ABC):

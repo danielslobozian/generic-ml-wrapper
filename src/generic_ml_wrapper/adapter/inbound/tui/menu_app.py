@@ -134,7 +134,8 @@ class SessionChoice:
     default); ``cwd`` is the folder it ran in; ``resumable`` gates selection; ``is_latest``
     marks the newest; ``usage`` is its already-rendered turn/cost cell (the word for
     "empty" when it never ran a turn), formatted by the wiring so the CLI listing and this
-    app cannot describe the same session two different ways.
+    app cannot describe the same session two different ways. ``workflow`` is the one it was
+    started with, or ``None`` for a plain session -- a resume continues with it.
     """
 
     session_id: str
@@ -144,6 +145,7 @@ class SessionChoice:
     date: str
     is_latest: bool
     usage: str = ""
+    workflow: str | None = None
 
 
 @dataclass(frozen=True)
@@ -644,9 +646,48 @@ class ClientPickerScreen(_MenuScreen):
         return next((i for i, c in enumerate(self._choices()) if c.is_default), 0)
 
     def handle(self, item: _Item) -> None:
-        """Exit with the pending launch, now carrying the chosen client."""
+        """Hand on the pending launch, now carrying the chosen client."""
         if item.action == "client:pick":
-            self.menu_app.exit(replace(self._pending, client=item.payload))
+            self.menu_app.attach_or_exit(replace(self._pending, client=item.payload))
+
+
+class AttachWorkflowScreen(_MenuScreen):
+    """After the client, before a new session starts: run it with a workflow, or without.
+
+    A workflow belongs to the session, not the job, so this is asked each time a session
+    starts -- one job can run a feature workflow today and a review workflow tomorrow. It
+    opens on "No workflow", so a plain start is still ``⏎``. Nothing is remembered: this
+    is ``--workflow`` for one launch, exactly as on the CLI.
+    """
+
+    def __init__(self, pending: MenuChoice) -> None:
+        """Bind the picker to the launch it is completing."""
+        super().__init__()
+        self._pending = pending
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > New > <job> > Workflow."""
+        t = i18n.active().t
+        parts = ["gmlw", t("tui.job"), t("tui.job.new")]
+        if self._pending.job:
+            parts.append(self._pending.job)
+        parts.append(t("tui.attach.crumb"))
+        return " > ".join(parts)
+
+    def menu_items(self) -> list[_Item]:
+        """The "No workflow" row first, then one row per installed workflow."""
+        t = i18n.active().t
+        items = [_Item("○", t("tui.attach.none"), t("tui.attach.none.d"), "attach:pick")]
+        items += [
+            _Item("⏵", *_wf_display(flow), "attach:pick", payload=flow.slug)
+            for flow in self.menu_app.workflows
+        ]
+        return items
+
+    def handle(self, item: _Item) -> None:
+        """Exit with the pending launch, carrying the chosen workflow (or none)."""
+        if item.action == "attach:pick":
+            self.menu_app.exit(replace(self._pending, workflow=item.payload or None))
 
 
 class ConfirmScreen(Screen[bool]):
@@ -1724,11 +1765,12 @@ class SessionPickerScreen(_MenuScreen):
                 client = f"↪ [b]{s.client}[/b]"  # in-row: mark + bold the client it switches to
             else:
                 icon, note = "▶", ""
+            where = f"{s.workflow} · {folder}" if s.workflow else folder
             items.append(
                 _Item(
                     icon,
                     title,
-                    f"{s.date} · {client} · {folder}",
+                    f"{s.date} · {client} · {where}",
                     "resume:pick",
                     payload=s.session_id,
                     note=note,
@@ -2610,6 +2652,18 @@ class MenuApp(App[MenuChoice | None]):
         """
         if self.launch_clients():
             self.push_screen(ClientPickerScreen(pending))
+        else:
+            self.attach_or_exit(pending)
+
+    def attach_or_exit(self, pending: MenuChoice) -> None:
+        """Offer a workflow for a new job session, then exit; any other launch just exits.
+
+        Only ``start`` asks: a resume continues with the workflow its session already
+        has, and the workflow launchers already name theirs. With no workflow installed
+        there is nothing to offer, so the launch goes ahead plain.
+        """
+        if pending.action == "start" and self.workflows:
+            self.push_screen(AttachWorkflowScreen(pending))
         else:
             self.exit(pending)
 

@@ -1,13 +1,13 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The additive v1->v2 ledger migration adds cwd/resumable without losing history."""
+"""The additive ledger migrations add columns without losing history."""
 
 from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
 
-from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.ledger import SCHEMA_VERSION, Ledger
 
 _V1_SESSIONS = (
     "CREATE TABLE jobs (job TEXT PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'work', "
@@ -40,7 +40,7 @@ def test_migration_adds_columns_and_preserves_rows(tmp_path: Path) -> None:
             "SELECT session_id, client, cwd, resumable FROM sessions ORDER BY id"
         ).fetchall()
 
-    assert version == 2  # bumped
+    assert version == SCHEMA_VERSION  # bumped all the way
     assert [r["session_id"] for r in rows] == ["T-1_001", "T-1_002"]  # history kept
     assert all(r["cwd"] is None for r in rows)  # new column, unknown for old rows
     # resumable backfilled from the client: claude yes, codex no.
@@ -54,4 +54,28 @@ def test_migration_is_idempotent(tmp_path: Path) -> None:
         pass
     with Ledger(db).connect() as connection:  # second open is a no-op
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-    assert version == 2
+    assert version == SCHEMA_VERSION
+
+
+def test_v2_gains_the_workflow_column_and_keeps_its_sessions(tmp_path: Path) -> None:
+    # The shape a 0.11.0 install has on disk.
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+    connection = sqlite3.connect(db)
+    connection.execute("ALTER TABLE sessions ADD COLUMN cwd TEXT")
+    connection.execute("ALTER TABLE sessions ADD COLUMN resumable INTEGER NOT NULL DEFAULT 1")
+    connection.execute("PRAGMA user_version = 2")
+    connection.commit()
+    connection.close()
+
+    with Ledger(db).connect() as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        rows = connection.execute(
+            "SELECT session_id, workflow FROM sessions ORDER BY id"
+        ).fetchall()
+
+    assert version == SCHEMA_VERSION
+    assert [(r["session_id"], r["workflow"]) for r in rows] == [
+        ("T-1_001", None),
+        ("T-1_002", None),
+    ]

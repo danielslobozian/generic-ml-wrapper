@@ -119,7 +119,9 @@ gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest] [--wor
 - `--resume-latest` — resume the job's most recent session instead of starting a new one.
   Not every client supports resume; unsupported clients report an error.
 - `--workflow NAME`, `-w NAME` — run a workflow on the job (list them with
-  `gmlw workflow list`). See [WORKFLOWS.md](WORKFLOWS.md).
+  `gmlw workflow list`). It applies to the new session only, and is recorded with it:
+  `gmlw sessions <job>` shows which workflow each session ran. Ignored on a resume, which
+  continues with the session's own. See [WORKFLOWS.md](WORKFLOWS.md).
 
 Before launching, `start` preflights the working directory and the client: a deleted
 cwd or an uninstalled/unsupported client prints guidance and exits 2 rather than
@@ -341,6 +343,11 @@ on your configured default with the cursor already there, so `⏎` is "the one I
 use". **The choice applies to that launch only** and never rewrites `client.default` — to
 change the default, use Config → Clients. Resume is deliberately not asked: a resumed
 session relaunches on the client it was made with.
+
+**Job → New then asks for a workflow**, the menu's equivalent of `--workflow`. It opens on
+**No workflow**, so a plain start is still `⏎`; below it are your installed workflows.
+The choice is recorded on the session and shown in the resume picker. It is skipped when
+no workflow is installed, on a resume, and for Workflow → Run, which already names one.
 
 Only clients you can actually launch on are listed:
 
