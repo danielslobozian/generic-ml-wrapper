@@ -20,8 +20,10 @@ import json
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
 from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
@@ -392,3 +394,65 @@ class JobTagStoreConformance:
         store.add("JOB-1", ["sprint-42"])
         store.remove("JOB-1", ["sprint-42"])
         assert store.tags_by_job() == {}
+
+
+# -- IncidentLogPort -------------------------------------------------------- #
+
+
+class InMemoryIncidentLog(IncidentLogPort):
+    """A list-backed reference ``IncidentLogPort``."""
+
+    def __init__(self, incidents: list[Incident] | None = None) -> None:
+        self.recorded: list[Incident] = list(incidents or [])
+
+    def record(self, incident: Incident) -> None:
+        self.recorded.append(incident)
+
+    def incidents(self, job: str | None = None, since: float | None = None) -> list[Incident]:
+        return sorted(
+            (
+                incident
+                for incident in self.recorded
+                if (job is None or incident.job == job)
+                and (since is None or incident.occurred_at >= since)
+            ),
+            key=lambda incident: incident.occurred_at,
+        )
+
+
+def an_incident(
+    job: str = "JOB-1",
+    session: str = "JOB-1_001",
+    kind: IncidentKind = IncidentKind.CONNECTION_LOST,
+    at: float = 1_000.0,
+) -> Incident:
+    """An incident with sensible defaults, for tests that care about one field."""
+    return Incident(job, session, kind, "TimeoutError: The read operation timed out", at)
+
+
+class IncidentLogConformance:
+    """The behavioral contract for an ``IncidentLogPort``."""
+
+    def make_log(self, tmp_path: Path) -> IncidentLogPort:
+        raise NotImplementedError
+
+    def test_starts_empty(self, tmp_path: Path) -> None:
+        assert self.make_log(tmp_path).incidents() == []
+
+    def test_reads_back_oldest_first(self, tmp_path: Path) -> None:
+        log = self.make_log(tmp_path)
+        late = an_incident(at=2_000.0, kind=IncidentKind.STREAM_INTERRUPTED)
+        early = an_incident(at=1_000.0)
+        log.record(late)
+        log.record(early)
+        assert log.incidents() == [early, late]
+
+    def test_narrows_by_job_and_time(self, tmp_path: Path) -> None:
+        log = self.make_log(tmp_path)
+        log.record(an_incident(job="A", session="A_001", at=1_000.0))
+        log.record(an_incident(job="A", session="A_001", at=3_000.0))
+        log.record(an_incident(job="B", session="B_001", at=3_000.0))
+        assert [i.job for i in log.incidents(job="A")] == ["A", "A"]
+        assert [(i.job, i.occurred_at) for i in log.incidents(job="A", since=2_000.0)] == [
+            ("A", 3_000.0)
+        ]

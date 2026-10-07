@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions, SessionSummary
+from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
@@ -14,7 +15,11 @@ class ListSessionsUseCase(ListSessions):
     """Summarise the sessions recorded for a job, with what each one used."""
 
     def __init__(
-        self, store: SessionStorePort, turns: PerTurnMeteringPort, usage: UsageStorePort
+        self,
+        store: SessionStorePort,
+        turns: PerTurnMeteringPort,
+        usage: UsageStorePort,
+        incidents: IncidentLogPort,
     ) -> None:
         """Wire the use case to the session store and the two usage stores.
 
@@ -27,10 +32,12 @@ class ListSessionsUseCase(ListSessions):
             store: Where the job's sessions are read from.
             turns: Where metered turns are read from.
             usage: Where recorded session costs are read from.
+            incidents: Where each session's connection incidents are read from.
         """
         self._store = store
         self._turns = turns
         self._usage = usage
+        self._incidents = incidents
 
     def execute(self, job: str) -> list[SessionSummary]:
         """List a job's sessions.
@@ -48,6 +55,11 @@ class ListSessionsUseCase(ListSessions):
         for turn in self._turns.turns_for_job(job):
             turns_per_session[turn.session_id] = turns_per_session.get(turn.session_id, 0) + 1
         costs = self._usage.session_costs(job)
+        incidents_per_session: dict[str, int] = {}
+        for incident in self._incidents.incidents(job=job):
+            incidents_per_session[incident.session_id] = (
+                incidents_per_session.get(incident.session_id, 0) + 1
+            )
         return [
             SessionSummary(
                 session_id=session.session_id,
@@ -58,6 +70,7 @@ class ListSessionsUseCase(ListSessions):
                 turn_count=turns_per_session.get(session.session_id, 0),
                 cost_usd=costs.get(session.session_id, 0.0),
                 workflow=session.workflow,
+                incidents=incidents_per_session.get(session.session_id, 0),
             )
             for session in self._store.sessions_for_job(job)
         ]

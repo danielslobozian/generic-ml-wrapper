@@ -71,6 +71,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
     FilesystemTranscriptStore,
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.adapter.outbound.store.sqlite_incident_log import SqliteIncidentLog
 from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
@@ -114,6 +115,7 @@ from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlu
 from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.report_health import ReportHealth
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
@@ -153,6 +155,7 @@ from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUse
 from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.usecase.report_health import ReportHealthUseCase
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
@@ -386,6 +389,7 @@ def build_start_job() -> StartJob:
             interceptors=interceptors,
             plugins=build_plugin_source(),
             sessions=sessions,
+            incidents=SqliteIncidentLog(_ledger()),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         cwd_factory=os.getcwd,
@@ -418,6 +422,17 @@ def build_list_jobs() -> ListJobs:
     return ListJobsUseCase(store=SqliteSessionStore(_ledger()), tags=SqliteJobTagStore(_ledger()))
 
 
+def build_report_health() -> ReportHealth:
+    """Build the ReportHealth use case over the ledger's incidents, in local time.
+
+    Returns:
+        A ready-to-run ReportHealth.
+    """
+    return ReportHealthUseCase(
+        incidents=SqliteIncidentLog(_ledger()), clock=lambda: datetime.now(UTC).astimezone()
+    )
+
+
 def build_tag_jobs() -> TagJobs:
     """Build the TagJobs use case over the work jobs and the ledger's tags.
 
@@ -437,6 +452,7 @@ def build_list_sessions() -> ListSessions:
         store=SqliteSessionStore(_ledger()),
         turns=SqlitePerTurnStore(_ledger()),
         usage=SqliteUsageStore(_ledger()),
+        incidents=SqliteIncidentLog(_ledger()),
     )
 
 
@@ -699,6 +715,7 @@ def build_export_usage() -> ExportUsage:
     return ExportUsageUseCase(
         usage=SqliteUsageStore(_ledger()),
         turns=SqlitePerTurnStore(_ledger()),
+        incidents=SqliteIncidentLog(_ledger()),
     )
 
 
@@ -763,6 +780,7 @@ def build_new_workflow() -> NewWorkflow:
             interceptors=interceptors,
             plugins=build_plugin_source(),
             sessions=sessions,
+            incidents=SqliteIncidentLog(_ledger()),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         hooks=_hook_runner(),
@@ -787,6 +805,7 @@ def build_edit_workflow() -> EditWorkflow:
             interceptors=interceptors,
             plugins=build_plugin_source(),
             sessions=sessions,
+            incidents=SqliteIncidentLog(_ledger()),
         ),
         uuid_factory=lambda: str(uuid.uuid4()),
         hooks=_hook_runner(),

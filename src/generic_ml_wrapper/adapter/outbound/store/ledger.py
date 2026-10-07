@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -66,6 +66,17 @@ CREATE TABLE job_tags (
     PRIMARY KEY (job, tag)
 );
 CREATE INDEX idx_job_tags_tag ON job_tags(tag);
+
+CREATE TABLE incidents (
+    id          INTEGER PRIMARY KEY,
+    job         TEXT NOT NULL,
+    session_id  TEXT NOT NULL,
+    kind        TEXT NOT NULL,                  -- 'connection_lost' | 'stream_interrupted'
+    cause       TEXT NOT NULL,                  -- the failure in one line
+    occurred_at REAL NOT NULL                   -- epoch seconds
+);
+CREATE INDEX idx_incidents_job ON incidents(job);
+CREATE INDEX idx_incidents_time ON incidents(occurred_at);
 
 CREATE TABLE session_costs (
     session_id TEXT PRIMARY KEY,
@@ -124,6 +135,14 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
     4: (
         "CREATE TABLE job_tags (job TEXT NOT NULL, tag TEXT NOT NULL, PRIMARY KEY (job, tag))",
         "CREATE INDEX idx_job_tags_tag ON job_tags(tag)",
+    ),
+    # Connection incidents seen by the relay. Starts empty: older ones are only in the log.
+    5: (
+        "CREATE TABLE incidents (id INTEGER PRIMARY KEY, job TEXT NOT NULL, "
+        "session_id TEXT NOT NULL, kind TEXT NOT NULL, cause TEXT NOT NULL, "
+        "occurred_at REAL NOT NULL)",
+        "CREATE INDEX idx_incidents_job ON incidents(job)",
+        "CREATE INDEX idx_incidents_time ON incidents(occurred_at)",
     ),
 }
 

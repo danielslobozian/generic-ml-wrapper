@@ -99,3 +99,23 @@ def test_v3_gains_the_job_tags_table(tmp_path: Path) -> None:
 
     assert version == SCHEMA_VERSION
     assert [(r["job"], r["tag"]) for r in tags] == [("T-1", "sprint-42")]
+
+
+def test_v4_gains_the_incidents_table(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+    connection = sqlite3.connect(db)
+    connection.execute("ALTER TABLE sessions ADD COLUMN cwd TEXT")
+    connection.execute("ALTER TABLE sessions ADD COLUMN resumable INTEGER NOT NULL DEFAULT 1")
+    connection.execute("ALTER TABLE sessions ADD COLUMN workflow TEXT")
+    connection.execute("CREATE TABLE job_tags (job TEXT NOT NULL, tag TEXT NOT NULL)")
+    connection.execute("PRAGMA user_version = 4")
+    connection.commit()
+    connection.close()
+
+    with Ledger(db).connect() as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        count = connection.execute("SELECT count(*) FROM incidents").fetchone()[0]
+
+    assert version == SCHEMA_VERSION
+    assert count == 0

@@ -16,6 +16,7 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, C
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.run import RunContext
     from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+    from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.plugin_source import PluginSourcePort
     from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
@@ -38,6 +39,7 @@ class DefaultCliCallerProvider(CliCallerProvider):
         interceptors: InterceptorChain | None = None,
         plugins: PluginSourcePort | None = None,
         sessions: SessionStorePort | None = None,
+        incidents: IncidentLogPort | None = None,
     ) -> None:
         """Bind the provider to its overrides, metering store, and interceptor chain.
 
@@ -52,10 +54,12 @@ class DefaultCliCallerProvider(CliCallerProvider):
                 overrides are used verbatim (only ``"path.py:Class"`` specs work).
             sessions: The session store, for clients whose session id can only be
                 learned from the wire once running (codex) and must be bound back.
+            incidents: Where the built-in gateway callers record a lost connection.
         """
         self._overrides = overrides or {}
         self._metering = metering
         self._transcript = transcript
+        self._incidents = incidents
         self._interceptors = interceptors
         self._plugins = plugins
         self._sessions = sessions
@@ -81,14 +85,31 @@ class DefaultCliCallerProvider(CliCallerProvider):
                 spec = self._plugins.resolve_caller(spec)
             return load_caller_class(spec)(run)
         if run.client == "claude":
-            return ClaudeCliCaller(run, self._metering, self._interceptors, self._transcript)
+            return ClaudeCliCaller(
+                run,
+                self._metering,
+                self._interceptors,
+                self._transcript,
+                incidents=self._incidents,
+            )
         if run.client == "cursor":
             return CursorCliCaller(run)
         if run.client == "codex":
             return CodexCliCaller(
-                run, self._metering, self._interceptors, self._transcript, self._sessions
+                run,
+                self._metering,
+                self._interceptors,
+                self._transcript,
+                self._sessions,
+                incidents=self._incidents,
             )
         if run.client == "vibe":
-            return VibeCliCaller(run, self._metering, self._interceptors, self._transcript)
+            return VibeCliCaller(
+                run,
+                self._metering,
+                self._interceptors,
+                self._transcript,
+                incidents=self._incidents,
+            )
         message = f"unsupported client: {run.client!r}"
         raise UnsupportedClientError(message)

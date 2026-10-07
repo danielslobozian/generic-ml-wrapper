@@ -7,6 +7,7 @@ import json
 import platform
 from collections.abc import Callable, Sequence
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
@@ -17,6 +18,7 @@ from generic_ml_wrapper.adapter.inbound.tui import menu_app as tui
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
+from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
@@ -83,6 +85,11 @@ from generic_ml_wrapper.application.port.inbound.new_workflow import (
 )
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
+from generic_ml_wrapper.application.port.inbound.report_health import (
+    DayHealth,
+    HealthReport,
+    ReportHealth,
+)
 from generic_ml_wrapper.application.port.inbound.set_credential import (
     SetCredential,
     SetCredentialCommand,
@@ -182,6 +189,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "jobs": ["jobs"],
         "sessions": ["sessions", "J"],
         "export": ["export", "J"],
+        "health": ["health"],
         "clients": ["clients"],
         "statusline": ["statusline"],
         "tui": ["tui"],
@@ -672,6 +680,7 @@ def test_sessions_command_json_output(
             "turn_count": 0,
             "cost_usd": 0.0,
             "workflow": None,
+            "incidents": 0,
         }
     ]
 
@@ -2613,3 +2622,88 @@ def test_a_command_that_hands_the_terminal_over_logs_nothing_to_it(
     # drawn over it and lost on the next redraw. Such a command logs to the file only.
     args = app.build_parser().parse_args(app._implicit_start(argv))
     assert app._hands_over_the_terminal(args) is hands_over
+
+
+# --------------------------------------------------------------------------- #
+# Connection health                                                            #
+# --------------------------------------------------------------------------- #
+def _incident(kind: IncidentKind = IncidentKind.CONNECTION_LOST) -> Incident:
+    return Incident(
+        "PAY-1",
+        "PAY-1_003",
+        kind,
+        "TimeoutError: The read operation timed out",
+        datetime(2026, 10, 5, 18, 4, 28, tzinfo=UTC).timestamp(),
+    )
+
+
+class _FakeHealth(ReportHealth):
+    def __init__(self, report: HealthReport) -> None:
+        self.report = report
+        self.asked: list[tuple[int, str | None]] = []
+
+    def execute(self, days: int = 7, job: str | None = None) -> HealthReport:
+        self.asked.append((days, job))
+        return self.report
+
+
+def test_health_lists_each_day_then_the_latest_incidents(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = HealthReport(
+        days=2,
+        job=None,
+        by_day=(DayHealth("2026-10-06"), DayHealth("2026-10-05", 1, 1)),
+        incidents=(_incident(IncidentKind.STREAM_INTERRUPTED), _incident()),
+    )
+    fake = _FakeHealth(report)
+    monkeypatch.setattr(app, "build_report_health", lambda: fake)
+    assert app.main(["health", "--days", "2", "--job", "PAY-1"]) == 0
+    assert fake.asked == [(2, "PAY-1")]
+    out = capsys.readouterr().out
+    assert "2026-10-05  1 connection lost · 1 stream cut" in out
+    assert "2026-10-06  0 connection lost · 0 stream cut" in out
+    assert "PAY-1_003  stream cut  TimeoutError: The read operation timed out" in out
+
+
+def test_health_says_so_when_all_is_well(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = HealthReport(days=7, job=None, by_day=(), incidents=())
+    monkeypatch.setattr(app, "build_report_health", lambda: _FakeHealth(report))
+    assert app.main(["health"]) == 0
+    assert "No connection incidents" in capsys.readouterr().out
+
+
+def test_health_json_names_the_kind(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = HealthReport(days=1, job=None, by_day=(), incidents=(_incident(),))
+    monkeypatch.setattr(app, "build_report_health", lambda: _FakeHealth(report))
+    assert app.main(["health", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["incidents"][0]["kind"] == "connection_lost"
+
+
+def test_the_export_lists_the_jobs_incidents() -> None:
+    text = app.format_usage(
+        UsageReport("PAY-1", turn_count=1, incidents=(_incident(), _incident()))
+    )
+    assert "connection incidents ──  2  (2 connection lost · 0 stream cut)" in text
+    assert "TimeoutError: The read operation timed out" in text
+
+
+def test_a_session_with_incidents_is_marked_in_the_listing() -> None:
+    text = app.format_sessions(
+        "PAY-1",
+        [SessionSummary("PAY-1_001", "claude"), SessionSummary("PAY-1_002", "claude", incidents=3)],
+    )
+    first, second = text.splitlines()[2:]
+    assert "incident" not in first
+    assert second.endswith("⚠ 3 incident(s)")
+
+
+def test_the_export_shows_incidents_even_before_any_turn_was_metered() -> None:
+    text = app.format_usage(UsageReport("PAY-1", incidents=(_incident(),)))
+    assert "No usage recorded" not in text
+    assert "TimeoutError: The read operation timed out" in text

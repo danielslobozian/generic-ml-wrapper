@@ -2,7 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the ListSessions use case, driven by a fake store."""
 
-from _conformance import InMemoryPerTurnStore, InMemoryUsageStore
+from _conformance import (
+    InMemoryIncidentLog,
+    InMemoryPerTurnStore,
+    InMemoryUsageStore,
+    an_incident,
+)
 
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
@@ -38,10 +43,14 @@ def _use_case(
     store: SessionStorePort,
     turns: InMemoryPerTurnStore | None = None,
     usage: InMemoryUsageStore | None = None,
+    incidents: InMemoryIncidentLog | None = None,
 ) -> ListSessionsUseCase:
     """The use case with empty usage stores unless a test supplies its own."""
     return ListSessionsUseCase(
-        store, turns or InMemoryPerTurnStore(), usage or InMemoryUsageStore()
+        store,
+        turns or InMemoryPerTurnStore(),
+        usage or InMemoryUsageStore(),
+        incidents or InMemoryIncidentLog(),
     )
 
 
@@ -110,3 +119,17 @@ def test_a_session_that_never_ran_a_turn_reports_zero() -> None:
 
     assert summary.turn_count == 0
     assert summary.cost_usd == 0.0
+
+
+def test_each_session_carries_its_incident_count() -> None:
+    store = FakeStore(
+        [
+            Session("JOB-1_001", "JOB-1", "claude", None),
+            Session("JOB-1_002", "JOB-1", "claude", None),
+        ]
+    )
+    incidents = InMemoryIncidentLog(
+        [an_incident(session="JOB-1_002"), an_incident(session="JOB-1_002")]
+    )
+    summaries = _use_case(store, incidents=incidents).execute("JOB-1")
+    assert [(s.session_id, s.incidents) for s in summaries] == [("JOB-1_001", 0), ("JOB-1_002", 2)]
