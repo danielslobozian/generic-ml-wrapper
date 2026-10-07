@@ -8,7 +8,10 @@ import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import ZipWorkflowArchive
+from generic_ml_wrapper.application.domain.model.archive_status import ArchiveStatus
 
 _WHEN = datetime(2026, 7, 29, 15, 30, 12, tzinfo=UTC)
 
@@ -106,3 +109,48 @@ def test_unpacking_leaves_no_scratch_folder_behind(tmp_path: Path) -> None:
     destination = tmp_path / "dest" / "wf"
     archive.unpack(written, destination)
     assert [p.name for p in destination.parent.iterdir()] == ["wf"]
+
+
+def _a_zip(path: Path, *names: str) -> Path:
+    with zipfile.ZipFile(path, "w") as archive:
+        for name in names:
+            archive.writestr(name, "x")
+    return path
+
+
+@pytest.mark.parametrize(
+    ("names", "expected"),
+    [
+        (("workflow.md", "scripts/run.py"), ArchiveStatus.COMPLETE),
+        # extractall strips traversal, so this one lands at the top and unpacks as a workflow.
+        (("../../workflow.md",), ArchiveStatus.COMPLETE),
+        # Only a top-level steps file is portable: these would unpack into nothing.
+        (("sub/workflow.md",), ArchiveStatus.INCOMPLETE),
+        (("a/../workflow.md",), ArchiveStatus.INCOMPLETE),
+        (("scripts/run.py",), ArchiveStatus.INCOMPLETE),
+    ],
+)
+def test_inspecting_reports_whether_the_archive_carries_a_workflow(
+    tmp_path: Path, names: tuple[str, ...], expected: ArchiveStatus
+) -> None:
+    archive = _a_zip(tmp_path / "wf.zip", *names)
+    assert _archive(tmp_path / "exports").inspect(archive) is expected
+
+
+def test_inspecting_agrees_with_what_unpacking_installs(tmp_path: Path) -> None:
+    # The claim behind COMPLETE: an archive inspect accepts really yields a workflow.md.
+    for index, name in enumerate(["../../workflow.md", "sub/workflow.md", "a/../workflow.md"]):
+        archive = _a_zip(tmp_path / f"wf{index}.zip", name)
+        destination = tmp_path / f"out{index}"
+        zip_archive = _archive(tmp_path / "exports")
+        zip_archive.unpack(archive, destination)
+        complete = zip_archive.inspect(archive) is ArchiveStatus.COMPLETE
+        assert complete == (destination / "workflow.md").is_file()
+
+
+def test_inspecting_a_missing_or_unreadable_file_reports_missing(tmp_path: Path) -> None:
+    not_a_zip = tmp_path / "wf.zip"
+    not_a_zip.write_bytes(b"not a zip")
+    zip_archive = _archive(tmp_path / "exports")
+    assert zip_archive.inspect(tmp_path / "nope.zip") is ArchiveStatus.MISSING
+    assert zip_archive.inspect(not_a_zip) is ArchiveStatus.MISSING
