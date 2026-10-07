@@ -329,7 +329,8 @@ gmlw health [--days N] [--job J] [--json]
 - `--json` — output as JSON instead of text.
 
 `gmlw sessions <job>` marks a session that had incidents (`⚠ 3 incident(s)`), and
-`gmlw export <job>` lists them. Incidents are recorded from this version on; earlier
+`gmlw export <job>` lists them. In `gmlw tui`, **Health** shows the last two weeks one
+day per row (✅ quiet, ⚠ incidents); a bad day opens its incidents as a table. Incidents are recorded from this version on; earlier
 ones are only in `~/.gmlw/logs/gmlw.log`.
 
 ## clients
@@ -368,7 +369,7 @@ status line is installed and parsed.
 ## tui
 
 Open the interactive, full-screen menu — an alternative to the flag CLI. It is
-object-first (**Job · Workflow · Config · Rules**), you navigate with the arrow keys, and
+object-first (**Job · Workflow · Config · Rules · Health**), you navigate with the arrow keys, and
 each row shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too**
 (once initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
 capability index.

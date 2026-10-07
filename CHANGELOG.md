@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     marks a session that had any (`⚠ 3 incident(s)`). Both `--json` outputs carry them.
   - Recording an incident can never break a session: if it cannot be written, it is
     skipped. Incidents start with this version; earlier ones are only in the log.
+  - In the menu, a new top-level **Health** shows the last two weeks one day per row,
+    ✅ for a quiet day and ⚠ for one with incidents; a bad day opens its incidents as a
+    table (time, job, session, kind, cause).
 - **Jobs can be tagged, and listed by tag.** A tag is your own grouping — put the sprint
   on each ticket's job, and `gmlw jobs --tag sprint-42` shows that sprint's work. A job
   can carry several tags; one carried over into the next sprint gets that sprint's tag too.

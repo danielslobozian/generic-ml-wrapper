@@ -2707,3 +2707,27 @@ def test_the_export_shows_incidents_even_before_any_turn_was_metered() -> None:
     text = app.format_usage(UsageReport("PAY-1", incidents=(_incident(),)))
     assert "No usage recorded" not in text
     assert "TimeoutError: The read operation timed out" in text
+
+
+def test_the_menu_health_groups_incidents_by_local_day(monkeypatch: pytest.MonkeyPatch) -> None:
+    incident = _incident()
+    day = datetime.fromtimestamp(incident.occurred_at).astimezone().date().isoformat()
+    report = HealthReport(
+        days=2,
+        job=None,
+        by_day=(DayHealth(day, connection_lost=1), DayHealth("1999-01-01")),
+        incidents=(incident,),
+    )
+    monkeypatch.setattr(app, "build_report_health", lambda: _FakeHealth(report))
+    captured = _captured_menu(monkeypatch)
+    days = cast("Callable[[], list[tui.HealthDayView]]", captured["health"])()
+    assert [(d.day, d.count, d.summary) for d in days] == [
+        (day, 1, "1 connection lost · 0 stream cut"),
+        ("1999-01-01", 0, "0 connection lost · 0 stream cut"),
+    ]
+    assert days[0].rows[0][1:] == (
+        "PAY-1",
+        "PAY-1_003",
+        "connection lost",
+        "TimeoutError: The read operation timed out",
+    )

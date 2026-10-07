@@ -25,6 +25,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     ConfigSetting,
     CreateOutcome,
     Deleter,
+    HealthDayView,
     ImportAttempt,
     JobChoice,
     MenuApp,
@@ -2555,3 +2556,94 @@ def test_t_edits_the_highlighted_jobs_tags() -> None:
     assert "invalid tag" in str(seen["error"])
     assert kept == [("alpha", "sprint-43")]
     assert ("alpha", "3 sessions · #sprint-43") in cast("list[tuple[str, str]]", seen["rows"])
+
+
+# ── Health ──
+_HEALTH_DAYS = [
+    HealthDayView(
+        "2026-10-07",
+        "1 connection lost · 1 stream cut",
+        2,
+        (
+            ("20:04:28", "PAY-1", "PAY-1_003", "connection lost", "TimeoutError: timed out"),
+            ("19:12:02", "PAY-1", "PAY-1_003", "stream cut", "SSLEOFError: EOF"),
+        ),
+    ),
+    HealthDayView("2026-10-06", "0 connection lost · 0 stream cut", 0),
+]
+
+
+async def _open_health(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Health (the fifth row, above Quit)."""
+    await pilot.press("down", "down", "down", "down", "enter")
+    await pilot.pause()
+
+
+def test_the_top_menu_offers_health_above_quit() -> None:
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            seen.extend(r.item.title for r in app.screen.query(_Row))
+
+    asyncio.run(scenario())
+    assert seen[-2:] == ["Health", "Quit"]
+
+
+def test_health_lists_each_day_marking_the_bad_ones() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, health=lambda: list(_HEALTH_DAYS))
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_health(pilot)
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["rows"] = [
+                (r.item.icon, r.item.title, r.item.subtitle) for r in app.screen.query(_Row)
+            ]
+
+    asyncio.run(scenario())
+    assert str(seen["crumb"]).endswith("Health")
+    assert seen["rows"] == [
+        ("⚠", "2026-10-07", "1 connection lost · 1 stream cut"),
+        ("✅", "2026-10-06", "0 connection lost · 0 stream cut"),
+    ]
+
+
+def test_a_bad_day_opens_its_incidents_and_a_quiet_one_opens_nothing() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, health=lambda: list(_HEALTH_DAYS))
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_health(pilot)
+            await pilot.press("down", "enter")  # the quiet day
+            await pilot.pause()
+            seen["after_quiet"] = type(app.screen).__name__
+            await pilot.press("up", "enter")  # the bad day
+            await pilot.pause()
+            table = cast("DataTable[str]", app.screen.query_one("#incident_table", DataTable))
+            seen["rows"] = [table.get_row_at(i) for i in range(table.row_count)]
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["back"] = type(app.screen).__name__
+
+    asyncio.run(scenario())
+    assert seen["after_quiet"] == "HealthScreen"
+    assert seen["rows"] == [list(row) for row in _HEALTH_DAYS[0].rows]
+    assert seen["back"] == "HealthScreen"
+
+
+def test_health_says_so_when_it_is_not_wired() -> None:
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_health(pilot)
+            seen.append(str(app.screen.query_one("#empty", Static).render()))
+
+    asyncio.run(scenario())
+    assert "not available" in seen[0]
