@@ -18,6 +18,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     its own column (`--json` gains a `workflow` field), and the resume picker shows it
     next to the folder. Sessions recorded before this release show none.
   - The ledger gains one column; existing databases are upgraded in place on first use.
+- **`GMLW_HOME` puts everything gmlw keeps in another folder.** Handy for a development
+  build that should not share your real ledger, config and workflows. Only gmlw's own
+  folder moves: the clients it launches still read their settings and login from your
+  home.
 
 ### Fixed
 - **In the menu, persona, role, environment and the default client could each be set in

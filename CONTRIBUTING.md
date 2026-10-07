@@ -29,6 +29,16 @@ uv sync --extra dev        # install the project + dev tools into .venv
 pre-commit install         # wire the local git hooks (optional but recommended)
 ```
 
+To try your working tree without touching the gmlw you use day to day, run it with its
+own home and its own `gmlw` first on `PATH` (so the status line a client invokes is this
+build too):
+
+```bash
+alias gmlw-dev='GMLW_HOME=~/.gmlw-dev PATH="$PWD/.venv/bin:$PATH" gmlw'
+```
+
+Use an absolute path in place of `$PWD` if you define the alias in your shell profile.
+
 The only runtime dependencies are the sibling
 [`generic-ml-cache`](https://github.com/danielslobozian/generic-ml-cache) packages
 (`-core`, `-adapters`, `-bootstrap`) — used by the context compressor. Dev tooling
