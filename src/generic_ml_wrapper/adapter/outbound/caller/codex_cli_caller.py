@@ -137,6 +137,7 @@ class CodexCliCaller(CliCaller):
             usage_reader=openai_responses.read_usage,
             is_metered=_codex_metered,
             session_id_reader=openai_responses.read_session_id,
+            origin_reader=openai_responses.read_origin,
             session_id_sink=self._bind_session_id,
             interceptors=self._interceptors,
             incidents=self._incidents,

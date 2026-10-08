@@ -15,6 +15,11 @@ _V1_SESSIONS = (
     "CREATE TABLE sessions (id INTEGER PRIMARY KEY, session_id TEXT NOT NULL UNIQUE, "
     "job TEXT NOT NULL, client TEXT NOT NULL, uuid TEXT, "
     "created_at TEXT NOT NULL DEFAULT (datetime('now')));"
+    "CREATE TABLE turns (id INTEGER PRIMARY KEY, job TEXT NOT NULL, session_id TEXT NOT NULL, "
+    "turn_id TEXT, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, "
+    "cache_creation_tokens INTEGER NOT NULL DEFAULT 0, "
+    "cache_read_tokens INTEGER NOT NULL DEFAULT 0, cost_usd REAL, model TEXT, "
+    "timestamp REAL NOT NULL DEFAULT 0, duration_s REAL NOT NULL DEFAULT 0);"
 )
 
 
@@ -25,6 +30,10 @@ def _write_v1(path: Path) -> None:
     insert = "INSERT INTO sessions (session_id, job, client, uuid) VALUES (?, 'T-1', ?, ?)"
     connection.execute(insert, ("T-1_001", "claude", "u1"))
     connection.execute(insert, ("T-1_002", "codex", "u2"))
+    connection.execute(
+        "INSERT INTO turns (job, session_id, input_tokens, output_tokens) "
+        "VALUES ('T-1', 'T-1_001', 10, 2)"
+    )
     connection.execute("PRAGMA user_version = 1")
     connection.commit()
     connection.close()
@@ -119,3 +128,14 @@ def test_v4_gains_the_incidents_table(tmp_path: Path) -> None:
 
     assert version == SCHEMA_VERSION
     assert count == 0
+
+
+def test_v5_turns_count_as_the_main_conversation(tmp_path: Path) -> None:
+    # Turns recorded before agents were told apart: all the main conversation's.
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect() as connection:
+        rows = connection.execute("SELECT session_id, role, agent FROM turns").fetchall()
+
+    assert [(r["session_id"], r["role"], r["agent"]) for r in rows] == [("T-1_001", "main", None)]

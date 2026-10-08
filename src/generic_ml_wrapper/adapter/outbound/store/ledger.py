@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -56,7 +56,9 @@ CREATE TABLE turns (
     cost_usd              REAL,
     model                 TEXT,
     timestamp             REAL NOT NULL DEFAULT 0,
-    duration_s            REAL NOT NULL DEFAULT 0
+    duration_s            REAL NOT NULL DEFAULT 0,
+    role                  TEXT NOT NULL DEFAULT 'main',  -- 'main' or 'agent'
+    agent                 TEXT                           -- the agent's name, when given
 );
 CREATE INDEX idx_turns_job ON turns(job);
 
@@ -143,6 +145,12 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "occurred_at REAL NOT NULL)",
         "CREATE INDEX idx_incidents_job ON incidents(job)",
         "CREATE INDEX idx_incidents_time ON incidents(occurred_at)",
+    ),
+    # Which agent of a session made each turn. Existing turns were never told apart,
+    # so they count as the main conversation's.
+    6: (
+        "ALTER TABLE turns ADD COLUMN role TEXT NOT NULL DEFAULT 'main'",
+        "ALTER TABLE turns ADD COLUMN agent TEXT",
     ),
 }
 

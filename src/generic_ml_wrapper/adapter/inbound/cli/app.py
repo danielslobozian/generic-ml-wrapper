@@ -49,6 +49,7 @@ from generic_ml_wrapper.application.domain.model.migration import (
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
@@ -761,13 +762,21 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
         (len(model.model) for model in report.models),
         default=len(_UNKNOWN_LABEL),
     )
+    # Who made each turn, shown only once a job has agent turns to tell apart.
+    who = {(a.role, a.agent): _who(a.role, a.agent, loc) for a in report.agents}
+    who_width = max((len(label) for label in who.values()), default=0)
     lines = [loc.t("usage.header", job=report.job, count=report.turn_count), ""]
     for turn in report.turns:
+        label = who.get((turn.role, turn.agent))
         lines.append(
             loc.t(
                 "usage.turn_row",
                 clock=_clock(turn.timestamp),
-                model=f"{turn.model:<{width}}",
+                model=(
+                    f"{turn.model:<{width}}"
+                    if label is None
+                    else f"{label:<{who_width}}  {turn.model:<{width}}"
+                ),
                 duration=f"{turn.duration_s:>5.1f}",
                 tokens=_tokens(turn.input_tokens, turn.output_tokens, turn.cache_tokens, loc),
                 turn_id=turn.turn_id or "-",
@@ -784,6 +793,18 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
                 duration=f"{model.duration_s:.1f}",
             )
             for model in report.models
+        ]
+    if report.agents:
+        lines += ["", loc.t("usage.totals_by_agent")]
+        lines += [
+            loc.t(
+                "usage.agent_row",
+                agent=f"{who[agent.role, agent.agent]:<{who_width}}",
+                calls=f"{agent.calls:>3}",
+                tokens=_tokens(agent.input_tokens, agent.output_tokens, agent.cache_tokens, loc),
+                duration=f"{agent.duration_s:.1f}",
+            )
+            for agent in report.agents
         ]
     if report.incidents:
         lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
@@ -817,6 +838,13 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
 
 
 _UNKNOWN_LABEL = "(unknown)"
+
+
+def _who(role: TurnRole, agent: str | None, loc: i18n.Localizer) -> str:
+    """Name the side of a session a turn came from: main, the agent's name, or agent."""
+    if agent is not None:
+        return agent
+    return loc.t("usage.role_main" if role is TurnRole.MAIN else "usage.role_agent")
 
 
 def _clock(timestamp: float) -> str:

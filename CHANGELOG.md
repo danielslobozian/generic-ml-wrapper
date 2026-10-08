@@ -7,6 +7,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **The export tells the main conversation's turns from its agents'.** A session that
+  starts agents (subagents) spends much of its tokens in them, and until now their turns
+  were mixed in with the main conversation's. Each metered turn now records who made it,
+  read off the request the client sends.
+  - `gmlw export <job>` labels every turn — `main`, the agent's name, or `agent` — and adds
+    a **totals by agent** section once a job has agent turns. `--json` carries `role` and
+    `agent` on each turn, and the totals under `agents`.
+  - Claude marks a subagent's calls (its web-search helpers included) but gives no name,
+    so its agents are counted together. Codex names each agent. Vibe does not say, so its
+    turns all count as `main`.
+  - Turns recorded before this version count as `main`.
 - **The status line breaks tokens down by kind.** The single `9.1M tok` total — almost
   all of it cache reads in a long session — becomes `↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k`:
   input, output, cache read, cache write. A cache read far above the input is the cache

@@ -9,7 +9,8 @@ Codex streams a turn as Server-Sent Events and reports usage once, in the final
 
 The *request* side carries codex's own session id, which is the only way to learn it
 — codex mints it internally and takes no launch flag to set it (see
-:func:`read_session_id`).
+:func:`read_session_id`), and which agent of the session made the turn (see
+:func:`read_origin`).
 """
 
 from __future__ import annotations
@@ -18,8 +19,12 @@ import json
 from typing import cast
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
+from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
 
 _DATA_PREFIX = "data:"
+_TURN_KEY = "x-codex-turn-metadata"
+# Codex names its agents as a path under the main thread's: "/root", "/root/<agent>".
+_ROOT_AGENT = "/root"
 
 
 def read_usage(text: str) -> StreamUsage | None:
@@ -78,6 +83,33 @@ def read_session_id(text: str) -> str | None:
     return _as_str(_get(request.get("client_metadata"), "session_id")) or _as_str(
         request.get("prompt_cache_key")
     )
+
+
+def read_origin(text: str) -> TurnOrigin:
+    """Read which agent of a codex session made a turn, from its *request* body.
+
+    ``client_metadata["x-codex-turn-metadata"]`` is a JSON string whose ``agent_name``
+    is ``/root`` for the main thread -- its title call included -- and
+    ``/root/<name>`` for an agent it spawned, which also has ``thread_source``
+    ``subagent``.
+
+    Args:
+        text: The decoded request body.
+
+    Returns:
+        The agent and its name (the path below ``/root``), else the main conversation.
+    """
+    try:
+        decoded: object = json.loads(text)
+        turn: object = json.loads(_as_str(_get(_get(decoded, "client_metadata"), _TURN_KEY)) or "")
+    except (json.JSONDecodeError, ValueError):
+        return MAIN
+    name = _as_str(_get(turn, "agent_name"))
+    if name is not None and name.startswith(_ROOT_AGENT + "/"):
+        return TurnOrigin(TurnRole.AGENT, name.removeprefix(_ROOT_AGENT + "/"))
+    if _get(turn, "thread_source") == "subagent":
+        return TurnOrigin(TurnRole.AGENT)
+    return MAIN
 
 
 def _usage(response: object) -> StreamUsage | None:

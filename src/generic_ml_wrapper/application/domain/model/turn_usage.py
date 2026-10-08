@@ -7,6 +7,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
+
 
 @dataclass(frozen=True)
 class TurnUsage:
@@ -26,6 +28,8 @@ class TurnUsage:
         timestamp: The turn's wall-clock time (epoch seconds), or ``0.0``.
         duration_s: How long the turn took, in seconds, or ``0.0``.
         turn_id: The provider's id for this turn, or ``None``.
+        role: Whether the main conversation or an agent made the turn.
+        agent: The agent's name when the client gives one, else ``None``.
     """
 
     session_id: str
@@ -38,6 +42,8 @@ class TurnUsage:
     timestamp: float = 0.0
     duration_s: float = 0.0
     turn_id: str | None = None
+    role: TurnRole = TurnRole.MAIN
+    agent: str | None = None
 
     def __post_init__(self) -> None:
         """Reject impossible usage: negative counts, or non-finite/negative amounts."""

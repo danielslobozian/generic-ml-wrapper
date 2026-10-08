@@ -296,6 +296,13 @@ Report a job's recorded usage: per-turn tokens and timing, totals by model, cost
 session, and grand totals — then the job's connection incidents, if it had any (see
 [health](#health)).
 
+When agents (subagents) did part of the work, each turn also says who made it — `main`,
+the agent's name, or `agent` when the client does not name them — and a **totals by
+agent** section adds them up. Claude marks its subagents' calls but does not name them;
+codex names each one; vibe does not tell them apart, so its turns all count as `main`.
+In `--json`, every turn carries `role` (`main` or `agent`) and `agent`, and `agents`
+holds the totals.
+
 ```
 gmlw export <job> [--json]
 ```

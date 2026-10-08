@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 if TYPE_CHECKING:
@@ -36,3 +37,13 @@ def test_turns_are_isolated_per_job(tmp_path: Path) -> None:
     store.record("JOB-1", TurnUsage("JOB-1_001", 1, 2, None, None))
     store.record("JOB-2", TurnUsage("JOB-2_001", 3, 4, None, None))
     assert store.turns_for_job("JOB-1") == [TurnUsage("JOB-1_001", 1, 2, None, None)]
+
+
+def test_the_agent_that_made_a_turn_is_kept(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    main = TurnUsage("JOB-1_001", 1, 2, None, None)
+    named = TurnUsage("JOB-1_001", 3, 4, None, None, role=TurnRole.AGENT, agent="search_space")
+    unnamed = TurnUsage("JOB-1_001", 5, 6, None, None, role=TurnRole.AGENT)
+    for turn in (main, named, unnamed):
+        store.record("JOB-1", turn)
+    assert store.turns_for_job("JOB-1") == [main, named, unnamed]

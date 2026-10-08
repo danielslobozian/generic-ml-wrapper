@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
+
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.incident import Incident
 
@@ -24,6 +26,8 @@ class TurnRow:
         output_tokens: Completion tokens.
         cache_tokens: Cache creation + read prompt tokens.
         turn_id: The provider's id for the turn, or ``None``.
+        role: Whether the main conversation or an agent made the turn.
+        agent: The agent's name when the client gives one, else ``None``.
     """
 
     timestamp: float
@@ -33,6 +37,8 @@ class TurnRow:
     output_tokens: int
     cache_tokens: int
     turn_id: str | None
+    role: TurnRole = TurnRole.MAIN
+    agent: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +55,30 @@ class ModelTotal:
     """
 
     model: str
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_tokens: int
+    duration_s: float
+
+
+@dataclass(frozen=True)
+class AgentTotal:
+    """The totals of one side of the job: the main conversation, or one agent.
+
+    Attributes:
+        role: The main conversation or an agent.
+        agent: The agent's name; ``None`` for the main conversation, and for the
+            agents of a client that does not name them (they are counted together).
+        calls: How many turns it made.
+        input_tokens: Total fresh prompt tokens.
+        output_tokens: Total completion tokens.
+        cache_tokens: Total cache prompt tokens.
+        duration_s: Total duration, in seconds.
+    """
+
+    role: TurnRole
+    agent: str | None
     calls: int
     input_tokens: int
     output_tokens: int
@@ -77,6 +107,8 @@ class UsageReport:
         job: The job identifier.
         turns: Every metered turn, chronological.
         models: Totals by model, sorted by model name.
+        agents: Totals by agent -- the main conversation first, then each agent by
+            name -- or empty when every turn was the main conversation's.
         session_costs: Recorded cost per session, sorted by session id.
         turn_count: The number of metered turns.
         input_tokens: The job's total fresh prompt tokens.
@@ -90,6 +122,7 @@ class UsageReport:
     job: str
     turns: tuple[TurnRow, ...] = ()
     models: tuple[ModelTotal, ...] = ()
+    agents: tuple[AgentTotal, ...] = ()
     session_costs: tuple[SessionCost, ...] = ()
     turn_count: int = 0
     input_tokens: int = 0

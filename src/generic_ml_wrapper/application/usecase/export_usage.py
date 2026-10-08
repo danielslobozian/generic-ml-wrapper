@@ -6,7 +6,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.port.inbound.export_usage import (
+    AgentTotal,
     ExportUsage,
     ModelTotal,
     SessionCost,
@@ -47,8 +49,8 @@ class ExportUsageUseCase(ExportUsage):
             job: The job identifier.
 
         Returns:
-            Per-turn rows (chronological), per-model totals, per-session cost, and
-            job totals.
+            Per-turn rows (chronological), per-model and per-agent totals, per-session
+            cost, and job totals.
         """
         recorded = self._turns.turns_for_job(job)
         turns = tuple(sorted((_row(turn) for turn in recorded), key=lambda row: row.timestamp))
@@ -59,6 +61,7 @@ class ExportUsageUseCase(ExportUsage):
             job=job,
             turns=turns,
             models=models,
+            agents=_agent_totals(recorded),
             session_costs=session_costs,
             turn_count=len(recorded),
             input_tokens=sum(model.input_tokens for model in models),
@@ -79,6 +82,8 @@ def _row(turn: TurnUsage) -> TurnRow:
         output_tokens=turn.output_tokens,
         cache_tokens=turn.cache_creation_tokens + turn.cache_read_tokens,
         turn_id=turn.turn_id,
+        role=turn.role,
+        agent=turn.agent,
     )
 
 
@@ -96,4 +101,32 @@ def _model_totals(recorded: list[TurnUsage]) -> tuple[ModelTotal, ...]:
     return tuple(
         ModelTotal(model, int(a[0]), int(a[1]), int(a[2]), int(a[3]), round(a[4], 1))
         for model, a in sorted(totals.items())
+    )
+
+
+def _agent_totals(recorded: list[TurnUsage]) -> tuple[AgentTotal, ...]:
+    if all(turn.role is TurnRole.MAIN for turn in recorded):
+        return ()
+    # (role, agent) -> [calls, input, output, cache, duration]
+    totals: dict[tuple[TurnRole, str | None], list[float]] = {}
+    for turn in recorded:
+        acc = totals.setdefault((turn.role, turn.agent), [0, 0, 0, 0, 0.0])
+        acc[0] += 1
+        acc[1] += turn.input_tokens
+        acc[2] += turn.output_tokens
+        acc[3] += turn.cache_creation_tokens + turn.cache_read_tokens
+        acc[4] += turn.duration_s
+    # The main conversation first, then the agents: unnamed before named, by name.
+    order = sorted(totals, key=lambda key: (key[0] is TurnRole.AGENT, key[1] or ""))
+    return tuple(
+        AgentTotal(
+            role,
+            agent,
+            int(totals[role, agent][0]),
+            int(totals[role, agent][1]),
+            int(totals[role, agent][2]),
+            int(totals[role, agent][3]),
+            round(totals[role, agent][4], 1),
+        )
+        for role, agent in order
     )
