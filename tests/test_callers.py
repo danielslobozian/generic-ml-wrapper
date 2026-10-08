@@ -525,10 +525,27 @@ def test_vibe_metering_routes_through_a_relay_home(
     assert 'api_base = "https://api.mistral.ai"' in seen["config"]  # tts untouched
 
 
-def test_vibe_metering_falls_back_to_unmetered_without_a_config(
+def test_vibe_metering_uses_the_built_in_provider_without_a_config(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    # vibe not configured yet runs on its built-in mistral provider: meter that.
     monkeypatch.setattr(vibe_cli_caller, "_VIBE_CONFIG", tmp_path / "missing.toml")
+    caller = _vibe(_vibe_run())
+    caller.start_metering()
+    try:
+        home = Path(caller._extra_env()["VIBE_HOME"])
+        config = (home / "config.toml").read_text(encoding="utf-8")
+        assert 'name = "mistral"' in config
+        assert 'api_base = "http://127.0.0.1:' in config
+        assert "--trust" in caller.command("hi")
+    finally:
+        caller.end_metering()
+
+
+def test_vibe_metering_falls_back_to_unmetered_on_an_unreadable_config(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(vibe_cli_caller, "_VIBE_CONFIG", tmp_path)  # a directory: unreadable
     caller = _vibe(_vibe_run())
     caller.start_metering()
     try:
