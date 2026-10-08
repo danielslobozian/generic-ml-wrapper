@@ -389,7 +389,7 @@ status line is installed and parsed.
 ## tui
 
 Open the interactive, full-screen menu — an alternative to the flag CLI. It is
-object-first (**Job · Workflow · Config · Rules · Health**), you navigate with the arrow keys, and
+object-first (**Job · Workflow · Config · Rules · Health · Attachments**), you navigate with the arrow keys, and
 each row shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too**
 (once initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
 capability index.
@@ -408,7 +408,11 @@ already have, or type a new name — either way you get a *fresh session*, which
 List, Export, and Import; **Config** covers listing/getting/setting a value, the
 **Clients** switcher (selecting a row also sets it as the default — the
 `gmlw config set client.default` path), and re-running **Setup**; **Rules** browses the
-environment and role rule axes.
+environment and role rule axes; **Attachments** covers Import, Export (the zip lands in the
+folder gmlw was started from), List, Delete, and Modify — which opens Job → New with a job
+named `modify_<name>_v<version>` (editable), lets you attach what to work with (typically
+`workflow-creator`), and starts the session asking the client to export that version here
+and help change it.
 
 **Every launch ends with a client step** — Job → New, Workflow → Run, Create, and Edit all
 ask which client to run on before starting, the menu's equivalent of `--client`. It opens
@@ -417,10 +421,13 @@ use". **The choice applies to that launch only** and never rewrites `client.defa
 change the default, use Config → Clients. Resume is deliberately not asked: a resumed
 session relaunches on the client it was made with.
 
-**Job → New then asks for a workflow**, the menu's equivalent of `--workflow`. It opens on
-**No workflow**, so a plain start is still `⏎`; below it are your installed workflows.
-The choice is recorded on the session and shown in the resume picker. It is skipped when
-no workflow is installed, on a resume, and for Workflow → Run, which already names one.
+**Job → New then asks what to attach**, the menu's equivalent of `--attach` or
+`--workflow`. It opens on **Nothing attached**, so a plain start is still `⏎`; below it are
+your attachments (one row per name, with its highest version), then your installed
+workflows. An attachment with several versions asks which, highest first; a version that
+changed since its import is shown but cannot be picked. The choice is recorded on the
+session and shown in the resume picker. It is skipped when there is nothing to attach, on a
+resume, and for Workflow → Run, which already names one.
 
 Only clients you can actually launch on are listed:
 

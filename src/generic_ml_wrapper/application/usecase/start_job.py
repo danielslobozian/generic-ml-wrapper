@@ -126,6 +126,11 @@ class StartJobUseCase(StartJob):
                 run = self._attach_workflow(run, command.workflow)
             else:
                 run = self._attach_baseline(run)
+            if command.note:
+                kickoff = (
+                    command.note if run.kickoff is None else f"{run.kickoff}\n\n{command.note}"
+                )
+                run = replace(run, kickoff=kickoff)
             run = self._with_greeting(run)  # in-band host greeting for a fresh session
             run = self._with_capability_card(run)  # optional ambient "how do I …" card
         caller = self._callers.for_run(run)

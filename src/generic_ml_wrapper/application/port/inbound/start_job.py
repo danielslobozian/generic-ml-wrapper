@@ -24,6 +24,7 @@ class StartJobCommand:
         attachment: An attachment to run the new session with, or ``None``.
         attachment_version: The attachment's version (``MAJOR.MINOR.PATCH``), or ``None``
             for the highest stored.
+        note: An extra paragraph for a new session's opening message, or ``None``.
         client_args: Passthrough launch arguments for this call, replacing whatever
             is configured for the client; ``None`` means "use the configured value".
         tags: Tags to put on the job once its session is recorded (kept with any it
@@ -37,6 +38,7 @@ class StartJobCommand:
     workflow: str | None = None
     attachment: str | None = None
     attachment_version: str | None = None
+    note: str | None = None
     client_args: str | None = None
     tags: tuple[str, ...] = ()
 

@@ -18,6 +18,7 @@ from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     Archiver,
+    AttachmentRow,
     ClientChoice,
     ClientRow,
     ConfigCatalog,
@@ -31,6 +32,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     MenuApp,
     MenuChoice,
     SessionChoice,
+    Shelf,
     SwitchChoice,
     Switcher,
     UsageView,
@@ -2380,9 +2382,9 @@ def test_a_new_session_can_be_started_with_a_workflow() -> None:
         return app.return_value
 
     choice = asyncio.run(scenario())
-    assert str(seen["crumb"]).endswith("PROJ-1 > Workflow")
-    # "No workflow" first, so a plain start stays one keypress.
-    assert seen["titles"] == ["No workflow", "Doc Review", "Nightly ETL"]
+    assert str(seen["crumb"]).endswith("PROJ-1 > Attach")
+    # "Nothing attached" first, so a plain start stays one keypress.
+    assert seen["titles"] == ["Nothing attached", "Doc Review", "Nightly ETL"]
     assert choice == MenuChoice(
         action="start", job="PROJ-1", client="claude", workflow="nightly-etl"
     )
@@ -2589,7 +2591,7 @@ def test_the_top_menu_offers_health_above_quit() -> None:
             seen.extend(r.item.title for r in app.screen.query(_Row))
 
     asyncio.run(scenario())
-    assert seen[-2:] == ["Health", "Quit"]
+    assert seen[-3:] == ["Health", "Attachments", "Quit"]
 
 
 def test_health_lists_each_day_marking_the_bad_ones() -> None:
@@ -2647,3 +2649,233 @@ def test_health_says_so_when_it_is_not_wired() -> None:
 
     asyncio.run(scenario())
     assert "not available" in seen[0]
+
+
+class _FakeShelf:
+    """An attachment store held in memory, recording what the screens ask of it."""
+
+    def __init__(self, rows: list[AttachmentRow] | None = None) -> None:
+        self.rows = list(rows or [])
+        self.imported: list[str] = []
+        self.exported: list[str] = []
+        self.deleted: list[tuple[str, ...]] = []
+
+    def import_zip(self, archive: str) -> str:
+        self.imported.append(archive)
+        return "✗ not a zip" if archive.endswith("bad.zip") else "imported notes 2.0.0"
+
+    def export(self, key: str) -> str:
+        self.exported.append(key)
+        return f"exported {key}"
+
+    def delete(self, keys: tuple[str, ...]) -> str:
+        self.deleted.append(keys)
+        self.rows = [row for row in self.rows if row.key not in keys]
+        return f"removed {len(keys)}"
+
+    def shelf(self) -> Shelf:
+        return Shelf(
+            rows=lambda: list(self.rows),
+            import_zip=self.import_zip,
+            export=self.export,
+            preview_delete=lambda keys: "remove " + ", ".join(keys),
+            delete=self.delete,
+            modify_note=lambda key: f"modify {key}",
+        )
+
+
+_ROWS = [
+    AttachmentRow("notes", "1.0.0", "My notes."),
+    AttachmentRow("notes", "2.10.0", "My notes, better."),
+    AttachmentRow("notes", "2.9.0", "My notes."),
+    AttachmentRow("workflow-creator", "1.0.0", "Create a workflow."),
+    AttachmentRow("broken", "1.0.0", "", intact=False),
+]
+
+
+async def _open_attachments(pilot: Pilot[MenuChoice | None], verb_index: int) -> None:
+    """Top → Attachments (above Quit) → the verb at ``verb_index``."""
+    await pilot.press(*["down"] * 5, "enter")
+    await pilot.press(*["down"] * verb_index, "enter")
+    await pilot.pause()
+
+
+def _titles(app: MenuApp) -> list[str]:
+    return [row.item.title for row in app.screen.query(_Row)]
+
+
+def test_attachments_list_shows_every_version_and_marks_a_changed_one() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_attachments(pilot, 2)
+            seen["titles"] = _titles(app)
+            seen["subtitles"] = [row.item.subtitle for row in app.screen.query(_Row)]
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["titles"] == [
+        "notes  1.0.0",
+        "notes  2.10.0",
+        "notes  2.9.0",
+        "workflow-creator  1.0.0",
+        "broken  1.0.0",
+    ]
+    assert "changed since its import" in cast("list[str]", seen["subtitles"])[-1]
+    assert str(seen["crumb"]).endswith("Attachments > List")
+
+
+def test_attachments_import_reports_back_on_the_menu(tmp_path: Path) -> None:
+    fake = _FakeShelf()
+    app = MenuApp(_JOBS, shelf=fake.shelf())
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_attachments(pilot, 0)
+            app.screen.query_one("#archive", Input).value = str(tmp_path / "notes.zip")
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+
+    asyncio.run(scenario())
+    assert fake.imported == [str(tmp_path / "notes.zip")]
+    assert "imported notes 2.0.0" in str(seen["detail"])
+    assert str(seen["crumb"]).endswith("Attachments")
+
+
+def test_a_failed_import_keeps_the_form_and_says_why(tmp_path: Path) -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf().shelf())
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_attachments(pilot, 0)
+            app.screen.query_one("#archive", Input).value = str(tmp_path / "bad.zip")
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+            seen["form"] = bool(app.screen.query("#archive"))
+
+    asyncio.run(scenario())
+    assert "not a zip" in str(seen["detail"])
+    assert seen["form"] is True
+
+
+def test_attachments_export_writes_the_picked_version_and_stays() -> None:
+    fake = _FakeShelf(_ROWS)
+    app = MenuApp(_JOBS, shelf=fake.shelf())
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_attachments(pilot, 1)
+            await pilot.press("down", "enter")  # notes 2.10.0
+            await pilot.pause()
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert fake.exported == ["notes@2.10.0"]
+    assert "exported notes@2.10.0" in str(seen["detail"])
+
+
+def test_attachments_delete_removes_the_ticked_versions_after_confirming() -> None:
+    fake = _FakeShelf(_ROWS)
+    app = MenuApp(_JOBS, shelf=fake.shelf())
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_attachments(pilot, 3)
+            await pilot.press("space", "down", "down", "down", "down", "space", "enter")
+            await pilot.pause()
+            await pilot.press("down", "enter")  # the confirming answer
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert fake.deleted == [("notes@1.0.0", "broken@1.0.0")]
+
+
+def test_modify_opens_a_new_job_named_for_the_work_and_carries_the_request() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _open_attachments(pilot, 4)
+            await pilot.press("down", "enter")  # notes 2.10.0
+            await pilot.pause()
+            seen["name"] = app.screen.query_one("#name", Input).value
+            await pilot.press("enter")  # keep the proposed name
+            await pilot.pause()
+            seen["attach"] = _titles(app)
+            await pilot.press("down", "down", "enter")  # workflow-creator
+            await pilot.pause()
+
+    asyncio.run(scenario())
+    assert seen["name"] == "modify_notes_v2-10-0"
+    assert seen["attach"] == ["Nothing attached", "notes", "workflow-creator", "broken"]
+    assert app.return_value == MenuChoice(
+        action="start",
+        job="modify_notes_v2-10-0",
+        attachment="workflow-creator",
+        attachment_version="1.0.0",
+        note="modify notes@2.10.0",
+    )
+
+
+def _new_job_attach(app: MenuApp, picks: tuple[str, ...]) -> None:
+    async def scenario() -> None:
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.press("enter", "enter", "enter")  # Job → New → type a name
+            await pilot.pause()
+            app.screen.query_one("#name", Input).value = "PROJ-1"
+            await pilot.press("enter")
+            await pilot.pause()
+            await pilot.press(*picks)
+            await pilot.pause()
+
+    asyncio.run(scenario())
+
+
+def test_an_attachment_with_several_versions_asks_which_highest_first() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    _new_job_attach(app, ("down", "enter", "enter"))
+
+    assert app.return_value == MenuChoice(
+        action="start", job="PROJ-1", attachment="notes", attachment_version="2.10.0"
+    )
+
+
+def test_an_older_version_can_be_picked() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    _new_job_attach(app, ("down", "enter", "down", "down", "enter"))
+
+    assert app.return_value == MenuChoice(
+        action="start", job="PROJ-1", attachment="notes", attachment_version="1.0.0"
+    )
+
+
+def test_an_attachment_with_one_version_starts_straight_away() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    _new_job_attach(app, ("down", "down", "enter"))
+
+    assert app.return_value == MenuChoice(
+        action="start", job="PROJ-1", attachment="workflow-creator", attachment_version="1.0.0"
+    )
+
+
+def test_nothing_attached_is_still_one_keypress() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    _new_job_attach(app, ("enter",))
+
+    assert app.return_value == MenuChoice(action="start", job="PROJ-1")
+
+
+def test_without_attachments_or_workflows_a_new_job_starts_plain() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf().shelf())
+    _new_job_attach(app, ())
+
+    assert app.return_value == MenuChoice(action="start", job="PROJ-1")

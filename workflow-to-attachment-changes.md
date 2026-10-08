@@ -115,13 +115,18 @@ would break them moved there.
 
 ## Phase 6 — TUI
 
-- [ ] Main menu: the Workflow entry becomes Attachments: import, export, list, delete,
-      modify.
-- [ ] New-session flow: pick an attachment (or none), then its version (default highest).
-- [ ] Modify: opens the new-job screen named `modify_<name>_v<version>`, attachment
-      picker available, opening message asks the client to export that version into the
-      job's folder and help change it.
-- [ ] Tests in `test_tui_menu.py`.
+- [x] Top menu: **Attachments** (import, export, list, delete, modify), above Quit for
+      now; phase 7 puts it where Workflow is, which keeps the tests' row counts.
+- [x] New-session flow: the attach step offers "Nothing attached", each attachment by
+      name, then the workflows; several versions ask which, highest first; a changed
+      version is shown, not pickable.
+- [x] Modify: opens Job → New with `modify_<name>_v<version>` (dots become `-`, a job id
+      has none), the attach step available, and `StartJobCommand.note` adding the
+      request to export that version here and help change it.
+- [x] Wiring: `Shelf` closures in `app.py` over the real use cases; TUI launches carry
+      attachment, version and note.
+- [x] Tests in `test_tui_menu.py`, `test_cli.py`, `test_start_job_usecase.py`;
+      `docs/CLI.md` tui section.
 
 ## Phase 7 — Removal
 
@@ -140,6 +145,8 @@ would break them moved there.
       "the workflow steps" in `context_opening.py`; `Session.workflow` and
       `SessionSummary.workflow` (the ledger column stays, as history).
 - [ ] `composition.py` wiring.
+- [ ] TUI: move Attachments to Workflow's place in the top menu; drop `Archiver`,
+      `AttachWorkflowScreen`'s workflow rows, the Workflow screens, `MenuApp.workflows`.
 - [ ] `resources/workflows/`.
 - [ ] Help topics `job-vs-workflow`, `start-vs-run` (`help_topics.py`), replaced by one
       on attachments.

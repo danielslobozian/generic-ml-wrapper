@@ -101,8 +101,10 @@ class MenuChoice:
     new workflow whose name is proposed at the end). ``"workflow_import"`` carries the
     ``archive`` to install from. ``client`` is the one this launch was pointed at, or
     ``None`` to use the configured default -- a per-launch choice, exactly like ``--client``
-    on the CLI, and never a change to the default itself. A ``None`` return means "do
-    nothing".
+    on the CLI, and never a change to the default itself. ``attachment`` and
+    ``attachment_version`` are what a new session starts with, like ``--attach``; ``note``
+    is an extra line for its opening message (the Modify shortcut's request). A ``None``
+    return means "do nothing".
 
     Only things that need the terminal come back this way. Deleting does not -- it happens
     in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
@@ -116,6 +118,9 @@ class MenuChoice:
     guided: bool = False
     archive: str | None = None
     client: str | None = None
+    attachment: str | None = None
+    attachment_version: str | None = None
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +220,52 @@ class Archiver:
     export: Callable[[str], str]
     install: Callable[[str, bool], ImportAttempt]
     reload_workflows: Callable[[], list[Workflow]]
+
+
+@dataclass(frozen=True)
+class AttachmentRow:
+    """One stored attachment version, as the Attachments screens show it.
+
+    Attributes:
+        name: The attachment's name.
+        version: The version, ``MAJOR.MINOR.PATCH``.
+        description: Its one line, or empty.
+        intact: ``False`` when it changed since its import; it is shown but cannot be used.
+    """
+
+    name: str
+    version: str
+    description: str
+    intact: bool = True
+
+    @property
+    def key(self) -> str:
+        """``name@version``: how a row is carried, and how ``--attach`` names it."""
+        return f"{self.name}@{self.version}"
+
+
+@dataclass(frozen=True)
+class Shelf:
+    """The attachment store, as injected closures: the app holds no port.
+
+    Every ``name@version`` argument is an :attr:`AttachmentRow.key`. Each call returns the
+    line to show; a line starting with ``✗`` is a failure.
+
+    Attributes:
+        rows: Every stored version, by name then version.
+        import_zip: Imports a zip by its path.
+        export: Writes ``name@version`` as a zip into the current folder.
+        preview_delete: Renders what deleting these versions would remove.
+        delete: Deletes these versions.
+        modify_note: The opening request of a Modify session for ``name@version``.
+    """
+
+    rows: Callable[[], list[AttachmentRow]]
+    import_zip: Callable[[str], str]
+    export: Callable[[str], str]
+    preview_delete: Callable[[tuple[str, ...]], str]
+    delete: Callable[[tuple[str, ...]], str]
+    modify_note: Callable[[str], str]
 
 
 @dataclass(frozen=True)
@@ -404,6 +455,13 @@ _WORKFLOW_MENU = (
     ("📦", "tui.wf.export", "wf:export", "gmlw workflow export <workflow>"),
     ("📥", "tui.wf.import", "wf:import", "gmlw workflow import <archive>"),
 )
+_ATTACHMENT_MENU = (
+    ("📥", "tui.att.import", "att:import", "gmlw attachment import <zip>"),
+    ("📦", "tui.att.export", "att:export", "gmlw attachment export <name> <version>"),
+    ("📋", "tui.att.list", "att:list", "gmlw attachment list"),
+    ("🗑", "tui.att.delete", "att:delete", "gmlw attachment delete <name> <version>"),
+    ("✏️", "tui.att.modify", "att:modify", "gmlw start modify_<name>_v<version>"),
+)
 _CONFIG_MENU = (
     ("📃", "tui.cfg.list", "cfg:list", "gmlw config list"),
     ("🔍", "tui.cfg.get", "cfg:get", "gmlw config get <key>"),
@@ -425,6 +483,7 @@ _TOP_MENU = (
     ("🎛", "tui.config", "menu:config", ""),
     ("📏", "tui.rules", "menu:rules", ""),
     ("🩺", "tui.health", "menu:health", "gmlw health"),
+    ("📎", "tui.attachment", "menu:attachment", "gmlw attachment list"),
     ("🚪", "tui.quit", "quit", ""),
 )
 # The icon per rule axis, so a group reads as a place or a craft at a glance.
@@ -693,9 +752,24 @@ class AttachWorkflowScreen(_MenuScreen):
         return " > ".join(parts)
 
     def menu_items(self) -> list[_Item]:
-        """The "No workflow" row first, then one row per installed workflow."""
+        """The nothing-attached row, then each attachment by name, then each workflow."""
         t = i18n.active().t
         items = [_Item("○", t("tui.attach.none"), t("tui.attach.none.d"), "attach:pick")]
+        for name, versions in _by_name(self.menu_app.attachment_rows()).items():
+            usable = [row for row in versions if row.intact]
+            top = usable[0] if usable else versions[0]
+            subtitle = t("tui.att.versions", version=top.version, count=len(versions))
+            items.append(
+                _Item(
+                    "📎",
+                    name,
+                    f"{subtitle} · {top.description}" if top.description else subtitle,
+                    "attach:attachment",
+                    f"gmlw start <job> --attach {name}",
+                    payload=name,
+                    disabled=not usable,
+                )
+            )
         items += [
             _Item("⏵", *_wf_display(flow), "attach:pick", payload=flow.slug)
             for flow in self.menu_app.workflows
@@ -703,9 +777,76 @@ class AttachWorkflowScreen(_MenuScreen):
         return items
 
     def handle(self, item: _Item) -> None:
-        """Exit with the pending launch, carrying the chosen workflow (or none)."""
+        """Exit with a workflow (or none); an attachment with several versions asks which."""
         if item.action == "attach:pick":
             self.menu_app.exit(replace(self._pending, workflow=item.payload or None))
+        elif item.action == "attach:attachment":
+            versions = [
+                row for row in _by_name(self.menu_app.attachment_rows())[item.payload] if row.intact
+            ]
+            if len(versions) == 1:
+                self.menu_app.exit(
+                    replace(
+                        self._pending,
+                        attachment=item.payload,
+                        attachment_version=versions[0].version,
+                    )
+                )
+            else:
+                self.menu_app.push_screen(AttachmentVersionScreen(self._pending, item.payload))
+
+
+class AttachmentVersionScreen(_MenuScreen):
+    """Which version of an attachment the new session runs with; the highest comes first."""
+
+    def __init__(self, pending: MenuChoice, name: str) -> None:
+        """Bind the picker to the launch it completes and the attachment chosen."""
+        super().__init__()
+        self._pending = pending
+        self._name = name
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Job > New > <job> > Attach > <name>."""
+        t = i18n.active().t
+        parts = ["gmlw", t("tui.job"), t("tui.job.new")]
+        if self._pending.job:
+            parts.append(self._pending.job)
+        parts += [t("tui.attach.crumb"), self._name]
+        return " > ".join(parts)
+
+    def menu_items(self) -> list[_Item]:
+        """One row per version, highest first; a changed one is shown but cannot be picked."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "📎" if row.intact else "✗",
+                row.version,
+                row.description if row.intact else t("tui.att.invalid"),
+                "attach:version",
+                f"gmlw start <job> --attach {row.key}",
+                payload=row.version,
+                disabled=not row.intact,
+            )
+            for row in _by_name(self.menu_app.attachment_rows())[self._name]
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Exit with the pending launch, carrying the attachment and the chosen version."""
+        if item.action == "attach:version":
+            self.menu_app.exit(
+                replace(self._pending, attachment=self._name, attachment_version=item.payload)
+            )
+
+
+def _by_name(rows: list[AttachmentRow]) -> dict[str, list[AttachmentRow]]:
+    """Group stored versions by attachment, each group highest version first."""
+    grouped: dict[str, list[AttachmentRow]] = {}
+    for row in rows:
+        grouped.setdefault(row.name, []).append(row)
+    for versions in grouped.values():
+        versions.sort(key=lambda row: tuple(int(part) for part in row.version.split(".")))
+        versions.reverse()
+    return grouped
 
 
 class ConfirmScreen(Screen[bool]):
@@ -904,6 +1045,8 @@ class TopMenuScreen(_MenuScreen):
             self.menu_app.push_screen(RulesMenuScreen())
         elif item.action == "menu:health":
             self.menu_app.push_screen(HealthScreen())
+        elif item.action == "menu:attachment":
+            self.menu_app.push_screen(AttachmentMenuScreen())
 
     def action_back(self) -> None:
         """At the front door, Back leaves gmlw (there is nothing to pop to)."""
@@ -1685,6 +1828,17 @@ class NewJobScreen(Screen[None]):
 
     BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
 
+    def __init__(self, name: str = "", note: str | None = None) -> None:
+        """Open the form, optionally with a name already typed and an opening request.
+
+        Args:
+            name: The name to start from (the Modify shortcut proposes one), editable.
+            note: An extra line for the session's opening message, or ``None``.
+        """
+        super().__init__()
+        self._name = name
+        self._note = note
+
     @property
     def menu_app(self) -> MenuApp:
         """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
@@ -1694,7 +1848,7 @@ class NewJobScreen(Screen[None]):
         """A breadcrumb, the name input, a status line, and the key hints."""
         t = i18n.active().t
         yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.new')}", id="crumb")
-        yield Input(placeholder=t("tui.newjob.placeholder"), id="name")
+        yield Input(self._name, placeholder=t("tui.newjob.placeholder"), id="name")
         with Container(id="status"):
             yield Static(t("tui.newjob.hint"), id="detail")
             yield Static(t("tui.newjob.keys"), id="keys")
@@ -1712,7 +1866,7 @@ class NewJobScreen(Screen[None]):
         if error is not None:
             self.query_one("#detail", Static).update(f"✗ {error}")
             return
-        self.menu_app.launch(MenuChoice(action="start", job=name))
+        self.menu_app.launch(MenuChoice(action="start", job=name, note=self._note))
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Job menu."""
@@ -2738,6 +2892,185 @@ class RuleListScreen(_MenuScreen):
         """Rules are read-only here; the detail panel already shows the selection."""
 
 
+class AttachmentMenuScreen(_MenuScreen):
+    """The Attachment object's verbs: Import, Export, List, Delete, Modify."""
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Attachments."""
+        return f"gmlw > {i18n.active().t('tui.attachment')}"
+
+    def menu_items(self) -> list[_Item]:
+        """The Attachment verbs."""
+        return _menu(_ATTACHMENT_MENU)
+
+    def handle(self, item: _Item) -> None:
+        """Import types a path; the others pick from the stored versions."""
+        if self.menu_app.shelf is None:
+            self._stub(item)
+        elif item.action == "att:import":
+            self.menu_app.push_screen(ImportAttachmentScreen())
+        elif item.action == "att:list":
+            self.menu_app.push_screen(AttachmentPickerScreen("list"))
+        elif item.action == "att:export":
+            self.menu_app.push_screen(AttachmentPickerScreen("export"))
+        elif item.action == "att:modify":
+            self.menu_app.push_screen(AttachmentPickerScreen("modify"))
+        elif item.action == "att:delete":
+            self.menu_app.push_screen(AttachmentDeleteScreen())
+
+
+def _attachment_item(row: AttachmentRow, action: str, example: str) -> _Item:
+    """A stored version's row: ``name version``, its description or why it is unusable."""
+    t = i18n.active().t
+    return _Item(
+        "📎" if row.intact else "✗",
+        f"{row.name}  {row.version}",
+        row.description if row.intact else t("tui.att.invalid"),
+        action,
+        example,
+        payload=row.key,
+    )
+
+
+class AttachmentPickerScreen(_MenuScreen):
+    """Pick a stored version, to read it (``list``), export it, or modify it.
+
+    List is read-only: the detail panel is the view. Export writes the zip in place and
+    stays, so a second export is one keypress away. Modify opens the new-job form with a
+    name proposed for the work and the session's opening request already set.
+    """
+
+    empty_key = "tui.att.none"
+
+    def __init__(self, mode: str) -> None:
+        """Bind the picker to its mode (``"list"``, ``"export"`` or ``"modify"``)."""
+        super().__init__()
+        self._mode = mode
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Attachments > List|Export|Modify."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.attachment')} > {t(f'tui.att.{self._mode}')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per stored version, by name then version."""
+        examples = {
+            "list": "gmlw start <job> --attach {key}",
+            "export": "gmlw attachment export {name} {version}",
+            "modify": "gmlw start {job}",
+        }
+        return [
+            _attachment_item(
+                row,
+                f"att:{self._mode}",
+                examples[self._mode].format(
+                    key=row.key, name=row.name, version=row.version, job=modify_job(row)
+                ),
+            )
+            for row in self.menu_app.attachment_rows()
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Export writes the zip; Modify opens the new-job form; List does nothing."""
+        shelf = self.menu_app.shelf
+        if shelf is None:
+            return
+        if item.action == "att:export":
+            self.tell(shelf.export(item.payload))
+        elif item.action == "att:modify":
+            row = next(r for r in self.menu_app.attachment_rows() if r.key == item.payload)
+            self.menu_app.push_screen(NewJobScreen(modify_job(row), shelf.modify_note(row.key)))
+
+
+def modify_job(row: AttachmentRow) -> str:
+    """The job name the Modify shortcut proposes: ``modify_<name>_v<version>``.
+
+    A job id cannot hold ``.``, so the version's dots become ``-``; it stays editable.
+    """
+    return f"modify_{row.name}_v{row.version.replace('.', '-')}"[:64]
+
+
+class AttachmentDeleteScreen(_MultiSelectScreen):
+    """Tick stored versions, then delete them after one confirmation."""
+
+    empty_key = "tui.att.none"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Attachments > Delete."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.attachment')} > {t('tui.att.delete')}"
+
+    def menu_items(self) -> list[_Item]:
+        """One tickable row per stored version; a changed one can be deleted too."""
+        rows = [
+            _attachment_item(row, "att:tick", f"gmlw attachment delete {row.name} {row.version}")
+            for row in self.menu_app.attachment_rows()
+        ]
+        return [
+            replace(item, icon=self.ticked if item.payload in self._selected else self.unticked)
+            for item in rows
+        ]
+
+    def preview(self, selected: tuple[str, ...]) -> str:
+        """What deleting the ticked versions removes."""
+        shelf = self.menu_app.shelf
+        return "" if shelf is None else shelf.preview_delete(selected)
+
+    def perform(self, selected: tuple[str, ...]) -> str:
+        """Delete the ticked versions."""
+        shelf = self.menu_app.shelf
+        return "" if shelf is None else shelf.delete(selected)
+
+    def reopened(self) -> _MultiSelectScreen:
+        """A fresh copy, read from the store again."""
+        return AttachmentDeleteScreen()
+
+
+class ImportAttachmentScreen(Screen[None]):
+    """Type or paste the path of a zip to import — the install happens here.
+
+    There is nothing to confirm: a version already stored is refused, never replaced. A
+    failure keeps the form and its message, so a mistyped path is fixed in place.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the zip-path input, a status line, and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.attachment')} > {t('tui.att.import')}", id="crumb")
+        yield Input(placeholder=t("tui.att.import.placeholder"), id="archive")
+        with Container(id="status"):
+            yield Static(t("tui.att.import.hint"), id="detail")
+            yield Static(t("tui.wf.new.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the input so the user can paste straight away."""
+        self.query_one("#archive", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Import the zip; report back on the Attachments menu, or keep the form on failure."""
+        raw = event.value.strip()
+        shelf = self.menu_app.shelf
+        if not raw or shelf is None:
+            return
+        message = shelf.import_zip(str(Path(raw).expanduser()))
+        if message.startswith("✗"):
+            self.query_one("#detail", Static).update(message)
+            return
+        self.menu_app.pop_screen()
+        self.menu_app.tell_current(message)
+
+    def action_cancel(self) -> None:
+        """Abandon the form and return to the Attachments menu."""
+        self.menu_app.pop_screen()
+
+
 class MenuApp(App[MenuChoice | None]):
     """The front-end app. ``run()`` returns a :class:`MenuChoice`, or ``None`` to quit.
 
@@ -2797,6 +3130,7 @@ class MenuApp(App[MenuChoice | None]):
         retag_job: Callable[[str, str], str | None] | None = None,
         archiver: Archiver | None = None,
         launch_clients: Callable[[], list[ClientChoice]] | None = None,
+        shelf: Shelf | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2846,6 +3180,8 @@ class MenuApp(App[MenuChoice | None]):
                 picker opens (so a default changed in Config shows immediately). Defaults
                 to none, which skips the picker entirely and launches on the configured
                 default -- the behaviour before the picker existed.
+            shelf: The attachment store's calls, for the Attachments menu and the attach
+                step of a new session; ``None`` leaves both without attachments.
         """
         super().__init__()
         self.jobs = jobs
@@ -2868,6 +3204,11 @@ class MenuApp(App[MenuChoice | None]):
         self.retag_job = retag_job
         self.archiver = archiver
         self.launch_clients = launch_clients or _no_clients
+        self.shelf = shelf
+
+    def attachment_rows(self) -> list[AttachmentRow]:
+        """Every stored attachment version, re-read on each call; none when unwired."""
+        return [] if self.shelf is None else self.shelf.rows()
 
     def refresh_jobs(self) -> None:
         """Re-read the job list after something changed it (a delete)."""
@@ -2913,7 +3254,7 @@ class MenuApp(App[MenuChoice | None]):
         has, and the workflow launchers already name theirs. With no workflow installed
         there is nothing to offer, so the launch goes ahead plain.
         """
-        if pending.action == "start" and self.workflows:
+        if pending.action == "start" and (self.workflows or self.attachment_rows()):
             self.push_screen(AttachWorkflowScreen(pending))
         else:
             self.exit(pending)

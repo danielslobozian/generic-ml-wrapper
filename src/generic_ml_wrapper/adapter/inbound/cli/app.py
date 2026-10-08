@@ -57,6 +57,7 @@ from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
+from generic_ml_wrapper.application.domain.service.attachment_context import modify_request
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
@@ -160,7 +161,7 @@ if TYPE_CHECKING:
 
     # Type-only: the tui adapter is imported lazily inside `_tui` (see the note there), so
     # the post-menu handler can be typed without pulling Textual in at CLI startup.
-    from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice
+    from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice, Shelf
 
 # Set from the Clients screen, which is not a `Switcher`, so it is named here rather than
 # read off one.
@@ -1938,6 +1939,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         install=_install_in_app,
         reload_workflows=lambda: build_list_workflow_catalog().execute(),
     )
+    shelf = _shelf()
 
     def _launch_clients() -> list[ClientChoice]:
         # Re-read per open, not snapshotted with the rest: a default just changed in Config
@@ -2182,6 +2184,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         reload_jobs=_job_choices,
         retag_job=_retag_job,
         archiver=archiver,
+        shelf=shelf,
         launch_clients=_launch_clients,
     ).run()  # blocks; terminal restored on return
 
@@ -2230,11 +2233,19 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:
         picked = next((s for s in recorded if s.session_id == choice.session), None)
         picked_cwd = picked.cwd if picked is not None else None
     return _tui_launch_job(
-        choice.job, resume, choice.session, picked_cwd, client, workflow=choice.workflow
+        choice.job,
+        resume,
+        choice.session,
+        picked_cwd,
+        client,
+        workflow=choice.workflow,
+        attachment=choice.attachment,
+        attachment_version=choice.attachment_version,
+        note=choice.note,
     )
 
 
-def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; workflow keyword-only)
+def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; what it attaches keyword-only)
     job: str,
     resume: bool,
     session: str | None,
@@ -2242,6 +2253,9 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; workflow keywo
     client: str,
     *,
     workflow: str | None = None,
+    attachment: str | None = None,
+    attachment_version: str | None = None,
+    note: str | None = None,
 ) -> int:
     """Launch (or resume) a job from the TUI's choice — the hand-off after ``run()`` returns.
 
@@ -2252,6 +2266,9 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; workflow keywo
         picked_cwd: A resumed session's stored folder to relaunch in, or ``None``.
         client: The resolved client to wrap.
         workflow: The workflow to attach to a new session, or ``None`` for a plain one.
+        attachment: The attachment to start a new session with, or ``None``.
+        attachment_version: That attachment's version, or ``None`` for the highest.
+        note: An extra paragraph for the new session's opening message, or ``None``.
 
     Returns:
         The process exit code.
@@ -2262,6 +2279,9 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; workflow keywo
         resume_latest=resume and session is None,  # a picked session wins over "latest"
         resume_session=session,
         workflow=workflow,
+        attachment=attachment,
+        attachment_version=attachment_version,
+        note=note,
     )
     # Guard the folder the launch will actually use: a resumed session's stored folder, or
     # the current directory for a new start (or a pre-folder resume, whose cwd is ``None``).
@@ -2277,7 +2297,12 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; workflow keywo
             result = build_start_job().execute(command)
         except _Terminated:
             return 143
-        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+        except (
+            UnknownWorkflowError,
+            ResumeNotSupportedError,
+            AttachmentError,
+            AttachmentVersionError,
+        ) as error:
             print(_render_error(error), file=sys.stderr)
             return 2
     _print_exit_receipt(result)
@@ -2939,6 +2964,66 @@ def _attachment_delete(name: str, version: str, *, assume_yes: bool) -> int:
     build_delete_attachment().execute(name, version)
     print(i18n.t("delete.attachment.done", name=name, version=version), file=sys.stderr)
     return 0
+
+
+def _shelf() -> Shelf:
+    """The attachment store's calls for the TUI, each returning the line to show."""
+    from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
+        AttachmentRow,
+        Shelf,
+    )
+
+    def _split(key: str) -> tuple[str, str]:
+        name, _, version = key.partition("@")
+        return name, version
+
+    def _rows() -> list[AttachmentRow]:
+        return [
+            AttachmentRow(
+                item.attachment.name,
+                str(item.attachment.version),
+                item.attachment.description,
+                item.intact,
+            )
+            for item in build_list_attachments().execute()
+        ]
+
+    def _import(archive: str) -> str:
+        try:
+            attachment = build_import_attachment().execute(archive)
+        except DomainError as error:
+            return f"✗ {_render_error(error)}"
+        return i18n.t("attachment.import.done", name=attachment.name, version=attachment.version)
+
+    def _export(key: str) -> str:
+        name, version = _split(key)
+        try:
+            written = build_export_attachment().execute(name, version, Path.cwd())
+        except DomainError as error:
+            return f"✗ {_render_error(error)}"
+        return i18n.t("attachment.export.written", path=written)
+
+    def _preview(keys: tuple[str, ...]) -> str:
+        lines = [i18n.t("delete.attachments.preview", count=len(keys))]
+        lines += [f"  {name} {version}" for name, version in map(_split, keys)]
+        return "\n".join(lines)
+
+    def _delete(keys: tuple[str, ...]) -> str:
+        for name, version in map(_split, keys):
+            try:
+                build_delete_attachment().execute(name, version)
+            except DomainError as error:
+                return f"✗ {_render_error(error)}"
+        return i18n.t("delete.attachments.done", count=len(keys))
+
+    return Shelf(
+        rows=_rows,
+        import_zip=_import,
+        export=_export,
+        preview_delete=_preview,
+        delete=_delete,
+        modify_note=lambda key: modify_request(*_split(key)),
+    )
 
 
 def _plugins(args: argparse.Namespace) -> int:

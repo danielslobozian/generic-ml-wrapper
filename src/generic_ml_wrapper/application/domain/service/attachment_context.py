@@ -37,6 +37,25 @@ def attachment_section(attachment: Attachment, folder: str, main: str) -> str:
     return f"{intro}\n\n{main.strip()}"
 
 
+def modify_request(name: str, version: str) -> str:
+    """The opening request of a session started to make a new version of an attachment.
+
+    Args:
+        name: The attachment's name.
+        version: The version to start from.
+
+    Returns:
+        The request.
+    """
+    return (
+        f"The user wants a new version of the attachment {name} {version}. Start by running "
+        f"`gmlw attachment export {name} {version}` here and unzipping it into a folder "
+        f"`{name}/`, then help them change it. Stored versions never change: the result "
+        "needs a higher version in its manifest.yaml, then a zip with manifest.yaml at its "
+        "root, imported with `gmlw attachment import`."
+    )
+
+
 def attachment_kickoff(attachment: Attachment, job: str) -> str:
     """The opening message of a session that runs with an attachment.
 

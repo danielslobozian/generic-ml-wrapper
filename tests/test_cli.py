@@ -1812,6 +1812,7 @@ def test_tui_reads_the_default_client_after_the_menu_closes(
         client: str,
         *,
         workflow: str | None = None,
+        **_attached: object,
     ) -> int:
         launched.append(client)
         return 0
@@ -2164,6 +2165,7 @@ def test_a_launch_ends_gmlw_rather_than_returning(monkeypatch: pytest.MonkeyPatc
         _client: str,
         *,
         workflow: str | None = None,
+        **_attached: object,
     ) -> int:
         return 7
 
@@ -2405,6 +2407,7 @@ def _launched_client(monkeypatch: pytest.MonkeyPatch, choice: tui.MenuChoice) ->
         client: str,
         *,
         workflow: str | None = None,
+        **_attached: object,
     ) -> int:
         seen.append(client)
         return 0
@@ -2447,6 +2450,7 @@ def test_a_job_launches_with_the_workflow_the_menu_attached(
         _client: str,
         *,
         workflow: str | None = None,
+        **_attached: object,
     ) -> int:
         seen.append(workflow)
         return 0
@@ -2936,3 +2940,55 @@ def test_attachment_delete_reports_before_asking(
 def test_attachment_without_an_action_shows_its_help(capsys: pytest.CaptureFixture[str]) -> None:
     assert app.main(["attachment"]) == 0
     assert "import" in capsys.readouterr().out
+
+
+def test_the_tui_shelf_reaches_the_real_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shelf = app._shelf()  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.chdir(tmp_path)
+
+    assert "imported notes 1.0.0" in shelf.import_zip(str(_attachment_zip(tmp_path)))
+    assert [(row.key, row.intact) for row in shelf.rows()] == [("notes@1.0.0", True)]
+    assert str(tmp_path / "notes-1.0.0.zip") in shelf.export("notes@1.0.0")
+    assert shelf.export("notes@1.0.0").startswith("✗")  # already there
+    assert "notes 1.0.0" in shelf.preview_delete(("notes@1.0.0",))
+    assert "gmlw attachment export notes 1.0.0" in shelf.modify_note("notes@1.0.0")
+    assert "removed 1" in shelf.delete(("notes@1.0.0",))
+    assert shelf.rows() == []
+    assert shelf.import_zip(str(tmp_path / "missing.zip")).startswith("✗")
+
+
+def test_a_tui_launch_carries_the_attachment_and_the_note(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: dict[str, StartJobCommand] = {}
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            seen["command"] = command
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
+
+    def _installed(_client: str) -> bool:
+        return True
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    monkeypatch.setattr(app, "_preflight_client", _installed)
+
+    app._tui_launch_job(  # pyright: ignore[reportPrivateUsage]
+        "modify_notes_v1-0-0",
+        False,
+        None,
+        None,
+        "claude",
+        attachment="workflow-creator",
+        attachment_version="1.0.0",
+        note="modify notes@1.0.0",
+    )
+
+    command = seen["command"]
+    assert (command.attachment, command.attachment_version, command.note) == (
+        "workflow-creator",
+        "1.0.0",
+        "modify notes@1.0.0",
+    )

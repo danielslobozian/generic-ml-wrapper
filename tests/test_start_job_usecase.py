@@ -745,3 +745,26 @@ def test_resuming_a_plain_session_opens_nothing(tmp_path: Path) -> None:
 
     assert provider.run is not None
     assert provider.run.extra_dirs == ()
+
+
+def test_a_note_follows_the_attachments_opening_message(tmp_path: Path) -> None:
+    provider = FakeProvider()
+
+    _use_case(FakeStore(ids=[]), provider, attachments=_store_with(tmp_path, "1.0.0")).execute(
+        StartJobCommand(job="JOB-1", client="claude", attachment="notes", note="Modify x.")
+    )
+
+    assert provider.run is not None
+    assert provider.run.kickoff is not None
+    assert provider.run.kickoff.endswith("Begin as its text says.\n\nModify x.")
+
+
+def test_a_note_alone_opens_a_plain_session() -> None:
+    provider = FakeProvider()
+
+    _use_case(FakeStore(ids=[]), provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", note="Modify x.")
+    )
+
+    assert provider.run is not None
+    assert provider.run.kickoff == "Modify x."
