@@ -22,6 +22,7 @@ from generic_ml_wrapper.application.domain.model.incident import Incident, Incid
 from generic_ml_wrapper.application.domain.model.migration import MigrationReport
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
@@ -48,6 +49,7 @@ from generic_ml_wrapper.application.port.inbound.edit_workflow import (
     WorkflowNotFoundError,
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import (
+    AgentTotal,
     ExportUsage,
     ModelTotal,
     SessionCost,
@@ -726,6 +728,38 @@ def test_format_usage_renders_turns_models_costs_and_total() -> None:
     assert "JOB-1_001  $0.99" in text
     assert "── total ──  2 turn(s)" in text
     assert "$0.99" in text
+
+
+def test_format_usage_without_agents_shows_no_agent_column_or_section() -> None:
+    text = app.format_usage(_report())
+    assert "totals by agent" not in text
+    assert "main" not in text
+
+
+def test_format_usage_names_who_made_each_turn_and_totals_by_agent() -> None:
+    agent = TurnRole.AGENT
+    report = UsageReport(
+        "JOB-1",
+        turns=(
+            TurnRow(0.0, "gpt", 1.0, 10, 1, 0, "t1"),
+            TurnRow(0.0, "gpt", 1.0, 20, 2, 0, "t2", role=agent, agent="search_space"),
+            TurnRow(0.0, "gpt", 1.0, 30, 3, 0, "t3", role=agent),
+        ),
+        models=(ModelTotal("gpt", 3, 60, 6, 0, 3.0),),
+        agents=(
+            AgentTotal(TurnRole.MAIN, None, 1, 10, 1, 0, 1.0),
+            AgentTotal(agent, None, 1, 30, 3, 0, 1.0),
+            AgentTotal(agent, "search_space", 1, 20, 2, 0, 1.0),
+        ),
+        turn_count=3,
+    )
+    text = app.format_usage(report)
+    rows = text.splitlines()
+    assert any("main          gpt" in row and "[t1]" in row for row in rows)
+    assert any("search_space  gpt" in row and "[t2]" in row for row in rows)
+    assert any("agent         gpt" in row and "[t3]" in row for row in rows)
+    assert "── totals by agent ──" in text
+    assert "  search_space    1 call(s)  20+2 tok  1.0s" in rows
 
 
 def test_format_usage_unmetered_timestamp_shows_dashes() -> None:

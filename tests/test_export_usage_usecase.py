@@ -4,8 +4,14 @@
 
 from _conformance import InMemoryIncidentLog, an_incident
 
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
-from generic_ml_wrapper.application.port.inbound.export_usage import ModelTotal, SessionCost
+from generic_ml_wrapper.application.port.inbound.export_usage import (
+    AgentTotal,
+    ModelTotal,
+    SessionCost,
+    UsageReport,
+)
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
@@ -100,3 +106,36 @@ def test_the_jobs_incidents_are_in_the_report() -> None:
     log = InMemoryIncidentLog([an_incident(job="JOB-2"), mine])
     report = ExportUsageUseCase(FakeUsageStore({}), FakeTurnStore(), log).execute("JOB-1")
     assert report.incidents == (mine,)
+
+
+def _export(turns: list[TurnUsage]) -> UsageReport:
+    return ExportUsageUseCase(
+        FakeUsageStore({}), FakeTurnStore(turns), InMemoryIncidentLog()
+    ).execute("JOB-1")
+
+
+def test_a_job_with_only_main_turns_has_no_agent_totals() -> None:
+    assert _export([TurnUsage("JOB-1_001", 1, 2, None, "m")]).agents == ()
+
+
+def test_agent_totals_put_main_first_then_unnamed_then_named_agents() -> None:
+    agent = TurnRole.AGENT
+    report = _export(
+        [
+            TurnUsage("S", 10, 1, None, "m", duration_s=1.0, role=agent, agent="zeta"),
+            TurnUsage("S", 20, 2, None, "m", cache_read_tokens=7, duration_s=2.0),
+            TurnUsage("S", 30, 3, None, "m", duration_s=0.5, role=agent),
+            TurnUsage("S", 40, 4, None, "m", duration_s=0.5, role=agent, agent="alpha"),
+            TurnUsage("S", 50, 5, None, "m", duration_s=1.5, role=agent, agent="zeta"),
+        ]
+    )
+    assert report.agents == (
+        AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 7, 2.0),
+        AgentTotal(agent, None, 1, 30, 3, 0, 0.5),
+        AgentTotal(agent, "alpha", 1, 40, 4, 0, 0.5),
+        AgentTotal(agent, "zeta", 2, 60, 6, 0, 2.5),
+    )
+    assert [(row.role, row.agent) for row in report.turns][:2] == [
+        (agent, "zeta"),
+        (TurnRole.MAIN, None),
+    ]

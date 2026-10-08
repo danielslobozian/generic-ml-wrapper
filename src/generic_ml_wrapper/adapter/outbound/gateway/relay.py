@@ -31,6 +31,7 @@ from urllib.parse import urlsplit
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage as _anthropic_usage
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
+from generic_ml_wrapper.application.domain.model.turn_origin import MAIN
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Mapping
 
     from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
+    from generic_ml_wrapper.application.domain.model.turn_origin import TurnOrigin
     from generic_ml_wrapper.application.port.outbound.incident_log import IncidentLogPort
     from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
@@ -50,6 +52,7 @@ if TYPE_CHECKING:
     PathMap = Callable[[str], str]
     SessionIdReader = Callable[[str], "str | None"]
     SessionIdSink = Callable[[str], None]
+    OriginReader = Callable[[str], TurnOrigin]
 
 _ANTHROPIC = "https://api.anthropic.com"
 
@@ -102,6 +105,7 @@ class MeteringRelay:
         is_metered: MeteredPredicate | None = None,
         session_id_reader: SessionIdReader | None = None,
         session_id_sink: SessionIdSink | None = None,
+        origin_reader: OriginReader | None = None,
         interceptors: InterceptorChain | None = None,
         incidents: IncidentLogPort | None = None,
         clock: Callable[[], float] = time.time,
@@ -129,6 +133,9 @@ class MeteringRelay:
             session_id_sink: Receives the id ``session_id_reader`` finds, once per
                 distinct value — clients mint it themselves, so this is how the wrapper
                 learns which client-side session its named session actually became.
+            origin_reader: Reads, from a metered turn's *request* body, whether the main
+                conversation or an agent made it; ``None`` records every turn as main,
+                for a client whose requests do not say.
             interceptors: The interceptor chain applied to the wire — ``request`` to
                 the outbound body, ``response`` to the captured reply; empty when ``None``.
             incidents: Where a lost connection or a cut-off answer is recorded, so a
@@ -152,6 +159,7 @@ class MeteringRelay:
         self._metered = is_metered or _claude_metered
         self._read_session_id = session_id_reader
         self._session_id_sink = session_id_sink
+        self._read_origin = origin_reader
         # The last id handed to the sink. The id is stable for a session's life, so this
         # makes the common case one write per session; it is a "last observation wins"
         # latch rather than a write-once so a client that ever does rotate still lands
@@ -328,6 +336,11 @@ class MeteringRelay:
         usage = self._read_usage(captured.decode("utf-8", "replace"))
         turn: TurnUsage | None = None
         if usage is not None:
+            origin = (
+                MAIN
+                if self._read_origin is None
+                else self._read_origin(request.decode("utf-8", "replace"))
+            )
             turn = TurnUsage(
                 self._session,
                 usage.input_tokens,
@@ -339,6 +352,8 @@ class MeteringRelay:
                 timestamp=started_at,
                 duration_s=round(self._clock() - started_at, 3),
                 turn_id=usage.turn_id,
+                role=origin.role,
+                agent=origin.agent,
             )
             self._metering.record(self._job, turn)
         if self._transcript is not None:

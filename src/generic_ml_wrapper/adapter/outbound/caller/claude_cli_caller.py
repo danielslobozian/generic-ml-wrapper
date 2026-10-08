@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import context_file, status_line_config
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import StatusLineSnapshot
+from generic_ml_wrapper.adapter.outbound.gateway import anthropic_sse
 from generic_ml_wrapper.adapter.outbound.gateway.relay import MeteringRelay
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller
@@ -92,6 +93,7 @@ class ClaudeCliCaller(CliCaller):
             metering=self._metering,
             client=self.run.client,
             transcript=self._transcript,
+            origin_reader=anthropic_sse.read_origin,
             interceptors=self._interceptors,
             incidents=self._incidents,
         )

@@ -20,6 +20,7 @@ from generic_ml_wrapper.adapter.outbound.gateway.relay import (
     _tee,
 )
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnOrigin, TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.diagnostics import Diagnostics
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
@@ -140,6 +141,37 @@ def test_relay_streams_response_back_and_records_usage() -> None:
 
     assert returned == _SSE  # the client sees the upstream stream unchanged
     assert store.recorded == [("JOB-1", TurnUsage("JOB-1_001", 10, 20, None, "m"))]
+
+
+def test_relay_records_who_made_the_turn_from_the_request() -> None:
+    store = _FakeStore()
+    seen: list[str] = []
+
+    def origin(request: str) -> TurnOrigin:
+        seen.append(request)
+        return TurnOrigin(TurnRole.AGENT, "search_space")
+
+    relay = MeteringRelay(
+        job="JOB-1",
+        session="JOB-1_001",
+        metering=store,
+        forwarder=_echo_forwarder,
+        origin_reader=origin,
+        clock=_zero,
+    )
+    relay.start()
+    try:
+        _post(relay, body=b'{"system":"x"}')
+    finally:
+        relay.stop()
+
+    assert seen == ['{"system":"x"}']  # read off the request, not the reply
+    assert store.recorded == [
+        (
+            "JOB-1",
+            TurnUsage("JOB-1_001", 10, 20, None, "m", role=TurnRole.AGENT, agent="search_space"),
+        )
+    ]
 
 
 class _FakeTranscript(TranscriptPort):

@@ -2,11 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for extracting per-turn usage from an Anthropic SSE stream."""
 
+import json
+
+import pytest
+
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import (
     StreamUsage,
     extract_usage,
+    read_origin,
     read_usage,
 )
+from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
 
 # A representative Anthropic Messages streaming response (trimmed to the events
 # that carry usage), as the lines a relay tees off the wire.
@@ -88,3 +94,34 @@ def test_malformed_data_lines_are_skipped() -> None:
     ]
     # input stayed unknown (bool rejected), output read → model None
     assert extract_usage(stream) == StreamUsage(0, 7, None)
+
+
+# The billing line Claude Code opens every request's system prompt with.
+_BILLING = "x-anthropic-billing-header: cc_version=2.1.293.ddc; cc_entrypoint=cli;"
+
+
+def _request(system: object) -> str:
+    return json.dumps({"model": "claude-opus-5-5", "system": system, "messages": []})
+
+
+def test_a_subagents_request_is_an_agent_turn() -> None:
+    system = [{"type": "text", "text": _BILLING + " cc_is_subagent=true;"}, {"text": "You are"}]
+    assert read_origin(_request(system)) == TurnOrigin(TurnRole.AGENT)
+
+
+def test_the_mark_in_a_plain_string_system_counts_too() -> None:
+    assert read_origin(_request(_BILLING + " cc_is_subagent=true;")) == TurnOrigin(TurnRole.AGENT)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _request([{"type": "text", "text": _BILLING}, {"type": "text", "text": "You are"}]),
+        json.dumps({"model": "claude-haiku-4-5", "messages": []}),  # startup call: no system
+        _request([1, {"text": 2}]),  # malformed blocks
+        "not json",
+        "[]",
+    ],
+)
+def test_anything_else_is_the_main_conversation(body: str) -> None:
+    assert read_origin(body) == MAIN

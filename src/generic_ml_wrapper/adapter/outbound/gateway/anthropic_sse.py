@@ -7,6 +7,9 @@ Anthropic streams a turn as Server-Sent Events. Usage is split across two events
 ``message_delta`` carries the cumulative ``output_tokens``. This reads both from
 the raw ``data:`` lines a relay tees off the response, so the relay can record a
 turn without buffering or re-encoding the body.
+
+The *request* tells a subagent's turn from the main conversation's (see
+:func:`read_origin`).
 """
 
 from __future__ import annotations
@@ -15,10 +18,15 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 _DATA_PREFIX = "data:"
+# Claude Code's billing line, the first system block of every request it sends,
+# carries this only on a subagent's calls -- its web-search helpers included.
+_SUBAGENT_MARK = "cc_is_subagent=true"
 
 
 @dataclass(frozen=True)
@@ -57,6 +65,42 @@ def read_usage(text: str) -> StreamUsage | None:
     """
     streaming = extract_usage(text.splitlines())
     return streaming if streaming is not None else _from_json(text)
+
+
+def read_origin(text: str) -> TurnOrigin:
+    """Read whether a Claude turn came from the main conversation or a subagent.
+
+    Claude Code opens every request's system prompt with a billing line
+    (``x-anthropic-billing-header: ...``); a subagent's adds ``cc_is_subagent=true``.
+    Subagents carry no name on the wire, so the origin never has one.
+
+    Args:
+        text: The decoded request body.
+
+    Returns:
+        An agent origin when the mark is present, else the main conversation.
+    """
+    try:
+        decoded: object = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        return MAIN
+    if not isinstance(decoded, dict):
+        return MAIN
+    system = cast("dict[str, object]", decoded).get("system")
+    if isinstance(system, str):
+        marked = _SUBAGENT_MARK in system
+    elif isinstance(system, list):
+        marked = any(_SUBAGENT_MARK in _block_text(block) for block in cast("list[object]", system))
+    else:
+        marked = False
+    return TurnOrigin(TurnRole.AGENT) if marked else MAIN
+
+
+def _block_text(block: object) -> str:
+    if not isinstance(block, dict):
+        return ""
+    text = cast("dict[str, object]", block).get("text")
+    return text if isinstance(text, str) else ""
 
 
 def _from_json(text: str) -> StreamUsage | None:

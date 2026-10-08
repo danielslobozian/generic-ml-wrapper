@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
 
@@ -25,8 +26,8 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
         with self._ledger.connect() as connection:
             connection.execute(
                 "INSERT INTO turns (job, session_id, turn_id, input_tokens, output_tokens, "
-                "cache_creation_tokens, cache_read_tokens, cost_usd, model, timestamp, duration_s) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "cache_creation_tokens, cache_read_tokens, cost_usd, model, timestamp, duration_s, "
+                "role, agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job,
                     turn.session_id,
@@ -39,6 +40,8 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
                     turn.model,
                     turn.timestamp,
                     turn.duration_s,
+                    turn.role.value,
+                    turn.agent,
                 ),
             )
 
@@ -47,7 +50,7 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
         with self._ledger.connect() as connection:
             rows = connection.execute(
                 "SELECT session_id, turn_id, input_tokens, output_tokens, cache_creation_tokens, "
-                "cache_read_tokens, cost_usd, model, timestamp, duration_s "
+                "cache_read_tokens, cost_usd, model, timestamp, duration_s, role, agent "
                 "FROM turns WHERE job = ? ORDER BY id",
                 (job,),
             ).fetchall()
@@ -63,6 +66,8 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
                 timestamp=row["timestamp"],
                 duration_s=row["duration_s"],
                 turn_id=row["turn_id"],
+                role=TurnRole(row["role"]),
+                agent=row["agent"],
             )
             for row in rows
         ]

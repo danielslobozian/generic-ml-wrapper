@@ -2,8 +2,17 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for extracting per-turn usage from a Codex Responses API SSE stream."""
 
+import json
+
+import pytest
+
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
-from generic_ml_wrapper.adapter.outbound.gateway.openai_responses import read_session_id, read_usage
+from generic_ml_wrapper.adapter.outbound.gateway.openai_responses import (
+    read_origin,
+    read_session_id,
+    read_usage,
+)
+from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
 
 # The usage shape from a real billed Codex turn (from the cursor-codex reference).
 _STREAM = (
@@ -79,3 +88,34 @@ def test_a_non_object_body_yields_none() -> None:
 
 def test_an_empty_session_id_is_not_an_id() -> None:
     assert read_session_id('{"client_metadata":{"session_id":""}}') is None
+
+
+def _turn_request(**turn: str) -> str:
+    # client_metadata["x-codex-turn-metadata"] is itself a JSON string.
+    metadata = {"session_id": "s", "x-codex-turn-metadata": json.dumps(turn)}
+    return json.dumps({"model": "gpt", "client_metadata": metadata})
+
+
+def test_a_spawned_agent_is_named_by_its_path_below_root() -> None:
+    body = _turn_request(
+        agent_name="/root/search_space", thread_source="subagent", subagent_kind="thread_spawn"
+    )
+    assert read_origin(body) == TurnOrigin(TurnRole.AGENT, "search_space")
+
+
+def test_a_subagent_without_a_name_is_still_an_agent() -> None:
+    assert read_origin(_turn_request(thread_source="subagent")) == TurnOrigin(TurnRole.AGENT)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        _turn_request(agent_name="/root", thread_source="user"),
+        _turn_request(agent_name="/root", thread_source="thread_title"),  # its title call
+        json.dumps({"model": "gpt", "client_metadata": {"session_id": "s"}}),
+        json.dumps({"client_metadata": {"x-codex-turn-metadata": "not json"}}),
+        "not json",
+    ],
+)
+def test_the_root_thread_and_unreadable_requests_are_main(body: str) -> None:
+    assert read_origin(body) == MAIN
