@@ -52,6 +52,16 @@ it spans several sessions), with the tokens broken down by kind:
 far larger than the input is caching doing its job; a large cache write turn after turn
 means the cache keeps being rebuilt.
 
+Once subagents have made turns, each kind they used is followed by their share of it:
+
+```
+  session PAY-1_003 (57m) · 86 turns · ↑ 182k (22%)  ↓ 96k (8%)  ⟲ 8.6M (60%)  ✎ 240k (31%) · $2.50
+```
+
+Here three fifths of the cache read was the subagents'. A share that is there but under a
+percent shows as `<1%`; a kind they did not use has no parenthesis. `gmlw export <job>`
+has the counts behind it, under totals by agent.
+
 **Context delivery:** Native. Compiled context (workflow blob or startup context) is written
 to a context file and passed with `--append-system-prompt-file`, leaving a durable
 provenance artifact under `~/.gmlw/contexts/`.

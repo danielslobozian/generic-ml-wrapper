@@ -125,6 +125,7 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     tokens: TokenCounts,
     cost_usd: float,
     age_s: float | None = None,
+    agents: TokenCounts | None = None,
 ) -> str:
     """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · $``.
 
@@ -146,6 +147,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
         cost_usd: The scope's cumulative cost.
         age_s: How long ago this scope's first recorded turn was, or ``None`` when it
             has none -- a session launched but never prompted has no age to show.
+        agents: The part of ``tokens`` the agents (subagents) used, or ``None`` when
+            no agent made a turn; each kind then shows its share of the total.
 
     Returns:
         The footer row (no trailing newline).
@@ -154,27 +157,46 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     parts = [head]
     if turns:
         parts.append(f"{turns} turns")
-        parts.append(render_tokens(tokens))
+        parts.append(render_tokens(tokens, agents))
     parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
 
 
-def render_tokens(tokens: TokenCounts) -> str:
+def render_tokens(tokens: TokenCounts, agents: TokenCounts | None = None) -> str:
     """The four token counts as ``↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k``.
 
     A space after each mark, so a narrow glyph never runs into its number; two between
     the pairs, so each reads as one unit. Compacted to k/M/G, because the cache read of
     a long session runs to millions and must stay scannable.
+
+    With ``agents``, each kind the agents used is followed by their share of it --
+    ``⟲ 8.6M (60%)`` -- the total staying the first number read. A share is a
+    percentage rather than a count: it answers "how much of this was the agents" at a
+    glance, and it is the same width whatever the unit.
     """
-    return "  ".join(
-        f"{mark} {_compact(count)}"
-        for mark, count in (
-            ("↑", tokens.input),
-            ("↓", tokens.output),
-            ("⟲", tokens.cache_read),
-            ("✎", tokens.cache_write),
-        )
+    pairs = (
+        ("↑", tokens.input, 0 if agents is None else agents.input),
+        ("↓", tokens.output, 0 if agents is None else agents.output),
+        ("⟲", tokens.cache_read, 0 if agents is None else agents.cache_read),
+        ("✎", tokens.cache_write, 0 if agents is None else agents.cache_write),
     )
+    return "  ".join(
+        f"{mark} {_compact(count)}" + ("" if part == 0 else f" ({_share(part, count)})")
+        for mark, count, part in pairs
+    )
+
+
+def _share(part: int, whole: int) -> str:
+    """``part`` as a whole percentage of ``whole``.
+
+    Never ``0%`` for a part that is there, and never ``100%`` for one that is not all of it.
+    """
+    percent = round(part * 100 / whole)
+    if percent < 1:
+        return "<1%"
+    if percent >= 100 and part < whole:  # noqa: PLR2004  (a percentage's ceiling)
+        return "99%"
+    return f"{percent}%"
 
 
 def _git(workspace: Workspace) -> str | None:
