@@ -18,6 +18,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     so its agents are counted together. Codex names each agent. Vibe does not say, so its
     turns all count as `main`.
   - Turns recorded before this version count as `main`.
+  - The status line shows the agents' share of each kind of token once they have made
+    turns: `↑ 182k (22%)  ↓ 96k (8%)  ⟲ 8.6M (60%)  ✎ 240k (31%)` -- three fifths of the
+    cache read was the agents'. A share under a percent shows as `<1%`, and a kind the
+    agents did not use has none. Without agent turns the line is unchanged.
 - **The status line breaks tokens down by kind.** The single `9.1M tok` total — almost
   all of it cache reads in a long session — becomes `↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k`:
   input, output, cache read, cache write. A cache read far above the input is the cache

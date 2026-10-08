@@ -9,6 +9,7 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
+from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
@@ -194,6 +195,30 @@ def test_each_token_count_compacts_to_k_m_g() -> None:
     )
 
 
+def test_each_kind_the_agents_used_shows_their_share() -> None:
+    tokens = TokenCounts(182_000, 96_000, 8_600_000, 240_000)
+    agents = TokenCounts(40_000, 0, 5_160_000, 240_000)
+    # output untouched by agents: no parenthesis; cache write all theirs: 100%
+    assert render_tokens(tokens, agents) == ("↑ 182k (22%)  ↓ 96k  ⟲ 8.6M (60%)  ✎ 240k (100%)")
+
+
+@pytest.mark.parametrize(
+    ("part", "whole", "share"),
+    [
+        (1, 1_000, "<1%"),  # there, but under a percent: never shown as 0%
+        (995, 1_000, "99%"),  # not all of it: never rounded up to 100%
+        (1_000, 1_000, "100%"),
+        (505, 1_000, "50%"),
+    ],
+)
+def test_a_share_is_a_whole_percentage_that_never_misleads(
+    part: int, whole: int, share: str
+) -> None:
+    assert render_tokens(TokenCounts(input=whole), TokenCounts(input=part)) == (
+        f"↑ 1k ({share})  ↓ 0  ⟲ 0  ✎ 0"
+    )
+
+
 def test_render_usage_row_without_turns_shows_only_cost() -> None:
     assert render_usage_row("job", "JOB-1", 0, TokenCounts(), 0.43) == "  job JOB-1 · $0.43"
 
@@ -255,6 +280,22 @@ def test_use_case_shows_session_then_job_row_across_sessions() -> None:
     assert out == (
         "  session JOB-1_002 · 2 turns · ↑ 310  ↓ 45  ⟲ 0  ✎ 0 · $0.00\n"
         "  job JOB-1 · 3 turns · ↑ 410  ↓ 65  ⟲ 0  ✎ 0 · $0.00"
+    )
+
+
+def test_use_case_shows_the_agents_share_on_each_row_that_has_agent_turns() -> None:
+    agent = TurnRole.AGENT
+    turns = FakePerTurnStore(
+        [
+            TurnUsage("JOB-1_001", 100, 20, None, "m", role=agent),  # a prior session's agent
+            TurnUsage("JOB-1_002", 300, 40, None, "m"),  # the current session: main only
+        ]
+    )
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
+    # the session had no agent turns: today's line; the job did: shares
+    assert out == (
+        "  session JOB-1_002 · 1 turns · ↑ 300  ↓ 40  ⟲ 0  ✎ 0 · $0.00\n"
+        "  job JOB-1 · 2 turns · ↑ 400 (25%)  ↓ 60 (33%)  ⟲ 0  ✎ 0 · $0.00"
     )
 
 
