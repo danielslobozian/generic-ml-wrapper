@@ -45,6 +45,9 @@ PLUGINS = HOME / "plugins"
 # (cursor doesn't pipe its plan to the status line); merged into the cursor status payload.
 CURSOR_PLAN = HOME / "cursor-plan.json"
 CREDENTIALS = HOME / "credentials.toml"
+# Imported attachments, one read-only folder per version: attachments/<name>/<version>/.
+# Their hashes are in the ledger; see docs/ATTACHMENTS.md.
+ATTACHMENTS = HOME / "attachments"
 # Authoring sessions (gmlw workflow new) live apart from real work jobs, so they
 # never appear in `gmlw jobs` and their spend is its own bucket.
 AUTHORING = HOME / "authoring"

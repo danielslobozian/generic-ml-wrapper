@@ -15,7 +15,10 @@ from __future__ import annotations
 
 import pytest
 
-from generic_ml_wrapper.application.domain.model.attachment import AttachmentVersionError
+from generic_ml_wrapper.application.domain.model.attachment import (
+    AttachmentError,
+    AttachmentVersionError,
+)
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
@@ -47,6 +50,21 @@ _CASES: list[DomainError] = [
     IdentifierError("error.identifier.env_var_name", value="1BAD"),
     IdentifierError("error.identifier.attachment_name", value="Bad Name"),
     AttachmentVersionError("error.attachment.version", value="2.1"),
+    AttachmentError("error.attachment.archive_unreadable", archive="x.zip"),
+    AttachmentError("error.attachment.archive_unsafe", archive="x.zip", entry="../x"),
+    AttachmentError("error.attachment.manifest_missing", archive="x.zip", manifest="manifest.yaml"),
+    AttachmentError("error.attachment.manifest_unreadable", archive="x.zip"),
+    AttachmentError("error.attachment.manifest_line", line=2),
+    AttachmentError("error.attachment.manifest_unknown_key", key="author"),
+    AttachmentError("error.attachment.manifest_duplicate_key", key="name"),
+    AttachmentError("error.attachment.manifest_missing_key", key="version"),
+    AttachmentError("error.attachment.main_path", file="../x.md"),
+    AttachmentError("error.attachment.main_missing", file="main.md"),
+    AttachmentError("error.attachment.exists", name="notes", version="1.0.0"),
+    AttachmentError("error.attachment.not_found", name="notes"),
+    AttachmentError("error.attachment.version_not_found", name="notes", version="2.0.0"),
+    AttachmentError("error.attachment.invalid", name="notes", version="1.0.0"),
+    AttachmentError("error.attachment.export_exists", path="/tmp/notes-1.0.0.zip"),
     WorkflowNameError("error.workflow.reserved_name", name="_common"),
     WorkflowNotFoundError("error.workflow.not_found", name="missing"),
     UnknownWorkflowError("error.workflow.unknown", name="missing"),

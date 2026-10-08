@@ -7,10 +7,14 @@ from __future__ import annotations
 import pytest
 
 from generic_ml_wrapper.application.domain.model.attachment import (
+    Attachment,
+    AttachmentError,
     AttachmentVersion,
     AttachmentVersionError,
+    find,
     highest,
 )
+from generic_ml_wrapper.application.domain.model.identifiers import AttachmentName
 
 
 @pytest.mark.parametrize(
@@ -70,3 +74,28 @@ def test_highest_is_the_default_even_when_a_patch_came_later() -> None:
 
 def test_highest_of_nothing_is_none() -> None:
     assert highest([]) is None
+
+
+def _stored(name: str, version: str) -> Attachment:
+    return Attachment(AttachmentName(name), AttachmentVersion.parse(version), "", "main.md", "h")
+
+
+_STORED = [_stored("notes", "1.0.0"), _stored("notes", "3.0.0"), _stored("other", "9.0.0")]
+
+
+def test_find_takes_the_version_asked_for() -> None:
+    assert find(_STORED, "notes", AttachmentVersion(1, 0, 0)) == _STORED[0]
+
+
+def test_find_without_a_version_takes_the_attachments_highest() -> None:
+    assert find(_STORED, "notes") == _STORED[1]
+
+
+def test_find_refuses_an_unknown_name_or_version() -> None:
+    with pytest.raises(AttachmentError) as raised:
+        find(_STORED, "missing")
+    assert raised.value.catalogue_key == "error.attachment.not_found"
+    with pytest.raises(AttachmentError) as raised:
+        find(_STORED, "notes", AttachmentVersion(2, 0, 0))
+    assert raised.value.catalogue_key == "error.attachment.version_not_found"
+    assert raised.value.params == {"name": "notes", "version": "2.0.0"}

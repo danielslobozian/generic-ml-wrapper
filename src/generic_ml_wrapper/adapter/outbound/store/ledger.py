@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -87,6 +87,16 @@ CREATE TABLE session_costs (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_session_costs_job ON session_costs(job);
+
+CREATE TABLE attachments (
+    name         TEXT NOT NULL,
+    version      TEXT NOT NULL,                 -- MAJOR.MINOR.PATCH, as the author set it
+    description  TEXT NOT NULL DEFAULT '',
+    main_md_file TEXT NOT NULL,                 -- relative to the version's folder
+    content_hash TEXT NOT NULL,                 -- SHA-256 of the folder, taken at import
+    imported_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (name, version)
+);
 """
 
 
@@ -151,6 +161,13 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
     6: (
         "ALTER TABLE turns ADD COLUMN role TEXT NOT NULL DEFAULT 'main'",
         "ALTER TABLE turns ADD COLUMN agent TEXT",
+    ),
+    # The imported attachment versions and their hashes. Starts empty.
+    7: (
+        "CREATE TABLE attachments (name TEXT NOT NULL, version TEXT NOT NULL, "
+        "description TEXT NOT NULL DEFAULT '', main_md_file TEXT NOT NULL, "
+        "content_hash TEXT NOT NULL, imported_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "PRIMARY KEY (name, version))",
     ),
 }
 

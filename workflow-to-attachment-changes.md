@@ -46,21 +46,21 @@ Confirmed 2026-10-08.
 
 ## Phase 2 — Store and import
 
-- [ ] `paths.ATTACHMENTS = HOME / "attachments"`.
-- [ ] Manifest reader (D2): `name`, `description`, `version`, `main_md_file`; the main
+- [x] `paths.ATTACHMENTS = HOME / "attachments"`.
+- [x] Manifest reader (D2): `name`, `description`, `version`, `main_md_file`; the main
       file must exist in the zip.
-- [ ] Zip import: unzip to a temporary folder, refuse `..`, absolute paths and links;
+- [x] Zip import: unzip to a temporary folder, refuse `..`, absolute paths and links;
       stop if `name@version` exists; move into `attachments/<name>/<version>/`; make
       read-only.
-- [ ] Folder hash: SHA-256 over sorted relative paths and their bytes.
-- [ ] Ledger migration 7: table `attachments` (name, version, description, main_md_file,
+- [x] Folder hash: SHA-256 over sorted relative paths and their bytes.
+- [x] Ledger migration 7: table `attachments` (name, version, description, main_md_file,
       hash, imported_at; key name+version). `SCHEMA_VERSION = 7`, final schema updated.
-- [ ] Port `AttachmentStorePort` + filesystem/SQLite adapter: import, list, get,
+- [x] Port `AttachmentStorePort` + filesystem/SQLite adapter: import, list, get,
       delete, verify (recompute the hash, compare with the ledger).
-- [ ] Export: write a stored version back as `<name>-<version>.zip`.
-- [ ] Use cases: `ImportAttachment`, `ExportAttachment`, `ListAttachments`,
+- [x] Export: write a stored version back as `<name>-<version>.zip`.
+- [x] Use cases: `ImportAttachment`, `ExportAttachment`, `ListAttachments`,
       `DeleteAttachment`.
-- [ ] Tests: import happy path, existing version stops, escapes refused, bad manifest,
+- [x] Tests: import happy path, existing version stops, escapes refused, bad manifest,
       missing main file, hash mismatch marks invalid, delete, export round-trip, migration
       7 from v6.
 

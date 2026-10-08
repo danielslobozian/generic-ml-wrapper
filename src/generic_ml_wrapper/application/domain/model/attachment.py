@@ -28,6 +28,10 @@ class AttachmentVersionError(DomainError, ValueError):
     """Raised when a string is not a ``MAJOR.MINOR.PATCH`` version."""
 
 
+class AttachmentError(DomainError, ValueError):
+    """Raised when an attachment cannot be imported, found, or used as asked."""
+
+
 @dataclass(frozen=True, order=True)
 class AttachmentVersion:
     """An attachment's version: ``MAJOR.MINOR.PATCH``, compared number by number.
@@ -71,6 +75,23 @@ class AttachmentVersion:
 
 
 @dataclass(frozen=True)
+class AttachmentManifest:
+    """What an attachment says about itself, in its ``manifest.yaml``.
+
+    Attributes:
+        name: The attachment's name.
+        version: The version its author gave it.
+        description: One line shown in listings, or empty.
+        main_md_file: The file delivered into the context, relative to the attachment's root.
+    """
+
+    name: AttachmentName
+    version: AttachmentVersion
+    description: str
+    main_md_file: str
+
+
+@dataclass(frozen=True)
 class Attachment:
     """One stored version of an attachment.
 
@@ -99,3 +120,28 @@ def highest(versions: Iterable[AttachmentVersion]) -> AttachmentVersion | None:
         The highest version, or ``None`` when there is none.
     """
     return max(versions, default=None)
+
+
+def find(
+    attachments: Iterable[Attachment], name: str, version: AttachmentVersion | None = None
+) -> Attachment:
+    """Pick one stored version: the one asked for, else the attachment's highest.
+
+    Args:
+        attachments: The stored versions.
+        name: The attachment's name.
+        version: The version, or ``None`` for the highest.
+
+    Returns:
+        The stored version.
+
+    Raises:
+        AttachmentError: If the attachment, or that version of it, is not stored.
+    """
+    versions = {a.version: a for a in attachments if a.name == name}
+    chosen = highest(versions) if version is None else version
+    if chosen is None:
+        raise AttachmentError("error.attachment.not_found", name=name)
+    if chosen not in versions:
+        raise AttachmentError("error.attachment.version_not_found", name=name, version=str(chosen))
+    return versions[chosen]

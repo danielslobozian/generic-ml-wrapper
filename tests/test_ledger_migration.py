@@ -139,3 +139,22 @@ def test_v5_turns_count_as_the_main_conversation(tmp_path: Path) -> None:
         rows = connection.execute("SELECT session_id, role, agent FROM turns").fetchall()
 
     assert [(r["session_id"], r["role"], r["agent"]) for r in rows] == [("T-1_001", "main", None)]
+
+
+def test_v6_gains_an_empty_attachments_table(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect() as connection:
+        columns = [row["name"] for row in connection.execute("PRAGMA table_info(attachments)")]
+        count = connection.execute("SELECT COUNT(*) FROM attachments").fetchone()[0]
+
+    assert columns == [
+        "name",
+        "version",
+        "description",
+        "main_md_file",
+        "content_hash",
+        "imported_at",
+    ]
+    assert count == 0
