@@ -170,7 +170,8 @@ __CLIENT_DEFAULT__
 # root = "/some/dir"   # optional; defaults to ~/.gmlw/transcripts
 
 # Interceptors (0..N, ordered), each a str->str transform (InterceptorPort) bound to
-# a target. Compile-time targets: "profile" | "rules" | "workflow" | "context". Wire
+# a target. Compile-time targets: "profile" | "rules" | "workflow" | "attachment" |
+# "context". Wire
 # targets (metered clients only): "request" (outbound body) | "response" (captured
 # reply, observe-only). A target may have many; one spec may appear under several.
 # The built-in MessageSizeLogger logs each message's size — put it on request and
@@ -200,7 +201,8 @@ __CLIENT_DEFAULT__
 
 # Context packaging. On every run gmlw composes an operating context from a fixed set of
 # sources; [startup] decides, per mode, which are active and which are compressed. Modes:
-# default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`).
+# default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`),
+# attachment (`start --attach`; its main file is delivered as written, never compressed).
 # Sources: me.user (profile/me/*.md), me.learned (profile/me/learned*), company
 # (environments/<env>/*.md — the active [profile] default_environment), rules.environment
 # (environments/<env>/rules/*.rule.md — the place's constraints) and rules.role

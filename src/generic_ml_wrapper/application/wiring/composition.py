@@ -451,6 +451,7 @@ def build_start_job() -> StartJob:
         capability_card=_capability_card,
         tags=SqliteJobTagStore(_ledger()),
         client_args=config.client_args_for,
+        attachments=_attachment_store(),
     )
 
 

@@ -383,6 +383,46 @@ def test_start_passes_the_workflow(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen["command"].workflow == "doc-review"
 
 
+@pytest.mark.parametrize(
+    ("value", "name", "version"),
+    [("notes", "notes", None), ("notes@1.2.0", "notes", "1.2.0"), ("notes@", "notes", "")],
+)
+def test_start_passes_the_attachment(
+    monkeypatch: pytest.MonkeyPatch, value: str, name: str, version: str | None
+) -> None:
+    seen: dict[str, StartJobCommand] = {}
+
+    class FakeUseCase(StartJob):
+        def execute(self, command: StartJobCommand) -> StartJobResult:
+            seen["command"] = command
+            return StartJobResult(exit_code=0, job=command.job, session_id=f"{command.job}_001")
+
+    monkeypatch.setattr(app, "build_start_job", lambda: FakeUseCase())
+    app.main(["start", "JOB-1", "--attach", value])
+
+    assert (seen["command"].attachment, seen["command"].attachment_version) == (name, version)
+    assert seen["command"].workflow is None
+
+
+def test_start_refuses_an_attachment_and_a_workflow_together(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        app.main(["start", "JOB-1", "--attach", "notes", "--workflow", "review"])
+    assert "not allowed with" in capsys.readouterr().err
+
+
+def test_start_reports_an_unknown_attachment_cleanly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def _installed(_client: str) -> bool:
+        return True  # no client needed: the attachment is refused first
+
+    monkeypatch.setattr(app, "_preflight_client", _installed)
+    assert app.main(["start", "JOB-1", "--attach", "missing"]) == 2
+    assert "no attachment named 'missing'" in capsys.readouterr().out
+
+
 def test_start_reports_unknown_workflow_cleanly(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

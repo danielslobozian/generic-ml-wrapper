@@ -63,3 +63,26 @@ def test_authoring_kind_is_hidden_from_work_jobs(tmp_path: Path) -> None:
     assert authoring.jobs() == ["doc-review"]
     # sessions_for_job is keyed by job, so either store can read a known job's sessions.
     assert authoring.ids_for_job("doc-review") == ["doc-review_001"]
+
+
+def test_the_attachment_a_session_ran_is_read_back(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    store.record(
+        Session(
+            "JOB-1_001",
+            "JOB-1",
+            "claude",
+            "u-1",
+            attachment="notes",
+            attachment_version="1.0.0",
+            attachment_hash="abc",
+        )
+    )
+
+    (read,) = store.sessions_for_job("JOB-1")
+
+    assert (read.attachment, read.attachment_version, read.attachment_hash) == (
+        "notes",
+        "1.0.0",
+        "abc",
+    )

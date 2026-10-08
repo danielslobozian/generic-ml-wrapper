@@ -7,10 +7,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 
+from generic_ml_wrapper.application.domain.model.attachment import (
+    Attachment,
+    AttachmentError,
+    AttachmentVersion,
+    find,
+)
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.identifiers import TagName
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
+from generic_ml_wrapper.application.domain.service.attachment_context import (
+    attachment_kickoff,
+    attachment_section,
+)
 from generic_ml_wrapper.application.domain.service.greeting import greeting_context
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.session_naming import next_session_id
@@ -21,6 +31,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
     UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.port.outbound.attachment_store import AttachmentStorePort
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
@@ -46,6 +57,7 @@ class StartJobUseCase(StartJob):
         capability_card: Callable[[], str | None],
         tags: JobTagStorePort,
         client_args: Callable[[str], str] = lambda _client: "",
+        attachments: AttachmentStorePort | None = None,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -68,6 +80,8 @@ class StartJobUseCase(StartJob):
                 Consulted with the *run's* client, which on a resume comes from the stored
                 session rather than the command — so a resumed codex session never receives
                 arguments configured for claude. Defaults to none configured.
+            attachments: The attachment store a session's attachment is read from, or
+                ``None`` when attachments are not available.
         """
         self._store = store
         self._workflows = workflows
@@ -80,6 +94,7 @@ class StartJobUseCase(StartJob):
         self._capability_card = capability_card
         self._client_args = client_args
         self._tags = tags
+        self._attachments = attachments
 
     def execute(self, command: StartJobCommand) -> StartJobResult:
         """Resolve the session, optionally inject a workflow, run the client.
@@ -92,6 +107,9 @@ class StartJobUseCase(StartJob):
 
         Raises:
             UnknownWorkflowError: If a workflow was requested but does not exist.
+            AttachmentError: If the attachment, or that version, is not stored, or has
+                changed since its import.
+            AttachmentVersionError: If the requested version is not ``MAJOR.MINOR.PATCH``.
             ResumeNotSupportedError: If resume was requested for a client whose
                 caller cannot resume a session.
             IdentifierError: If a requested tag is not a valid tag name.
@@ -100,8 +118,11 @@ class StartJobUseCase(StartJob):
         tags = sorted({TagName(tag) for tag in command.tags})
         run, session = self._resolve(command)
         run = self._with_client_args(run, command.client_args)
+        attached: Attachment | None = None
         if not run.resume:
-            if command.workflow is not None:
+            if command.attachment is not None:
+                run, attached = self._attach(run, command.attachment, command.attachment_version)
+            elif command.workflow is not None:
                 run = self._attach_workflow(run, command.workflow)
             else:
                 run = self._attach_baseline(run)
@@ -131,7 +152,14 @@ class StartJobUseCase(StartJob):
             # The workflow is recorded with it: it belongs to this session, not the job, so
             # one job can carry a feature session, then a review session, then a plain one.
             self._store.record(
-                replace(session, resumable=caller.can_resume(), workflow=command.workflow)
+                replace(
+                    session,
+                    resumable=caller.can_resume(),
+                    workflow=command.workflow,
+                    attachment=None if attached is None else attached.name,
+                    attachment_version=None if attached is None else str(attached.version),
+                    attachment_hash=None if attached is None else attached.content_hash,
+                )
             )
         # After the record, so the job exists to be tagged (a resumed one already does).
         if tags:
@@ -193,6 +221,37 @@ class StartJobUseCase(StartJob):
         context = self._workflows.compile(CompileMode.DEFAULT, job=run.job)
         return run if not context else replace(run, context=context)
 
+    def _attach(
+        self, run: RunContext, name: str, version: str | None
+    ) -> tuple[RunContext, Attachment]:
+        """Deliver an attachment into a new session, checked against its hash first.
+
+        Its section follows gmlw's own context, the session opens on a message naming
+        it, its credentials are exported, and the store is opened to the client, since
+        the attachment's other files are read from there.
+        """
+        store = self._attachments
+        if store is None:
+            raise AttachmentError("error.attachment.not_found", name=name)
+        wanted = None if version is None else AttachmentVersion.parse(version)
+        attachment = find(store.all(), name, wanted)
+        if not store.is_intact(attachment):
+            raise AttachmentError(
+                "error.attachment.invalid", name=name, version=str(attachment.version)
+            )
+        section = attachment_section(
+            attachment, str(store.folder(attachment)), store.read_main(attachment)
+        )
+        context = self._workflows.compile(CompileMode.ATTACHMENT, job=run.job, attachment=section)
+        run = replace(
+            run,
+            context=context,
+            kickoff=attachment_kickoff(attachment, run.job),
+            env=tuple(self._credentials.resolve(name).items()),
+            extra_dirs=(str(store.root()),),
+        )
+        return run, attachment
+
     def _attach_workflow(self, run: RunContext, workflow: str) -> RunContext:
         # Asked before anything is installed: a run named for a workflow that is not there
         # writes nothing on its way to being refused. The seed follows, because composing
@@ -231,13 +290,16 @@ class StartJobUseCase(StartJob):
             return self._store.latest_for_job(command.job)
         return None
 
-    @staticmethod
-    def _resumed_run(session: Session) -> RunContext:
+    def _resumed_run(self, session: Session) -> RunContext:
         """Build the run that reopens a session -- in the folder it was launched in.
 
         ``cwd`` is the session's stored folder (``None`` for pre-folder sessions, which
         resume in the current directory as before). Claude's resume is scoped to that folder.
+        A session that ran with an attachment gets the store opened again: its context
+        still sends it to the attachment's files.
         """
+        store = self._attachments
+        reopened = session.attachment is not None and store is not None
         return RunContext(
             job=session.job,
             session_id=session.session_id,
@@ -245,6 +307,7 @@ class StartJobUseCase(StartJob):
             uuid=session.uuid,
             resume=True,
             cwd=session.cwd,
+            extra_dirs=(str(store.root()),) if reopened and store is not None else (),
         )
 
     def _resolve(self, command: StartJobCommand) -> tuple[RunContext, Session | None]:

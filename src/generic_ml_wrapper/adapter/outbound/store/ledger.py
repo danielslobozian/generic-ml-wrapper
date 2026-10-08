@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -40,6 +40,9 @@ CREATE TABLE sessions (
     cwd        TEXT,                            -- the folder it was launched in (resume there)
     resumable  INTEGER NOT NULL DEFAULT 1,      -- 0/1: snapshot of the client's resumability
     workflow   TEXT,                            -- the workflow it was started with, if any
+    attachment         TEXT,                    -- the attachment it was started with, if any
+    attachment_version TEXT,
+    attachment_hash    TEXT,                    -- that version's hash when it started
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_sessions_job ON sessions(job);
@@ -168,6 +171,12 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "description TEXT NOT NULL DEFAULT '', main_md_file TEXT NOT NULL, "
         "content_hash TEXT NOT NULL, imported_at TEXT NOT NULL DEFAULT (datetime('now')), "
         "PRIMARY KEY (name, version))",
+    ),
+    # Which attachment version a session ran. Existing sessions ran none.
+    8: (
+        "ALTER TABLE sessions ADD COLUMN attachment TEXT",
+        "ALTER TABLE sessions ADD COLUMN attachment_version TEXT",
+        "ALTER TABLE sessions ADD COLUMN attachment_hash TEXT",
     ),
 }
 

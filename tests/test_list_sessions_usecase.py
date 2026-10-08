@@ -133,3 +133,17 @@ def test_each_session_carries_its_incident_count() -> None:
     )
     summaries = _use_case(store, incidents=incidents).execute("JOB-1")
     assert [(s.session_id, s.incidents) for s in summaries] == [("JOB-1_001", 0), ("JOB-1_002", 2)]
+
+
+def test_a_session_shows_the_attachment_version_it_ran() -> None:
+    sessions = [
+        Session(
+            "JOB-1_001", "JOB-1", "claude", None, attachment="notes", attachment_version="1.2.0"
+        ),
+        Session("JOB-1_002", "JOB-1", "claude", None, workflow="review"),
+        Session("JOB-1_003", "JOB-1", "claude", None),
+    ]
+
+    summaries = _use_case(FakeStore(sessions)).execute("JOB-1")
+
+    assert [summary.workflow for summary in summaries] == ["notes@1.2.0", "review", None]

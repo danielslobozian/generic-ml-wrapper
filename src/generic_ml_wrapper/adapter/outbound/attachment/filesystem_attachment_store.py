@@ -148,6 +148,18 @@ class FilesystemAttachmentStore(AttachmentStorePort):
         folder = self._folder(attachment.name, attachment.version)
         return folder.is_dir() and folder_hash(folder) == attachment.content_hash
 
+    def root(self) -> Path:
+        """The store's folder."""
+        return self._root
+
+    def folder(self, attachment: Attachment) -> Path:
+        """``<root>/<name>/<version>``."""
+        return self._folder(attachment.name, attachment.version)
+
+    def read_main(self, attachment: Attachment) -> str:
+        """The main file's text, as UTF-8."""
+        return (self.folder(attachment) / attachment.main_md_file).read_text(encoding="utf-8")
+
     def delete(self, attachment: Attachment) -> None:
         """Remove the folder (and the name's folder once empty), then the record."""
         folder = self._folder(attachment.name, attachment.version)

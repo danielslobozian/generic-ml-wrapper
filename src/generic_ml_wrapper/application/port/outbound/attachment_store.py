@@ -108,6 +108,36 @@ class AttachmentStorePort(ABC):
         """
 
     @abstractmethod
+    def root(self) -> Path:
+        """The store's folder, which a session is given access to.
+
+        Returns:
+            The folder holding every attachment.
+        """
+
+    @abstractmethod
+    def folder(self, attachment: Attachment) -> Path:
+        """A stored version's folder.
+
+        Args:
+            attachment: The stored version.
+
+        Returns:
+            The folder its files are in.
+        """
+
+    @abstractmethod
+    def read_main(self, attachment: Attachment) -> str:
+        """Read a stored version's main file.
+
+        Args:
+            attachment: The stored version.
+
+        Returns:
+            The main file's text.
+        """
+
+    @abstractmethod
     def delete(self, attachment: Attachment) -> None:
         """Remove a stored version: its folder and its record.
 

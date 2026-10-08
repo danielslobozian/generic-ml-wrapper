@@ -522,6 +522,14 @@ _STARTUP_ACTIVATION: dict[str, dict[str, bool]] = {
         "rules.environment": True,
         "rules.role": True,
     },
+    "attachment": {
+        "persona": False,
+        "me.user": True,
+        "me.learned": True,
+        "company": True,
+        "rules.environment": True,
+        "rules.role": True,
+    },
     "authoring": {
         "persona": False,
         "me.user": True,
@@ -537,7 +545,7 @@ def default_startup(mode: str) -> dict[str, SourceSetting]:
     """Return a mode's baked-in activation matrix, with no config file read.
 
     Args:
-        mode: The compile mode (``default``/``workflow``/``authoring``).
+        mode: The compile mode (``default``/``workflow``/``authoring``/``attachment``).
 
     Returns:
         A setting per source key. Intrinsic ``base``/``steps`` are always active;
@@ -556,7 +564,7 @@ def startup(mode: str, path: Path | None = None) -> dict[str, SourceSetting]:
     """Return a mode's activation matrix from ``[startup.<mode>.context]`` over defaults.
 
     Args:
-        mode: The compile mode (``default``/``workflow``/``authoring``).
+        mode: The compile mode (``default``/``workflow``/``authoring``/``attachment``).
         path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
 
     Returns:

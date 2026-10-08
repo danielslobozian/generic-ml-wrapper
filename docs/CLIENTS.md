@@ -138,6 +138,15 @@ the numbers.
 **Context delivery:** Context is delivered as an initial instruction at launch, through the
 same throwaway-`VIBE_HOME` relay path used for metering.
 
+## Attachments
+
+A session started with `--attach` reads its attachment's files from `~/.gmlw/attachments`,
+outside the project folder. gmlw opens that folder with each client's own flag:
+`--add-dir` on claude, codex and vibe, on start and on resume. Claude's `--add-dir` also
+grants write access; the store's files are read-only, and a version changed anyway is
+refused at its next use. cursor-agent gets no such flag, so whether a cursor session can
+read the attachment's other files is up to cursor's own permissions.
+
 ## Choosing a client
 
 - **Want metering and resume and a live status line?** Use **claude** — it is the only client

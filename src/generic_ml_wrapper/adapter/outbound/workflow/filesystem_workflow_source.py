@@ -307,7 +307,13 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         """Return the create-workflow guided supplement (``guided.md``), or ``""``."""
         return self._read(self._root / _META / _GUIDE)
 
-    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
+    def compile(
+        self,
+        mode: CompileMode,
+        name: str | None = None,
+        job: str | None = None,
+        attachment: str | None = None,
+    ) -> str:
         """Compose a run's operating context for a mode.
 
         The order is: the session snapshot, the profile family (persona, self, learned,
@@ -322,6 +328,7 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             mode: The compile mode (default/workflow/authoring).
             name: The workflow whose base/steps to compose, or ``None``.
             job: The job this session runs on, for the snapshot.
+            attachment: An attachment's section, last and verbatim, or ``None``.
 
         Returns:
             The composed context (active sections, joined by blank lines).
@@ -331,7 +338,10 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         profile = self._interceptors.apply("profile", self._profile_group(settings))
         rules = self._interceptors.apply("rules", self._rules_group(settings))
         workflow = self._interceptors.apply("workflow", self._workflow_group(mode, name, settings))
-        context = "\n\n\n".join(part for part in (snapshot, profile, rules, workflow) if part)
+        attached = self._interceptors.apply("attachment", attachment or "")
+        context = "\n\n\n".join(
+            part for part in (snapshot, profile, rules, workflow, attached) if part
+        )
         return self._interceptors.apply("context", context)
 
     def _snapshot(self, job: str | None) -> SessionSnapshot:

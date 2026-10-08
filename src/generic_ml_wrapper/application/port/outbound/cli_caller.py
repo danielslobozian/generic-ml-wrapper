@@ -26,6 +26,21 @@ class CliCaller(ABC):
         """
         self.run = run
 
+    def extra_dir_flags(self, flag: str = "--add-dir") -> list[str]:
+        """The run's extra folders as launch flags, one ``flag <dir>`` pair per folder.
+
+        For a client whose flag opens a folder outside the working one to the session
+        (``--add-dir`` on claude, codex and vibe). A client without such a flag leaves
+        this unused.
+
+        Args:
+            flag: The client's flag.
+
+        Returns:
+            The flags, or empty when the run has no extra folders.
+        """
+        return [token for folder in self.run.extra_dirs for token in (flag, folder)]
+
     def can_deliver_statusline(self) -> bool:
         """Whether this client hosts a status line the wrapper renders into.
 

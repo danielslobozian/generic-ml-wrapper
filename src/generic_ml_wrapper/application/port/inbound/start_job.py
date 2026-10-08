@@ -21,6 +21,9 @@ class StartJobCommand:
         resume_session: Resume this specific session id instead of the latest; takes
             precedence over ``resume_latest``. ``None`` means "not a specific-session resume".
         workflow: A workflow to run on the job, or ``None`` for the plain wrapper.
+        attachment: An attachment to run the new session with, or ``None``.
+        attachment_version: The attachment's version (``MAJOR.MINOR.PATCH``), or ``None``
+            for the highest stored.
         client_args: Passthrough launch arguments for this call, replacing whatever
             is configured for the client; ``None`` means "use the configured value".
         tags: Tags to put on the job once its session is recorded (kept with any it
@@ -32,6 +35,8 @@ class StartJobCommand:
     resume_latest: bool = False
     resume_session: str | None = None
     workflow: str | None = None
+    attachment: str | None = None
+    attachment_version: str | None = None
     client_args: str | None = None
     tags: tuple[str, ...] = ()
 

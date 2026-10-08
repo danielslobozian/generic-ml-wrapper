@@ -11,7 +11,7 @@ cross-links to [CONFIGURATION.md](CONFIGURATION.md), [WORKFLOWS.md](WORKFLOWS.md
 ```
 gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
-gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME] [--tag T]...
+gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME | --attach NAME[@VERSION]] [--tag T]...
 gmlw run [workflow] [--client X] [--client-args ARGS]   # run a workflow directly (job named after it)
 gmlw jobs [--tag T] [--json]
 gmlw jobs tag <job> <tag> [<tag>...]           # e.g. the sprint it belongs to
@@ -107,7 +107,8 @@ existing file is left untouched; migrating the older layout comes in a later rel
 Start or resume a session on a job.
 
 ```
-gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest] [--workflow|-w NAME]
+gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest]
+           [--workflow|-w NAME | --attach NAME[@VERSION]]
 ```
 
 - `job` (optional positional) — the job identifier. A job groups related sessions.
@@ -133,6 +134,13 @@ gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest] [--wor
   `gmlw workflow list`). It applies to the new session only, and is recorded with it:
   `gmlw sessions <job>` shows which workflow each session ran. Ignored on a resume, which
   continues with the session's own. See [WORKFLOWS.md](WORKFLOWS.md).
+- `--attach NAME[@VERSION]` — start the new session with an attachment (list them with
+  `gmlw attachment list`); without `@VERSION`, the highest. Its main file follows gmlw's
+  own context, the session opens on a message naming it, and the attachment store is
+  opened to the client (`--add-dir`) so its other files can be read. A version changed
+  since its import is refused before any session is spent. `gmlw sessions <job>` shows
+  `name@version` for each session that ran one; a resume reopens the store. Not with
+  `--workflow`. See [ATTACHMENTS.md](ATTACHMENTS.md).
 
 Before launching, `start` preflights the working directory and the client: a deleted
 cwd or an uninstalled/unsupported client prints guidance and exits 2 rather than

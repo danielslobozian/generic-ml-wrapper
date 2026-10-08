@@ -34,7 +34,12 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
     CredentialsUnreadableError,
 )
 from generic_ml_wrapper.application.domain.model import client_catalog
-from generic_ml_wrapper.application.domain.model.attachment import AttachmentVersion, find
+from generic_ml_wrapper.application.domain.model.attachment import (
+    AttachmentError,
+    AttachmentVersion,
+    AttachmentVersionError,
+    find,
+)
 from generic_ml_wrapper.application.domain.model.axis import AxisKind
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import (
@@ -362,11 +367,18 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         action="store_true",
         help=i18n.t("cli.flag.resume_latest"),
     )
-    start.add_argument(
+    attach_or_workflow = start.add_mutually_exclusive_group()
+    attach_or_workflow.add_argument(
         "--workflow",
         "-w",
         default=None,
         help=i18n.t("cli.flag.workflow"),
+    )
+    attach_or_workflow.add_argument(
+        "--attach",
+        default=None,
+        metavar=i18n.t("cli.metavar.attach"),
+        help=i18n.t("cli.flag.attach"),
     )
     start.add_argument(
         "--client-args",
@@ -2277,12 +2289,15 @@ def _start(args: argparse.Namespace) -> int:
         print(i18n.t("start.needs_job"), file=sys.stderr)
         return 2
     workflow = None if args.workflow is None else str(args.workflow)
+    attachment, attachment_version = _attach_target(getattr(args, "attach", None))
     client = _client(args.client)
     command = StartJobCommand(
         job=JobId(args.job),
         client=client,
         resume_latest=bool(args.resume_latest),
         workflow=workflow,
+        attachment=attachment,
+        attachment_version=attachment_version,
         client_args=args.client_args,
         tags=tuple(getattr(args, "tag", None) or ()),
     )
@@ -2301,7 +2316,12 @@ def _start(args: argparse.Namespace) -> int:
             result = build_start_job().execute(command)
         except _Terminated:
             return 143  # 128 + SIGTERM: terminated, but teardown ran
-        except (UnknownWorkflowError, ResumeNotSupportedError) as error:
+        except (
+            UnknownWorkflowError,
+            ResumeNotSupportedError,
+            AttachmentError,
+            AttachmentVersionError,
+        ) as error:
             print(_render_error(error))
             return 2
     farewell = _farewell()
@@ -2309,6 +2329,14 @@ def _start(args: argparse.Namespace) -> int:
         print(farewell, file=sys.stderr)
     _print_exit_receipt(result)  # the persistent return summary: cost, commands, one tip
     return result.exit_code
+
+
+def _attach_target(value: str | None) -> tuple[str | None, str | None]:
+    """Split ``--attach NAME[@VERSION]`` into the name and the version (``None``: highest)."""
+    if value is None:
+        return None, None
+    name, at, version = str(value).partition("@")
+    return name, (version if at else None)
 
 
 def _run(args: argparse.Namespace) -> int:

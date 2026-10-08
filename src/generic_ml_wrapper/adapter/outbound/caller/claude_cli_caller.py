@@ -123,10 +123,13 @@ class ClaudeCliCaller(CliCaller):
             The argv list to execute.
         """
         run = self.run
+        # Right after the binary: claude's --add-dir takes several folders, so a
+        # positional (the kickoff) must never follow it directly.
+        dirs = self.extra_dir_flags()
         if run.resume:
-            argv = [BINARY, "--resume", run.uuid or run.session_id]
+            argv = [BINARY, *dirs, "--resume", run.uuid or run.session_id]
         else:
-            argv = [BINARY, "-n", run.session_id]
+            argv = [BINARY, *dirs, "-n", run.session_id]
             if run.uuid is not None:
                 argv += ["--session-id", run.uuid]
             if context_file is not None:

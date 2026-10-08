@@ -3,10 +3,18 @@
 """Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
 import os
+import zipfile
+from pathlib import Path
 
 import pytest
 from _conformance import InMemoryJobTagStore
 
+from generic_ml_wrapper.adapter.outbound.attachment.filesystem_attachment_store import (
+    FilesystemAttachmentStore,
+    folder_hash,
+)
+from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.application.domain.model.attachment import AttachmentError
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
 from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
@@ -20,10 +28,12 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobCommand,
     UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.port.outbound.attachment_store import AttachmentStorePort
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 
 # A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
@@ -105,8 +115,16 @@ class FakeWorkflows(WorkflowSourcePort):
     def meta_guide(self) -> str:
         raise NotImplementedError
 
-    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
+    def compile(
+        self,
+        mode: CompileMode,
+        name: str | None = None,
+        job: str | None = None,
+        attachment: str | None = None,
+    ) -> str:
         self.compiled.append((mode, name))
+        if mode is CompileMode.ATTACHMENT:
+            return f"{self._baseline}\n\n\n{attachment}"
         if mode is CompileMode.DEFAULT:
             return self._baseline
         return f"CONTEXT<{name}>"
@@ -174,6 +192,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
     tags: InMemoryJobTagStore | None = None,
+    attachments: AttachmentStorePort | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -188,6 +207,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         tags=tags or InMemoryJobTagStore(),
         # configured per client; a client with no entry has no arguments
         client_args=lambda client: (client_args or {}).get(client, ""),
+        attachments=attachments,
     )
 
 
@@ -565,3 +585,163 @@ def test_an_invalid_tag_is_refused_before_a_session_is_spent() -> None:
         )
     assert store.recorded == []
     assert provider.run is None
+
+
+def _store_with(tmp_path: Path, *versions: str) -> FilesystemAttachmentStore:
+    store = FilesystemAttachmentStore(tmp_path / "attachments", Ledger(tmp_path / "ledger.db"))
+    for version in versions:
+        archive = tmp_path / f"notes-{version}.zip"
+        with zipfile.ZipFile(archive, "w") as zipped:
+            zipped.writestr(
+                "manifest.yaml", f"name: notes\nversion: {version}\nmain_md_file: main.md\n"
+            )
+            zipped.writestr("main.md", f"Notes {version}: read more/details.md when needed.\n")
+            zipped.writestr("more/details.md", "Details.\n")
+        ImportAttachmentUseCase(store).execute(str(archive))
+    return store
+
+
+def test_an_attachment_follows_the_baseline_and_opens_the_session(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    workflows = FakeWorkflows()
+    attachments = _store_with(tmp_path, "1.0.0")
+    credentials = FakeCredentials({"notes": {"NOTES_TOKEN": "t"}})
+
+    _use_case(store, provider, workflows, credentials=credentials, attachments=attachments).execute(
+        StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+    )
+
+    run = provider.run
+    assert run is not None
+    folder = tmp_path / "attachments" / "notes" / "1.0.0"
+    assert workflows.compiled == [(CompileMode.ATTACHMENT, None)]
+    assert run.context is not None
+    assert run.context.startswith("BASELINE\n\n\n## Attachment: notes 1.0.0\n\n")
+    assert f"Its files are in {folder}." in run.context
+    assert run.context.endswith("Notes 1.0.0: read more/details.md when needed.")
+    assert run.kickoff == (
+        "This session on JOB-1 runs with the attachment notes 1.0.0. Begin as its text says."
+    )
+    assert run.env == (("NOTES_TOKEN", "t"),)
+    assert run.extra_dirs == (str(tmp_path / "attachments"),)
+    recorded = store.recorded[0]
+    assert (recorded.attachment, recorded.attachment_version) == ("notes", "1.0.0")
+    assert recorded.attachment_hash == folder_hash(folder)
+    assert recorded.workflow is None
+
+
+def test_an_attachment_defaults_to_its_highest_version(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "2.9.0", "2.10.0", "1.0.0")
+
+    _use_case(store, provider, attachments=attachments).execute(
+        StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+    )
+
+    assert store.recorded[0].attachment_version == "2.10.0"
+
+
+def test_an_attachment_version_can_be_chosen(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "1.0.0", "2.0.0")
+
+    _use_case(store, provider, attachments=attachments).execute(
+        StartJobCommand(
+            job="JOB-1", client="claude", attachment="notes", attachment_version="1.0.0"
+        )
+    )
+
+    assert store.recorded[0].attachment_version == "1.0.0"
+    assert provider.run is not None
+    assert "Notes 1.0.0" in (provider.run.context or "")
+
+
+@pytest.mark.parametrize(
+    ("name", "version", "key"),
+    [
+        ("missing", None, "error.attachment.not_found"),
+        ("notes", "9.0.0", "error.attachment.version_not_found"),
+    ],
+)
+def test_an_unknown_attachment_is_refused_before_a_session_is_spent(
+    tmp_path: Path, name: str, version: str | None, key: str
+) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "1.0.0")
+
+    with pytest.raises(AttachmentError) as raised:
+        _use_case(store, provider, attachments=attachments).execute(
+            StartJobCommand(
+                job="JOB-1", client="claude", attachment=name, attachment_version=version
+            )
+        )
+
+    assert raised.value.catalogue_key == key
+    assert store.recorded == []
+    assert provider.log == []
+
+
+def test_a_changed_attachment_is_refused_before_a_session_is_spent(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "1.0.0")
+    folder = tmp_path / "attachments" / "notes" / "1.0.0"
+    folder.chmod(0o755)
+    (folder / "extra.md").write_text("x")
+
+    with pytest.raises(AttachmentError) as raised:
+        _use_case(store, provider, attachments=attachments).execute(
+            StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+        )
+
+    assert raised.value.catalogue_key == "error.attachment.invalid"
+    assert store.recorded == []
+
+
+def test_without_a_store_an_attachment_is_not_found() -> None:
+    store = FakeStore(ids=[])
+    with pytest.raises(AttachmentError):
+        _use_case(store, FakeProvider()).execute(
+            StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+        )
+
+
+def test_resuming_an_attachment_session_reopens_the_store(tmp_path: Path) -> None:
+    attachments = _store_with(tmp_path, "1.0.0")
+    session = Session(
+        "JOB-1_001",
+        "JOB-1",
+        "claude",
+        "u-1",
+        "/work",
+        attachment="notes",
+        attachment_version="1.0.0",
+    )
+    store = FakeStore(latest=session, ids=["JOB-1_001"])
+    provider = FakeProvider()
+
+    _use_case(store, provider, attachments=attachments).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True)
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is True
+    assert provider.run.context is None
+    assert provider.run.extra_dirs == (str(tmp_path / "attachments"),)
+
+
+def test_resuming_a_plain_session_opens_nothing(tmp_path: Path) -> None:
+    session = Session("JOB-1_001", "JOB-1", "claude", "u-1", "/work")
+    store = FakeStore(latest=session, ids=["JOB-1_001"])
+    provider = FakeProvider()
+
+    _use_case(store, provider, attachments=_store_with(tmp_path)).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True)
+    )
+
+    assert provider.run is not None
+    assert provider.run.extra_dirs == ()

@@ -26,6 +26,7 @@ class CompileMode(StrEnum):
     DEFAULT = "default"
     WORKFLOW = "workflow"
     AUTHORING = "authoring"
+    ATTACHMENT = "attachment"
 
 
 class CompressorKind(StrEnum):

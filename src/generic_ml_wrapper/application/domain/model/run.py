@@ -25,6 +25,8 @@ class RunContext:
         client_args: Extra launch arguments to hand the client verbatim, already split
             into tokens. Opaque to the wrapper: whatever the user configured for this
             client, passed through unexamined. Empty when none is configured.
+        extra_dirs: Folders outside ``cwd`` the session must be able to read, e.g. the
+            attachment store; a caller opens them with its client's own flag.
     """
 
     job: str
@@ -37,3 +39,4 @@ class RunContext:
     kickoff: str | None = None
     env: tuple[tuple[str, str], ...] = ()
     client_args: tuple[str, ...] = ()
+    extra_dirs: tuple[str, ...] = ()

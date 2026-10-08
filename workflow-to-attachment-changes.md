@@ -73,26 +73,29 @@ Confirmed 2026-10-08.
 
 ## Phase 4 — Attaching to a session
 
-- [ ] `StartJobCommand.workflow` → `attachment` (name + optional version); default to
-      the highest version; refuse an invalid version.
-- [ ] `context_source.py`: `BASE`/`STEPS` → one `ATTACHMENT` source (the main file);
-      `CompileMode` → `DEFAULT`, `ATTACHMENT` (D5); drop `includes_workflow`.
-- [ ] Compile: main file after gmlw's groups, introduced by gmlw's line (name, version,
-      absolute folder, "paths are relative to this folder").
-- [ ] Callers: open the store with `--add-dir` on claude, codex, vibe; check what
-      cursor offers and document it in `docs/CLIENTS.md`.
-- [ ] Opening message naming the attachment and version (replaces the workflow kickoff in
-      `start_job.py:203`, and `context_opening.py:25`).
-- [ ] Credentials keyed by attachment name (`credentials_store`, `set_credential`,
-      `gmlw creds set`).
-- [ ] Ledger migration 8 (or folded into 7): `sessions.workflow` → `attachment`, add
-      `attachment_version`, `attachment_hash`; `Session`, `sqlite_session_store`,
-      `list_sessions`, `gmlw sessions` and the TUI session list show `name@version`.
-- [ ] Interceptor stage `workflow` → `attachment` (`interceptor_chain.py`,
-      `port/outbound/interceptor.py`, seeded config comments).
-- [ ] Config: `[startup.attachment]` (D5) in `config.py`, seeder template.
-- [ ] Tests: `test_start_job_usecase`, `test_context_source`, `test_config`, caller
-      argv tests, `test_ledger_migration`, `test_sqlite_session_store`.
+Done additively: workflows keep working until phase 7 removes them, so the renames that
+would break them moved there.
+
+- [x] `StartJobCommand.attachment` + `attachment_version`; defaults to the highest; an
+      invalid version is refused before a session is recorded. (`workflow` goes in
+      phase 7.)
+- [x] `CompileMode.ATTACHMENT` with its `[startup.attachment]` defaults. The main file is
+      delivered as written, never compressed, so it needs no context source.
+- [x] Compile: the attachment section last, through its own interceptor target, after
+      gmlw's groups; gmlw's introduction gives name, version, absolute folder and "paths
+      are relative to this folder" (`domain/service/attachment_context.py`).
+- [x] Callers: `RunContext.extra_dirs`, opened with `--add-dir` on claude (ahead of any
+      positional), codex (after `resume <id>`), vibe; on start and on resume. cursor has
+      no such flag: documented in `docs/CLIENTS.md`.
+- [x] Opening message naming the attachment and version.
+- [x] Credentials resolved by attachment name (same store; renamed in phase 8).
+- [x] Ledger migration 8: `sessions.attachment`, `attachment_version`, `attachment_hash`;
+      `Session`, `sqlite_session_store`; `gmlw sessions` and the TUI show `name@version`.
+- [x] Interceptor target `attachment`; seeded config comments.
+- [x] `gmlw start --attach NAME[@VERSION]`, exclusive with `--workflow`; `docs/CLI.md`.
+- [x] Tests: `test_start_job_usecase`, `test_callers`, `test_filesystem_workflow_source`,
+      `test_sqlite_session_store`, `test_list_sessions_usecase`, `test_ledger_migration`,
+      `test_cli`.
 
 ## Phase 5 — The provided attachment
 
@@ -124,6 +127,11 @@ Confirmed 2026-10-08.
 - [ ] Adapters: `adapter/outbound/workflow/` (source, zip archive),
       `tty_workflow_chooser.py`, `tty_guided_chooser.py`.
 - [ ] `paths.py`: `WORKFLOWS`, `DRAFTS`, `AUTHORING`, `WORKFLOW_BACKUPS`.
+- [ ] Moved from phase 4: `StartJobCommand.workflow`; `CompileMode.WORKFLOW`/`AUTHORING`,
+      `BASE`/`STEPS`, `includes_workflow`, `[startup.workflow]`/`[startup.authoring]`;
+      the `workflow` interceptor target; the workflow kickoff (`start_job.py`) and
+      "the workflow steps" in `context_opening.py`; `Session.workflow` and
+      `SessionSummary.workflow` (the ledger column stays, as history).
 - [ ] `composition.py` wiring.
 - [ ] `resources/workflows/`.
 - [ ] Help topics `job-vs-workflow`, `start-vs-run` (`help_topics.py`), replaced by one

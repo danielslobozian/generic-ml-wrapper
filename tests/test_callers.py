@@ -777,3 +777,49 @@ def test_the_status_line_precedes_the_prompt() -> None:
     argv = _codex(_codex_run()).command("GO")
     assert argv[-1] == "GO"
     assert any(a.startswith("tui.status_line=") for a in argv[:-1])
+
+
+_STORE = "/home/u/.gmlw/attachments"
+
+
+def _with_dirs(run: RunContext) -> RunContext:
+    return replace(run, extra_dirs=(_STORE,))
+
+
+def test_claude_opens_the_extra_folders_ahead_of_any_positional() -> None:
+    caller = _claude(_with_dirs(_run(resume=False, uuid=None, kickoff="go")))
+    assert caller.command("/tmp/ctx.md") == [
+        BINARY,
+        "--add-dir",
+        _STORE,
+        "-n",
+        "JOB-1_001",
+        "--append-system-prompt-file",
+        "/tmp/ctx.md",
+        "go",
+    ]
+
+
+def test_claude_reopens_the_extra_folders_on_resume() -> None:
+    caller = _claude(_with_dirs(_run(resume=True, uuid="u-1")))
+    assert caller.command() == [BINARY, "--add-dir", _STORE, "--resume", "u-1"]
+
+
+def test_codex_opens_the_extra_folders_after_its_subcommand() -> None:
+    fresh = _codex(_with_dirs(_run(resume=False, uuid=None))).command("hi")
+    assert fresh[:3] == ["codex", "--add-dir", _STORE]
+    assert fresh[-1] == "hi"
+    resumed = _codex(_with_dirs(_run(resume=True, uuid="c-1"))).command()
+    assert resumed[:5] == ["codex", "resume", "c-1", "--add-dir", _STORE]
+
+
+def test_vibe_opens_the_extra_folders() -> None:
+    argv = _vibe(_with_dirs(_run(resume=False, uuid=None))).command("hi")
+    assert argv[:3] == ["vibe", "--add-dir", _STORE]
+    assert argv[-1] == "hi"
+
+
+def test_no_extra_folders_add_no_flags() -> None:
+    assert "--add-dir" not in _claude(_run(resume=False, uuid=None)).command()
+    assert "--add-dir" not in _codex(_run(resume=False, uuid=None)).command()
+    assert "--add-dir" not in _vibe(_run(resume=False, uuid=None)).command()

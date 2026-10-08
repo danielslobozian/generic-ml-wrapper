@@ -151,7 +151,13 @@ class WorkflowSourcePort(ABC):
         """
 
     @abstractmethod
-    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
+    def compile(
+        self,
+        mode: CompileMode,
+        name: str | None = None,
+        job: str | None = None,
+        attachment: str | None = None,
+    ) -> str:
         """Compile a run's operating context for a mode.
 
         The context opens with the session snapshot — the active environment, role,
@@ -166,6 +172,8 @@ class WorkflowSourcePort(ABC):
                 modes; ``None`` for a plain (default) run.
             job: The job this session runs on, for the snapshot; ``None`` leaves the
                 snapshot's ``job_name`` empty rather than omitting the block.
+            attachment: An attachment's section, placed after gmlw's own groups as
+                written (never compressed), or ``None``.
 
         Returns:
             The composed context (the snapshot, then the active sources).

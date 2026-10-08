@@ -68,7 +68,13 @@ class FakeWorkflows(WorkflowSourcePort):
     def meta_guide(self) -> str:
         return ""
 
-    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
+    def compile(
+        self,
+        mode: CompileMode,
+        name: str | None = None,
+        job: str | None = None,
+        attachment: str | None = None,
+    ) -> str:
         return ""
 
 

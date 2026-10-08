@@ -31,6 +31,10 @@ class Session:
         workflow: The workflow the session was started with, or ``None`` for a plain one.
             A job can run a different workflow in each of its sessions (a feature, then
             an MR review), so it is recorded here rather than on the job.
+        attachment: The attachment the session was started with, or ``None``.
+        attachment_version: That attachment's version, as ``MAJOR.MINOR.PATCH``.
+        attachment_hash: The hash that version had when the session started, so the
+            record says what ran even after the version is deleted.
     """
 
     session_id: str
@@ -41,3 +45,6 @@ class Session:
     resumable: bool = True
     created_at: str | None = field(default=None, compare=False)
     workflow: str | None = None
+    attachment: str | None = None
+    attachment_version: str | None = None
+    attachment_hash: str | None = None

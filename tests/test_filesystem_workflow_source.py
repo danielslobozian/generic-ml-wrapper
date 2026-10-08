@@ -479,6 +479,24 @@ def test_compile_runs_interceptors_per_target(tmp_path: Path) -> None:
     assert compiled.startswith("CTX(")  # context target wrapped the whole compiled blob
 
 
+def test_an_attachment_section_comes_last_through_its_own_target(tmp_path: Path) -> None:
+    chain = InterceptorChain([("attachment", _Marker("ATT"))])
+    source = FilesystemWorkflowSource(tmp_path / "wf", None, interceptors=chain)
+
+    compiled = source.compile(CompileMode.ATTACHMENT, job="j", attachment="## Attachment: a")
+
+    assert compiled.startswith("## This session")
+    assert compiled.endswith("\n\n\nATT(## Attachment: a)")
+
+
+def test_no_attachment_adds_no_section(tmp_path: Path) -> None:
+    chain = InterceptorChain([("attachment", _Marker("ATT"))])
+    compiled = FilesystemWorkflowSource(tmp_path / "wf", None, interceptors=chain).compile(
+        CompileMode.ATTACHMENT, job="j"
+    )
+    assert "ATT(" not in compiled
+
+
 def test_compiled_context_opens_with_the_session_snapshot(tmp_path: Path) -> None:
     """The snapshot leads, carrying the live selections and the job it was compiled for."""
     source = FilesystemWorkflowSource(

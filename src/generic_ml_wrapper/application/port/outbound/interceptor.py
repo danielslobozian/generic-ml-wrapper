@@ -13,7 +13,8 @@ class InterceptorPort(Interceptor, ABC):
     """Outbound port for an interceptor; the contract is the domain :class:`Interceptor`.
 
     Interceptors are chained (0..N), ordered, and each targets a name: the
-    compile-time context sections (``profile``, ``rules``, ``workflow``, ``context``)
+    compile-time context sections (``profile``, ``rules``, ``workflow``, ``attachment``,
+    ``context``)
     or, for clients routed through the metering relay, the live wire (``request`` for
     the outbound request body, ``response`` for the captured response body). A logger,
     a compressor, and a secret-anonymiser are all interceptors. An interceptor must be

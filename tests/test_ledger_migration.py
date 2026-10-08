@@ -158,3 +158,16 @@ def test_v6_gains_an_empty_attachments_table(tmp_path: Path) -> None:
         "imported_at",
     ]
     assert count == 0
+
+
+def test_v7_sessions_ran_no_attachment(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect() as connection:
+        rows = connection.execute(
+            "SELECT attachment, attachment_version, attachment_hash FROM sessions"
+        ).fetchall()
+
+    assert rows
+    assert all(tuple(row) == (None, None, None) for row in rows)
