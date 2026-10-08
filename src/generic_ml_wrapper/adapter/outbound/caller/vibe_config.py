@@ -8,6 +8,11 @@ model uses. Everything else — model definitions, prices, ``api_key_env_var``, 
 permissions — is preserved, so the metered run behaves like the real one but its
 traffic detours through the local relay. The API key resolves from the OS keyring,
 which is independent of ``VIBE_HOME``, so no credential is copied.
+
+A fresh vibe install writes neither ``active_model`` nor any ``[[models]]`` or
+``[[providers]]``: it runs on built-ins it keeps in code. When the config leaves the
+active model on those built-ins, the upstream is vibe's default ``mistral`` provider,
+and the redirect adds that provider's table, pointed at the relay.
 """
 
 from __future__ import annotations
@@ -16,13 +21,28 @@ import tomllib
 from typing import cast
 from urllib.parse import urlsplit
 
+# vibe's built-in provider, and the model keys (unset, alias, name) that resolve to it.
+_DEFAULT_PROVIDER = "mistral"
+_DEFAULT_API_BASE = "https://api.mistral.ai/v1"
+_DEFAULT_MODEL_KEYS = frozenset({"", "mistral-medium-3.5", "mistral-vibe-cli-latest"})
+# A [[providers]] entry replaces the built-in one wholesale (vibe merges them by name),
+# so it restates the built-in's key variable and backend; the backend fills in the rest.
+_DEFAULT_PROVIDER_TABLE = """
+[[providers]]
+name = "mistral"
+api_base = "{api_base}"
+api_key_env_var = "MISTRAL_API_KEY"
+backend = "mistral"
+"""
+
 
 def active_upstream(source_text: str) -> str | None:
     """Return the ``api_base`` the config's active model talks to, or ``None``.
 
     Resolves ``active_model`` to its ``[[models]]`` entry (matched by ``name`` or
     ``alias``), then that model's ``[[providers]]`` entry, and returns its
-    ``api_base`` (e.g. ``https://api.mistral.ai/v1``).
+    ``api_base`` (e.g. ``https://api.mistral.ai/v1``). An unset ``active_model``, or
+    one naming vibe's built-in default model, resolves to the built-in provider.
 
     Args:
         source_text: The contents of a vibe ``config.toml``.
@@ -34,13 +54,13 @@ def active_upstream(source_text: str) -> str | None:
         data = tomllib.loads(source_text)
     except tomllib.TOMLDecodeError:
         return None
-    active = data.get("active_model")
-    if not isinstance(active, str):
-        return None
-    provider_name = _provider_of(data.get("models"), active)
+    provider_name = _provider_name(data)
     if provider_name is None:
         return None
-    return _api_base_of(data.get("providers"), provider_name)
+    api_base = _api_base_of(data.get("providers"), provider_name)
+    if api_base is None and provider_name == _DEFAULT_PROVIDER:
+        return _DEFAULT_API_BASE
+    return api_base
 
 
 def redirect(source_text: str, upstream: str, relay_base_url: str) -> str:
@@ -57,25 +77,40 @@ def redirect(source_text: str, upstream: str, relay_base_url: str) -> str:
     Returns:
         The config text with ``upstream`` replaced by the relay-pointed base URL, changed
         only inside the active provider's ``[[providers]]`` table -- so the same URL in a
-        comment or in another provider is left alone. Unchanged if the active provider
-        cannot be resolved.
+        comment or in another provider is left alone. When that provider is vibe's
+        built-in one and the config has no table for it, a table is appended. Unchanged
+        if the active provider cannot be resolved.
     """
     new_api_base = relay_base_url + urlsplit(upstream).path
-    provider = _active_provider_name(source_text)
-    if provider is None:
-        return source_text
-    return _repoint_provider(source_text, provider, f'"{upstream}"', f'"{new_api_base}"')
-
-
-def _active_provider_name(source_text: str) -> str | None:
     try:
         data = tomllib.loads(source_text)
     except tomllib.TOMLDecodeError:
-        return None
-    active = data.get("active_model")
+        return source_text
+    provider = _provider_name(data)
+    if provider is None:
+        return source_text
+    if (
+        provider == _DEFAULT_PROVIDER
+        and upstream == _DEFAULT_API_BASE
+        and _api_base_of(data.get("providers"), provider) is None
+    ):
+        return _with_default_provider(source_text, new_api_base)
+    return _repoint_provider(source_text, provider, f'"{upstream}"', f'"{new_api_base}"')
+
+
+def _provider_name(data: dict[str, object]) -> str | None:
+    active = data.get("active_model", "")
     if not isinstance(active, str):
         return None
-    return _provider_of(data.get("models"), active)
+    provider = _provider_of(data.get("models"), active)
+    if provider is None and active in _DEFAULT_MODEL_KEYS:
+        return _DEFAULT_PROVIDER
+    return provider
+
+
+def _with_default_provider(source_text: str, api_base: str) -> str:
+    separator = "" if not source_text or source_text.endswith("\n") else "\n"
+    return source_text + separator + _DEFAULT_PROVIDER_TABLE.format(api_base=api_base)
 
 
 def _repoint_provider(source_text: str, provider_name: str, old: str, new: str) -> str:

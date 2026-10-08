@@ -109,6 +109,13 @@ relay and, because vibe has no flag to repoint one provider, writes a **throwawa
 `VIBE_HOME`** whose config repoints the provider at the relay for the duration of the run.
 The throwaway home is removed when the run ends. Per-turn tokens and cost are recorded.
 
+The provider is the one the active model uses in `~/.vibe/config.toml`. A fresh install
+writes none of that — no `active_model`, no `[[models]]`, no `[[providers]]` — and runs on
+vibe's built-in `mistral` provider (`https://api.mistral.ai/v1`); the throwaway config then
+adds that provider's entry, pointed at the relay. The key still comes from your keyring
+or `MISTRAL_API_KEY`. Only an active model the wrapper cannot place (one of vibe's other
+built-ins, such as `local`) runs unmetered, with a warning in the log.
+
 **Resume:** **Not supported.** `can_resume` is false — the wrapper cannot bind or resume a
 vibe session by its own id, and the throwaway `VIBE_HOME` holds no durable session state.
 Each run is fresh; `--resume-latest` does not apply.

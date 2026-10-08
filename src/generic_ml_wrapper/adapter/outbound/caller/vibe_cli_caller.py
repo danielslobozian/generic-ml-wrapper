@@ -80,6 +80,8 @@ class VibeCliCaller(CliCaller):
         """Start the relay and write the throwaway VIBE_HOME pointed at it."""
         try:
             source_text = _VIBE_CONFIG.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            source_text = ""  # vibe not configured yet: it runs on its built-ins
         except OSError as error:
             log.warning(i18n.t("log.vibe_config_unreadable", config=_VIBE_CONFIG, error=error))
             return

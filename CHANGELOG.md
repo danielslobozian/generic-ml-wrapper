@@ -50,6 +50,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   home.
 
 ### Fixed
+- **Vibe was never metered on a fresh install.** The wrapper reroutes vibe through the relay
+  by repointing, in `~/.vibe/config.toml`, the provider the active model uses. A fresh vibe
+  writes none of that — it runs on built-in defaults — so there was nothing to repoint, and
+  every run started unmetered: no tokens, no cost, no incidents, only a warning in the log.
+  When the config leaves the model on vibe's defaults, the run is now routed through vibe's
+  built-in `mistral` provider. A missing `config.toml` counts as all defaults, too.
 - **A dropped connection printed a traceback over the client's screen.** Logs are kept off
   the terminal while a client owns it, but a session started from the menu opened with a
   bare `gmlw` — the usual way in — was not counted as one of those, so every relay failure
