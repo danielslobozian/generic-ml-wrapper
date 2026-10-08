@@ -538,6 +538,9 @@ def test_vibe_metering_uses_the_built_in_provider_without_a_config(
         assert 'name = "mistral"' in config
         assert 'api_base = "http://127.0.0.1:' in config
         assert "--trust" in caller.command("hi")
+        # vibe's account check rewrites config.toml; VIBE_PROVIDERS ranks above it
+        providers = caller._extra_env()["VIBE_PROVIDERS"]
+        assert '"api_base": "http://127.0.0.1:' in providers
     finally:
         caller.end_metering()
 

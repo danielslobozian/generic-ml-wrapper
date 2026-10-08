@@ -38,7 +38,8 @@ class VibeCliCaller(CliCaller):
     is ``False`` — and it has no status-line hook. It takes its operating context via
     a "read this file first" opening message (it has no system-prompt flag).
     ``start_metering`` stands up a relay pointed at the active model's upstream and
-    writes a throwaway ``VIBE_HOME`` whose config repoints that provider at the relay;
+    writes a throwaway ``VIBE_HOME`` whose config repoints that provider at the relay,
+    also passed as ``VIBE_PROVIDERS`` so vibe's own rewrite of the config cannot undo it;
     if the relay cannot start (or the config can't be read), vibe launches unmetered.
     """
 
@@ -67,6 +68,7 @@ class VibeCliCaller(CliCaller):
         self._transcript = transcript
         self._relay: MeteringRelay | None = None
         self._vibe_home: str | None = None
+        self._providers: str | None = None
 
     def can_resume(self) -> bool:
         """Vibe mints its own uuid and takes no session id at launch."""
@@ -112,6 +114,7 @@ class VibeCliCaller(CliCaller):
             vibe_config.redirect(source_text, upstream, relay.base_url), encoding="utf-8"
         )
         self._vibe_home = str(home)
+        self._providers = vibe_config.provider_override(source_text, upstream, relay.base_url)
 
     def end_metering(self) -> None:
         """Stop the relay and remove the throwaway VIBE_HOME."""
@@ -121,6 +124,7 @@ class VibeCliCaller(CliCaller):
         if self._vibe_home is not None:
             shutil.rmtree(self._vibe_home, ignore_errors=True)
             self._vibe_home = None
+        self._providers = None
 
     def _provider_flags(self) -> list[str]:
         # The throwaway VIBE_HOME has no trusted-folder record; trust the cwd for
@@ -156,8 +160,14 @@ class VibeCliCaller(CliCaller):
         return self._run(self.command(self.run.kickoff))
 
     def _extra_env(self) -> dict[str, str]:
-        """Point vibe at the throwaway config home when the relay is running."""
-        return {} if self._vibe_home is None else {"VIBE_HOME": self._vibe_home}
+        """Point vibe at the throwaway config home, and the relay, when the relay runs."""
+        if self._vibe_home is None:
+            return {}
+        env = {"VIBE_HOME": self._vibe_home}
+        if self._providers is not None:
+            # Ranks above config.toml, which vibe's account check rewrites on startup.
+            env["VIBE_PROVIDERS"] = self._providers
+        return env
 
     def _run(self, argv: list[str]) -> int:
         env = {

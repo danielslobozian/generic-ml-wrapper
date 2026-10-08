@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Tests for the vibe config redirect helper."""
 
+import json
 import tomllib
 from typing import cast
 
@@ -129,3 +130,39 @@ def test_redirect_changes_only_the_active_providers_table() -> None:
     out = vibe_config.redirect(shared, "https://api.mistral.ai/v1", "http://127.0.0.1:52001")
     assert out.count('api_base = "http://127.0.0.1:52001/v1"') == 1  # only the active provider
     assert out.count('api_base = "https://api.mistral.ai/v1"') == 1  # llamacpp left untouched
+
+
+def test_provider_override_restates_the_built_in_provider_at_the_relay() -> None:
+    out = vibe_config.provider_override(
+        _FRESH, "https://api.mistral.ai/v1", "http://127.0.0.1:52001"
+    )
+    assert out is not None
+    assert json.loads(out) == [
+        {
+            "name": "mistral",
+            "api_key_env_var": "MISTRAL_API_KEY",
+            "backend": "mistral",
+            "api_base": "http://127.0.0.1:52001/v1",
+        }
+    ]
+
+
+def test_provider_override_keeps_the_configured_providers_whole_entry() -> None:
+    out = vibe_config.provider_override(
+        _CONFIG, "https://api.mistral.ai/v1", "http://127.0.0.1:52001"
+    )
+    assert out is not None
+    assert json.loads(out) == [
+        {
+            "name": "mistral",
+            "api_base": "http://127.0.0.1:52001/v1",
+            "api_style": "openai",
+            "backend": "mistral",
+        }
+    ]
+
+
+def test_provider_override_is_none_when_unresolvable() -> None:
+    relay = "http://127.0.0.1:52001"
+    assert vibe_config.provider_override('active_model = "local"\n', "x", relay) is None
+    assert vibe_config.provider_override("not [ valid toml", "x", relay) is None
