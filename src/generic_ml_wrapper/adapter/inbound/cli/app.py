@@ -34,6 +34,7 @@ from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_stor
     CredentialsUnreadableError,
 )
 from generic_ml_wrapper.application.domain.model import client_catalog
+from generic_ml_wrapper.application.domain.model.attachment import AttachmentVersion, find
 from generic_ml_wrapper.application.domain.model.axis import AxisKind
 from generic_ml_wrapper.application.domain.model.draft import Draft
 from generic_ml_wrapper.application.domain.model.identifiers import (
@@ -79,6 +80,7 @@ from generic_ml_wrapper.application.port.inbound.import_workflow import (
     ImportOutcome,
 )
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
+from generic_ml_wrapper.application.port.inbound.list_attachments import AttachmentListing
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
 from generic_ml_wrapper.application.port.inbound.list_jobs import JobSummary
 from generic_ml_wrapper.application.port.inbound.list_sessions import SessionSummary
@@ -105,15 +107,19 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_check_for_update,
     build_config_commands,
     build_create_axis,
+    build_delete_attachment,
     build_delete_jobs,
     build_delete_sessions,
     build_diagnostics,
     build_edit_workflow,
+    build_export_attachment,
     build_export_usage,
     build_export_workflow,
     build_guided_chooser,
+    build_import_attachment,
     build_import_workflow,
     build_init,
+    build_list_attachments,
     build_list_clients,
     build_list_drafts,
     build_list_jobs,
@@ -236,6 +242,7 @@ _COMMANDS = frozenset(
         "statusline",
         "tui",
         "workflow",
+        "attachment",
         "persona",
         "plugins",
         "creds",
@@ -250,6 +257,7 @@ _COMMANDS = frozenset(
 # Commands whose real work lives in a sub-action; invoked without one, they show help.
 _SUBACTIONS = {
     "workflow": "workflow_command",
+    "attachment": "attachment_command",
     "persona": "persona_command",
     "plugins": "plugins_command",
     "creds": "creds_command",
@@ -489,6 +497,31 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     _add_guided_flags(edit)
     workflow_list = workflow_sub.add_parser("list", help=i18n.t("cli.cmd.workflow_list"))
     _add_json_flag(workflow_list)
+
+    attachment = sub.add_parser("attachment", help=i18n.t("cli.cmd.attachment"))
+    attachment_sub = attachment.add_subparsers(
+        dest="attachment_command", metavar=i18n.t("cli.metavar.action")
+    )
+    attachment_import = attachment_sub.add_parser(
+        "import", help=i18n.t("cli.cmd.attachment_import")
+    )
+    attachment_import.add_argument("archive", help=i18n.t("cli.arg.attachment_archive"))
+    attachment_export = attachment_sub.add_parser(
+        "export", help=i18n.t("cli.cmd.attachment_export")
+    )
+    attachment_export.add_argument("name", help=i18n.t("cli.arg.attachment_name"))
+    attachment_export.add_argument(
+        "version", nargs="?", default=None, help=i18n.t("cli.arg.attachment_version_optional")
+    )
+    attachment_export.add_argument("--to", default=".", help=i18n.t("cli.flag.attachment_to"))
+    attachment_list = attachment_sub.add_parser("list", help=i18n.t("cli.cmd.attachment_list"))
+    _add_json_flag(attachment_list)
+    attachment_delete = attachment_sub.add_parser(
+        "delete", help=i18n.t("cli.cmd.attachment_delete")
+    )
+    attachment_delete.add_argument("name", help=i18n.t("cli.arg.attachment_name"))
+    attachment_delete.add_argument("version", help=i18n.t("cli.arg.attachment_version"))
+    _add_yes_flag(attachment_delete)
 
     persona = sub.add_parser("persona", help=i18n.t("cli.cmd.persona"))
     persona_sub = persona.add_subparsers(
@@ -938,6 +971,39 @@ def format_personas(personas: list[Persona], loc: i18n.Localizer | None = None) 
     return "\n".join(lines)
 
 
+def format_attachments(listings: list[AttachmentListing], loc: i18n.Localizer | None = None) -> str:
+    """Render the stored attachment versions as human-readable lines.
+
+    Args:
+        listings: The stored versions, each with whether it is intact.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    if not listings:
+        return loc.t("attachment.none")
+    lines = [loc.t("attachment.count", count=len(listings)), ""]
+    name_width = max(len(item.attachment.name) for item in listings)
+    version_width = max(len(str(item.attachment.version)) for item in listings)
+    for item in listings:
+        name = f"{item.attachment.name:<{name_width}}"
+        version = f"{item.attachment.version!s:<{version_width}}"
+        if item.intact:
+            lines.append(
+                loc.t(
+                    "attachment.row",
+                    name=name,
+                    version=version,
+                    description=item.attachment.description,
+                )
+            )
+        else:
+            lines.append(loc.t("attachment.row_invalid", name=name, version=version))
+    return "\n".join(lines)
+
+
 def format_plugins(plugins: list[Plugin], loc: i18n.Localizer | None = None) -> str:
     """Render the installed plugins as human-readable lines.
 
@@ -1111,6 +1177,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _tui()
         if args.command == "workflow":
             return _workflow(args)
+        if args.command == "attachment":
+            return _attachment(args)
         if args.command == "persona":
             return _persona(args)
         if args.command == "plugins":
@@ -2768,6 +2836,80 @@ def _persona(args: argparse.Namespace) -> int:
         else:
             print(format_personas(personas))
         return 0
+    return 0
+
+
+def _attachment(args: argparse.Namespace) -> int:
+    """``gmlw attachment``: import, export, list or delete stored attachment versions."""
+    command = args.attachment_command
+    if command == "import":
+        return _attachment_import(str(args.archive))
+    if command == "export":
+        version = None if args.version is None else str(args.version)
+        return _attachment_export(str(args.name), version, Path(str(args.to)))
+    if command == "delete":
+        return _attachment_delete(str(args.name), str(args.version), assume_yes=bool(args.yes))
+    listings = build_list_attachments().execute()
+    if bool(args.json):
+        payload = [
+            {
+                "name": item.attachment.name,
+                "version": str(item.attachment.version),
+                "description": item.attachment.description,
+                "main_md_file": item.attachment.main_md_file,
+                "intact": item.intact,
+            }
+            for item in listings
+        ]
+        print(_as_json(payload))
+    else:
+        print(format_attachments(listings))
+    return 0
+
+
+def _attachment_import(archive: str) -> int:
+    """Import an attachment from a zip — ``gmlw attachment import``."""
+    try:
+        attachment = build_import_attachment().execute(archive)
+    except DomainError as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    print(
+        i18n.t("attachment.import.done", name=attachment.name, version=attachment.version),
+        file=sys.stderr,
+    )
+    return 0
+
+
+def _attachment_export(name: str, version: str | None, folder: Path) -> int:
+    """Export a stored version as a zip — ``gmlw attachment export``."""
+    try:
+        written = build_export_attachment().execute(name, version, folder)
+    except DomainError as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    print(i18n.t("attachment.export.written", path=written), file=sys.stderr)
+    return 0
+
+
+def _attachment_delete(name: str, version: str, *, assume_yes: bool) -> int:
+    """Confirm, then delete one stored version — ``gmlw attachment delete``.
+
+    The version is looked up before asking, so an unknown one is reported rather than
+    confirmed and then refused.
+    """
+    try:
+        stored = [item.attachment for item in build_list_attachments().execute()]
+        find(stored, name, AttachmentVersion.parse(version))
+    except DomainError as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    preview = i18n.t("delete.attachment.preview", name=name, version=version)
+    if not _confirm_delete(preview, assume_yes=assume_yes):
+        print(i18n.t("delete.cancelled"), file=sys.stderr)
+        return 2
+    build_delete_attachment().execute(name, version)
+    print(i18n.t("delete.attachment.done", name=name, version=version), file=sys.stderr)
     return 0
 
 

@@ -66,10 +66,10 @@ Confirmed 2026-10-08.
 
 ## Phase 3 — CLI for the store
 
-- [ ] `gmlw attachment import <zip>`, `export <name> [<version>]`, `list`,
+- [x] `gmlw attachment import <zip>`, `export <name> [<version>]`, `list`,
       `delete <name> <version>`.
-- [ ] i18n keys (en, fr); `docs/CLI.md` (the docs test requires every command).
-- [ ] Tests in `test_cli.py`.
+- [x] i18n keys (en, fr); `docs/CLI.md` (the docs test requires every command).
+- [x] Tests in `test_cli.py`.
 
 ## Phase 4 — Attaching to a session
 

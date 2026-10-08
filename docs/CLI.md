@@ -31,6 +31,10 @@ gmlw workflow drafts [--json]
 gmlw workflow resume [draft]
 gmlw workflow export <name>
 gmlw workflow import <archive> [--replace]
+gmlw attachment import <zip>
+gmlw attachment export <name> [<version>] [--to FOLDER]
+gmlw attachment list [--json]
+gmlw attachment delete <name> <version> [--yes]
 gmlw persona list [--json]
 gmlw plugins list [--json]
 gmlw creds set <workflow> <ENV_VAR_NAME>
@@ -42,11 +46,12 @@ gmlw role new <label> [--description D] [--default]
 ```
 
 `--json` is accepted by the read commands only: `jobs`, `sessions`, `export`,
-`clients`, `workflow list`, `workflow drafts`, `persona list`, `plugins list`,
+`clients`, `workflow list`, `workflow drafts`, `attachment list`, `persona list`, `plugins list`,
 `config list`, and `config get`. It prints pretty-printed JSON instead of the
 human-readable text.
 
-`--yes` is accepted by the delete commands only — `jobs delete` and `sessions delete` —
+`--yes` is accepted by the delete commands only — `jobs delete`, `sessions delete` and
+`attachment delete` —
 and skips their confirmation prompt.
 
 ### Implicit `start`
@@ -575,6 +580,38 @@ gmlw workflow import ~/Downloads/tidy-review.zip --replace
 ```
 
 See [WORKFLOWS.md](WORKFLOWS.md) for the authoring flow and workflow layout.
+
+## attachment
+
+Import, export, list and delete attachments: blocks of specification a session can run
+with. The format is in [ATTACHMENTS.md](ATTACHMENTS.md). Invoked with no action, prints its
+own help.
+
+```
+gmlw attachment import <zip>
+gmlw attachment export <name> [<version>] [--to FOLDER]
+gmlw attachment list [--json]
+gmlw attachment delete <name> <version> [--yes]
+```
+
+- `import` — reads the zip's `manifest.yaml` and stores the version under
+  `~/.gmlw/attachments/<name>/<version>/`, read-only, with its hash in the ledger. A version
+  already stored is refused: new content needs a new version.
+- `export` — writes a stored version as `<name>-<version>.zip` into `--to` (default: the
+  current folder). Without a version, the highest. A version changed since its import is
+  refused.
+- `list` — every stored version, by name then version. One that changed since its import
+  is marked; delete it and import it again.
+- `delete` — removes one version, after confirming (`--yes` skips the question).
+
+Exit codes: `0` done, `2` refused or declined (the message says why).
+
+Example:
+
+```
+gmlw attachment import ~/Downloads/notes.zip
+gmlw attachment export notes 1.0.0 --to ~/work
+```
 
 ## persona
 

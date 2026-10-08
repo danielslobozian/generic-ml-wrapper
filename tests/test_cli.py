@@ -5,6 +5,7 @@
 import io
 import json
 import platform
+import zipfile
 from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -196,6 +197,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "statusline": ["statusline"],
         "tui": ["tui"],
         "workflow": ["workflow"],
+        "attachment": ["attachment"],
         "persona": ["persona"],
         "plugins": ["plugins"],
         "creds": ["creds"],
@@ -2765,3 +2767,132 @@ def test_the_menu_health_groups_incidents_by_local_day(monkeypatch: pytest.Monke
         "connection lost",
         "TimeoutError: The read operation timed out",
     )
+
+
+def _attachment_zip(folder: Path, version: str = "1.0.0") -> Path:
+    archive = folder / f"notes-{version}-source.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr(
+            "manifest.yaml",
+            f"name: notes\ndescription: My notes.\nversion: {version}\nmain_md_file: main.md\n",
+        )
+        zipped.writestr("main.md", "Notes.\n")
+    return archive
+
+
+def test_attachment_import_then_list(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["attachment", "import", str(_attachment_zip(tmp_path))]) == 0
+    assert "imported notes 1.0.0" in capsys.readouterr().err
+
+    assert app.main(["attachment", "list"]) == 0
+    out = capsys.readouterr().out
+    assert "1 attachment version(s)" in out
+    assert "notes  1.0.0  My notes." in out
+
+
+def test_attachment_list_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    capsys.readouterr()
+
+    assert app.main(["attachment", "list", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == [
+        {
+            "name": "notes",
+            "version": "1.0.0",
+            "description": "My notes.",
+            "main_md_file": "main.md",
+            "intact": True,
+        }
+    ]
+
+
+def test_attachment_list_shows_an_invalid_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    folder = paths.ATTACHMENTS / "notes" / "1.0.0"
+    folder.chmod(0o755)
+    (folder / "extra.md").write_text("x")
+    capsys.readouterr()
+
+    assert app.main(["attachment", "list"]) == 0
+    assert "changed since its import" in capsys.readouterr().out
+
+
+def test_attachment_list_empty_hint(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["attachment", "list"]) == 0
+    assert "gmlw attachment import <zip>" in capsys.readouterr().out
+
+
+def test_attachment_import_refuses_a_stored_version(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    capsys.readouterr()
+
+    assert app.main(["attachment", "import", str(_attachment_zip(tmp_path))]) == 2
+    assert "already imported" in capsys.readouterr().err
+
+
+def test_attachment_export_writes_the_zip_where_asked(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    capsys.readouterr()
+
+    assert app.main(["attachment", "export", "notes", "--to", str(tmp_path / "out")]) == 0
+
+    written = tmp_path / "out" / "notes-1.0.0.zip"
+    assert written.is_file()
+    assert str(written) in capsys.readouterr().err
+
+
+def test_attachment_export_of_an_unknown_name_fails(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["attachment", "export", "missing"]) == 2
+    assert "no attachment named 'missing'" in capsys.readouterr().err
+
+
+def test_attachment_delete_with_yes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    capsys.readouterr()
+
+    assert app.main(["attachment", "delete", "notes", "1.0.0", "--yes"]) == 0
+
+    assert "removed notes 1.0.0" in capsys.readouterr().err
+    assert not (paths.ATTACHMENTS / "notes").exists()
+
+
+def test_attachment_delete_without_a_tty_deletes_nothing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    capsys.readouterr()
+
+    assert app.main(["attachment", "delete", "notes", "1.0.0"]) == 2
+
+    err = capsys.readouterr().err
+    assert "permanently remove notes 1.0.0" in err
+    assert "nothing was deleted" in err
+    assert (paths.ATTACHMENTS / "notes" / "1.0.0").is_dir()
+
+
+@pytest.mark.parametrize(
+    ("version", "message"),
+    [("9.9.9", "has no version 9.9.9"), ("1.0", "invalid attachment version")],
+)
+def test_attachment_delete_reports_before_asking(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], version: str, message: str
+) -> None:
+    app.main(["attachment", "import", str(_attachment_zip(tmp_path))])
+    capsys.readouterr()
+
+    assert app.main(["attachment", "delete", "notes", version]) == 2
+
+    err = capsys.readouterr().err
+    assert message in err
+    assert "permanently remove" not in err
+
+
+def test_attachment_without_an_action_shows_its_help(capsys: pytest.CaptureFixture[str]) -> None:
+    assert app.main(["attachment"]) == 0
+    assert "import" in capsys.readouterr().out

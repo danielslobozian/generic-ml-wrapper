@@ -11,6 +11,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.outbound.attachment.filesystem_attachment_store import (
+    FilesystemAttachmentStore,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalog,
 )
@@ -93,13 +96,17 @@ from generic_ml_wrapper.application.port.inbound.check_client_ready import Check
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
+from generic_ml_wrapper.application.port.inbound.delete_attachment import DeleteAttachment
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessions
 from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
+from generic_ml_wrapper.application.port.inbound.export_attachment import ExportAttachment
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
 from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
+from generic_ml_wrapper.application.port.inbound.import_attachment import ImportAttachment
 from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflow
 from generic_ml_wrapper.application.port.inbound.init import Init
+from generic_ml_wrapper.application.port.inbound.list_attachments import ListAttachments
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
 from generic_ml_wrapper.application.port.inbound.list_drafts import ListDrafts
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
@@ -131,13 +138,17 @@ from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
 from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
+from generic_ml_wrapper.application.usecase.delete_attachment import DeleteAttachmentUseCase
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsUseCase
 from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
+from generic_ml_wrapper.application.usecase.export_attachment import ExportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
 from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
+from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.list_attachments import ListAttachmentsUseCase
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
@@ -285,6 +296,47 @@ def build_plugin_source() -> FilesystemPluginSource:
         A plugin source that lists plugins and resolves id references.
     """
     return FilesystemPluginSource(paths.PLUGINS)
+
+
+def _attachment_store() -> FilesystemAttachmentStore:
+    """The attachment store under ~/.gmlw/attachments, its hashes in the ledger."""
+    return FilesystemAttachmentStore(paths.ATTACHMENTS, _ledger())
+
+
+def build_import_attachment() -> ImportAttachment:
+    """Build the ImportAttachment use case wired to the attachment store.
+
+    Returns:
+        A ready-to-run ImportAttachment.
+    """
+    return ImportAttachmentUseCase(_attachment_store())
+
+
+def build_export_attachment() -> ExportAttachment:
+    """Build the ExportAttachment use case wired to the attachment store.
+
+    Returns:
+        A ready-to-run ExportAttachment.
+    """
+    return ExportAttachmentUseCase(_attachment_store())
+
+
+def build_list_attachments() -> ListAttachments:
+    """Build the ListAttachments use case wired to the attachment store.
+
+    Returns:
+        A ready-to-run ListAttachments.
+    """
+    return ListAttachmentsUseCase(_attachment_store())
+
+
+def build_delete_attachment() -> DeleteAttachment:
+    """Build the DeleteAttachment use case wired to the attachment store.
+
+    Returns:
+        A ready-to-run DeleteAttachment.
+    """
+    return DeleteAttachmentUseCase(_attachment_store())
 
 
 def build_list_plugins() -> ListPlugins:
