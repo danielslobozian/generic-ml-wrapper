@@ -151,11 +151,10 @@ def test_default_startup_matrix_per_mode() -> None:
     assert default["rules.role"].activated is True
     assert default["persona"].activated is False
     assert all(setting.compression is False for setting in default.values())
-    workflow = config.default_startup("workflow")
-    assert workflow["rules.environment"].activated is True  # rules on for a workflow
-    assert workflow["rules.role"].activated is True
-    assert workflow["base"].activated is True  # intrinsic
-    assert workflow["steps"].activated is True
+    attachment = config.default_startup("attachment")
+    assert attachment["rules.environment"].activated is True  # rules on with an attachment
+    assert attachment["rules.role"].activated is True
+    assert "base" not in attachment  # its text is delivered as written, not as a source
 
 
 def test_startup_reads_activation_and_compression_over_defaults(tmp_path: Path) -> None:
@@ -172,19 +171,6 @@ def test_startup_reads_activation_and_compression_over_defaults(tmp_path: Path) 
     assert settings["company"].activated is False  # overridden off
     assert settings["persona"].activated is True  # overridden on
     assert settings["me.learned"].activated is True  # untouched -> default
-
-
-def test_startup_ignores_activation_for_intrinsic_base_and_steps(tmp_path: Path) -> None:
-    path = _write(
-        tmp_path,
-        "[startup.workflow.context]\n"
-        "base = { activated = false, compression = true }\n"
-        "steps = { activated = false }\n",
-    )
-    settings = config.startup("workflow", path)
-    assert settings["base"].activated is True  # intrinsic: cannot be deactivated
-    assert settings["base"].compression is True  # but compression is honored
-    assert settings["steps"].activated is True
 
 
 def test_companion_defaults_to_no_persona(tmp_path: Path) -> None:

@@ -50,9 +50,9 @@ class SqliteSessionStore(SessionStorePort):
                 (session.job, self._kind),
             )
             connection.execute(
-                "INSERT INTO sessions (session_id, job, client, uuid, cwd, resumable, workflow, "
+                "INSERT INTO sessions (session_id, job, client, uuid, cwd, resumable, "
                 "attachment, attachment_version, attachment_hash) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     session.session_id,
                     session.job,
@@ -60,7 +60,6 @@ class SqliteSessionStore(SessionStorePort):
                     session.uuid,
                     session.cwd,
                     int(session.resumable),
-                    session.workflow,
                     session.attachment,
                     session.attachment_version,
                     session.attachment_hash,
@@ -85,7 +84,7 @@ class SqliteSessionStore(SessionStorePort):
         """Return the sessions recorded for a job, oldest first."""
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT session_id, job, client, uuid, cwd, resumable, created_at, workflow, "
+                "SELECT session_id, job, client, uuid, cwd, resumable, created_at, "
                 "attachment, attachment_version, attachment_hash "
                 "FROM sessions WHERE job = ? ORDER BY id",
                 (job,),
@@ -99,7 +98,6 @@ class SqliteSessionStore(SessionStorePort):
                 row["cwd"],
                 bool(row["resumable"]),
                 created_at=row["created_at"],
-                workflow=row["workflow"],
                 attachment=row["attachment"],
                 attachment_version=row["attachment_version"],
                 attachment_hash=row["attachment_hash"],

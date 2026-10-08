@@ -12,7 +12,6 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     IdentifierError,
     JobId,
     TagName,
-    WorkflowName,
 )
 
 
@@ -41,17 +40,6 @@ def test_job_id_accepts_safe_segments(value: str) -> None:
 def test_job_id_rejects_unsafe_values(value: str) -> None:
     with pytest.raises(IdentifierError):
         JobId(value)
-
-
-@pytest.mark.parametrize("value", ["doc-review", "a", "a1", "create-workflow"])
-def test_workflow_name_accepts_kebab(value: str) -> None:
-    assert WorkflowName(value) == value
-
-
-@pytest.mark.parametrize("value", ["", "Bad", "_common", "a b", "-x", "a_b", "a/b"])
-def test_workflow_name_rejects_invalid(value: str) -> None:
-    with pytest.raises(IdentifierError):
-        WorkflowName(value)
 
 
 @pytest.mark.parametrize("value", ["workflow-creator", "a", "a1", "notes-2"])

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Persist a session's compiled context to a durable, inspectable file.
 
-The exact operating context a session launches with (profile + rules + workflow) is
+The exact operating context a session launches with (profile + rules + attachment) is
 written per session to ``~/.gmlw/contexts/<job>/<session>.context.md`` and handed to
 the client from there -- a durable provenance artifact you can inspect after the run,
 instead of a temp file discarded the moment the client exits.

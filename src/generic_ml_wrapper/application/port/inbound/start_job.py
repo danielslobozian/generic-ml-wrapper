@@ -20,7 +20,6 @@ class StartJobCommand:
         resume_latest: Resume the job's most recent session instead of minting one.
         resume_session: Resume this specific session id instead of the latest; takes
             precedence over ``resume_latest``. ``None`` means "not a specific-session resume".
-        workflow: A workflow to run on the job, or ``None`` for the plain wrapper.
         attachment: An attachment to run the new session with, or ``None``.
         attachment_version: The attachment's version (``MAJOR.MINOR.PATCH``), or ``None``
             for the highest stored.
@@ -35,7 +34,6 @@ class StartJobCommand:
     client: str
     resume_latest: bool = False
     resume_session: str | None = None
-    workflow: str | None = None
     attachment: str | None = None
     attachment_version: str | None = None
     note: str | None = None
@@ -58,10 +56,6 @@ class StartJobResult:
     session_id: str
 
 
-class UnknownWorkflowError(DomainError, ValueError):
-    """Raised when a requested workflow does not exist."""
-
-
 class ResumeNotSupportedError(DomainError, ValueError):
     """Raised when resuming is requested for a client that cannot resume (e.g. codex)."""
 
@@ -74,13 +68,14 @@ class StartJob(ABC):
         """Run the use case.
 
         Args:
-            command: The request describing job, client, resume, and workflow.
+            command: The request describing job, client, resume, and attachment.
 
         Returns:
             The run's outcome: exit code, job, and the session that ran.
 
         Raises:
-            UnknownWorkflowError: If a workflow was requested but does not exist.
+            AttachmentError: If the attachment, or that version, is not stored, or has
+                changed since its import.
             ResumeNotSupportedError: If resume was requested for a client whose
                 caller cannot resume a session.
         """

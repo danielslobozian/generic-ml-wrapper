@@ -78,7 +78,7 @@ def greeting_context(greeting: str) -> str:
     The host greeting used to print to stderr, which the client clears the moment it takes
     the screen — structurally invisible. Delivered as context instead, the client renders it
     in-band at the top of the session. Model-directed framing, kept in English to match the
-    workflow kickoff (the other model-directed launch text).
+    attachment kickoff (the other model-directed launch text).
 
     Args:
         greeting: The rendered greeting line.

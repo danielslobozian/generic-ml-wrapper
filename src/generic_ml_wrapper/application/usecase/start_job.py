@@ -29,25 +29,24 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJob,
     StartJobCommand,
     StartJobResult,
-    UnknownWorkflowError,
 )
 from generic_ml_wrapper.application.port.outbound.attachment_store import AttachmentStorePort
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.context_compiler import ContextCompilerPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
-from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
 from generic_ml_wrapper.common.client_args import split as split_client_args
 
 
 class StartJobUseCase(StartJob):
-    """Resolve a session (new or resumed), optionally attach a workflow, run it."""
+    """Resolve a session (new or resumed), optionally attach an attachment, run it."""
 
     def __init__(  # noqa: PLR0913, PLR0917  (a use case binding its full set of outbound ports)
         self,
         store: SessionStorePort,
-        workflows: WorkflowSourcePort,
+        contexts: ContextCompilerPort,
         callers: CliCallerProvider,
         uuid_factory: Callable[[], str],
         cwd_factory: Callable[[], str],
@@ -63,12 +62,12 @@ class StartJobUseCase(StartJob):
 
         Args:
             store: Where sessions are persisted and read.
-            workflows: Seeds, checks, and compiles workflows.
+            contexts: Compiles a new session's operating context.
             callers: Resolves the client caller for a run.
             uuid_factory: Mints a client-side session uuid for new sessions.
             cwd_factory: Returns the folder a new session is launched in (persisted so a
                 resume can relaunch there -- Claude resume is scoped to it).
-            credentials: Resolves a workflow's credentials to export at launch.
+            credentials: Resolves an attachment's credentials to export at launch.
             hooks: The lifecycle hooks bracketing the client run.
             greeting: Renders the host greeting, or ``None`` when the companion is off —
                 injected into a new session's context so the client greets in-band.
@@ -84,7 +83,7 @@ class StartJobUseCase(StartJob):
                 ``None`` when attachments are not available.
         """
         self._store = store
-        self._workflows = workflows
+        self._contexts = contexts
         self._callers = callers
         self._uuid_factory = uuid_factory
         self._cwd_factory = cwd_factory
@@ -97,16 +96,15 @@ class StartJobUseCase(StartJob):
         self._attachments = attachments
 
     def execute(self, command: StartJobCommand) -> StartJobResult:
-        """Resolve the session, optionally inject a workflow, run the client.
+        """Resolve the session, optionally attach an attachment, run the client.
 
         Args:
-            command: The request describing job, client, resume, and workflow.
+            command: The request describing job, client, resume, and attachment.
 
         Returns:
             The run's outcome: exit code, job, and the session that ran.
 
         Raises:
-            UnknownWorkflowError: If a workflow was requested but does not exist.
             AttachmentError: If the attachment, or that version, is not stored, or has
                 changed since its import.
             AttachmentVersionError: If the requested version is not ``MAJOR.MINOR.PATCH``.
@@ -122,8 +120,6 @@ class StartJobUseCase(StartJob):
         if not run.resume:
             if command.attachment is not None:
                 run, attached = self._attach(run, command.attachment, command.attachment_version)
-            elif command.workflow is not None:
-                run = self._attach_workflow(run, command.workflow)
             else:
                 run = self._attach_baseline(run)
             if command.note:
@@ -140,13 +136,11 @@ class StartJobUseCase(StartJob):
             # to learn — one that died before its first turn, or was deleted client-side,
             # has none. Say which, because the fixes are not the same.
             if run.uuid is None:
-                raise ResumeNotSupportedError(
-                    "error.workflow.resume_unsupported", client=run.client
-                )
+                raise ResumeNotSupportedError("error.resume.unsupported", client=run.client)
             raise ResumeNotSupportedError(
-                "error.workflow.resume_lost", session_id=run.session_id, client=run.client
+                "error.resume.lost", session_id=run.session_id, client=run.client
             )
-        # Persist only once every precondition (workflow, caller, resume) has passed, so
+        # Persist only once every precondition (attachment, caller, resume) has passed, so
         # a rejected start never leaves a ghost session that burns an id and could be resumed.
         if session is not None:
             # Whether a session can be reopened is the *caller's* answer, not a property
@@ -154,13 +148,12 @@ class StartJobUseCase(StartJob):
             # from the built-in catalog, and deciding from that list alone recorded every
             # such session as unresumable however capable its adapter was.
             #
-            # The workflow is recorded with it: it belongs to this session, not the job, so
+            # The attachment is recorded with it: it belongs to this session, not the job, so
             # one job can carry a feature session, then a review session, then a plain one.
             self._store.record(
                 replace(
                     session,
                     resumable=caller.can_resume(),
-                    workflow=command.workflow,
                     attachment=None if attached is None else attached.name,
                     attachment_version=None if attached is None else str(attached.version),
                     attachment_hash=None if attached is None else attached.content_hash,
@@ -190,7 +183,7 @@ class StartJobUseCase(StartJob):
         """Prepend the host greeting to a new session's context, when the companion is on.
 
         The greeting is composed locally (free, no tokens) and rendered by the client
-        in-band. Prepended so it opens the session ahead of the profile/workflow context;
+        in-band. Prepended so it opens the session ahead of the profile/attachment context;
         a no-op when the companion is off (no persona) or the greeting is empty.
         """
         greeting = self._greeting()
@@ -204,7 +197,7 @@ class StartJobUseCase(StartJob):
         """Append the ambient capability card to a new session's context, when enabled.
 
         Off by default; when the ``[ambient]`` card is on, it is appended after the
-        profile/workflow context (reference material, not an opener) so the client can
+        profile/attachment context (reference material, not an opener) so the client can
         answer "how do I …" gmlw questions mid-session. Counted against the context budget
         like any other section.
         """
@@ -217,13 +210,13 @@ class StartJobUseCase(StartJob):
     def _attach_baseline(self, run: RunContext) -> RunContext:
         """Inject the always-on baseline context (snapshot/profile/learned/persona).
 
-        A plain ``gmlw start`` (no workflow) still composes the user's profile so every
+        A plain ``gmlw start`` (no attachment) still composes the user's profile so every
         session — on any client — inherits who the user is and how they work. The compiled
         context now always carries at least the session snapshot, so on a fresh install the
         client still learns which environment, role and job it is in even before the user
         has written a word of profile.
         """
-        context = self._workflows.compile(CompileMode.DEFAULT, job=run.job)
+        context = self._contexts.compile(CompileMode.DEFAULT, job=run.job)
         return run if not context else replace(run, context=context)
 
     def _attach(
@@ -247,7 +240,7 @@ class StartJobUseCase(StartJob):
         section = attachment_section(
             attachment, str(store.folder(attachment)), store.read_main(attachment)
         )
-        context = self._workflows.compile(CompileMode.ATTACHMENT, job=run.job, attachment=section)
+        context = self._contexts.compile(CompileMode.ATTACHMENT, job=run.job, attachment=section)
         run = replace(
             run,
             context=context,
@@ -256,25 +249,6 @@ class StartJobUseCase(StartJob):
             extra_dirs=(str(store.root()),),
         )
         return run, attachment
-
-    def _attach_workflow(self, run: RunContext, workflow: str) -> RunContext:
-        # Asked before anything is installed: a run named for a workflow that is not there
-        # writes nothing on its way to being refused. The seed follows, because composing
-        # the run's context reads the shared base and that has to be on disk by then.
-        if not self._workflows.exists(workflow):
-            raise UnknownWorkflowError("error.workflow.unknown", name=workflow)
-        self._workflows.seed()
-        kickoff = (
-            f"You are running the {workflow!r} workflow for {run.job}. Orient first — "
-            "read your context, look at what already exists, report where things stand, "
-            "then stop and wait. Do not start executing steps yet."
-        )
-        return replace(
-            run,
-            context=self._workflows.compile(CompileMode.WORKFLOW, workflow, job=run.job),
-            kickoff=kickoff,
-            env=tuple(self._credentials.resolve(workflow).items()),
-        )
 
     def _resume_target(self, command: StartJobCommand) -> Session | None:
         """The session to resume: the named one, else the latest, else ``None`` (new session).

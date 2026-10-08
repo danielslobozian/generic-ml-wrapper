@@ -69,10 +69,10 @@ class ListSessionsUseCase(ListSessions):
                 created_at=session.created_at,
                 turn_count=turns_per_session.get(session.session_id, 0),
                 cost_usd=costs.get(session.session_id, 0.0),
-                workflow=(
+                attachment=(
                     f"{session.attachment}@{session.attachment_version}"
-                    if session.attachment is not None
-                    else session.workflow
+                    if session.attachment_version is not None
+                    else session.attachment
                 ),
                 incidents=incidents_per_session.get(session.session_id, 0),
             )

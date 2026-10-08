@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The SetCredential use case: store a workflow credential."""
+"""The SetCredential use case: store an attachment credential."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from generic_ml_wrapper.application.port.outbound.credentials_store import Crede
 
 
 class SetCredentialUseCase(SetCredential):
-    """Store a workflow credential via the credentials store."""
+    """Store an attachment credential via the credentials store."""
 
     def __init__(self, store: CredentialsStorePort) -> None:
         """Wire the use case to the credentials store.
@@ -24,4 +24,4 @@ class SetCredentialUseCase(SetCredential):
 
     def execute(self, command: SetCredentialCommand) -> None:
         """Store the credential described by the command."""
-        self._store.set(command.workflow, command.name, command.value)
+        self._store.set(command.attachment, command.name, command.value)

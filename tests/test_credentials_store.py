@@ -22,11 +22,11 @@ def test_set_then_resolve_roundtrips(tmp_path: Path) -> None:
     assert store.resolve("doc-review") == {"GITHUB_TOKEN": "ghp_secret"}
 
 
-def test_resolve_unknown_workflow_is_empty(tmp_path: Path) -> None:
+def test_resolve_unknown_attachment_is_empty(tmp_path: Path) -> None:
     assert FilesystemCredentialsStore(tmp_path / "none.toml").resolve("doc-review") == {}
 
 
-def test_set_groups_by_workflow_and_replaces(tmp_path: Path) -> None:
+def test_set_groups_by_attachment_and_replaces(tmp_path: Path) -> None:
     store = FilesystemCredentialsStore(tmp_path / "credentials.toml")
     store.set("deploy", "AWS_ACCESS_KEY_ID", "AKIA1")
     store.set("deploy", "AWS_SECRET_ACCESS_KEY", "s3cr3t")
@@ -38,7 +38,7 @@ def test_set_groups_by_workflow_and_replaces(tmp_path: Path) -> None:
         "AWS_SECRET_ACCESS_KEY": "s3cr3t",
     }
     assert store.resolve("doc-review") == {"GITHUB_TOKEN": "ghp_2"}
-    # The written file is valid TOML with a table per workflow.
+    # The written file is valid TOML with a table per attachment.
     parsed = tomllib.loads((tmp_path / "credentials.toml").read_text(encoding="utf-8"))
     assert set(parsed) == {"deploy", "doc-review"}
 

@@ -40,16 +40,17 @@ from generic_ml_wrapper.adapter.outbound.bootstrap.subprocess_command_runner imp
 from generic_ml_wrapper.adapter.outbound.bootstrap.system_clipboard import SystemClipboard
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_axis_chooser import TtyAxisChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_client_setup import TtyClientSetup
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_guided_chooser import TtyGuidedChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_language_chooser import TtyLanguageChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_persona_chooser import TtyPersonaChooser
 from generic_ml_wrapper.adapter.outbound.bootstrap.tty_text_prompt import TtyTextPrompt
-from generic_ml_wrapper.adapter.outbound.bootstrap.tty_workflow_chooser import TtyWorkflowChooser
 from generic_ml_wrapper.adapter.outbound.caller.default_provider import DefaultCliCallerProvider
 from generic_ml_wrapper.adapter.outbound.compress.cache_backed_compressor import (
     CacheBackedContextCompressor,
 )
 from generic_ml_wrapper.adapter.outbound.config.tomlkit_config_writer import TomlkitConfigWriter
+from generic_ml_wrapper.adapter.outbound.context.filesystem_context_compiler import (
+    FilesystemContextCompiler,
+)
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     FilesystemCredentialsStore,
 )
@@ -84,10 +85,6 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import Sqli
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
 from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
-from generic_ml_wrapper.adapter.outbound.workflow.filesystem_workflow_source import (
-    FilesystemWorkflowSource,
-)
-from generic_ml_wrapper.adapter.outbound.workflow.zip_workflow_archive import ZipWorkflowArchive
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspector,
 )
@@ -102,27 +99,20 @@ from generic_ml_wrapper.application.port.inbound.create_axis import CreateAxis
 from generic_ml_wrapper.application.port.inbound.delete_attachment import DeleteAttachment
 from generic_ml_wrapper.application.port.inbound.delete_jobs import DeleteJobs
 from generic_ml_wrapper.application.port.inbound.delete_sessions import DeleteSessions
-from generic_ml_wrapper.application.port.inbound.edit_workflow import EditWorkflow
 from generic_ml_wrapper.application.port.inbound.export_attachment import ExportAttachment
 from generic_ml_wrapper.application.port.inbound.export_usage import ExportUsage
-from generic_ml_wrapper.application.port.inbound.export_workflow import ExportWorkflow
 from generic_ml_wrapper.application.port.inbound.import_attachment import ImportAttachment
-from generic_ml_wrapper.application.port.inbound.import_workflow import ImportWorkflow
 from generic_ml_wrapper.application.port.inbound.init import Init
 from generic_ml_wrapper.application.port.inbound.list_attachments import ListAttachments
 from generic_ml_wrapper.application.port.inbound.list_clients import ListClients
-from generic_ml_wrapper.application.port.inbound.list_drafts import ListDrafts
 from generic_ml_wrapper.application.port.inbound.list_jobs import ListJobs
 from generic_ml_wrapper.application.port.inbound.list_launch_clients import ListLaunchClients
 from generic_ml_wrapper.application.port.inbound.list_personas import ListPersonas
 from generic_ml_wrapper.application.port.inbound.list_plugins import ListPlugins
 from generic_ml_wrapper.application.port.inbound.list_rules import ListRules
 from generic_ml_wrapper.application.port.inbound.list_sessions import ListSessions
-from generic_ml_wrapper.application.port.inbound.list_workflow_catalog import ListWorkflowCatalog
-from generic_ml_wrapper.application.port.inbound.list_workflows import ListWorkflows
 from generic_ml_wrapper.application.port.inbound.migrate_layout import MigrateLayout
 from generic_ml_wrapper.application.port.inbound.migrate_slugs import MigrateSlugs
-from generic_ml_wrapper.application.port.inbound.new_workflow import NewWorkflow
 from generic_ml_wrapper.application.port.inbound.render_greeting import RenderGreeting
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.inbound.report_health import ReportHealth
@@ -144,32 +134,23 @@ from generic_ml_wrapper.application.usecase.create_axis import CreateAxisUseCase
 from generic_ml_wrapper.application.usecase.delete_attachment import DeleteAttachmentUseCase
 from generic_ml_wrapper.application.usecase.delete_jobs import DeleteJobsUseCase
 from generic_ml_wrapper.application.usecase.delete_sessions import DeleteSessionsUseCase
-from generic_ml_wrapper.application.usecase.edit_workflow import EditWorkflowUseCase
 from generic_ml_wrapper.application.usecase.export_attachment import ExportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.export_usage import ExportUsageUseCase
-from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
-from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
 from generic_ml_wrapper.application.usecase.install_provided_attachments import (
     InstallProvidedAttachmentsUseCase,
 )
 from generic_ml_wrapper.application.usecase.list_attachments import ListAttachmentsUseCase
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
-from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
 from generic_ml_wrapper.application.usecase.list_jobs import ListJobsUseCase
 from generic_ml_wrapper.application.usecase.list_launch_clients import ListLaunchClientsUseCase
 from generic_ml_wrapper.application.usecase.list_personas import ListPersonasUseCase
 from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCase
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
-from generic_ml_wrapper.application.usecase.list_workflow_catalog import (
-    ListWorkflowCatalogUseCase,
-)
-from generic_ml_wrapper.application.usecase.list_workflows import ListWorkflowsUseCase
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
 from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
-from generic_ml_wrapper.application.usecase.new_workflow import NewWorkflowUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
 from generic_ml_wrapper.application.usecase.report_health import ReportHealthUseCase
@@ -222,17 +203,16 @@ def _artifact_purge() -> ArtifactPurgePort:
     return FilesystemArtifactPurge(paths.CONTEXTS, _transcript_root())
 
 
-def _workflow_source(interceptors: InterceptorChain) -> FilesystemWorkflowSource:
-    """Build the filesystem workflow source with the standard ``~/.gmlw`` roots.
+def _context_compiler(interceptors: InterceptorChain) -> FilesystemContextCompiler:
+    """Build the context compiler with the standard ``~/.gmlw`` roots.
 
     Args:
         interceptors: The interceptor chain applied to context sections at compile.
 
     Returns:
-        A workflow source that compiles context from workflows, profile, and rules.
+        A compiler that composes context from the profile, rules, and an attachment.
     """
-    return FilesystemWorkflowSource(
-        paths.WORKFLOWS,
+    return FilesystemContextCompiler(
         paths.PROFILE,
         paths.TEMPLATES,
         interceptors,
@@ -439,7 +419,7 @@ def build_start_job() -> StartJob:
     sessions = SqliteSessionStore(_ledger())
     return StartJobUseCase(
         store=sessions,
-        workflows=_workflow_source(interceptors),
+        contexts=_context_compiler(interceptors),
         callers=DefaultCliCallerProvider(
             config.caller_overrides(),
             metering=SqlitePerTurnStore(_ledger()),
@@ -533,9 +513,6 @@ def build_delete_sessions() -> DeleteSessions:
 def build_delete_jobs() -> DeleteJobs:
     """Build the DeleteJobs use case wired to the stores and both purges.
 
-    The session store is the default ``work``-scoped one, so ``authoring`` jobs are
-    unreachable here exactly as they are unreachable from ``gmlw jobs``.
-
     Returns:
         A ready-to-run DeleteJobs.
     """
@@ -546,77 +523,6 @@ def build_delete_jobs() -> DeleteJobs:
         ledger=SqliteLedgerPurge(_ledger()),
         artifacts=_artifact_purge(),
     )
-
-
-def build_export_workflow() -> ExportWorkflow:
-    """Build the ExportWorkflow use case wired to the zip archive under ~/.gmlw/exports.
-
-    Returns:
-        A ready-to-run ExportWorkflow.
-    """
-    return ExportWorkflowUseCase(
-        workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
-    )
-
-
-def build_import_workflow() -> ImportWorkflow:
-    """Build the ImportWorkflow use case wired to the zip archive and the backup root.
-
-    Returns:
-        A ready-to-run ImportWorkflow.
-    """
-    return ImportWorkflowUseCase(
-        workflows=_workflow_source(InterceptorChain(())),
-        archive=ZipWorkflowArchive(paths.EXPORTS, lambda: datetime.now(UTC)),
-        backups_root=paths.WORKFLOW_BACKUPS,
-        clock=lambda: datetime.now(UTC),
-    )
-
-
-def build_list_workflow_catalog() -> ListWorkflowCatalog:
-    """Build the ListWorkflowCatalog use case wired to the filesystem workflow source.
-
-    Returns:
-        A ready-to-run ListWorkflowCatalog.
-    """
-    return ListWorkflowCatalogUseCase(workflows=_workflow_source(InterceptorChain(())))
-
-
-def build_list_drafts() -> ListDrafts:
-    """Build the ListDrafts use case wired to the filesystem workflow source.
-
-    Returns:
-        A ready-to-run ListDrafts.
-    """
-    return ListDraftsUseCase(workflows=_workflow_source(InterceptorChain(())))
-
-
-def build_list_workflows() -> ListWorkflows:
-    """Build the ListWorkflows use case wired to the filesystem workflow source.
-
-    Returns:
-        A ready-to-run ListWorkflows.
-    """
-    return ListWorkflowsUseCase(workflows=_workflow_source(InterceptorChain(())))
-
-
-def build_workflow_chooser() -> TtyWorkflowChooser:
-    """Build the pre-launch workflow chooser for ``gmlw run`` with no workflow.
-
-    Returns:
-        A terminal chooser that offers the runnable workflows, or declines off a TTY.
-    """
-    return TtyWorkflowChooser(build_localizer())
-
-
-def build_guided_chooser() -> TtyGuidedChooser:
-    """Build the guided-vs-quick authoring chooser for ``workflow new`` / ``edit``.
-
-    Returns:
-        A terminal chooser that asks whether to author with the guided experience.
-    """
-    return TtyGuidedChooser(build_localizer())
 
 
 def build_set_credential() -> SetCredential:
@@ -825,56 +731,6 @@ def _status_parser(client: str | None) -> ClientStatusParserPort:
     if client == "cursor":
         return CursorStatusParser()
     return ClaudeStatusParser()
-
-
-def build_new_workflow() -> NewWorkflow:
-    """Build the NewWorkflow use case wired to its outbound adapters.
-
-    Returns:
-        A ready-to-run NewWorkflow.
-    """
-    interceptors = _interceptor_chain()
-    sessions = SqliteSessionStore(_ledger(), kind="authoring")
-    return NewWorkflowUseCase(
-        workflows=_workflow_source(interceptors),
-        store=sessions,
-        callers=DefaultCliCallerProvider(
-            config.caller_overrides(),
-            metering=SqlitePerTurnStore(_ledger()),
-            transcript=_transcript(),
-            interceptors=interceptors,
-            plugins=build_plugin_source(),
-            sessions=sessions,
-            incidents=SqliteIncidentLog(_ledger()),
-        ),
-        uuid_factory=lambda: str(uuid.uuid4()),
-        hooks=_hook_runner(),
-    )
-
-
-def build_edit_workflow() -> EditWorkflow:
-    """Build the EditWorkflow use case wired to its outbound adapters.
-
-    Returns:
-        A ready-to-run EditWorkflow.
-    """
-    interceptors = _interceptor_chain()
-    sessions = SqliteSessionStore(_ledger(), kind="authoring")
-    return EditWorkflowUseCase(
-        workflows=_workflow_source(interceptors),
-        store=sessions,
-        callers=DefaultCliCallerProvider(
-            config.caller_overrides(),
-            metering=SqlitePerTurnStore(_ledger()),
-            transcript=_transcript(),
-            interceptors=interceptors,
-            plugins=build_plugin_source(),
-            sessions=sessions,
-            incidents=SqliteIncidentLog(_ledger()),
-        ),
-        uuid_factory=lambda: str(uuid.uuid4()),
-        hooks=_hook_runner(),
-    )
 
 
 def build_diagnostics(

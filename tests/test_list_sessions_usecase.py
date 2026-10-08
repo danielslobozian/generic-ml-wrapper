@@ -140,10 +140,10 @@ def test_a_session_shows_the_attachment_version_it_ran() -> None:
         Session(
             "JOB-1_001", "JOB-1", "claude", None, attachment="notes", attachment_version="1.2.0"
         ),
-        Session("JOB-1_002", "JOB-1", "claude", None, workflow="review"),
+        Session("JOB-1_002", "JOB-1", "claude", None, attachment="review"),
         Session("JOB-1_003", "JOB-1", "claude", None),
     ]
 
     summaries = _use_case(FakeStore(sessions)).execute("JOB-1")
 
-    assert [summary.workflow for summary in summaries] == ["notes@1.2.0", "review", None]
+    assert [summary.attachment for summary in summaries] == ["notes@1.2.0", "review", None]

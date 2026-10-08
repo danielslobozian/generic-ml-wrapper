@@ -28,7 +28,7 @@ _DIRS = ("profile/me", "templates")
 _ENVIRONMENTS = "environments"
 # Rules are a projection of the user, so they live on the two axes that describe one: the
 # environment (the place) and the role (the craft). Init seeds an empty rules/ drop-zone in
-# each of the chosen folders. There is no global tier and no per-workflow tier.
+# each of the chosen folders. There is no global tier and no per-attachment tier.
 _ROLES = "profile/roles"
 _CONFIG = "config.toml"
 # The learned notebook, seeded empty (header + the two sections) for the client to fill.
@@ -170,8 +170,7 @@ __CLIENT_DEFAULT__
 # root = "/some/dir"   # optional; defaults to ~/.gmlw/transcripts
 
 # Interceptors (0..N, ordered), each a str->str transform (InterceptorPort) bound to
-# a target. Compile-time targets: "profile" | "rules" | "workflow" | "attachment" |
-# "context". Wire
+# a target. Compile-time targets: "profile" | "rules" | "attachment" | "context". Wire
 # targets (metered clients only): "request" (outbound body) | "response" (captured
 # reply, observe-only). A target may have many; one spec may appear under several.
 # The built-in MessageSizeLogger logs each message's size — put it on request and
@@ -201,15 +200,14 @@ __CLIENT_DEFAULT__
 
 # Context packaging. On every run gmlw composes an operating context from a fixed set of
 # sources; [startup] decides, per mode, which are active and which are compressed. Modes:
-# default (a plain `gmlw start`), workflow (`start -w`), authoring (`workflow new`),
-# attachment (`start --attach`; its main file is delivered as written, never compressed).
+# default (a plain `gmlw start`) and attachment (`start --attach`; the attachment's own
+# text is delivered as written, never compressed).
 # Sources: me.user (profile/me/*.md), me.learned (profile/me/learned*), company
 # (environments/<env>/*.md — the active [profile] default_environment), rules.environment
 # (environments/<env>/rules/*.rule.md — the place's constraints) and rules.role
 # (profile/roles/<role>/rules/*.rule.md — the user's own craft preferences), persona (the
-# selected persona + shared floor, see [companion]); a workflow run also composes its base
-# and steps. Omit all of this for the built-in per-mode defaults; the default-mode defaults,
-# shown explicitly:
+# selected persona + shared floor, see [companion]). Omit all of this for the built-in
+# per-mode defaults; the default-mode defaults, shown explicitly:
 # [startup.default.context.me]
 # user    = { activated = true,  compression = false }
 # learned = { activated = true,  compression = false }
@@ -219,11 +217,7 @@ __CLIENT_DEFAULT__
 # [startup.default.context]
 # company = { activated = true,  compression = false }
 # persona = { activated = false, compression = false }
-# In workflow/authoring modes base and steps are always active — only their compression
-# is configurable:
-# [startup.workflow.context]
-# base  = { compression = false }
-# steps = { compression = true }
+# The same keys under [startup.attachment.context] set the attachment mode.
 
 [companion]
 # The persona gmlw adopts: it voices a free host greeting at launch, and its tone is
@@ -238,15 +232,14 @@ __COMPANION_PERSONA__
 # When a source has compression = true, gmlw compresses it through generic-ml-cache
 # (record/replay — the same source replays for free). The prompt is chosen by the source's
 # data type; each is your IP (the repo ships none), so a source stays verbatim until a
-# prompt resolves for it. Kinds: human-touch (me.user + me.learned), technical (workflow
-# base + steps), rules (both rule axes); company/persona are verbatim.
+# prompt resolves for it. Kinds: human-touch (me.user + me.learned), rules (both rule
+# axes); company/persona are verbatim.
 # adapter = "cursor"   # any generic-ml-cache client adapter / model / effort
 # model = "gpt-5.4"
 # effort = "low"
 # [compress.prompts]
 # A prompt file per kind, OR per specific source key (the key wins over the kind):
 # human-touch = "/path/to/human-touch.md"
-# technical = "/path/to/technical.md"
 # rules = "/path/to/rules.md"
 # "me.user" = "/path/to/just-me-user.md"   # override the kind for one source only
 """

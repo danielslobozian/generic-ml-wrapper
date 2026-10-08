@@ -17,7 +17,6 @@ from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, ListItem, ListView, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
-    Archiver,
     AttachmentRow,
     ClientChoice,
     ClientRow,
@@ -27,7 +26,6 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     CreateOutcome,
     Deleter,
     HealthDayView,
-    ImportAttempt,
     JobChoice,
     MenuApp,
     MenuChoice,
@@ -43,7 +41,6 @@ from generic_ml_wrapper.application.domain.model.rule_catalog import (
     RuleGroup,
     RuleSummary,
 )
-from generic_ml_wrapper.application.domain.model.workflow import Workflow
 
 _JOBS = [JobChoice(job="alpha", session_count=3), JobChoice(job="beta", session_count=1)]
 
@@ -809,158 +806,6 @@ def test_job_export_view_is_read_only_and_esc_returns() -> None:
     assert seen["back_on_chooser"] is True
 
 
-# --- Workflow Run + List ------------------------------------------------------------------
-
-_WORKFLOWS = [
-    Workflow(slug="nightly-etl", label="Nightly ETL", description="the overnight load"),
-    Workflow(slug="release-notes", label="release-notes", description=""),  # legacy: no sidecar
-]
-
-
-async def _open_workflow(pilot: Pilot[MenuChoice | None]) -> None:
-    """Top → Workflow (2nd object row)."""
-    await pilot.press("down", "enter")  # Job(0) → Workflow(1)
-    await pilot.pause()
-
-
-def test_workflow_run_exits_with_the_chosen_workflow() -> None:
-    """Workflow → Run → pick a workflow → the app exits with a run choice for it."""
-    result: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("enter")  # Run (row 0) → workflow picker
-            await pilot.pause()
-            await pilot.press("down", "enter")  # pick the 2nd workflow ('release-notes')
-        result["value"] = app.return_value
-
-    asyncio.run(scenario())
-    assert result["value"] == MenuChoice(action="run", workflow="release-notes")
-
-
-def test_workflow_list_shows_the_runnable_workflows() -> None:
-    """Workflow → List lists every runnable workflow (read-only)."""
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("down", "down", "down", "enter")  # Run(0) Create(1) Edit(2) List(3)
-            await pilot.pause()
-            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
-
-    asyncio.run(scenario())
-    # The label leads; a legacy workflow with no sidecar still shows its slug.
-    assert seen["titles"] == ["Nightly ETL", "release-notes"]
-
-
-def test_workflow_run_empty_shows_the_create_hint() -> None:
-    """With no workflows, the Run picker shows the 'create one' hint, not a crash."""
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, workflows=[])  # none authored yet
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("enter")  # Run → picker
-            await pilot.pause()
-            seen["rows"] = len(app.screen.query(_Row))
-            seen["empty"] = str(app.screen.query_one("#empty", Static).render())
-
-    asyncio.run(scenario())
-    assert seen["rows"] == 0
-    assert "create" in str(seen["empty"]).lower()
-
-
-# --- Workflow Create + Edit (name entry + guided/quick authoring depth) --------------------
-
-
-def test_workflow_create_named_then_guided_exits_with_the_choice() -> None:
-    """Workflow → Create → type a name → pick Guided → exits with a guided new-workflow choice."""
-    result: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("down", "enter")  # Create (row 1) → name form
-            await pilot.pause()
-            app.screen.query_one("#name", Input).value = "etl-nightly"
-            await pilot.press("enter")  # → guided chooser
-            await pilot.pause()
-            await pilot.press("enter")  # pick Guided (row 0)
-        result["value"] = app.return_value
-
-    asyncio.run(scenario())
-    assert result["value"] == MenuChoice(action="workflow_new", workflow="etl-nightly", guided=True)
-
-
-def test_workflow_create_empty_name_is_allowed_and_quick() -> None:
-    """An empty name is accepted (proposed at the end); Quick sets guided False."""
-    result: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("down", "enter")  # Create → name form
-            await pilot.pause()
-            await pilot.press("enter")  # empty name → guided chooser
-            await pilot.pause()
-            await pilot.press("down", "enter")  # pick Quick (row 1)
-        result["value"] = app.return_value
-
-    asyncio.run(scenario())
-    assert result["value"] == MenuChoice(action="workflow_new", workflow=None, guided=False)
-
-
-def test_workflow_create_rejects_a_bad_name_and_keeps_the_form() -> None:
-    """A non-empty invalid name keeps the form open with the reason (no teardown)."""
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, validate_workflow=lambda name: "bad name" if name else None)
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("down", "enter")  # Create → name form
-            await pilot.pause()
-            app.screen.query_one("#name", Input).value = "Bad Name!"
-            await pilot.press("enter")  # rejected
-            await pilot.pause()
-            seen["on_form"] = bool(app.screen.query("#name"))
-            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
-            seen["running"] = app.is_running
-
-    asyncio.run(scenario())
-    assert seen["on_form"] is True  # did not tear down
-    assert "bad name" in str(seen["detail"])
-    assert seen["running"] is True
-
-
-def test_workflow_edit_picks_a_workflow_then_quick() -> None:
-    """Workflow → Edit → pick a workflow → pick Quick → exits with an edit choice."""
-    result: dict[str, object] = {}
-
-    async def scenario() -> None:
-        app = MenuApp(_JOBS, workflows=_WORKFLOWS)
-        async with app.run_test(size=(90, 30)) as pilot:
-            await _open_workflow(pilot)
-            await pilot.press("down", "down", "enter")  # Edit (row 2) → workflow picker
-            await pilot.pause()
-            await pilot.press("enter")  # pick 'nightly-etl' → guided chooser
-            await pilot.pause()
-            await pilot.press("down", "enter")  # pick Quick
-        result["value"] = app.return_value
-
-    asyncio.run(scenario())
-    assert result["value"] == MenuChoice(
-        action="workflow_edit", workflow="nightly-etl", guided=False
-    )
-
-
 # --- Config Clients (worker-loaded DataTable of clients + versions) -----------------------
 
 _CLIENTS = [
@@ -1160,210 +1005,6 @@ def test_walking_to_a_rule_shows_its_text_and_draft_status() -> None:
     detail = str(seen["detail"])
     assert "No @Transactional in a use case." in detail
     assert "draft" in detail  # a draft is injected into no session; the browser must say so
-
-
-# ── workflow export / import ──
-_ARCHIVE_WORKFLOWS = [
-    Workflow(slug="doc-review", label="Doc Review", description="review the docs"),
-    Workflow(slug="nightly-etl", label="Nightly ETL", description=""),
-]
-
-
-class _RecordingArchiver:
-    """An Archiver that records what it was asked to do and answers with fixed lines.
-
-    ``clash`` makes the next install report a name collision, so the confirmation branch
-    can be driven without a real archive on disk.
-    """
-
-    def __init__(self, *, clash: bool = False) -> None:
-        self.exported: list[str] = []
-        self.installed: list[tuple[str, bool]] = []
-        self._clash = clash
-        self.catalogue = list(_ARCHIVE_WORKFLOWS)
-
-    def as_archiver(self) -> Archiver:
-        return Archiver(
-            export=self._export, install=self._install, reload_workflows=lambda: self.catalogue
-        )
-
-    def _export(self, slug: str) -> str:
-        self.exported.append(slug)
-        return f"exported to /tmp/{slug}.zip"
-
-    def _install(self, archive: str, replace: bool) -> ImportAttempt:
-        self.installed.append((archive, replace))
-        if self._clash and not replace:
-            return ImportAttempt("a workflow named 'doc-review' already exists.", True)
-        self.catalogue = [
-            *_ARCHIVE_WORKFLOWS,
-            Workflow(slug="fresh", label="Fresh", description=""),
-        ]
-        return ImportAttempt("workflow 'fresh' imported.")
-
-
-def _workflow_app(archiver: _RecordingArchiver | None = None) -> MenuApp:
-    return MenuApp(
-        _JOBS,
-        workflows=list(_ARCHIVE_WORKFLOWS),
-        archiver=(archiver or _RecordingArchiver()).as_archiver(),
-    )
-
-
-async def _open_workflow_menu(pilot: Pilot[MenuChoice | None]) -> None:
-    """Top → Workflow."""
-    await pilot.press("down", "enter")
-    await pilot.pause()
-
-
-def test_export_packs_the_picked_workflow_without_leaving_the_list() -> None:
-    """Packing a zip asks nothing, so it should not cost the user their place."""
-    recorder = _RecordingArchiver()
-    app = _workflow_app(recorder)
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("down", "down", "down", "down", "enter")  # Export
-            await pilot.pause()
-            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
-            await pilot.press("enter")  # the first workflow
-            await pilot.pause()
-            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
-            seen["running"] = app.is_running
-
-    asyncio.run(scenario())
-    # The picker reads by label, but exports the slug the CLI verb takes.
-    assert seen["titles"] == ["Doc Review", "Nightly ETL"]
-    assert recorder.exported == ["doc-review"]
-    assert "exported to" in str(seen["detail"])  # said in place...
-    assert seen["running"] is True  # ...and still on the picker
-    assert app.return_value is None
-
-
-def test_a_second_export_is_one_keypress_away() -> None:
-    recorder = _RecordingArchiver()
-    app = _workflow_app(recorder)
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("down", "down", "down", "down", "enter")
-            await pilot.pause()
-            await pilot.press("enter")
-            await pilot.pause()
-            await pilot.press("down", "enter")
-            await pilot.pause()
-
-    asyncio.run(scenario())
-    assert recorder.exported == ["doc-review", "nightly-etl"]
-
-
-async def _submit_archive(app: MenuApp, pilot: Pilot[MenuChoice | None], archive: Path) -> None:
-    """Top → Workflow → Import → paste the path → submit."""
-    await _open_workflow_menu(pilot)
-    await pilot.press("down", "down", "down", "down", "down", "enter")  # Import
-    await pilot.pause()
-    app.screen.query_one("#archive", Input).value = str(archive)
-    await pilot.press("enter")
-    await pilot.pause()
-
-
-def test_import_installs_the_archive_without_leaving_the_menu(tmp_path: Path) -> None:
-    archive = tmp_path / "shared.zip"
-    archive.write_bytes(b"PK")
-    recorder = _RecordingArchiver()
-    app = _workflow_app(recorder)
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _submit_archive(app, pilot, archive)
-            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
-            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
-            seen["running"] = app.is_running
-
-    asyncio.run(scenario())
-    assert recorder.installed == [(str(archive), False)]
-    assert "imported" in str(seen["detail"])
-    assert "Workflow" in str(seen["crumb"])  # back on the Workflow menu, not the front door
-    assert seen["running"] is True
-    assert app.return_value is None
-
-
-def test_a_successful_import_shows_up_in_the_workflow_list(tmp_path: Path) -> None:
-    """A workflow you cannot see is one you cannot run — the catalogue has to re-read."""
-    archive = tmp_path / "shared.zip"
-    archive.write_bytes(b"PK")
-    app = _workflow_app()
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _submit_archive(app, pilot, archive)
-            # The Workflow menu kept its cursor on Import, where we left it — up twice
-            # from there is List (Run, Create, Edit, List, Export, Import).
-            await pilot.press("up", "up", "enter")
-            await pilot.pause()
-            seen["titles"] = [str(r.item.title) for r in app.screen.query(_Row)]
-
-    asyncio.run(scenario())
-    assert "Fresh" in str(seen["titles"])
-
-
-def test_a_name_clash_is_asked_about_in_place(tmp_path: Path) -> None:
-    archive = tmp_path / "shared.zip"
-    archive.write_bytes(b"PK")
-    recorder = _RecordingArchiver(clash=True)
-    app = _workflow_app(recorder)
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _submit_archive(app, pilot, archive)
-            seen["body"] = str(app.screen.query_one("#consequences", Static).render())
-            await pilot.press("down", "enter")  # Yes, replace
-            await pilot.pause()
-
-    asyncio.run(scenario())
-    assert "already exists" in str(seen["body"])
-    assert recorder.installed == [(str(archive), False), (str(archive), True)]
-
-
-def test_declining_a_clash_leaves_the_existing_workflow_alone(tmp_path: Path) -> None:
-    archive = tmp_path / "shared.zip"
-    archive.write_bytes(b"PK")
-    recorder = _RecordingArchiver(clash=True)
-    app = _workflow_app(recorder)
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _submit_archive(app, pilot, archive)
-            await pilot.press("escape")  # Esc is a no
-            await pilot.pause()
-
-    asyncio.run(scenario())
-    assert recorder.installed == [(str(archive), False)]  # never re-run with replace
-
-
-def test_import_keeps_the_form_open_when_the_archive_is_not_there() -> None:
-    # Checked in-form so a typo is fixed here rather than tearing the menu down to fail
-    # at the prompt.
-    app = _workflow_app()
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("down", "down", "down", "down", "down", "enter")
-            await pilot.pause()
-            app.screen.query_one("#archive", Input).value = "/nope/missing.zip"
-            await pilot.press("enter")
-            await pilot.pause()
-            assert "✗" in str(app.screen.query_one("#detail", Static).render())
-
-    asyncio.run(scenario())
-    assert app.return_value is None  # still in the form, nothing handed back
 
 
 def test_config_picker_highlight_reads_as_selected_while_the_filter_holds_focus() -> None:
@@ -1962,10 +1603,10 @@ _LAUNCH_CLIENTS = [
 
 
 def _launch_app(clients: list[ClientChoice] | None = None) -> MenuApp:
-    """An app wired for launching: jobs, workflows, and a client choice."""
+    """An app wired for launching: jobs, an attachment, and a client choice."""
     return MenuApp(
         _JOBS,
-        workflows=list(_ARCHIVE_WORKFLOWS),
+        shelf=_launch_shelf(),
         launch_clients=lambda: list(_LAUNCH_CLIENTS if clients is None else clients),
         current_client="claude",
     )
@@ -1983,8 +1624,13 @@ async def _new_job(pilot: Pilot[MenuChoice | None], name: str = "PROJ-1") -> Non
     await pilot.pause()
 
 
-async def _no_workflow(pilot: Pilot[MenuChoice | None]) -> None:
-    """Past the workflow step a new session asks after the client: take "No workflow"."""
+def _launch_shelf() -> Shelf:
+    """One stored attachment, so a new session's attach step is shown."""
+    return _FakeShelf([AttachmentRow("doc-review", "1.0.0", "review the docs")]).shelf()
+
+
+async def _nothing_attached(pilot: Pilot[MenuChoice | None]) -> None:
+    """Past the client a new session asks what to attach: take the nothing-attached row."""
     await pilot.pause()
     await pilot.press("enter")
 
@@ -2000,7 +1646,7 @@ def test_starting_a_job_asks_which_client_first() -> None:
             seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
             seen["running"] = app.is_running
             await pilot.press("enter")  # take the default
-            await _no_workflow(pilot)
+            await _nothing_attached(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2025,7 +1671,7 @@ def test_the_picker_opens_on_the_configured_default() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
             await pilot.press("enter")
-            await _no_workflow(pilot)
+            await _nothing_attached(pilot)
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client="cursor")
@@ -2038,7 +1684,7 @@ def test_a_different_client_can_be_picked_for_one_launch() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
             await pilot.press("down", "enter")  # onto Cursor
-            await _no_workflow(pilot)
+            await _nothing_attached(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2071,7 +1717,7 @@ def test_a_custom_caller_can_be_launched_on_like_any_other() -> None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
             await pilot.press("down", "down", "enter")  # onto cursor-mitm
-            await _no_workflow(pilot)
+            await _nothing_attached(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2094,90 +1740,6 @@ def test_a_custom_caller_says_where_it_came_from() -> None:
     asyncio.run(scenario())
     assert "your own caller" in str(seen["detail"])
     assert "config.toml" in str(seen["detail"])  # survives Rich's markup parser intact
-
-
-def test_running_a_workflow_asks_which_client() -> None:
-    """Issue #80: a step between picking the workflow and it starting."""
-    app = _launch_app()
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("enter")  # Run → workflow picker
-            await pilot.pause()
-            await pilot.press("enter")  # the first workflow
-            await pilot.pause()
-            await pilot.press("down", "enter")  # Cursor
-        return app.return_value
-
-    choice = asyncio.run(scenario())
-    assert choice is not None
-    assert choice.action == "run"
-    assert choice.workflow == "doc-review"
-    assert choice.client == "cursor"
-
-
-def test_the_client_step_names_the_workflow_it_is_about_to_run() -> None:
-    app = _launch_app()
-    seen: dict[str, object] = {}
-
-    async def scenario() -> None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("enter")  # Run
-            await pilot.pause()
-            await pilot.press("enter")  # doc-review
-            await pilot.pause()
-            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
-
-    asyncio.run(scenario())
-    assert "Workflow" in str(seen["crumb"])
-    assert "doc-review" in str(seen["crumb"])
-
-
-def test_authoring_a_new_workflow_asks_after_the_depth() -> None:
-    app = _launch_app()
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("down", "enter")  # Create
-            await pilot.pause()
-            app.screen.query_one("#name", Input).value = ""  # unnamed: named at the end
-            await pilot.press("enter")
-            await pilot.pause()
-            await pilot.press("enter")  # guided
-            await pilot.pause()
-            await pilot.press("down", "enter")  # Cursor
-        return app.return_value
-
-    choice = asyncio.run(scenario())
-    assert choice is not None
-    assert choice.action == "workflow_new"
-    assert choice.guided is True
-    assert choice.client == "cursor"
-
-
-def test_editing_a_workflow_asks_after_the_depth() -> None:
-    app = _launch_app()
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _open_workflow_menu(pilot)
-            await pilot.press("down", "down", "enter")  # Edit → picker
-            await pilot.pause()
-            await pilot.press("enter")  # the first workflow
-            await pilot.pause()
-            await pilot.press("down", "enter")  # quick
-            await pilot.pause()
-            await pilot.press("down", "enter")  # Cursor
-        return app.return_value
-
-    choice = asyncio.run(scenario())
-    assert choice is not None
-    assert choice.action == "workflow_edit"
-    assert choice.guided is False
-    assert choice.client == "cursor"
 
 
 def test_resuming_is_not_asked_about() -> None:
@@ -2280,7 +1842,7 @@ def test_an_existing_job_still_goes_through_the_client_step() -> None:
             await pilot.press("down", "enter")  # alpha
             await pilot.pause()
             await pilot.press("down", "enter")  # a different client
-            await _no_workflow(pilot)
+            await _nothing_attached(pilot)
         return app.return_value
 
     choice = asyncio.run(scenario())
@@ -2366,72 +1928,21 @@ def test_resume_is_unchanged_and_still_reopens_a_session() -> None:
     assert asyncio.run(scenario()) == MenuChoice(action="resume", job="alpha", session="alpha_003")
 
 
-# ── Attaching a workflow to a new session ──
-def test_a_new_session_can_be_started_with_a_workflow() -> None:
-    app = _launch_app()
-    seen: dict[str, object] = {}
+def test_the_attach_step_follows_even_without_a_client_choice() -> None:
+    app = MenuApp(_JOBS, shelf=_launch_shelf(), current_client="claude")
 
     async def scenario() -> MenuChoice | None:
         async with app.run_test(size=(100, 30)) as pilot:
             await _new_job(pilot)
-            await pilot.press("enter")  # the default client
-            await pilot.pause()
-            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
-            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
-            await pilot.press("down", "down", "enter")  # Nightly ETL
-        return app.return_value
-
-    choice = asyncio.run(scenario())
-    assert str(seen["crumb"]).endswith("PROJ-1 > Attach")
-    # "Nothing attached" first, so a plain start stays one keypress.
-    assert seen["titles"] == ["Nothing attached", "Doc Review", "Nightly ETL"]
-    assert choice == MenuChoice(
-        action="start", job="PROJ-1", client="claude", workflow="nightly-etl"
-    )
-
-
-def test_no_workflow_is_offered_when_none_is_installed() -> None:
-    app = MenuApp(_JOBS, launch_clients=lambda: list(_LAUNCH_CLIENTS), current_client="claude")
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _new_job(pilot)
-            await pilot.press("enter")  # the client is the last step
-        return app.return_value
-
-    assert asyncio.run(scenario()) == MenuChoice(action="start", job="PROJ-1", client="claude")
-
-
-def test_the_workflow_step_follows_even_without_a_client_choice() -> None:
-    app = MenuApp(_JOBS, workflows=list(_ARCHIVE_WORKFLOWS), current_client="claude")
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            await _new_job(pilot)
-            await pilot.press("down", "enter")  # Doc Review
+            await pilot.press("down", "enter")  # doc-review
         return app.return_value
 
     assert asyncio.run(scenario()) == MenuChoice(
-        action="start", job="PROJ-1", workflow="doc-review"
+        action="start", job="PROJ-1", attachment="doc-review", attachment_version="1.0.0"
     )
 
 
-def test_a_workflow_run_is_not_asked_for_a_second_workflow() -> None:
-    app = _launch_app()
-
-    async def scenario() -> MenuChoice | None:
-        async with app.run_test(size=(100, 30)) as pilot:
-            app.launch(MenuChoice(action="run", workflow="doc-review"))
-            await pilot.pause()
-            await pilot.press("enter")  # the client; the run already names its workflow
-        return app.return_value
-
-    assert asyncio.run(scenario()) == MenuChoice(
-        action="run", workflow="doc-review", client="claude"
-    )
-
-
-def test_the_resume_picker_shows_the_workflow_a_session_ran() -> None:
+def test_the_resume_picker_shows_the_attachment_a_session_ran() -> None:
     sessions = [
         SessionChoice("alpha_001", "claude", "/work/a", True, "2026-07-24 09:00", False),
         SessionChoice(
@@ -2441,7 +1952,7 @@ def test_the_resume_picker_shows_the_workflow_a_session_ran() -> None:
             True,
             "2026-07-25 10:00",
             True,
-            workflow="mr-review",
+            attachment="mr-review@1.0.0",
         ),
     ]
     app = MenuApp(_JOBS, sessions_for=lambda _job: sessions, current_client="claude")
@@ -2455,7 +1966,7 @@ def test_the_resume_picker_shows_the_workflow_a_session_ran() -> None:
     asyncio.run(scenario())
     assert seen == [
         "2026-07-24 09:00 · claude · /work/a",
-        "2026-07-25 10:00 · claude · mr-review · /work/b",
+        "2026-07-25 10:00 · claude · mr-review@1.0.0 · /work/b",
     ]
 
 
@@ -2591,7 +2102,7 @@ def test_the_top_menu_offers_health_above_quit() -> None:
             seen.extend(r.item.title for r in app.screen.query(_Row))
 
     asyncio.run(scenario())
-    assert seen[-3:] == ["Health", "Attachments", "Quit"]
+    assert seen[-2:] == ["Health", "Quit"]
 
 
 def test_health_lists_each_day_marking_the_bad_ones() -> None:
@@ -2694,8 +2205,8 @@ _ROWS = [
 
 
 async def _open_attachments(pilot: Pilot[MenuChoice | None], verb_index: int) -> None:
-    """Top → Attachments (above Quit) → the verb at ``verb_index``."""
-    await pilot.press(*["down"] * 5, "enter")
+    """Top → Attachments (second) → the verb at ``verb_index``."""
+    await pilot.press("down", "enter")
     await pilot.press(*["down"] * verb_index, "enter")
     await pilot.pause()
 
@@ -2874,7 +2385,7 @@ def test_nothing_attached_is_still_one_keypress() -> None:
     assert app.return_value == MenuChoice(action="start", job="PROJ-1")
 
 
-def test_without_attachments_or_workflows_a_new_job_starts_plain() -> None:
+def test_without_attachments_a_new_job_starts_plain() -> None:
     app = MenuApp(_JOBS, shelf=_FakeShelf().shelf())
     _new_job_attach(app, ())
 

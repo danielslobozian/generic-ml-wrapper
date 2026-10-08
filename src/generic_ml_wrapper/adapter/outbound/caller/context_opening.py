@@ -22,6 +22,6 @@ def read_first_opening(context_path: str, kickoff: str | None = None) -> str:
     preamble = (
         f"Your operating context for this session is in the file:\n{context_path}\n"
         "Read that file in full FIRST — it is your instructions, profile, rules, and "
-        "the workflow steps — then proceed as it says."
+        "the attachment you run with, if any — then proceed as it says."
     )
     return f"{preamble}\n\n{kickoff}" if kickoff else preamble

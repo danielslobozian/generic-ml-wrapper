@@ -130,44 +130,38 @@ would break them moved there.
 
 ## Phase 7 — Removal
 
-- [ ] CLI: the `workflow` group (`new`, `edit`, `resume`, `drafts`, `list`, `import`,
-      `export`), `run`, `--workflow`, `--guided`; handlers in `app.py`.
-- [ ] Use cases and ports: `new_workflow`, `edit_workflow`, `import_workflow`,
-      `export_workflow`, `list_workflows`, `list_workflow_catalog`, `list_drafts`.
-- [ ] Models: `workflow.py`, `draft.py`, `archive_status.py` (if unused); `WorkflowName`
-      in `identifiers.py` and its i18n key.
-- [ ] Adapters: `adapter/outbound/workflow/` (source, zip archive),
-      `tty_workflow_chooser.py`, `tty_guided_chooser.py`.
-- [ ] `paths.py`: `WORKFLOWS`, `DRAFTS`, `AUTHORING`, `WORKFLOW_BACKUPS`.
-- [ ] Moved from phase 4: `StartJobCommand.workflow`; `CompileMode.WORKFLOW`/`AUTHORING`,
-      `BASE`/`STEPS`, `includes_workflow`, `[startup.workflow]`/`[startup.authoring]`;
-      the `workflow` interceptor target; the workflow kickoff (`start_job.py`) and
-      "the workflow steps" in `context_opening.py`; `Session.workflow` and
-      `SessionSummary.workflow` (the ledger column stays, as history).
-- [ ] `composition.py` wiring.
-- [ ] TUI: move Attachments to Workflow's place in the top menu; drop `Archiver`,
-      `AttachWorkflowScreen`'s workflow rows, the Workflow screens, `MenuApp.workflows`.
-- [ ] `resources/workflows/`.
-- [ ] Help topics `job-vs-workflow`, `start-vs-run` (`help_topics.py`), replaced by one
-      on attachments.
-- [ ] i18n: every `*workflow*`, `tui.wf.*` key (en, fr).
-- [ ] Wording in `rules.py`, `greeting.py`, `session_snapshot.py`,
-      `filesystem_layout_seeder.py`, `context_file.py`, `__init__.py`.
-- [ ] Tests removed with their code: `test_new_workflow_usecase`,
-      `test_edit_workflow_usecase`, `test_import_export_workflow_usecase`,
-      `test_list_workflows_usecase`, `test_filesystem_workflow_source`,
-      `test_workflow_archive`, `test_tty_workflow_chooser`, `test_tty_guided_chooser`,
-      `test_authoring_separation`; workflow cases in `test_cli`, `test_tui_menu`,
-      `test_domain_errors`, `test_identifiers`, `test_i18n`, `test_exit_handling`,
-      `test_delete_jobs_usecase`, `_conformance`.
+- [x] CLI: the `workflow` group, `run`, `--workflow`, `--guided`/`--quick` and their
+      handlers; `creds set <attachment> <NAME>`; the capability index and the help
+      topics (`job-vs-attachment` replaces `job-vs-workflow` and `start-vs-run`).
+- [x] Use cases, ports, models and adapters of workflows, drafts and archives; the
+      terminal choosers; `WorkflowName`; `resources/workflows/`; `paths.WORKFLOWS`,
+      `DRAFTS`, `AUTHORING`, `WORKFLOW_BACKUPS`; their wiring.
+- [x] The context composition moved out of the workflow source into
+      `FilesystemContextCompiler` behind `ContextCompilerPort`; `StartJobUseCase` takes
+      `contexts`. Modes are `default` and `attachment`; `BASE`/`STEPS`, the `technical`
+      compressor kind, `includes_workflow`, `[startup.workflow]`/`[startup.authoring]` and
+      the `workflow` interceptor target are gone. Resume errors are `error.resume.*`.
+- [x] `Session.workflow`, `SessionSummary.workflow`, `SessionChoice.workflow` →
+      `attachment`. Ledger migration 9 copies an old session's workflow name into its
+      attachment (no version, no hash) and turns authoring jobs into ordinary jobs; the
+      old column stays as history.
+- [x] Credentials are keyed by attachment name; the file's format is unchanged, so a
+      migrated workflow keeps its credentials as they are.
+- [x] TUI: Attachments in Workflow's place; the Workflow screens, `Archiver`,
+      `ImportAttempt`, `MenuApp.workflows`; the attach step offers attachments only.
+- [x] i18n: 98 unused workflow keys removed; the rest reworded (en, fr).
+- [x] Wording: rules directive ("per-attachment rule"), greeting, snapshot, seeded
+      config, context file and opening, package docstring.
+- [x] Tests: workflow-only tests removed with their code; the rest rewritten
+      (`test_filesystem_context_compiler.py` is the old source's test file).
 
 ## Phase 8 — Home folder migration
 
 - [ ] One-time, idempotent, on first run of the new version: import each
-      `~/.gmlw/workflows/<name>/` as `<name>@1.0.0` (D4); rename per-workflow credentials;
-      rewrite `[startup.workflow]`/`[startup.authoring]` and the `workflow` interceptor
-      stage in `config.toml`; leave `workflows/`, `drafts/`, `authoring/`,
-      `workflow-backups/` in place and say they can be deleted.
+      `~/.gmlw/workflows/<name>/` as `<name>@1.0.0` (D4); rewrite
+      `[startup.workflow]`/`[startup.authoring]` and the `workflow` interceptor target in
+      `config.toml`; leave `workflows/`, `drafts/`, `authoring/`, `workflow-backups/` in
+      place and say they can be deleted. (Credentials need nothing: same file, same keys.)
 - [ ] Tests on a fixture home.
 
 ## Phase 9 — Docs

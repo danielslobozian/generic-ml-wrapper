@@ -24,8 +24,7 @@ _GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
         (
             ("gmlw <job>", "index.desc.job"),
             ("gmlw start <job>", "index.desc.start"),
-            ("gmlw start <job> -w <workflow>", "index.desc.run_workflow"),
-            ("gmlw run <workflow>", "index.desc.run"),
+            ("gmlw start <job> --attach <name>", "index.desc.attach"),
         ),
     ),
     (
@@ -41,8 +40,8 @@ _GROUPS: tuple[tuple[str, tuple[tuple[str, str], ...]], ...] = (
     (
         "index.group.author",
         (
-            ("gmlw workflow new <name>", "index.desc.workflow_new"),
-            ("gmlw workflow list", "index.desc.workflow_list"),
+            ("gmlw attachment import <zip>", "index.desc.attachment_import"),
+            ("gmlw attachment list", "index.desc.attachment_list"),
             ("gmlw persona list", "index.desc.persona"),
             ("gmlw plugins list", "index.desc.plugins"),
         ),

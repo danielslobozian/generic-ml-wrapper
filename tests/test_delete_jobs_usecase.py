@@ -82,14 +82,6 @@ def test_an_unknown_job_aborts_the_whole_batch() -> None:
     assert fixture.artifacts.purged_jobs == []
 
 
-def test_an_authoring_job_is_unreachable_through_a_work_scoped_store() -> None:
-    """No guard is written for this — the injected store simply cannot see them."""
-    fixture = _Fixture()
-
-    with pytest.raises(NoSuchJobError):
-        fixture.use_case().execute(["create-workflow"])
-
-
 def test_an_empty_request_removes_nothing() -> None:
     fixture = _Fixture()
 

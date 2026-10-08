@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """The session snapshot: the small block of facts every session opens knowing.
 
-The rest of the context is *content* — who the user is, the place's constraints, a
-workflow's steps. This is the frame around it: which of each axis is in play right now.
+The rest of the context is *content* — who the user is, the place's constraints, an
+attachment's text. This is the frame around it: which of each axis is in play right now.
 At the moment a session starts there is exactly one environment, one role, one persona
 and one job, so the frame is a flat set of scalars rather than anything to resolve.
 
@@ -40,7 +40,7 @@ class SessionSnapshot:
         user_environment: The active environment slug (``[profile] default_environment``).
         user_role: The active role slug (``[profile] default_role``).
         ai_persona: The selected persona (``[companion] persona``), or ``""`` when off.
-        job_name: The job this session runs on; for an authoring session, the workflow.
+        job_name: The job this session runs on.
     """
 
     user_name: str = ""

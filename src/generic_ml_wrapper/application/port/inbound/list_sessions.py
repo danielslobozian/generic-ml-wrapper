@@ -22,7 +22,8 @@ class SessionSummary:
             got going -- one started and abandoned at the prompt is recorded like any
             other, and this is what distinguishes it.
         cost_usd: Its recorded cumulative cost, or ``0.0`` if none was ever metered.
-        workflow: The workflow it was started with, or ``None`` for a plain session.
+        attachment: What it was started with, as ``name@version`` (just the name for a
+            session recorded before attachments), or ``None`` for a plain session.
         incidents: How many connection incidents it suffered (lost connections and
             cut-off answers).
     """
@@ -34,7 +35,7 @@ class SessionSummary:
     created_at: str | None = None
     turn_count: int = 0
     cost_usd: float = 0.0
-    workflow: str | None = None
+    attachment: str | None = None
     incidents: int = 0
 
 

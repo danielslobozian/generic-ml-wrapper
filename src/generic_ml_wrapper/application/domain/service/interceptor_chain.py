@@ -18,7 +18,7 @@ class InterceptorChain:
     Each interceptor targets a name; :meth:`apply` runs, in declared order, those
     whose target matches (a target may have 0..N, and one interceptor may appear
     under several targets). The compile applies the context targets
-    (``profile``/``rules``/``workflow``/``attachment``/``context``); the metering relay applies the
+    (``profile``/``rules``/``attachment``/``context``); the metering relay applies the
     wire targets (``request``/``response``). An empty chain is the identity.
     """
 

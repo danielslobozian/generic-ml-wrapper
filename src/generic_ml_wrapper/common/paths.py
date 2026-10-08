@@ -12,7 +12,7 @@ def resolve_home() -> Path:
     """Return the folder gmlw keeps everything in: ``$GMLW_HOME``, else ``~/.gmlw``.
 
     The override moves gmlw's own folder only -- not ``HOME`` -- so a development build
-    can keep its own ledger, config and workflows while the clients it launches still
+    can keep its own ledger, config and attachments while the clients it launches still
     find their real settings and login under the user's home.
     """
     override = os.environ.get("GMLW_HOME")
@@ -27,7 +27,6 @@ LEDGER = HOME / "ledger.db"
 CONTEXTS = HOME / "contexts"
 # Opt-in transcript: the per-call in/out/usage trio under transcripts/<job>/<session>/.
 TRANSCRIPTS = HOME / "transcripts"
-WORKFLOWS = HOME / "workflows"
 PROFILE = HOME / "profile"
 # Place-specific context, one folder per environment (the movie set). The old single
 # profile/company folder is migrated into environments/<default_environment>/ on init.
@@ -48,14 +47,6 @@ CREDENTIALS = HOME / "credentials.toml"
 # Imported attachments, one read-only folder per version: attachments/<name>/<version>/.
 # Their hashes are in the ledger; see docs/ATTACHMENTS.md.
 ATTACHMENTS = HOME / "attachments"
-# Authoring sessions (gmlw workflow new) live apart from real work jobs, so they
-# never appear in `gmlw jobs` and their spend is its own bucket.
-AUTHORING = HOME / "authoring"
-# In-progress workflow drafts, one folder per authoring session. A new workflow is
-# authored here (its name is decided at the end), then atomically moved into
-# workflows/<name>/ on finish — so a half-authored workflow never appears in
-# `workflow list` / `run`. Kept out of workflows/ by living in its own root.
-DRAFTS = HOME / "drafts"
 # The generic-ml-cache store the context compressor records/replays through.
 COMPRESS_CACHE = HOME / "compress-cache"
 # Small bits of local UI state (e.g. which one-time exit-receipt hints have been shown).
@@ -64,11 +55,6 @@ STATE = HOME / "state"
 # written by the TUI's Export → save-to-file destination.
 EXPORTS = HOME / "exports"
 
-# Workflows displaced by an import. Deliberately a sibling of WORKFLOWS rather than a
-# folder inside it: anything under WORKFLOWS with a workflow.md lists as runnable, so
-# keeping backups out makes "a backup is never a workflow" structural instead of a
-# filter that has to be remembered.
-WORKFLOW_BACKUPS = HOME / "workflow-backups"
 # The wrapper's own rolling diagnostics. A wrapped session cannot write diagnostics to
 # stderr — that is the client's screen — so they land here instead, where they survive
 # the session and can actually be read afterwards.

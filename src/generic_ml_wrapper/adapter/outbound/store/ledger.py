@@ -22,12 +22,12 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 _SCHEMA = """
 CREATE TABLE jobs (
     job        TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL DEFAULT 'work',   -- 'work' | 'authoring'
+    kind       TEXT NOT NULL DEFAULT 'work',   -- 'work' ('authoring' until migration 9)
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -39,7 +39,7 @@ CREATE TABLE sessions (
     uuid       TEXT,
     cwd        TEXT,                            -- the folder it was launched in (resume there)
     resumable  INTEGER NOT NULL DEFAULT 1,      -- 0/1: snapshot of the client's resumability
-    workflow   TEXT,                            -- the workflow it was started with, if any
+    workflow   TEXT,                            -- history: before attachments, see migration 9
     attachment         TEXT,                    -- the attachment it was started with, if any
     attachment_version TEXT,
     attachment_hash    TEXT,                    -- that version's hash when it started
@@ -177,6 +177,13 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE sessions ADD COLUMN attachment TEXT",
         "ALTER TABLE sessions ADD COLUMN attachment_version TEXT",
         "ALTER TABLE sessions ADD COLUMN attachment_hash TEXT",
+    ),
+    # Sessions started with a workflow show its name as their attachment, with no
+    # version or hash: what they ran was never stored as a version. The old column stays.
+    # Authoring jobs become ordinary ones: writing an attachment is ordinary work now.
+    9: (
+        "UPDATE sessions SET attachment = workflow WHERE attachment IS NULL",
+        "UPDATE jobs SET kind = 'work' WHERE kind = 'authoring'",
     ),
 }
 

@@ -1,28 +1,21 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""Filesystem ``WorkflowSourcePort``: workflows under ``~/.gmlw/workflows``."""
+"""Filesystem ``ContextCompilerPort``: a session's context from ``~/.gmlw``."""
 
 from __future__ import annotations
 
-import json
-import tomllib
-from importlib import resources
-from importlib.resources.abc import Traversable
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from generic_ml_wrapper.adapter.outbound.bootstrap.about import ABOUT, write_about
 from generic_ml_wrapper.application.domain.model import context_source
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode, ContextSource
-from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.learned import CAPTURE_DIRECTIVE
 from generic_ml_wrapper.application.domain.model.rules import RULE_TEMPLATE, rule_capture_directive
 from generic_ml_wrapper.application.domain.model.session_snapshot import SessionSnapshot
-from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service import rule_parser
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.domain.service.rule_cleaner import clean_rule
-from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.port.outbound.context_compiler import ContextCompilerPort
 from generic_ml_wrapper.common import config
 
 if TYPE_CHECKING:
@@ -33,32 +26,24 @@ if TYPE_CHECKING:
     )
     from generic_ml_wrapper.application.port.outbound.persona_source import PersonaSourcePort
 
-_COMMON = "_common"
-_META = "create-workflow"
-_HIDDEN = frozenset({_COMMON, _META})
 _LEARNED_FILE = "learned.md"
 _LEARNED_DIR = "learned"
 _STRIP_SECTIONS = ("Origin", "Notes")
 # The user-editable rule format, read from the templates root and embedded in the directive.
 _RULE_TEMPLATE_FILE = "rule.template.md"
-_MARKER = "meta.json"
-_FINISHED = "finished"
-_GUIDE = "guided.md"
 
 
-class FilesystemWorkflowSource(WorkflowSourcePort):
-    """Read workflows from ``<root>/<name>/workflow.md``; seed packaged defaults.
+class FilesystemContextCompiler(ContextCompilerPort):
+    """Compose a session's operating context from several ``~/.gmlw`` locations.
 
-    ``compile`` composes a run's operating context from several locations — the
-    persona, the user's profile (self + learned + company), the global and
-    per-workflow rules, and (for a workflow) the shared base and its steps. Which
+    The persona, the user's profile (self + learned + company), the rules of the active
+    environment and role, and an attachment's section when the session has one. Which
     sources are active, and whether each is compressed, is decided per mode by the
     injected startup policy.
     """
 
     def __init__(  # noqa: PLR0913, PLR0917  (a composition adapter binding several ~/.gmlw roots)
         self,
-        root: Path,
         profile_root: Path | None = None,
         templates_root: Path | None = None,
         interceptors: InterceptorChain | None = None,
@@ -75,7 +60,6 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         """Bind the source to its roots and context policy.
 
         Args:
-            root: The directory holding one folder per workflow.
             profile_root: The user's profile directory, or ``None`` to omit it.
             templates_root: The user-editable templates directory, holding
                 ``rule.template.md``. ``None`` (or a missing file) falls back to the
@@ -106,10 +90,6 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             language: Resolves the language gmlw speaks for the session snapshot; defaults
                 to unset, which renders as ``""``.
         """
-        self._root = root
-        # In-progress drafts live in a sibling root (``~/.gmlw/drafts``), so a half-
-        # authored workflow is never visible under ``workflows/`` until it is deployed.
-        self._drafts_root = root.parent / "drafts"
         self._profile_root = profile_root
         self._templates_root = templates_root
         self._interceptors = interceptors or InterceptorChain(())
@@ -123,210 +103,21 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         self._user_name = user_name or (lambda: None)
         self._language = language or (lambda: None)
 
-    def seed(self) -> None:
-        """Copy the packaged default workflows into ``root``, never overwriting."""
-        packaged = resources.files("generic_ml_wrapper").joinpath("resources", "workflows")
-        self._copy_tree(packaged, self._root)
-
-    def _copy_tree(self, source: Traversable, destination: Path) -> None:
-        destination.mkdir(parents=True, exist_ok=True)
-        for entry in source.iterdir():
-            target = destination / entry.name
-            if entry.is_dir():
-                self._copy_tree(entry, target)
-            elif not target.exists():
-                target.write_bytes(entry.read_bytes())
-
-    def names(self) -> list[str]:
-        """Return the runnable workflow names, sorted.
-
-        A runnable workflow is a folder with a ``workflow.md`` that is neither the
-        shared base nor the create-workflow meta-workflow.
-
-        Returns:
-            The runnable workflow names (empty if none exist).
-        """
-        if not self._root.is_dir():
-            return []
-        return sorted(
-            child.name
-            for child in self._root.iterdir()
-            if child.name not in _HIDDEN and (child / "workflow.md").is_file()
-        )
-
-    def exists(self, name: str) -> bool:
-        """Return whether ``<root>/<name>/workflow.md`` exists.
-
-        Args:
-            name: The workflow name.
-
-        Returns:
-            ``True`` if the workflow has a ``workflow.md``.
-        """
-        return (self._root / name / "workflow.md").is_file()
-
-    def catalog(self) -> list[Workflow]:
-        """Return the runnable workflows with their ``.about.toml`` words, sorted by slug.
-
-        Read tolerantly and per folder: an unreadable or malformed sidecar degrades that
-        one workflow to its slug rather than failing the listing.
-        """
-        return [self._described(slug) for slug in self.names()]
-
-    def _described(self, slug: str) -> Workflow:
-        about = self._root / slug / ABOUT
-        label, description = slug, ""
-        if about.is_file():
-            try:
-                data = tomllib.loads(about.read_text(encoding="utf-8"))
-            except (OSError, tomllib.TOMLDecodeError):
-                return Workflow(slug=slug, label=slug, description="")
-            raw_label, raw_description = data.get("label"), data.get("description")
-            label = raw_label if isinstance(raw_label, str) and raw_label else slug
-            description = raw_description if isinstance(raw_description, str) else ""
-        return Workflow(slug=slug, label=label, description=description)
-
-    def create(self, name: str) -> str:
-        """Create ``<root>/<name>/``.
-
-        Args:
-            name: The workflow name.
-
-        Returns:
-            The absolute path to the created folder.
-        """
-        folder = self._root / name
-        folder.mkdir(parents=True, exist_ok=True)
-        return str(folder)
-
-    def folder(self, name: str) -> str:
-        """Return ``<root>/<name>`` without touching the filesystem.
-
-        Args:
-            name: The workflow name.
-
-        Returns:
-            The absolute path to the workflow's folder.
-        """
-        return str(self._root / name)
-
-    def create_draft(self, key: str) -> str:
-        """Create ``<drafts>/<key>/``.
-
-        Args:
-            key: A unique key for the draft (the authoring session id).
-
-        Returns:
-            The absolute path to the created draft folder.
-        """
-        folder = self._drafts_root / key
-        folder.mkdir(parents=True, exist_ok=True)
-        return str(folder)
-
-    def drafts(self) -> list[Draft]:
-        """Return the drafts still on disk, newest first (by folder mtime).
-
-        The folder name *is* the authoring session id, so a draft needs no stored path
-        to be found again — which is what makes an abandoned interview reopenable even
-        though it was never recorded anywhere as resumable.
-        """
-        if not self._drafts_root.is_dir():
-            return []
-        folders = [folder for folder in self._drafts_root.iterdir() if folder.is_dir()]
-        folders.sort(key=lambda folder: folder.stat().st_mtime, reverse=True)
-        return [
-            Draft(
-                key=folder.name,
-                path=str(folder),
-                name=(marker := self.read_draft_marker(str(folder))).name,
-                finished=marker.finished,
-            )
-            for folder in folders
-        ]
-
-    def read_draft_marker(self, draft_path: str) -> DraftMarker:
-        """Read ``<draft>/meta.json`` into a :class:`DraftMarker`, tolerantly.
-
-        A missing file, unreadable bytes, invalid JSON, or an unexpected shape all
-        yield ``DraftMarker(None, finished=False)`` — an incomplete draft, left in place.
-
-        Args:
-            draft_path: The draft folder returned by :meth:`create_draft`.
-
-        Returns:
-            The parsed marker.
-        """
-        marker = Path(draft_path) / _MARKER
-        try:
-            data: object = json.loads(marker.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return DraftMarker(None, finished=False)
-        if not isinstance(data, dict):
-            return DraftMarker(None, finished=False)
-        fields = cast("dict[str, object]", data)
-        raw_name = fields.get("name")
-        raw_label = fields.get("label")
-        raw_description = fields.get("description")
-        return DraftMarker(
-            raw_name if isinstance(raw_name, str) and raw_name else None,
-            finished=fields.get("status") == _FINISHED,
-            label=raw_label if isinstance(raw_label, str) and raw_label else None,
-            description=raw_description if isinstance(raw_description, str) else "",
-        )
-
-    def deploy_draft(
-        self, draft_path: str, name: str, label: str, description: str, created: str
-    ) -> str:
-        """Move a finished draft into ``<root>/<name>/`` (an atomic directory rename).
-
-        The transient marker is removed first so it does not linger in the deployed
-        workflow, and the human words it carried are rewritten as the folder's
-        ``.about.toml`` — the marker is scaffolding, the sidecar is the record.
-
-        The caller must have derived and validated the slug and confirmed it is free.
-
-        Args:
-            draft_path: The draft folder to deploy.
-            name: The slug to deploy it as (the folder name).
-            label: The human name behind the slug.
-            description: A fuller line, or empty when none was given.
-            created: An ISO-8601 timestamp for when the workflow appeared.
-
-        Returns:
-            The absolute path to the deployed workflow folder.
-        """
-        draft = Path(draft_path)
-        (draft / _MARKER).unlink(missing_ok=True)
-        target = self._root / name
-        self._root.mkdir(parents=True, exist_ok=True)
-        draft.rename(target)
-        write_about(target, label, description, created)
-        return str(target)
-
-    def meta_guide(self) -> str:
-        """Return the create-workflow guided supplement (``guided.md``), or ``""``."""
-        return self._read(self._root / _META / _GUIDE)
-
     def compile(
-        self,
-        mode: CompileMode,
-        name: str | None = None,
-        job: str | None = None,
-        attachment: str | None = None,
+        self, mode: CompileMode, job: str | None = None, attachment: str | None = None
     ) -> str:
         """Compose a run's operating context for a mode.
 
         The order is: the session snapshot, the profile family (persona, self, learned,
-        company), then rules, then — for a workflow/authoring run — the base and steps.
-        Each active source is optionally compressed (per its config), sections pass
-        through the interceptor chain for their target, and the joined result through
-        ``context``. The snapshot leads because it frames everything after it, and stays
-        verbatim: six scalars are not worth compressing and a paraphrase would make them
-        wrong rather than shorter.
+        company), then rules, then the attachment's section. Each active source is
+        optionally compressed (per its config), sections pass through the interceptor
+        chain for their target, and the joined result through ``context``. The snapshot
+        leads because it frames everything after it, and stays verbatim: six scalars are
+        not worth compressing and a paraphrase would make them wrong rather than shorter.
+        The attachment's section is never compressed: it is delivered as written.
 
         Args:
-            mode: The compile mode (default/workflow/authoring).
-            name: The workflow whose base/steps to compose, or ``None``.
+            mode: The compile mode (default/attachment).
             job: The job this session runs on, for the snapshot.
             attachment: An attachment's section, last and verbatim, or ``None``.
 
@@ -337,11 +128,8 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
         snapshot = self._snapshot(job).render()
         profile = self._interceptors.apply("profile", self._profile_group(settings))
         rules = self._interceptors.apply("rules", self._rules_group(settings))
-        workflow = self._interceptors.apply("workflow", self._workflow_group(mode, name, settings))
         attached = self._interceptors.apply("attachment", attachment or "")
-        context = "\n\n\n".join(
-            part for part in (snapshot, profile, rules, workflow, attached) if part
-        )
+        context = "\n\n\n".join(part for part in (snapshot, profile, rules, attached) if part)
         return self._interceptors.apply("context", context)
 
     def _snapshot(self, job: str | None) -> SessionSnapshot:
@@ -442,30 +230,6 @@ class FilesystemWorkflowSource(WorkflowSourcePort):
             if text:
                 return text
         return RULE_TEMPLATE
-
-    def _workflow_group(
-        self, mode: CompileMode, name: str | None, settings: dict[str, config.SourceSetting]
-    ) -> str:
-        """Compose the shared base and the workflow's steps (workflow/authoring only)."""
-        if not context_source.includes_workflow(mode):
-            return ""
-        parts: list[str] = []
-        base = self._maybe_compress(
-            self._read(self._root / _COMMON / "base.md"),
-            context_source.BASE,
-            settings[context_source.BASE.key],
-        )
-        if base:
-            parts.append(base)
-        if name:
-            steps = self._maybe_compress(
-                self._read(self._root / name / "workflow.md"),
-                context_source.STEPS,
-                settings[context_source.STEPS.key],
-            )
-            if steps:
-                parts.append(steps)
-        return "\n\n\n".join(parts)
 
     def _maybe_compress(
         self, text: str, source: ContextSource, setting: config.SourceSetting
