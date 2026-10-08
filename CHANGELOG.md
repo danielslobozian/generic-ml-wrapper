@@ -56,6 +56,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every run started unmetered: no tokens, no cost, no incidents, only a warning in the log.
   When the config leaves the model on vibe's defaults, the run is now routed through vibe's
   built-in `mistral` provider. A missing `config.toml` counts as all defaults, too.
+  - Even then, a signed-in vibe undid it: on startup it checks the account and rewrites the
+    Mistral provider's address in its config back to the account's own, so the calls went
+    straight to Mistral again. The relay address is now also passed in `VIBE_PROVIDERS`,
+    which vibe ranks above its config file and that rewrite does not touch.
 - **A dropped connection printed a traceback over the client's screen.** Logs are kept off
   the terminal while a client owns it, but a session started from the menu opened with a
   bare `gmlw` — the usual way in — was not counted as one of those, so every relay failure

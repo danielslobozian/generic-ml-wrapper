@@ -13,10 +13,16 @@ A fresh vibe install writes neither ``active_model`` nor any ``[[models]]`` or
 ``[[providers]]``: it runs on built-ins it keeps in code. When the config leaves the
 active model on those built-ins, the upstream is vibe's default ``mistral`` provider,
 and the redirect adds that provider's table, pointed at the relay.
+
+The file alone does not hold: on startup vibe checks the account and rewrites a
+Mistral provider's ``api_base`` back to the account's own URL. Its ``VIBE_*``
+variables rank above ``config.toml``, so :func:`provider_override` also hands the
+relay-pointed provider over as ``VIBE_PROVIDERS``, which that rewrite cannot reach.
 """
 
 from __future__ import annotations
 
+import json
 import tomllib
 from typing import cast
 from urllib.parse import urlsplit
@@ -25,15 +31,13 @@ from urllib.parse import urlsplit
 _DEFAULT_PROVIDER = "mistral"
 _DEFAULT_API_BASE = "https://api.mistral.ai/v1"
 _DEFAULT_MODEL_KEYS = frozenset({"", "mistral-medium-3.5", "mistral-vibe-cli-latest"})
-# A [[providers]] entry replaces the built-in one wholesale (vibe merges them by name),
-# so it restates the built-in's key variable and backend; the backend fills in the rest.
-_DEFAULT_PROVIDER_TABLE = """
-[[providers]]
-name = "mistral"
-api_base = "{api_base}"
-api_key_env_var = "MISTRAL_API_KEY"
-backend = "mistral"
-"""
+# A provider entry replaces the built-in one wholesale (vibe merges them by name), so
+# it restates the built-in's key variable and backend; the backend fills in the rest.
+_DEFAULT_PROVIDER_ENTRY: dict[str, object] = {
+    "name": _DEFAULT_PROVIDER,
+    "api_key_env_var": "MISTRAL_API_KEY",
+    "backend": "mistral",
+}
 
 
 def active_upstream(source_text: str) -> str | None:
@@ -98,6 +102,36 @@ def redirect(source_text: str, upstream: str, relay_base_url: str) -> str:
     return _repoint_provider(source_text, provider, f'"{upstream}"', f'"{new_api_base}"')
 
 
+def provider_override(source_text: str, upstream: str, relay_base_url: str) -> str | None:
+    """Return the active provider, pointed at the relay, as a ``VIBE_PROVIDERS`` value.
+
+    The provider's whole entry from the config (or vibe's built-in one when the config
+    has none) with ``api_base`` repointed as :func:`redirect` does, as a JSON list.
+
+    Args:
+        source_text: The contents of a vibe ``config.toml``.
+        upstream: The ``api_base`` to repoint (from :func:`active_upstream`).
+        relay_base_url: The relay's base URL (``http://127.0.0.1:PORT``).
+
+    Returns:
+        The JSON list holding that one provider, or ``None`` if it cannot be resolved.
+    """
+    try:
+        data = tomllib.loads(source_text)
+    except tomllib.TOMLDecodeError:
+        return None
+    provider = _provider_name(data)
+    if provider is None:
+        return None
+    entry = _provider_entry(data.get("providers"), provider)
+    if entry is None:
+        if provider != _DEFAULT_PROVIDER:
+            return None
+        entry = _DEFAULT_PROVIDER_ENTRY
+    relayed = {**entry, "api_base": relay_base_url + urlsplit(upstream).path}
+    return json.dumps([relayed], default=str)
+
+
 def _provider_name(data: dict[str, object]) -> str | None:
     active = data.get("active_model", "")
     if not isinstance(active, str):
@@ -110,7 +144,9 @@ def _provider_name(data: dict[str, object]) -> str | None:
 
 def _with_default_provider(source_text: str, api_base: str) -> str:
     separator = "" if not source_text or source_text.endswith("\n") else "\n"
-    return source_text + separator + _DEFAULT_PROVIDER_TABLE.format(api_base=api_base)
+    entry = {**_DEFAULT_PROVIDER_ENTRY, "api_base": api_base}
+    table = "".join(f'{key} = "{value}"\n' for key, value in entry.items())
+    return f"{source_text}{separator}\n[[providers]]\n{table}"
 
 
 def _repoint_provider(source_text: str, provider_name: str, old: str, new: str) -> str:
@@ -151,6 +187,12 @@ def _provider_of(models: object, active: str) -> str | None:
 
 
 def _api_base_of(providers: object, name: str) -> str | None:
+    provider = _provider_entry(providers, name)
+    api_base = None if provider is None else provider.get("api_base")
+    return api_base if isinstance(api_base, str) else None
+
+
+def _provider_entry(providers: object, name: str) -> dict[str, object] | None:
     if not isinstance(providers, list):
         return None
     for entry in cast("list[object]", providers):
@@ -158,6 +200,5 @@ def _api_base_of(providers: object, name: str) -> str | None:
             continue
         provider = cast("dict[str, object]", entry)
         if provider.get("name") == name:
-            api_base = provider.get("api_base")
-            return api_base if isinstance(api_base, str) else None
+            return provider
     return None
