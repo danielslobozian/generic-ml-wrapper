@@ -265,6 +265,7 @@
   "log.hook_failed": "{phase} hook failed: {error}",
   "log.metering_teardown_failed": "metering teardown failed: {error}",
   "log.session_not_deleted": "session '{session}' was not deleted: its files could not be removed: {error}",
+  "log.provided_attachment_failed": "a provided attachment could not be imported: {error}",
   "log.job_not_deleted": "job '{job}' was not deleted: its files could not be removed: {error}",
   "log.interceptor_size": "[interceptor] {target}: {chars} chars",
   "log.compress_prompt_unreadable": "cannot read compress prompt {path} ({error}); skipping",

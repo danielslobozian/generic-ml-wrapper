@@ -265,6 +265,7 @@
   "log.hook_failed": "échec du hook {phase} : {error}",
   "log.metering_teardown_failed": "échec de l'arrêt du métrage : {error}",
   "log.session_not_deleted": "la session « {session} » n'a pas été supprimée : ses fichiers n'ont pas pu être retirés : {error}",
+  "log.provided_attachment_failed": "une pièce jointe fournie n'a pas pu être importée : {error}",
   "log.job_not_deleted": "le job « {job} » n'a pas été supprimé : ses fichiers n'ont pas pu être retirés : {error}",
   "log.interceptor_size": "[interceptor] {target} : {chars} caractères",
   "log.compress_prompt_unreadable": "impossible de lire le prompt de compression {path} ({error}) ; ignoré",

@@ -14,6 +14,9 @@ from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.outbound.attachment.filesystem_attachment_store import (
     FilesystemAttachmentStore,
 )
+from generic_ml_wrapper.adapter.outbound.attachment.packaged_attachments import (
+    PackagedAttachments,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalog,
 )
@@ -148,6 +151,9 @@ from generic_ml_wrapper.application.usecase.export_workflow import ExportWorkflo
 from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.import_workflow import ImportWorkflowUseCase
 from generic_ml_wrapper.application.usecase.init import InitUseCase
+from generic_ml_wrapper.application.usecase.install_provided_attachments import (
+    InstallProvidedAttachmentsUseCase,
+)
 from generic_ml_wrapper.application.usecase.list_attachments import ListAttachmentsUseCase
 from generic_ml_wrapper.application.usecase.list_clients import ListClientsUseCase
 from generic_ml_wrapper.application.usecase.list_drafts import ListDraftsUseCase
@@ -628,7 +634,13 @@ def build_bootstrap() -> Bootstrap:
     Returns:
         A ready-to-run Bootstrap.
     """
-    return BootstrapUseCase(seeder=FilesystemLayoutSeeder(paths.HOME))
+    store = _attachment_store()
+    return BootstrapUseCase(
+        seeder=FilesystemLayoutSeeder(paths.HOME),
+        attachments=InstallProvidedAttachmentsUseCase(
+            PackagedAttachments(), store, ImportAttachmentUseCase(store)
+        ),
+    )
 
 
 def build_config_commands() -> ConfigCommands:

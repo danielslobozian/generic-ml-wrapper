@@ -124,9 +124,11 @@ A session's own output, an attachment being written included, goes to the job's 
 
 ## 7. The provided attachment
 
-gmlw ships one attachment, `workflow-creator`, as a zip. It enters the store through the
-same import as any other, on install and on each upgrade that carries a new version. gmlw
-has no other path for its own content.
+gmlw ships one attachment, `workflow-creator`. It enters the store through the same import
+as any other: whenever gmlw starts, a provided version the store does not hold yet is zipped
+and imported, so an upgrade that carries a new version adds it beside the old ones. gmlw has
+no other path for its own content. Deleting a provided version brings it back at the next
+start; it is always there to build workflows with.
 
 ## 8. Impact on today's gmlw
 

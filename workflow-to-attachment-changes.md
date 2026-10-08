@@ -99,12 +99,19 @@ would break them moved there.
 
 ## Phase 5 — The provided attachment
 
-- [ ] Move `resources/workflows/create-workflow/` to `resources/attachments/workflow-creator/`
-      with `manifest.yaml` (1.0.0); fold in what it needs from `_common/base.md` and
-      `guided.md`; its text writes its result to the job's folder as a zip-ready folder
-      with a manifest.
-- [ ] Install and upgrade import it (D3).
-- [ ] Tests: the shipped manifest is valid; install imports it once.
+- [x] `resources/attachments/workflow-creator/` (1.0.0): `manifest.yaml`, `main.md`,
+      `guided.md` (read only when the user picks the guided way), `run-conventions.md`
+      (today's `_common/base.md`, copied into every workflow it writes). It writes the
+      workflow as `<name>/` in the job's folder with its manifest, zips it with
+      `manifest.yaml` at the root, and hands over `gmlw attachment import`; a new
+      version starts from `gmlw attachment export`. The old
+      `resources/workflows/create-workflow/` stays until phase 7.
+- [x] Every start imports a provided version the store lacks (D3), through
+      `ImportAttachment`; a failure is logged, never fatal (`bootstrap.py`,
+      `install_provided_attachments.py`, `packaged_attachments.py`).
+- [x] Tests: the shipped manifest is valid and its main file points only at files it
+      carries; imported once; a new provided version lands beside the old; bootstrap
+      survives a broken one. `docs/ATTACHMENTS.md` §7 says when it is imported.
 
 ## Phase 6 — TUI
 
