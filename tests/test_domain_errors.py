@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from generic_ml_wrapper.application.domain.model.attachment import AttachmentVersionError
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
@@ -44,6 +45,8 @@ _CASES: list[DomainError] = [
     IdentifierError("error.identifier.job_id", value="bad id"),
     IdentifierError("error.identifier.workflow_name", value="Bad Name"),
     IdentifierError("error.identifier.env_var_name", value="1BAD"),
+    IdentifierError("error.identifier.attachment_name", value="Bad Name"),
+    AttachmentVersionError("error.attachment.version", value="2.1"),
     WorkflowNameError("error.workflow.reserved_name", name="_common"),
     WorkflowNotFoundError("error.workflow.not_found", name="missing"),
     UnknownWorkflowError("error.workflow.unknown", name="missing"),
