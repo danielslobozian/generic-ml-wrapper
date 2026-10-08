@@ -214,6 +214,8 @@
   "error.unexpected": "gmlw : erreur inattendue : {error}",
   "error.identifier.job_id": "id de job invalide « {value} » : caractères autorisés : lettres, chiffres, « - » et « _ » ; doit commencer par une lettre ou un chiffre et compter au plus 64 caractères",
   "error.identifier.workflow_name": "nom de workflow invalide « {value} » : caractères autorisés : lettres minuscules, chiffres et « - » ; doit commencer par une lettre ou un chiffre",
+  "error.identifier.attachment_name": "nom de pièce jointe invalide « {value} » : caractères autorisés : lettres minuscules, chiffres et « - » ; doit commencer par une lettre ou un chiffre",
+  "error.attachment.version": "version de pièce jointe invalide « {value} » : elle doit compter trois nombres, MAJEURE.MINEURE.CORRECTIF, sans zéro en tête (par exemple 1.0.0)",
   "error.identifier.tag_name": "tag invalide '{value}' : caractères autorisés : lettres, chiffres, '.', '_' et '-' ; il doit commencer par une lettre ou un chiffre et faire au plus 40 caractères",
   "error.identifier.env_var_name": "nom de variable d'environnement invalide « {value} » : caractères autorisés : lettres, chiffres et « _ » ; ne doit pas commencer par un chiffre",
   "error.job.not_found": "job inconnu : « {job} » n'a aucune activité enregistrée (voir : gmlw jobs)",

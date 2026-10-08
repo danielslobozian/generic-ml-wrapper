@@ -22,6 +22,9 @@ _JOB_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 # A workflow name is lowercase kebab: the same rule new_workflow used, now shared.
 _WORKFLOW_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 
+# An attachment name is lowercase kebab, the same rule: it is a folder under the store.
+_ATTACHMENT_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
+
 # A tag groups jobs (a sprint, an epic). Compared case-insensitively, so it is stored
 # lowercased; '.' is allowed for versions ("v1.2"). Short, because it is shown on every row.
 _TAG_NAME = re.compile(r"\A[a-z0-9][a-z0-9._-]{0,39}\Z")
@@ -55,6 +58,18 @@ class WorkflowName(str):
         """Return the validated workflow name, or raise :class:`IdentifierError`."""
         if not _WORKFLOW_NAME.match(value):
             raise IdentifierError("error.identifier.workflow_name", value=value)
+        return super().__new__(cls, value)
+
+
+class AttachmentName(str):
+    """A validated attachment name (lowercase letters/digits and ``-``)."""
+
+    __slots__ = ()
+
+    def __new__(cls, value: str) -> AttachmentName:
+        """Return the validated attachment name, or raise :class:`IdentifierError`."""
+        if not _ATTACHMENT_NAME.match(value):
+            raise IdentifierError("error.identifier.attachment_name", value=value)
         return super().__new__(cls, value)
 
 

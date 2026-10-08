@@ -1,9 +1,10 @@
 # Workflow → attachment: change list
 
 The work that takes gmlw from workflows to attachments, as specified in
-[docs/ATTACHMENTS.md](docs/ATTACHMENTS.md). Tick an item when it is merged. Each phase is
-one or more small PRs that leave `nox -s green` passing. This file is deleted in the last
-phase.
+[docs/ATTACHMENTS.md](docs/ATTACHMENTS.md). All of it lands on one branch,
+`feature/attachments`, as one PR. Each phase is one or more commits that leave
+`nox -s green` passing; tick an item in the commit that does it. This file is deleted in
+the last phase.
 
 Scan baseline (2026-10-08): "workflow" appears on 2,248 lines in 100 files: 1,076 in
 `src`, 815 in `tests`, 230 in `docs`.
@@ -30,17 +31,17 @@ Confirmed 2026-10-08.
 
 ## Phase 0 — Spec
 
-- [ ] Commit `docs/ATTACHMENTS.md`, delete the draft `docs/ENGINE_PACKAGE.md`
-      (never committed), open the docs PR.
+- [x] Commit `docs/ATTACHMENTS.md`, delete the draft `docs/ENGINE_PACKAGE.md`
+      (never committed), open the docs PR. (#123)
 
 ## Phase 1 — Domain
 
-- [ ] `domain/model/attachment.py`: `AttachmentVersion` (`MAJOR.MINOR.PATCH`, no leading
+- [x] `domain/model/attachment.py`: `AttachmentVersion` (`MAJOR.MINOR.PATCH`, no leading
       zeros, ordered number by number), `Attachment` (name, version, description,
       main file, hash).
-- [ ] `identifiers.py`: `AttachmentName` replaces `WorkflowName` (same rule); i18n
-      `error.identifier.attachment_name`.
-- [ ] Tests: version parsing, refusals (`2`, `2.1`, `v1.0.0`, `1.0.0-beta`, `1.02.0`),
+- [x] `identifiers.py`: `AttachmentName` (same rule as `WorkflowName`, which goes in
+      phase 7); i18n `error.identifier.attachment_name`, `error.attachment.version`.
+- [x] Tests: version parsing, refusals (`2`, `2.1`, `v1.0.0`, `1.0.0-beta`, `1.02.0`),
       ordering (`2.10.0` > `2.9.0`), highest-version selection.
 
 ## Phase 2 — Store and import
@@ -118,7 +119,8 @@ Confirmed 2026-10-08.
       `export`), `run`, `--workflow`, `--guided`; handlers in `app.py`.
 - [ ] Use cases and ports: `new_workflow`, `edit_workflow`, `import_workflow`,
       `export_workflow`, `list_workflows`, `list_workflow_catalog`, `list_drafts`.
-- [ ] Models: `workflow.py`, `draft.py`, `archive_status.py` (if unused).
+- [ ] Models: `workflow.py`, `draft.py`, `archive_status.py` (if unused); `WorkflowName`
+      in `identifiers.py` and its i18n key.
 - [ ] Adapters: `adapter/outbound/workflow/` (source, zip archive),
       `tty_workflow_chooser.py`, `tty_guided_chooser.py`.
 - [ ] `paths.py`: `WORKFLOWS`, `DRAFTS`, `AUTHORING`, `WORKFLOW_BACKUPS`.

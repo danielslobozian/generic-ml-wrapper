@@ -214,6 +214,8 @@
   "error.unexpected": "gmlw: unexpected error: {error}",
   "error.identifier.job_id": "invalid job id '{value}': allowed characters are letters, digits, '-' and '_'; it must start with a letter or digit and be at most 64 characters",
   "error.identifier.workflow_name": "invalid workflow name '{value}': allowed characters are lowercase letters, digits and '-'; it must start with a letter or digit",
+  "error.identifier.attachment_name": "invalid attachment name '{value}': allowed characters are lowercase letters, digits and '-'; it must start with a letter or digit",
+  "error.attachment.version": "invalid attachment version '{value}': it must be three numbers, MAJOR.MINOR.PATCH, without leading zeros (for example 1.0.0)",
   "error.identifier.tag_name": "invalid tag '{value}': allowed characters are letters, digits, '.', '_' and '-'; it must start with a letter or digit and be at most 40 characters",
   "error.identifier.env_var_name": "invalid environment-variable name '{value}': allowed characters are letters, digits and '_'; it must not start with a digit",
   "error.job.not_found": "unknown job: '{job}' has no recorded activity (see: gmlw jobs)",
