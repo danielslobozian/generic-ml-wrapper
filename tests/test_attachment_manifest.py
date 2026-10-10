@@ -16,7 +16,7 @@ from generic_ml_wrapper.application.domain.service.attachment_manifest import pa
 
 _FULL = """\
 name: workflow-creator
-description: Create a workflow, step by step.
+description: Create a checklist, step by step.
 version: 1.0.0
 main_md_file: main.md
 """
@@ -25,7 +25,7 @@ main_md_file: main.md
 def test_reads_the_four_keys() -> None:
     manifest = parse_manifest(_FULL)
     assert manifest.name == "workflow-creator"
-    assert manifest.description == "Create a workflow, step by step."
+    assert manifest.description == "Create a checklist, step by step."
     assert manifest.version == AttachmentVersion(1, 0, 0)
     assert manifest.main_md_file == "main.md"
 

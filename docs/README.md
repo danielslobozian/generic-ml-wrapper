@@ -15,7 +15,7 @@ Where to look, in the order most people need it.
 - **[USER_GUIDE.md](USER_GUIDE.md)** — task-oriented recipes: track a ticket, resume a
   session, compare cost by model, record a rule, and more.
 - **[ATTACHMENTS.md](ATTACHMENTS.md)** — what an attachment is, its format, importing and
-  versions, how a session uses one, and how older workflows were brought over.
+  versions, how a session uses one, and what upgrading from an older gmlw does.
 
 ## Reference
 

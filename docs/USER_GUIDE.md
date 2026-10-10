@@ -44,10 +44,10 @@ gmlw export PROJ-482
 Cursor sessions are not metered by the wrapper (its usage isn't on an interceptable API), so they
 carry no cost figures.
 
-## 4. Create a workflow, and run a session with it
+## 4. Write a workflow with `workflow-creator`, and run a session with it
 
 A workflow is an attachment. Start a job with the `workflow-creator` attachment gmlw ships: it
-interviews you, drafts ordered steps, marks which are scriptable, and writes the workflow as a
+interviews you, drafts ordered steps, marks which are scriptable, and writes it as a
 folder with its `manifest.yaml`, zipped, in the job's folder. Import the zip, then start any
 session with it.
 

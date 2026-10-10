@@ -1115,7 +1115,7 @@ def _announce_slug_migration(report: SlugMigrationReport) -> None:
 
 
 def _announce_legacy_migration(report: LegacyMigrationReport) -> None:
-    """Narrate the one-time import of old workflows as attachments, when it did anything.
+    """Narrate the one-time legacy import into attachments, when it did anything.
 
     Args:
         report: What was imported, left out and rewritten.

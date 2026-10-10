@@ -62,7 +62,7 @@ def _empty_reasons() -> list[tuple[str, str]]:
 
 @dataclass(frozen=True)
 class LegacyMigrationReport:
-    """What the one-time move from the old ``workflows/`` folder to attachments did.
+    """What the one-time legacy import into attachments did.
 
     Attributes:
         imported: ``name@version`` for each folder imported as an attachment (in order).

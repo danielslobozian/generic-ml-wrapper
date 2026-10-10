@@ -2487,12 +2487,13 @@ def test_a_tui_launch_carries_the_attachment_and_the_note(
     )
 
 
-def test_old_workflows_are_imported_and_announced_on_the_next_command(
+def test_legacy_workflows_are_imported_and_announced_on_the_next_command(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     folder = paths.LEGACY_WORKFLOWS / "doc-review"
     folder.mkdir(parents=True)
-    (folder / "workflow.md").write_text("# doc-review", encoding="utf-8")
+    legacy_main = folder / "workflow.md"
+    legacy_main.write_text("# doc-review", encoding="utf-8")
 
     assert app.main(["attachment", "list"]) == 0
 

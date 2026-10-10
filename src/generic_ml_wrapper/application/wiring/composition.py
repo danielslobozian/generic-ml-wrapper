@@ -296,7 +296,7 @@ def _attachment_store() -> FilesystemAttachmentStore:
 
 
 def build_migrate_legacy_workflows() -> MigrateLegacyWorkflowsUseCase:
-    """Build the one-time import of an older gmlw's workflows as attachments.
+    """Build the one-time legacy import into attachments.
 
     Returns:
         A ready-to-run migration; a no-op once it has run.
