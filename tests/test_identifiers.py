@@ -7,11 +7,11 @@ from __future__ import annotations
 import pytest
 
 from generic_ml_wrapper.application.domain.model.identifiers import (
+    AttachmentName,
     EnvVarName,
     IdentifierError,
     JobId,
     TagName,
-    WorkflowName,
 )
 
 
@@ -42,15 +42,15 @@ def test_job_id_rejects_unsafe_values(value: str) -> None:
         JobId(value)
 
 
-@pytest.mark.parametrize("value", ["doc-review", "a", "a1", "create-workflow"])
-def test_workflow_name_accepts_kebab(value: str) -> None:
-    assert WorkflowName(value) == value
+@pytest.mark.parametrize("value", ["workflow-creator", "a", "a1", "notes-2"])
+def test_attachment_name_accepts_kebab(value: str) -> None:
+    assert AttachmentName(value) == value
 
 
-@pytest.mark.parametrize("value", ["", "Bad", "_common", "a b", "-x", "a_b", "a/b"])
-def test_workflow_name_rejects_invalid(value: str) -> None:
+@pytest.mark.parametrize("value", ["", "Bad", "_common", "a b", "-x", "a_b", "a/b", "..", "a.b"])
+def test_attachment_name_rejects_invalid(value: str) -> None:
     with pytest.raises(IdentifierError):
-        WorkflowName(value)
+        AttachmentName(value)
 
 
 @pytest.mark.parametrize("value", ["TOKEN", "GITHUB_TOKEN", "_x", "A1", "aws_key"])

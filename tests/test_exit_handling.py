@@ -90,7 +90,7 @@ def test_start_returns_143_when_terminated(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(app, "_preflight_client", _true_for_client)
     monkeypatch.setattr(app, "build_start_job", _TerminatingStartJob)
     args = argparse.Namespace(
-        job="test", client="claude", workflow=None, resume_latest=False, client_args=None
+        job="test", client="claude", attach=None, resume_latest=False, client_args=None
     )
     assert app._start(args) == 143
 

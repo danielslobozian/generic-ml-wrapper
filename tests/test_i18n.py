@@ -5,12 +5,8 @@
 import json
 from importlib import resources
 
-import pytest
-
 from generic_ml_wrapper.application.domain.model.identifiers import (
-    IdentifierError,
     JobId,
-    WorkflowName,
 )
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
@@ -114,20 +110,7 @@ def test_module_level_t_uses_the_active_localiser() -> None:
         set_active(original)
 
 
-# ── the in-form name hints must describe the validator that actually runs ──
-# These two keys once shared the same sentence, but they guard different rules: a job id
-# allows underscores and either case, a workflow name is lowercase kebab. The workflow
-# hint promised underscores the validator then rejected, which reads to the user as the
-# app being broken rather than the input being wrong.
-def test_the_workflow_name_hint_does_not_promise_what_the_validator_rejects() -> None:
-    for lang in SUPPORTED_LANGUAGES:
-        hint = _catalog(lang)["tui.wf.invalid"].lower()
-        with pytest.raises(IdentifierError):
-            WorkflowName("a_b")  # the validator rejects underscores…
-        assert "underscore" not in hint, f"{lang}: hint still offers underscores"
-        assert "_" not in hint, f"{lang}: hint still offers underscores"
-
-
+# ── the in-form job-name hint describes the validator that actually runs ──
 def test_the_job_id_hint_still_offers_underscores_because_job_ids_allow_them() -> None:
     # The other half of the pair: this one was always right and must not be "fixed" too.
     assert JobId("a_b") == "a_b"

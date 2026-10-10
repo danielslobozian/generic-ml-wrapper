@@ -1,0 +1,4 @@
+name: workflow-creator
+description: Create a workflow, or a new version of one, by talking it through.
+version: 1.0.0
+main_md_file: main.md

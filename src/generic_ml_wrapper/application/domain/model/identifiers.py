@@ -19,8 +19,8 @@ from generic_ml_wrapper.common.errors import DomainError
 # '..' traversal, no absolute path, no separator can reach a filesystem path.
 _JOB_ID = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9_-]{0,63}\Z")
 
-# A workflow name is lowercase kebab: the same rule new_workflow used, now shared.
-_WORKFLOW_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
+# An attachment name is lowercase kebab: it is a folder under the store, and typed at a shell.
+_ATTACHMENT_NAME = re.compile(r"\A[a-z0-9][a-z0-9-]*\Z")
 
 # A tag groups jobs (a sprint, an epic). Compared case-insensitively, so it is stored
 # lowercased; '.' is allowed for versions ("v1.2"). Short, because it is shown on every row.
@@ -46,15 +46,15 @@ class JobId(str):
         return super().__new__(cls, value)
 
 
-class WorkflowName(str):
-    """A validated workflow name (lowercase letters/digits and ``-``)."""
+class AttachmentName(str):
+    """A validated attachment name (lowercase letters/digits and ``-``)."""
 
     __slots__ = ()
 
-    def __new__(cls, value: str) -> WorkflowName:
-        """Return the validated workflow name, or raise :class:`IdentifierError`."""
-        if not _WORKFLOW_NAME.match(value):
-            raise IdentifierError("error.identifier.workflow_name", value=value)
+    def __new__(cls, value: str) -> AttachmentName:
+        """Return the validated attachment name, or raise :class:`IdentifierError`."""
+        if not _ATTACHMENT_NAME.match(value):
+            raise IdentifierError("error.identifier.attachment_name", value=value)
         return super().__new__(cls, value)
 
 

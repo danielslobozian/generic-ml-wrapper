@@ -66,7 +66,7 @@ def test_migration_is_idempotent(tmp_path: Path) -> None:
     assert version == SCHEMA_VERSION
 
 
-def test_v2_gains_the_workflow_column_and_keeps_its_sessions(tmp_path: Path) -> None:
+def test_v2_sessions_are_kept_and_ran_no_attachment(tmp_path: Path) -> None:
     # The shape a 0.11.0 install has on disk.
     db = tmp_path / "ledger.db"
     _write_v1(db)
@@ -80,11 +80,11 @@ def test_v2_gains_the_workflow_column_and_keeps_its_sessions(tmp_path: Path) -> 
     with Ledger(db).connect() as connection:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         rows = connection.execute(
-            "SELECT session_id, workflow FROM sessions ORDER BY id"
+            "SELECT session_id, attachment FROM sessions ORDER BY id"
         ).fetchall()
 
     assert version == SCHEMA_VERSION
-    assert [(r["session_id"], r["workflow"]) for r in rows] == [
+    assert [(r["session_id"], r["attachment"]) for r in rows] == [
         ("T-1_001", None),
         ("T-1_002", None),
     ]
@@ -139,3 +139,64 @@ def test_v5_turns_count_as_the_main_conversation(tmp_path: Path) -> None:
         rows = connection.execute("SELECT session_id, role, agent FROM turns").fetchall()
 
     assert [(r["session_id"], r["role"], r["agent"]) for r in rows] == [("T-1_001", "main", None)]
+
+
+def test_v6_gains_an_empty_attachments_table(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect() as connection:
+        columns = [row["name"] for row in connection.execute("PRAGMA table_info(attachments)")]
+        count = connection.execute("SELECT COUNT(*) FROM attachments").fetchone()[0]
+
+    assert columns == [
+        "name",
+        "version",
+        "description",
+        "main_md_file",
+        "content_hash",
+        "imported_at",
+    ]
+    assert count == 0
+
+
+def test_v7_sessions_ran_no_attachment(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    _write_v1(db)
+
+    with Ledger(db).connect() as connection:
+        rows = connection.execute(
+            "SELECT attachment, attachment_version, attachment_hash FROM sessions"
+        ).fetchall()
+
+    assert rows
+    assert all(tuple(row) == (None, None, None) for row in rows)
+
+
+def test_v8_sessions_show_what_they_ran_before_attachments(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    with Ledger(db).connect() as connection:
+        connection.execute(
+            "INSERT INTO sessions (session_id, job, client, workflow) "
+            "VALUES ('T-1_001', 'T-1', 'claude', 'review'), ('T-1_002', 'T-1', 'claude', NULL)"
+        )
+        connection.execute("PRAGMA user_version = 8")
+
+    with Ledger(db).connect() as connection:
+        rows = connection.execute(
+            "SELECT attachment, attachment_version FROM sessions ORDER BY id"
+        ).fetchall()
+
+    assert [tuple(row) for row in rows] == [("review", None), (None, None)]
+
+
+def test_v8_authoring_jobs_become_ordinary_jobs(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    with Ledger(db).connect() as connection:
+        connection.execute("INSERT INTO jobs (job, kind) VALUES ('create-x_001', 'authoring')")
+        connection.execute("PRAGMA user_version = 8")
+
+    with Ledger(db).connect() as connection:
+        kinds = [row["kind"] for row in connection.execute("SELECT kind FROM jobs")]
+
+    assert kinds == ["work"]

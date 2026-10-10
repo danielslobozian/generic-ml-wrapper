@@ -3,7 +3,7 @@
 """``gmlw help <topic>`` — short explainers for the core concepts, from the catalogue.
 
 Progressive disclosure: the bare index lists *what* the commands are; these topics explain
-the *concepts behind* them (job vs workflow, start vs run, personas, cost). Each topic's
+the *concepts behind* them (job vs attachment, personas, cost). Each topic's
 summary and body live in the i18n catalogue, so the help speaks the active language.
 """
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 # The topics, in display order. Each name maps to catalogue keys ``help.<name>.summary``
 # (the one-line listing) and ``help.<name>.body`` (the full explainer).
-TOPICS: tuple[str, ...] = ("job-vs-workflow", "start-vs-run", "personas", "cost")
+TOPICS: tuple[str, ...] = ("job-vs-attachment", "personas", "cost")
 
 
 def _key(topic: str) -> str:

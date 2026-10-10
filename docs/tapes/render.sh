@@ -25,9 +25,10 @@ fi
 py="$(dirname "$gmlw_bin")/python"
 
 demo="$(mktemp -d)"
-trap 'rm -rf "$demo"' EXIT
+# The attachment store is read-only by design, so make it writable before removing it.
+trap 'chmod -R u+w "$demo"; rm -rf "$demo"' EXIT
 
-# 1. Seed the ledger (job REFACTOR-42 with sessions/turns/costs) and one workflow.
+# 1. Seed the ledger (job REFACTOR-42 with sessions/turns/costs) and one attachment.
 "$py" docs/tapes/seed.py "$demo" >/dev/null
 
 # 2. A clean demo git repo so the status line has a real branch to show.

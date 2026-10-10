@@ -18,5 +18,5 @@ Show
 Sleep 800ms
 Type "gmlw help" Sleep 400ms Enter
 Sleep 2200ms
-Type "gmlw help job-vs-workflow" Sleep 400ms Enter
+Type "gmlw help job-vs-attachment" Sleep 400ms Enter
 Sleep 4s

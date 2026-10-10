@@ -3,27 +3,34 @@
 """Tests for the StartJob use case, driven by fakes for its outbound ports."""
 
 import os
+import zipfile
+from pathlib import Path
 
 import pytest
 from _conformance import InMemoryJobTagStore
 
+from generic_ml_wrapper.adapter.outbound.attachment.filesystem_attachment_store import (
+    FilesystemAttachmentStore,
+    folder_hash,
+)
+from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
+from generic_ml_wrapper.application.domain.model.attachment import AttachmentError
 from generic_ml_wrapper.application.domain.model.context_source import CompileMode
-from generic_ml_wrapper.application.domain.model.draft import Draft, DraftMarker
 from generic_ml_wrapper.application.domain.model.identifiers import IdentifierError
 from generic_ml_wrapper.application.domain.model.run import RunContext
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.model.workflow import Workflow
 from generic_ml_wrapper.application.domain.service.hook import Hook, HookContext, HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.port.inbound.start_job import (
     ResumeNotSupportedError,
     StartJobCommand,
-    UnknownWorkflowError,
 )
+from generic_ml_wrapper.application.port.outbound.attachment_store import AttachmentStorePort
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
+from generic_ml_wrapper.application.port.outbound.context_compiler import ContextCompilerPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
-from generic_ml_wrapper.application.port.outbound.workflow_source import WorkflowSourcePort
+from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 
 # A quoted value once split, per platform: Windows splits in non-posix mode on purpose, so
@@ -63,53 +70,18 @@ class FakeStore(SessionStorePort):
         return self._latest
 
 
-class FakeWorkflows(WorkflowSourcePort):
-    def __init__(self, *, present: str | None = None, baseline: str = "BASELINE") -> None:
-        self.seeded = False
-        self._present = present
+class FakeContexts(ContextCompilerPort):
+    def __init__(self, *, baseline: str = "BASELINE") -> None:
         self._baseline = baseline
-        self.compiled: list[tuple[CompileMode, str | None]] = []
+        self.compiled: list[CompileMode] = []
 
-    def seed(self) -> None:
-        self.seeded = True
-
-    def names(self) -> list[str]:
-        return []
-
-    def exists(self, name: str) -> bool:
-        return name == self._present
-
-    def catalog(self) -> list[Workflow]:
-        return []
-
-    def create(self, name: str) -> str:
-        raise NotImplementedError
-
-    def folder(self, name: str) -> str:
-        return f"/workflows/{name}"
-
-    def drafts(self) -> list[Draft]:
-        raise NotImplementedError
-
-    def create_draft(self, key: str) -> str:
-        raise NotImplementedError
-
-    def read_draft_marker(self, draft_path: str) -> DraftMarker:
-        raise NotImplementedError
-
-    def deploy_draft(
-        self, draft_path: str, name: str, label: str, description: str, created: str
+    def compile(
+        self, mode: CompileMode, job: str | None = None, attachment: str | None = None
     ) -> str:
-        raise NotImplementedError
-
-    def meta_guide(self) -> str:
-        raise NotImplementedError
-
-    def compile(self, mode: CompileMode, name: str | None = None, job: str | None = None) -> str:
-        self.compiled.append((mode, name))
-        if mode is CompileMode.DEFAULT:
-            return self._baseline
-        return f"CONTEXT<{name}>"
+        self.compiled.append(mode)
+        if mode is CompileMode.ATTACHMENT:
+            return f"{self._baseline}\n\n\n{attachment}"
+        return self._baseline
 
 
 class RecordingCaller(CliCaller):
@@ -133,13 +105,13 @@ class RecordingCaller(CliCaller):
 
 
 class FakeCredentials(CredentialsStorePort):
-    def __init__(self, by_workflow: dict[str, dict[str, str]] | None = None) -> None:
-        self._by_workflow = by_workflow or {}
+    def __init__(self, by_attachment: dict[str, dict[str, str]] | None = None) -> None:
+        self._by_attachment = by_attachment or {}
 
-    def resolve(self, workflow: str) -> dict[str, str]:
-        return self._by_workflow.get(workflow, {})
+    def resolve(self, attachment: str) -> dict[str, str]:
+        return self._by_attachment.get(attachment, {})
 
-    def set(self, workflow: str, name: str, value: str) -> None:
+    def set(self, attachment: str, name: str, value: str) -> None:
         raise NotImplementedError
 
 
@@ -167,17 +139,18 @@ class RecordingHook(Hook):
 def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set, plus the greeting)
     store: FakeStore,
     provider: FakeProvider,
-    workflows: FakeWorkflows | None = None,
+    contexts: FakeContexts | None = None,
     credentials: FakeCredentials | None = None,
     hooks: HookRunner | None = None,
     greeting: str | None = None,
     capability_card: str | None = None,
     client_args: dict[str, str] | None = None,
     tags: InMemoryJobTagStore | None = None,
+    attachments: AttachmentStorePort | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
-        workflows=workflows or FakeWorkflows(),
+        contexts=contexts or FakeContexts(),
         callers=provider,
         uuid_factory=lambda: "fixed-uuid",
         cwd_factory=lambda: "/work/svc-a",
@@ -188,14 +161,15 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         tags=tags or InMemoryJobTagStore(),
         # configured per client; a client with no entry has no arguments
         client_args=lambda client: (client_args or {}).get(client, ""),
+        attachments=attachments,
     )
 
 
 def test_new_session_is_minted_recorded_and_run() -> None:
     store = FakeStore(ids=["JOB-1_001"])
     provider = FakeProvider()
-    workflows = FakeWorkflows()
-    result = _use_case(store, provider, workflows).execute(
+    contexts = FakeContexts()
+    result = _use_case(store, provider, contexts).execute(
         StartJobCommand(job="JOB-1", client="claude")
     )
 
@@ -208,7 +182,7 @@ def test_new_session_is_minted_recorded_and_run() -> None:
     assert provider.run is not None
     assert provider.run.resume is False
     # a plain start now composes the always-on baseline (default mode)
-    assert workflows.compiled == [(CompileMode.DEFAULT, None)]
+    assert contexts.compiled == [CompileMode.DEFAULT]
     assert provider.run.context == "BASELINE"
 
 
@@ -229,7 +203,7 @@ def test_greeting_becomes_the_context_when_the_baseline_is_empty() -> None:
     _use_case(
         FakeStore(ids=["JOB-1_001"]),
         provider,
-        workflows=FakeWorkflows(baseline=""),
+        contexts=FakeContexts(baseline=""),
         greeting="Hi, Dan.",
     ).execute(StartJobCommand(job="JOB-1", client="claude"))
     assert provider.run is not None
@@ -292,7 +266,7 @@ def test_lifecycle_hooks_bracket_the_client_run() -> None:
 
 def test_plain_start_with_empty_baseline_injects_no_context() -> None:
     provider = FakeProvider()
-    _use_case(FakeStore(ids=["JOB-1_001"]), provider, FakeWorkflows(baseline="")).execute(
+    _use_case(FakeStore(ids=["JOB-1_001"]), provider, FakeContexts(baseline="")).execute(
         StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
@@ -366,60 +340,13 @@ def test_resume_latest_falls_back_to_new_when_none_exists() -> None:
     assert provider.run.resume is False
 
 
-def test_workflow_context_is_compiled_and_injected() -> None:
-    store = FakeStore()
-    provider = FakeProvider()
-    workflows = FakeWorkflows(present="doc-review")
-
-    _use_case(store, provider, workflows).execute(
-        StartJobCommand(job="JOB-1", client="claude", workflow="doc-review")
-    )
-
-    assert workflows.seeded is True
-    assert provider.run is not None
-    assert workflows.compiled == [(CompileMode.WORKFLOW, "doc-review")]
-    assert provider.run.context == "CONTEXT<doc-review>"
-    assert "doc-review" in (provider.run.kickoff or "")
-
-
-def test_workflow_credentials_are_resolved_into_the_run_env() -> None:
-    provider = FakeProvider()
-    workflows = FakeWorkflows(present="doc-review")
-    credentials = FakeCredentials({"doc-review": {"GITHUB_TOKEN": "ghp_x"}})
-
-    _use_case(FakeStore(), provider, workflows, credentials).execute(
-        StartJobCommand(job="JOB-1", client="claude", workflow="doc-review")
-    )
-
-    assert provider.run is not None
-    assert dict(provider.run.env) == {"GITHUB_TOKEN": "ghp_x"}
-
-
-def test_no_workflow_means_no_injected_env() -> None:
+def test_no_attachment_means_no_injected_env() -> None:
     provider = FakeProvider()
     _use_case(FakeStore(ids=["JOB-1_001"]), provider).execute(
         StartJobCommand(job="JOB-1", client="claude")
     )
     assert provider.run is not None
     assert provider.run.env == ()
-
-
-def test_unknown_workflow_is_rejected() -> None:
-    workflows = FakeWorkflows(present=None)
-    with pytest.raises(UnknownWorkflowError):
-        _use_case(FakeStore(), FakeProvider(), workflows).execute(
-            StartJobCommand(job="JOB-1", client="claude", workflow="missing")
-        )
-    assert workflows.seeded is False  # refused before the shared base was installed
-
-
-def test_rejected_start_records_no_ghost_session() -> None:
-    store = FakeStore()
-    with pytest.raises(UnknownWorkflowError):
-        _use_case(store, FakeProvider(), FakeWorkflows(present=None)).execute(
-            StartJobCommand(job="JOB-1", client="claude", workflow="missing")
-        )
-    assert store.recorded == []  # validation happens before the session is persisted
 
 
 def test_resume_on_client_that_cannot_resume_is_rejected() -> None:
@@ -434,14 +361,13 @@ def test_resume_on_client_that_cannot_resume_is_rejected() -> None:
     assert provider.log == []  # refused before the client was launched
 
 
-def test_workflow_is_not_injected_when_resuming() -> None:
+def test_an_attachment_is_not_injected_when_resuming(tmp_path: Path) -> None:
     latest = Session("JOB-1_003", "JOB-1", "claude", "uuid-3")
     provider = FakeProvider()
-    workflows = FakeWorkflows(present="doc-review")
 
-    _use_case(FakeStore(latest=latest), provider, workflows).execute(
-        StartJobCommand(job="JOB-1", client="claude", resume_latest=True, workflow="doc-review")
-    )
+    _use_case(
+        FakeStore(latest=latest), provider, attachments=_store_with(tmp_path, "1.0.0")
+    ).execute(StartJobCommand(job="JOB-1", client="claude", resume_latest=True, attachment="notes"))
 
     assert provider.run is not None
     assert provider.run.context is None
@@ -534,18 +460,10 @@ def test_the_recorded_flag_matches_what_the_resume_gate_will_ask() -> None:
         assert store.recorded[0].resumable is declared
 
 
-def test_the_workflow_is_recorded_on_the_session_it_started() -> None:
-    store = FakeStore()
-    _use_case(store, FakeProvider(), FakeWorkflows(present="doc-review")).execute(
-        StartJobCommand(job="JOB-1", client="claude", workflow="doc-review")
-    )
-    assert [session.workflow for session in store.recorded] == ["doc-review"]
-
-
-def test_a_plain_start_records_no_workflow() -> None:
+def test_a_plain_start_records_no_attachment() -> None:
     store = FakeStore()
     _use_case(store, FakeProvider()).execute(StartJobCommand(job="JOB-1", client="claude"))
-    assert [session.workflow for session in store.recorded] == [None]
+    assert [session.attachment for session in store.recorded] == [None]
 
 
 def test_start_tags_the_job_once_its_session_is_recorded() -> None:
@@ -565,3 +483,185 @@ def test_an_invalid_tag_is_refused_before_a_session_is_spent() -> None:
         )
     assert store.recorded == []
     assert provider.run is None
+
+
+def _store_with(tmp_path: Path, *versions: str) -> FilesystemAttachmentStore:
+    store = FilesystemAttachmentStore(tmp_path / "attachments", Ledger(tmp_path / "ledger.db"))
+    for version in versions:
+        archive = tmp_path / f"notes-{version}.zip"
+        with zipfile.ZipFile(archive, "w") as zipped:
+            zipped.writestr(
+                "manifest.yaml", f"name: notes\nversion: {version}\nmain_md_file: main.md\n"
+            )
+            zipped.writestr("main.md", f"Notes {version}: read more/details.md when needed.\n")
+            zipped.writestr("more/details.md", "Details.\n")
+        ImportAttachmentUseCase(store).execute(str(archive))
+    return store
+
+
+def test_an_attachment_follows_the_baseline_and_opens_the_session(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    contexts = FakeContexts()
+    attachments = _store_with(tmp_path, "1.0.0")
+    credentials = FakeCredentials({"notes": {"NOTES_TOKEN": "t"}})
+
+    _use_case(store, provider, contexts, credentials=credentials, attachments=attachments).execute(
+        StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+    )
+
+    run = provider.run
+    assert run is not None
+    folder = tmp_path / "attachments" / "notes" / "1.0.0"
+    assert contexts.compiled == [CompileMode.ATTACHMENT]
+    assert run.context is not None
+    assert run.context.startswith("BASELINE\n\n\n## Attachment: notes 1.0.0\n\n")
+    assert f"Its files are in {folder}." in run.context
+    assert run.context.endswith("Notes 1.0.0: read more/details.md when needed.")
+    assert run.kickoff == (
+        "This session on JOB-1 runs with the attachment notes 1.0.0. Begin as its text says."
+    )
+    assert run.env == (("NOTES_TOKEN", "t"),)
+    assert run.extra_dirs == (str(tmp_path / "attachments"),)
+    recorded = store.recorded[0]
+    assert (recorded.attachment, recorded.attachment_version) == ("notes", "1.0.0")
+    assert recorded.attachment_hash == folder_hash(folder)
+
+
+def test_an_attachment_defaults_to_its_highest_version(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "2.9.0", "2.10.0", "1.0.0")
+
+    _use_case(store, provider, attachments=attachments).execute(
+        StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+    )
+
+    assert store.recorded[0].attachment_version == "2.10.0"
+
+
+def test_an_attachment_version_can_be_chosen(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "1.0.0", "2.0.0")
+
+    _use_case(store, provider, attachments=attachments).execute(
+        StartJobCommand(
+            job="JOB-1", client="claude", attachment="notes", attachment_version="1.0.0"
+        )
+    )
+
+    assert store.recorded[0].attachment_version == "1.0.0"
+    assert provider.run is not None
+    assert "Notes 1.0.0" in (provider.run.context or "")
+
+
+@pytest.mark.parametrize(
+    ("name", "version", "key"),
+    [
+        ("missing", None, "error.attachment.not_found"),
+        ("notes", "9.0.0", "error.attachment.version_not_found"),
+    ],
+)
+def test_an_unknown_attachment_is_refused_before_a_session_is_spent(
+    tmp_path: Path, name: str, version: str | None, key: str
+) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "1.0.0")
+
+    with pytest.raises(AttachmentError) as raised:
+        _use_case(store, provider, attachments=attachments).execute(
+            StartJobCommand(
+                job="JOB-1", client="claude", attachment=name, attachment_version=version
+            )
+        )
+
+    assert raised.value.catalogue_key == key
+    assert store.recorded == []
+    assert provider.log == []
+
+
+def test_a_changed_attachment_is_refused_before_a_session_is_spent(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    attachments = _store_with(tmp_path, "1.0.0")
+    folder = tmp_path / "attachments" / "notes" / "1.0.0"
+    folder.chmod(0o755)
+    (folder / "extra.md").write_text("x")
+
+    with pytest.raises(AttachmentError) as raised:
+        _use_case(store, provider, attachments=attachments).execute(
+            StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+        )
+
+    assert raised.value.catalogue_key == "error.attachment.invalid"
+    assert store.recorded == []
+
+
+def test_without_a_store_an_attachment_is_not_found() -> None:
+    store = FakeStore(ids=[])
+    with pytest.raises(AttachmentError):
+        _use_case(store, FakeProvider()).execute(
+            StartJobCommand(job="JOB-1", client="claude", attachment="notes")
+        )
+
+
+def test_resuming_an_attachment_session_reopens_the_store(tmp_path: Path) -> None:
+    attachments = _store_with(tmp_path, "1.0.0")
+    session = Session(
+        "JOB-1_001",
+        "JOB-1",
+        "claude",
+        "u-1",
+        "/work",
+        attachment="notes",
+        attachment_version="1.0.0",
+    )
+    store = FakeStore(latest=session, ids=["JOB-1_001"])
+    provider = FakeProvider()
+
+    _use_case(store, provider, attachments=attachments).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True)
+    )
+
+    assert provider.run is not None
+    assert provider.run.resume is True
+    assert provider.run.context is None
+    assert provider.run.extra_dirs == (str(tmp_path / "attachments"),)
+
+
+def test_resuming_a_plain_session_opens_nothing(tmp_path: Path) -> None:
+    session = Session("JOB-1_001", "JOB-1", "claude", "u-1", "/work")
+    store = FakeStore(latest=session, ids=["JOB-1_001"])
+    provider = FakeProvider()
+
+    _use_case(store, provider, attachments=_store_with(tmp_path)).execute(
+        StartJobCommand(job="JOB-1", client="claude", resume_latest=True)
+    )
+
+    assert provider.run is not None
+    assert provider.run.extra_dirs == ()
+
+
+def test_a_note_follows_the_attachments_opening_message(tmp_path: Path) -> None:
+    provider = FakeProvider()
+
+    _use_case(FakeStore(ids=[]), provider, attachments=_store_with(tmp_path, "1.0.0")).execute(
+        StartJobCommand(job="JOB-1", client="claude", attachment="notes", note="Modify x.")
+    )
+
+    assert provider.run is not None
+    assert provider.run.kickoff is not None
+    assert provider.run.kickoff.endswith("Begin as its text says.\n\nModify x.")
+
+
+def test_a_note_alone_opens_a_plain_session() -> None:
+    provider = FakeProvider()
+
+    _use_case(FakeStore(ids=[]), provider).execute(
+        StartJobCommand(job="JOB-1", client="claude", note="Modify x.")
+    )
+
+    assert provider.run is not None
+    assert provider.run.kickoff == "Modify x."

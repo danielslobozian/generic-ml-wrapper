@@ -37,7 +37,7 @@ launcher, and it holds none of the wrapper's state.)
 
 ### 1. Credentials at rest, and child-process injection
 
-Per-workflow credentials are stored locally in `~/.gmlw/credentials.toml`, written
+Per-attachment credentials are stored locally in `~/.gmlw/credentials.toml`, written
 `0600` (owner read/write only) via an atomic, symlink-safe write; a corrupt file is
 never overwritten. At launch the wrapper **injects these values into the child client's
 environment** so the client can use them. Consequently:
@@ -107,7 +107,7 @@ cannot parse (so it can never destroy your existing settings) and writes atomica
 
 ## Scope
 
-**Expected behavior, not a vulnerability:** "my own `config.toml`, workflow, or
+**Expected behavior, not a vulnerability:** "my own `config.toml`, attachment, or
 credential made the wrapper run/send something." Those are the trusted-code and
 trusted-config boundaries above — you are configuring your own machine.
 

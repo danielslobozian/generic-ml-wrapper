@@ -12,7 +12,7 @@ model; the rest reach it.
 A rule is a projection of the *user*, so it lives on one of the two axes that describe
 them: the **environment** (the place — its processes and standards) or the **role**
 (the craft — how the work is done, wherever it happens). There is no global tier and
-no workflow tier: a workflow that behaves wrongly is fixed in the workflow itself.
+no attachment tier: an attachment that behaves wrongly is fixed in the attachment itself.
 
 ``RULE_TEMPLATE`` is seeded once to ``~/.gmlw/templates/rule.template.md`` and never
 overwritten, so a user who reshapes it keeps their version — and because
@@ -70,7 +70,7 @@ A rule lives on one of two axes, and this session has one of each active:
 When the two conflict, the environment rule wins: a constraint is not overridden by a
 preference. Within a single axis, an explicit `Precedence:` number decides.
 
-There is no general or per-workflow rule. If a workflow behaves wrongly, fix the workflow.
+There is no general or per-attachment rule. If an attachment behaves wrongly, fix the attachment.
 
 When the user is dissatisfied with something you did and wants it to never happen again —
 or otherwise asks you to hold to a standard — offer to record it as a rule. A rule is a

@@ -1,14 +1,20 @@
 """Seed a demo ~/.gmlw ledger for the README demo GIFs. No secrets, no network."""
 
 import sys
+import tempfile
+import zipfile
 from pathlib import Path
 
+from generic_ml_wrapper.adapter.outbound.attachment.filesystem_attachment_store import (
+    FilesystemAttachmentStore,
+)
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
 from generic_ml_wrapper.application.domain.model.session import Session
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
 
 home = Path(sys.argv[1]) / ".gmlw"
 home.mkdir(parents=True, exist_ok=True)
@@ -49,25 +55,32 @@ for sid, uuid, sturns, cost in data:
         turns.record(JOB, t)
     costs.record_session_cost(JOB, sid, cost)
 
-# A demo workflow, so the TUI's Workflow > List browser has something to show (matches
-# the worked example in docs/WORKFLOWS.md).
-workflow_dir = home / "workflows" / "doc-review"
-workflow_dir.mkdir(parents=True, exist_ok=True)
-(workflow_dir / "workflow.md").write_text(
-    "# doc-review\n\n"
-    "*Review a documentation change for clarity and correctness before it ships.*\n\n"
-    "## Steps\n\n"
-    "### 1. Collect the changed docs\n"
-    "Run `scripts/collect.sh` to list the docs touched on this branch and gather their diffs.\n\n"
-    "### 2. Review clarity and accuracy\n"
-    "Read each changed doc. Flag anything unclear, out of date, or contradicted by the code.\n\n"
-    "### 3. Report and stop\n"
-    "Summarise the findings as a short checklist the author can act on, then stop.\n",
-    encoding="utf-8",
-)
-(workflow_dir / ".about.toml").write_text(
-    'label = "Doc review"\ndescription = "Review a documentation change before it ships."\n',
-    encoding="utf-8",
-)
+# A demo attachment, so the TUI's Attachments > List browser has more than the one gmlw
+# ships. Imported the way a user's would be: a zip with its manifest at the root.
+with tempfile.TemporaryDirectory() as scratch:
+    archive = Path(scratch) / "doc-review.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr(
+            "manifest.yaml",
+            "name: doc-review\n"
+            'description: "Review a documentation change before it ships."\n'
+            "version: 1.0.0\n"
+            "main_md_file: main.md\n",
+        )
+        zipped.writestr(
+            "main.md",
+            "# doc-review\n\n"
+            "*Review a documentation change for clarity and correctness before it ships.*\n\n"
+            "## Steps\n\n"
+            "### 1. Collect the changed docs\n"
+            "Run `scripts/collect.sh` to list the docs touched on this branch and gather their diffs.\n\n"
+            "### 2. Review clarity and accuracy\n"
+            "Read each changed doc. Flag anything unclear, out of date, or contradicted by the code.\n\n"
+            "### 3. Report and stop\n"
+            "Summarise the findings as a short checklist the author can act on, then stop.\n",
+        )
+        zipped.writestr("scripts/collect.sh", "#!/bin/sh\ngit diff --stat main -- '*.md'\n")
+    store = FilesystemAttachmentStore(home / "attachments", ledger)
+    ImportAttachmentUseCase(store).execute(str(archive))
 
-print(f"seeded {home/'ledger.db'} — job {JOB}, {len(data)} sessions, 1 workflow")
+print(f"seeded {home/'ledger.db'} — job {JOB}, {len(data)} sessions, 1 attachment")

@@ -493,8 +493,8 @@ class SourceSetting:
     """Whether a context source is composed into a run, and whether it is compressed.
 
     Attributes:
-        activated: Include the source in the compiled context. Intrinsic workflow
-            sources (``base``/``steps``) are always active regardless of config.
+        activated: Include the source in the compiled context. A source that is not
+            activatable is always active regardless of config.
         compression: Attempt to compress the source through its kind's prompt. Only
             takes effect when a prompt resolves (see :meth:`CompressSettings.prompt_for`).
     """
@@ -514,15 +514,7 @@ _STARTUP_ACTIVATION: dict[str, dict[str, bool]] = {
         "rules.environment": True,
         "rules.role": True,
     },
-    "workflow": {
-        "persona": False,
-        "me.user": True,
-        "me.learned": True,
-        "company": True,
-        "rules.environment": True,
-        "rules.role": True,
-    },
-    "authoring": {
+    "attachment": {
         "persona": False,
         "me.user": True,
         "me.learned": True,
@@ -537,12 +529,11 @@ def default_startup(mode: str) -> dict[str, SourceSetting]:
     """Return a mode's baked-in activation matrix, with no config file read.
 
     Args:
-        mode: The compile mode (``default``/``workflow``/``authoring``).
+        mode: The compile mode (``default``/``attachment``).
 
     Returns:
-        A setting per source key. Intrinsic ``base``/``steps`` are always active;
-        cross-cutting sources follow the built-in per-mode defaults; nothing is
-        compressed by default.
+        A setting per source key: the built-in per-mode defaults; nothing is compressed
+        by default.
     """
     activation = _STARTUP_ACTIVATION.get(mode, _STARTUP_ACTIVATION["default"])
     settings: dict[str, SourceSetting] = {}
@@ -556,12 +547,12 @@ def startup(mode: str, path: Path | None = None) -> dict[str, SourceSetting]:
     """Return a mode's activation matrix from ``[startup.<mode>.context]`` over defaults.
 
     Args:
-        mode: The compile mode (``default``/``workflow``/``authoring``).
+        mode: The compile mode (``default``/``attachment``).
         path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
 
     Returns:
         A setting per source key: the config value where given, else the baked-in
-        default. ``base``/``steps`` stay always-active (only their compression is read).
+        default.
     """
     defaults = default_startup(mode)
     context = _table(_table(_table(_load(path), "startup"), mode), "context")

@@ -159,13 +159,15 @@ class SessionStoreConformance:
         assert store.sessions_for_job("JOB-1") == [first, second]
         assert store.ids_for_job("JOB-1") == ["JOB-1_001", "JOB-1_002"]
 
-    def test_the_workflow_a_session_ran_is_kept(self, tmp_path: Path) -> None:
+    def test_the_attachment_a_session_ran_is_kept(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)
-        feature = Session("JOB-1_001", "JOB-1", "claude", None, workflow="feature")
+        feature = Session(
+            "JOB-1_001", "JOB-1", "claude", None, attachment="feature", attachment_version="1.0.0"
+        )
         plain = Session("JOB-1_002", "JOB-1", "claude", None)
         store.record(feature)
         store.record(plain)
-        assert [s.workflow for s in store.sessions_for_job("JOB-1")] == ["feature", None]
+        assert [s.attachment for s in store.sessions_for_job("JOB-1")] == ["feature", None]
 
     def test_latest_is_the_most_recently_recorded(self, tmp_path: Path) -> None:
         store = self.make_store(tmp_path)

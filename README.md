@@ -25,7 +25,7 @@ Run **claude**, **cursor**, **codex**, or **vibe** exactly as you know them — 
 
 <br>
 
-[Why a wrapper](#why-a-wrapper) &nbsp;•&nbsp; [Clients](#clients-at-a-glance) &nbsp;•&nbsp; [The job](#the-job) &nbsp;•&nbsp; [Install](#install) &nbsp;•&nbsp; [Workflows](#workflows) &nbsp;•&nbsp; [What it records](#what-it-records) &nbsp;•&nbsp; [Concepts](docs/CONCEPTS.md) &nbsp;•&nbsp; [Guides](#guides) &nbsp;•&nbsp; [Design](docs/DESIGN.md)
+[Why a wrapper](#why-a-wrapper) &nbsp;•&nbsp; [Clients](#clients-at-a-glance) &nbsp;•&nbsp; [The job](#the-job) &nbsp;•&nbsp; [Install](#install) &nbsp;•&nbsp; [Attachments](#attachments) &nbsp;•&nbsp; [What it records](#what-it-records) &nbsp;•&nbsp; [Concepts](docs/CONCEPTS.md) &nbsp;•&nbsp; [Guides](#guides) &nbsp;•&nbsp; [Design](docs/DESIGN.md)
 
 </div>
 
@@ -125,7 +125,7 @@ Either way:
 gmlw start MY-FIRST-JOB                # first run self-seeds ~/.gmlw (owner-only)
 ```
 
-On first run the wrapper creates `~/.gmlw/` (mode `0700`) with a commented `config.toml`, a SQLite ledger, and the workflow, profile, environment and template folders. Pick the client per run with `--client claude|cursor|codex|vibe`, or set a default in `config.toml`.
+On first run the wrapper creates `~/.gmlw/` (mode `0700`) with a commented `config.toml`, a SQLite ledger, and the attachment, profile, environment and template folders. Pick the client per run with `--client claude|cursor|codex|vibe`, or set a default in `config.toml`.
 
 ### Update
 
@@ -135,17 +135,17 @@ gmlw does not update itself. It checks PyPI at most once a day (cached, and only
 uv tool upgrade generic-ml-wrapper     # or: uv tool install --reinstall generic-ml-wrapper
 ```
 
-## Workflows
+## Attachments
 
-A **workflow** is a small operating context you author once and launch a job with. Rather than re-explaining the same standing instructions to the client every time, you compile them once — a base, your profile, the rules of your environment and role, and the workflow's own steps — into the context the session opens with.
+An **attachment** is a block of specification a session starts with — a method, a procedure, a checklist — so you stop re-explaining the same standing instructions every time. It is a zip with a small `manifest.yaml` (name, version, main file); you write it with anything you like, and gmlw keeps every version you import, unchanged and hash-checked. Its main file joins the context after your profile and rules; its other files stay out of the context until the session needs them.
 
 ```sh
-gmlw workflow new doc-review           # author a workflow (an authoring session, kept apart from work)
-gmlw workflow list                     # the runnable workflows
-gmlw start DOCS-1 --workflow doc-review # launch a job with that context compiled in
+gmlw start my-review --attach workflow-creator   # gmlw ships this one: it helps you write a workflow
+gmlw attachment import doc-review-1.0.0.zip      # bring in what you wrote
+gmlw start DOCS-1 --attach doc-review            # a session with it (the highest version)
 ```
 
-Workflows can carry their own credentials (`gmlw creds set <workflow> <ENV_VAR>`), injected into the child process at launch and stored `0600`. Context compilation runs through an **interceptor chain**, so a step like context compression is an opt-in plug-in, not a fork of the engine.
+Attachments can carry their own credentials (`gmlw creds set <name> <ENV_VAR>`), injected into the child process at launch and stored `0600`. Context compilation runs through an **interceptor chain**, so a step like context compression is an opt-in plug-in, not a fork of the engine. See [Attachments](docs/ATTACHMENTS.md).
 
 ## What it records
 
@@ -167,7 +167,7 @@ For **Claude Code** and **Cursor**, the wrapper renders a rich status line strai
 
 Beyond metering, `gmlw` builds a portable operating context that follows you from one client to the next — who you are, your project's conventions, a learned notebook, a selectable persona, and rules you've demanded be held to — composed from four independent axes and packaged per launch mode. See [docs/CONCEPTS.md](docs/CONCEPTS.md) for the full model.
 
-Workflows (above) are *optional* and separate from this personal layer. Every listing/reporting command also speaks `--json` for automation.
+Attachments (above) are *optional* and separate from this personal layer. Every listing/reporting command also speaks `--json` for automation.
 
 ## What gmlw does not do
 
@@ -182,7 +182,7 @@ See **[docs/README.md](docs/README.md)** for the full map. Start with
 [Concepts](docs/CONCEPTS.md) for the mental model, then the
 [User guide](docs/USER_GUIDE.md) for task-oriented recipes, or jump straight to the
 [CLI reference](docs/CLI.md) · [Configuration](docs/CONFIGURATION.md) ·
-[Clients](docs/CLIENTS.md) · [Workflows](docs/WORKFLOWS.md) ·
+[Clients](docs/CLIENTS.md) · [Attachments](docs/ATTACHMENTS.md) ·
 [Troubleshooting](docs/TROUBLESHOOTING.md) · [Design](docs/DESIGN.md) ·
 [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md).
 

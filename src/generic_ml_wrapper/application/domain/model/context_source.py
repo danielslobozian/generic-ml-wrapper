@@ -3,9 +3,9 @@
 """The context sources, their compressor kinds, and the startup modes.
 
 A run's operating context is composed from a fixed set of *sources* (the user's
-profile, learned notes, company facts, rules, persona, and — for a workflow — its
-base and steps). Which sources are active, and whether each is compressed, is
-configured per *mode* (a plain start, a workflow, or authoring). Each source that
+profile, learned notes, company facts, rules, persona). Which sources are active, and
+whether each is compressed, is configured per *mode* (a plain start, or a session with
+an attachment, whose own text is delivered as written and is not a source). Each source that
 can be compressed maps to a *compressor kind* — the strategy chosen for that data
 shape (there is no one-size-fits-all compressor). This module is the single, pure
 declaration of that taxonomy; the config supplies activation and the prompts.
@@ -24,8 +24,7 @@ class CompileMode(StrEnum):
     """
 
     DEFAULT = "default"
-    WORKFLOW = "workflow"
-    AUTHORING = "authoring"
+    ATTACHMENT = "attachment"
 
 
 class CompressorKind(StrEnum):
@@ -36,7 +35,6 @@ class CompressorKind(StrEnum):
     """
 
     HUMAN_TOUCH = "human-touch"  # personal, preference-shaped: surface what the user likes
-    TECHNICAL = "technical"  # workflow base and steps: technical instructions
     RULES = "rules"  # reflexes/rules: a dedicated prompt
 
 
@@ -48,9 +46,9 @@ class ContextSource:
         key: The config key under ``[startup.<mode>.context]`` (dotted for the
             nested ``me`` group, e.g. ``"me.user"``).
         kind: The default compressor kind, or ``None`` when the source is left
-            verbatim by default (``company``, ``persona``, base guidance).
-        activatable: Whether config may deactivate it. ``base``/``steps`` are
-            intrinsic to a workflow (always present); only their compression toggles.
+            verbatim by default (``company``, ``persona``).
+        activatable: Whether config may deactivate it. Every source today can be; the
+            flag stays so an intrinsic one can be declared without changing config code.
     """
 
     key: str
@@ -71,14 +69,10 @@ ME_LEARNED = ContextSource("me.learned", CompressorKind.HUMAN_TOUCH)
 COMPANY = ContextSource("company", None)
 # Rules are a projection of the user, so they sit on the two axes that describe one: the
 # environment (the place — its processes and standards) and the role (the craft). Each is
-# separately activatable; there is no global tier and no per-workflow tier.
+# separately activatable; there is no global tier and no per-attachment tier.
 RULES_ENVIRONMENT = ContextSource("rules.environment", CompressorKind.RULES)
 RULES_ROLE = ContextSource("rules.role", CompressorKind.RULES)
 
-# The workflow-only sources, always present in a workflow/authoring run (a workflow
-# without its steps is meaningless); only their compression is configurable.
-BASE = ContextSource("base", CompressorKind.TECHNICAL, activatable=False)
-STEPS = ContextSource("steps", CompressorKind.TECHNICAL, activatable=False)
 
 # The identity/facts family, composed together (ahead of rules) in every mode.
 PROFILE_FAMILY: tuple[ContextSource, ...] = (PERSONA, ME_USER, ME_LEARNED, COMPANY)
@@ -91,9 +85,4 @@ RULE_AXES: tuple[ContextSource, ...] = (RULES_ROLE, RULES_ENVIRONMENT)
 CROSS_CUTTING: tuple[ContextSource, ...] = (*PROFILE_FAMILY, *RULE_AXES)
 
 # Every source, in composed order (used to seed defaults and iterate config).
-ALL_SOURCES: tuple[ContextSource, ...] = (*CROSS_CUTTING, BASE, STEPS)
-
-
-def includes_workflow(mode: CompileMode) -> bool:
-    """Whether a mode composes the workflow's base and steps (workflow/authoring)."""
-    return mode in (CompileMode.WORKFLOW, CompileMode.AUTHORING)
+ALL_SOURCES: tuple[ContextSource, ...] = CROSS_CUTTING

@@ -34,7 +34,7 @@ class CredentialsUnreadableError(Exception):
 
 
 class FilesystemCredentialsStore(CredentialsStorePort):
-    """Persist per-workflow credentials as ``[workflow]`` tables in one TOML file.
+    """Persist per-attachment credentials as ``[attachment]`` tables in one TOML file.
 
     The file is written with owner-only permissions and is never committed; it lives
     under ``~/.gmlw`` alongside the rest of the runtime state.
@@ -48,9 +48,9 @@ class FilesystemCredentialsStore(CredentialsStorePort):
         """
         self._path = path
 
-    def resolve(self, workflow: str) -> dict[str, str]:
-        """Return a workflow's credentials as an env-var-name to value mapping."""
-        table = self._load().get(workflow)
+    def resolve(self, attachment: str) -> dict[str, str]:
+        """Return an attachment's credentials as an env-var-name to value mapping."""
+        table = self._load().get(attachment)
         if not isinstance(table, dict):
             return {}
         return {
@@ -59,18 +59,18 @@ class FilesystemCredentialsStore(CredentialsStorePort):
             if isinstance(value, str)
         }
 
-    def set(self, workflow: str, name: str, value: str) -> None:
-        """Store one credential for a workflow, replacing any prior value.
+    def set(self, attachment: str, name: str, value: str) -> None:
+        """Store one credential for an attachment, replacing any prior value.
 
         Raises:
             CredentialsUnreadableError: If the file exists but is corrupt; it is left
                 untouched rather than overwritten (which would destroy every secret).
         """
         data = self._load()
-        table = data.get(workflow)
+        table = data.get(attachment)
         entries = cast("dict[str, object]", table) if isinstance(table, dict) else {}
         entries[name] = value
-        data[workflow] = entries
+        data[attachment] = entries
         self._write(_dump(data))
 
     def _write(self, text: str) -> None:
@@ -101,14 +101,14 @@ class FilesystemCredentialsStore(CredentialsStorePort):
 
 
 def _dump(data: dict[str, object]) -> str:
-    """Serialize ``{workflow: {name: value}}`` as TOML tables of basic strings."""
+    """Serialize ``{attachment: {name: value}}`` as TOML tables of basic strings."""
     blocks: list[str] = []
-    for workflow in sorted(data):
-        table = data[workflow]
+    for attachment in sorted(data):
+        table = data[attachment]
         if not isinstance(table, dict):
             continue
         entries = cast("dict[str, object]", table)
-        lines = [f"[{workflow}]"]
+        lines = [f"[{attachment}]"]
         lines += [
             f"{name} = {_basic_string(value)}"
             for name, value in sorted(entries.items())

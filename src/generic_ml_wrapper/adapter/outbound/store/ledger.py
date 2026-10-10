@@ -22,12 +22,12 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 9
 
 _SCHEMA = """
 CREATE TABLE jobs (
     job        TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL DEFAULT 'work',   -- 'work' | 'authoring'
+    kind       TEXT NOT NULL DEFAULT 'work',   -- 'work' ('authoring' until migration 9)
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -39,7 +39,10 @@ CREATE TABLE sessions (
     uuid       TEXT,
     cwd        TEXT,                            -- the folder it was launched in (resume there)
     resumable  INTEGER NOT NULL DEFAULT 1,      -- 0/1: snapshot of the client's resumability
-    workflow   TEXT,                            -- the workflow it was started with, if any
+    workflow   TEXT,                            -- history: before attachments, see migration 9
+    attachment         TEXT,                    -- the attachment it was started with, if any
+    attachment_version TEXT,
+    attachment_hash    TEXT,                    -- that version's hash when it started
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_sessions_job ON sessions(job);
@@ -87,6 +90,16 @@ CREATE TABLE session_costs (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_session_costs_job ON session_costs(job);
+
+CREATE TABLE attachments (
+    name         TEXT NOT NULL,
+    version      TEXT NOT NULL,                 -- MAJOR.MINOR.PATCH, as the author set it
+    description  TEXT NOT NULL DEFAULT '',
+    main_md_file TEXT NOT NULL,                 -- relative to the version's folder
+    content_hash TEXT NOT NULL,                 -- SHA-256 of the folder, taken at import
+    imported_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (name, version)
+);
 """
 
 
@@ -151,6 +164,26 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
     6: (
         "ALTER TABLE turns ADD COLUMN role TEXT NOT NULL DEFAULT 'main'",
         "ALTER TABLE turns ADD COLUMN agent TEXT",
+    ),
+    # The imported attachment versions and their hashes. Starts empty.
+    7: (
+        "CREATE TABLE attachments (name TEXT NOT NULL, version TEXT NOT NULL, "
+        "description TEXT NOT NULL DEFAULT '', main_md_file TEXT NOT NULL, "
+        "content_hash TEXT NOT NULL, imported_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "PRIMARY KEY (name, version))",
+    ),
+    # Which attachment version a session ran. Existing sessions ran none.
+    8: (
+        "ALTER TABLE sessions ADD COLUMN attachment TEXT",
+        "ALTER TABLE sessions ADD COLUMN attachment_version TEXT",
+        "ALTER TABLE sessions ADD COLUMN attachment_hash TEXT",
+    ),
+    # Sessions started with a workflow show its name as their attachment, with no
+    # version or hash: what they ran was never stored as a version. The old column stays.
+    # Authoring jobs become ordinary ones: writing an attachment is ordinary work now.
+    9: (
+        "UPDATE sessions SET attachment = workflow WHERE attachment IS NULL",
+        "UPDATE jobs SET kind = 'work' WHERE kind = 'authoring'",
     ),
 }
 
