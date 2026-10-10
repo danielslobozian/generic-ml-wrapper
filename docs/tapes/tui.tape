@@ -1,6 +1,6 @@
 # The interactive menu demo: gmlw tui, a browse-only tour.
-# Rendered by docs/tapes/render.sh, which seeds a demo ledger + one workflow and sets $HOME.
-# Only read-only browser screens are entered (Job > List, Workflow > List, Config > List) --
+# Rendered by docs/tapes/render.sh, which seeds a demo ledger + one attachment and sets $HOME.
+# Only read-only browser screens are entered (Job > List, Attachments > List, Config > List) --
 # never New/Resume/Run/Create/Edit/the config switchers, which launch a client or write config.
 Output "docs/images/gmlw-tui.gif"
 
@@ -21,7 +21,7 @@ Sleep 500ms
 Type "gmlw tui" Enter
 Sleep 1200ms
 
-# Front door: walk the cursor down through Job / Workflow / Config / Rules, then back to Job.
+# Front door: walk the cursor down through Job / Attachments / Config / Rules, then back to Job.
 Down
 Sleep 400ms
 Down
@@ -49,13 +49,11 @@ Sleep 400ms
 Escape
 Sleep 400ms
 
-# Workflow > List — read-only, shows the seeded workflow.
+# Attachments > List — read-only, shows the seeded attachment and workflow-creator.
 Down
 Sleep 400ms
 Enter
 Sleep 700ms
-Down
-Sleep 300ms
 Down
 Sleep 300ms
 Down

@@ -60,7 +60,7 @@ or set `[logging] level = "debug"` in `~/.gmlw/config.toml`. See
 While a client is running it owns the terminal, so the wrapper cannot report anything
 to the screen without corrupting the client's display — and anything it did write
 would be painted over on the next redraw. Diagnostics for those commands (`start`,
-`run`, `tui`, `workflow new/edit`) therefore go **only** to the log file:
+`tui`) therefore go **only** to the log file:
 
 ```
 tail -f ~/.gmlw/logs/gmlw.log
@@ -133,7 +133,7 @@ trust. See [CONFIGURATION.md](CONFIGURATION.md).
 
 - **Transcripts and contexts** — `~/.gmlw/transcripts/` and `~/.gmlw/contexts/` are
   self-contained and portable; copy or move them freely.
-- **`credentials.toml`** is `0600` secrets (per-workflow credentials injected into the
+- **`credentials.toml`** is `0600` secrets (per-attachment credentials injected into the
   child client). Treat it as sensitive; it never leaves your machine on its own.
 - The **whole `~/.gmlw`** is created owner-only (`0700`). Keep any backup owner-only too.
 
@@ -165,5 +165,5 @@ hours) — turning it off just stops that check from ever running. See
 
 ## See also
 
-- [CONCEPTS.md](CONCEPTS.md) · [CLIENTS.md](CLIENTS.md) · [WORKFLOWS.md](WORKFLOWS.md)
+- [CONCEPTS.md](CONCEPTS.md) · [CLIENTS.md](CLIENTS.md) · [ATTACHMENTS.md](ATTACHMENTS.md)
 - [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md)

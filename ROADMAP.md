@@ -424,7 +424,7 @@ _Next milestone not yet chosen._
 
 ## Parked
 
-- **External source connectors** — let a workflow pull from external systems (APIs,
+- **External source connectors** — let an attachment pull from external systems (APIs,
   cloud storage, platforms) rather than manual input. Large; its own initiative.
 - Relay extraction to a standalone project (shelved — no second consumer yet).
 - Workspace layout feature.

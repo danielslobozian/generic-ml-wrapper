@@ -58,8 +58,8 @@ and [`ROADMAP.md`](ROADMAP.md); the load-bearing ones are:
   The wrapper implements no record/replay cache or model-call layer of its own; the
   optional context compressor talks to that sibling. Proposals to reinvent it here
   will be declined.
-- **The workflow is optional.** `gmlw start <job>` with no workflow is already the
-  whole wrapper; the workflow is an enrichment, never the identity of the product.
+- **The attachment is optional.** `gmlw start <job>` with nothing attached is already
+  the whole wrapper; an attachment is an enrichment, never the identity of the product.
 - **Metering is not a toggle for a metered client.** A metered client always runs
   through the local relay; there is no plain, un-metered caller path.
 - **Public-clean by construction.** No personal data, employer, job prefixes, or

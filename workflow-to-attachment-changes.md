@@ -166,12 +166,20 @@ would break them moved there.
 
 ## Phase 9 — Docs
 
-- [ ] `docs/WORKFLOWS.md` removed; links to it point to `docs/ATTACHMENTS.md`.
-- [ ] `docs/CLI.md`, `DESIGN.md`, `CONFIGURATION.md`, `USER_GUIDE.md`, `CONCEPTS.md`,
-      `TROUBLESHOOTING.md`, `CLIENTS.md`, `docs/README.md`.
-- [ ] `docs/tapes/` (`seed.py`, `tui.tape`, `help.tape`, `render.sh`, `README.md`).
-- [ ] `README.md`, `ROADMAP.md`, `SECURITY.md`, `GOVERNANCE.md`, `AGENTS.md`.
-- [ ] `CHANGELOG.md` `[Unreleased]`: the change, the migration, the removed commands.
+- [x] `docs/WORKFLOWS.md` removed; every link to it points to `docs/ATTACHMENTS.md`, which
+      is now the user-facing page (no longer a draft) and gains credentials, scripts, and
+      "Coming from an older gmlw".
+- [x] `docs/CLI.md` (`run`, `workflow`, `--workflow` gone; `creds`, `help`, `tui`),
+      `DESIGN.md`, `CONFIGURATION.md` (two modes, no `base`/`steps`/`technical`),
+      `USER_GUIDE.md`, `CONCEPTS.md`, `TROUBLESHOOTING.md`, `CLIENTS.md`, `docs/README.md`.
+- [x] `docs/tapes/`: the seed imports a demo attachment; `tui.tape` walks Attachments →
+      List; `help.tape` shows `job-vs-attachment`. The GIFs are not re-rendered here (no
+      `vhs` on this machine): run `docs/tapes/render.sh` before the release.
+- [x] `README.md`, `SECURITY.md`, `GOVERNANCE.md`; `ROADMAP.md`'s parked item. Released
+      versions' entries keep their words. `AGENTS.md`'s "pr-hygiene workflow" is a GitHub
+      Actions workflow and stays.
+- [x] `CHANGELOG.md` `[Unreleased]`: attachments (Added, replacing the unreleased "workflow
+      from the menu" entry), the migration (Changed), the removed commands (Removed).
 
 ## Phase 10 — Guard and close
 

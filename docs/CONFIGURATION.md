@@ -7,13 +7,13 @@ to (at most) the `[client] default` chosen from the clients found on your `PATH`
 Every section is optional. Uncomment and edit only what you need. Delete the file
 entirely to fall back to the built-in defaults.
 
-Everything gmlw keeps — this file, the ledger, workflows, profile — lives under
+Everything gmlw keeps — this file, the ledger, attachments, profile — lives under
 `~/.gmlw`. Set `GMLW_HOME` to use another folder instead, for example to give a
 development build its own ledger: `GMLW_HOME=~/.gmlw-dev gmlw …`. Only gmlw's folder
 moves; the clients it launches still use their own settings and login.
 
 For the concepts behind the sections below (the four context axes, rules) see
-[CONCEPTS.md](CONCEPTS.md). Related guides: [WORKFLOWS.md](WORKFLOWS.md),
+[CONCEPTS.md](CONCEPTS.md). Related guides: [ATTACHMENTS.md](ATTACHMENTS.md),
 [CLIENTS.md](CLIENTS.md), [DESIGN.md](DESIGN.md), and the [security model](../SECURITY.md).
 
 ## Trusted-code boundary
@@ -106,7 +106,7 @@ under several targets.
 | `spec` | The `"module:Class"` / `"/path.py:Class"` to load |
 
 **Compile-time targets** (context assembly, all clients): `profile` \| `rules` \|
-`workflow` \| `context`.
+`attachment` \| `context`.
 
 **Wire targets** (metered clients only): `request` (outbound body) \| `response`
 (captured reply, observe-only).
@@ -172,13 +172,15 @@ client = "claude"   # optional; omit to run for every client
 
 On every run gmlw composes an operating context from a fixed set of sources.
 `[startup]` decides, per mode, which sources are **active** and which are
-**compressed**. There are three modes:
+**compressed**. There are two modes:
 
 | Mode | Triggered by |
 | --- | --- |
 | `default` | a plain `gmlw start` |
-| `workflow` | `gmlw start -w <name>` |
-| `authoring` | `gmlw workflow new` |
+| `attachment` | `gmlw start --attach <name>` |
+
+An attachment's own text is not a source: it follows these, delivered as written and never
+compressed.
 
 **Sources:**
 
@@ -191,9 +193,8 @@ On every run gmlw composes an operating context from a fixed set of sources.
 - `rules.environment` — `environments/<env>/rules/*.rule.md`, the place's constraints
 - `rules.role` — `profile/roles/<role>/rules/*.rule.md`, your own craft preferences. The
   environment's rules compose last and outrank the role's on conflict. There is no global
-  and no per-workflow rule tier.
+  and no per-attachment rule tier.
 - `persona` — the selected persona plus the shared floor (see [`[companion]`](#companion))
-- `base` / `steps` — a workflow run also composes its `base` and `steps`
 
 Each source is configured as `{ activated = <bool>, compression = <bool> }`. The keys
 nest by source group:
@@ -201,9 +202,6 @@ nest by source group:
 - `[startup.<mode>.context.me]` holds `user` and `learned`.
 - `[startup.<mode>.context.rules]` holds `environment` and `role`.
 - `[startup.<mode>.context]` holds `company` and `persona`.
-- `[startup.workflow.context]` also holds `base` and `steps` — in workflow and
-  authoring modes these are **always active**, so only their `compression` is read
-  (`activated` is ignored).
 
 Omit all of this to get the built-in per-mode defaults. The default-mode defaults,
 written out explicitly:
@@ -223,16 +221,13 @@ persona = { activated = false, compression = false }
 ```
 
 Every source defaults to `compression = false` — nothing is compressed unless you turn
-it on *and* a prompt resolves (see [`[compress]`](#compress)). For a workflow run you
-might, for example, opt to compress the longer `steps` while leaving `base` verbatim:
+it on *and* a prompt resolves (see [`[compress]`](#compress)). For sessions with an
+attachment you might, for example, leave out the company facts:
 
 ```toml
-[startup.workflow.context]
-base  = { compression = false }
-steps = { compression = true }   # opt-in; the default is false
+[startup.attachment.context]
+company = { activated = false }
 ```
-
-See [WORKFLOWS.md](WORKFLOWS.md) for how base and steps are compiled.
 
 ## `[companion]`
 
@@ -272,7 +267,6 @@ The compression prompt is chosen by the source's **kind**:
 | Kind | Covers |
 | --- | --- |
 | `human-touch` | `me.user` + `me.learned` |
-| `technical` | workflow `base` + `steps` |
 | `rules` | `rules.environment` + `rules.role` |
 
 `company` and `persona` are always verbatim (never compressed). Under
@@ -334,7 +328,7 @@ one-off run without editing the file.
 **Where diagnostics go depends on the command.** A utility command (`gmlw jobs`,
 `gmlw config list`, …) writes them to the log file *and* to stderr, so you see a
 warning while you are watching. A command that hands the terminal to a client
-(`start`, `run`, `tui`, `workflow new/edit`) writes to the **log file only** — there,
+(`start`, `tui`) writes to the **log file only** — there,
 stderr is the client's own screen, so a diagnostic printed to it would corrupt the
 client's display and be gone on the next redraw. `gmlw statusline` logs nothing at
 all: it renders into another program's prompt many times a session.
@@ -407,5 +401,5 @@ check = false
 ## See also
 
 - [CONCEPTS.md](CONCEPTS.md) — the four context axes and rules these keys configure.
-- [WORKFLOWS.md](WORKFLOWS.md) · [CLIENTS.md](CLIENTS.md) · [DESIGN.md](DESIGN.md)
+- [ATTACHMENTS.md](ATTACHMENTS.md) · [CLIENTS.md](CLIENTS.md) · [DESIGN.md](DESIGN.md)
 - [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md)

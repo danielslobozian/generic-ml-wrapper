@@ -1,7 +1,7 @@
 # User guide
 
 Task-oriented recipes for the `gmlw` CLI. Each section is a concrete job with the exact
-command to run. For the mental model behind these (job/session/workflow, the four
+command to run. For the mental model behind these (job/session/attachment, the four
 context axes, rules) see [CONCEPTS.md](CONCEPTS.md); for the full flag reference see
 [CLI.md](CLI.md), for every config key see [CONFIGURATION.md](CONFIGURATION.md), and
 for per-client behaviour see [CLIENTS.md](CLIENTS.md).
@@ -44,20 +44,23 @@ gmlw export PROJ-482
 Cursor sessions are not metered by the wrapper (its usage isn't on an interceptable API), so they
 carry no cost figures.
 
-## 4. Create and run a workflow
+## 4. Create a workflow, and run a session with it
 
-`workflow new` runs the shipped `create-workflow` meta-workflow: it interviews you, drafts ordered
-steps, marks which are scriptable, and writes `~/.gmlw/workflows/<name>/workflow.md`. Then launch
-any job with that workflow injected using `-w`.
+A workflow is an attachment. Start a job with the `workflow-creator` attachment gmlw ships: it
+interviews you, drafts ordered steps, marks which are scriptable, and writes the workflow as a
+folder with its `manifest.yaml`, zipped, in the job's folder. Import the zip, then start any
+session with it.
 
 ```
-gmlw workflow new triage
-gmlw workflow list
-gmlw start PROJ-482 -w triage
+gmlw start triage-workflow --attach workflow-creator
+gmlw attachment import triage-1.0.0.zip
+gmlw start PROJ-482 --attach triage
 ```
 
-The authoring session is hidden from `gmlw jobs`. See [WORKFLOWS.md](WORKFLOWS.md) for the compile
-order and the `scripts/` folder.
+To change it later, start a job with `workflow-creator` again and ask for a new version of
+`triage` (the menu's Attachments → Modify does the asking for you). Every version stays; a new
+session takes the highest unless you name one (`--attach triage@1.0.0`). See
+[ATTACHMENTS.md](ATTACHMENTS.md) for the format.
 
 ## 5. Add profile and environment context
 
@@ -106,7 +109,7 @@ Personas are off and invisible until you set this key.
 
 ## 7. Record a rule
 
-A rule is filed on the environment or role axis, not globally or per-workflow — see
+A rule is filed on the environment or role axis, not globally or per-attachment — see
 [CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism (which axis wins on
 conflict, `status: draft`, `Precedence`). In practice, either edit the file directly or
 let the client capture it the moment you correct it:
@@ -181,7 +184,7 @@ list you were clearing, with what you removed already gone from it.
 ## 11. Export JSON for automation
 
 Add `--json` to emit machine-readable output instead of the rendered tables. It's supported on
-`jobs`, `sessions`, `export`, `clients`, `workflow list`, `workflow drafts`, `persona list`,
+`jobs`, `sessions`, `export`, `clients`, `attachment list`, `persona list`,
 `plugins list`, `config list`, and `config get`.
 
 ```
@@ -189,7 +192,7 @@ gmlw jobs --json
 gmlw sessions PROJ-482 --json
 gmlw export PROJ-482 --json
 gmlw clients --json
-gmlw workflow list --json
+gmlw attachment list --json
 gmlw persona list --json
 gmlw plugins list --json
 gmlw config list --json

@@ -48,21 +48,53 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - `gmlw jobs` shows each job's tags (`--json` gains a `tags` field).
   - In the menu, Job → List shows the tags, filters by one, and `t` edits a job's tags.
   - Tags are case-insensitive and kept lowercase. Deleting a job deletes its tags.
-- **A new session can be started with a workflow from the menu, and every session
-  remembers which workflow it ran.** `gmlw start <job> --workflow NAME` could always do
-  this on the command line, but the menu could only run a workflow under a job named after
-  it. Job → New now asks, after the client, whether to attach a workflow: it opens on
-  **No workflow**, so a plain start is still `⏎`.
-  - A workflow belongs to the session, not the job, so one job can run a feature workflow
-    in one session and an MR-review workflow in the next.
-  - The workflow a session started with is now recorded. `gmlw sessions <job>` shows it in
-    its own column (`--json` gains a `workflow` field), and the resume picker shows it
-    next to the folder. Sessions recorded before this release show none.
-  - The ledger gains one column; existing databases are upgraded in place on first use.
+- **Attachments replace workflows.** An attachment is a block of specification a session
+  starts with — a method, a procedure, a checklist. It is a zip with a `manifest.yaml`
+  (`name`, `description`, `version`, `main_md_file`); you write it with whatever you like,
+  and gmlw never changes it. See [ATTACHMENTS.md](docs/ATTACHMENTS.md).
+  - `gmlw attachment import <zip>` stores a version under
+    `~/.gmlw/attachments/<name>/<version>/`, read-only, with its SHA-256 in the ledger. A
+    version already stored is refused: new content needs a new version (`MAJOR.MINOR.PATCH`).
+    Every version is kept; `export`, `list` and `delete` do the rest, and `list` marks a
+    version that changed since its import.
+  - `gmlw start <job> --attach <name>[@<version>]` starts a session with one — the highest
+    version unless you name one. Its main file follows your profile and rules as written;
+    its other files stay out of the context, and the store is opened to the client
+    (`--add-dir` on claude, codex and vibe) so the session reads them when the text says so.
+    A changed version is refused before any session is spent.
+  - Each session records the attachment's name, version and hash; `gmlw sessions <job>` and
+    the resume picker show `name@version`.
+  - gmlw ships one, **`workflow-creator`**: start a job with it to write a workflow — it
+    interviews you and hands over a zip ready to import — or a new version of one.
+  - In the menu, **Attachments** (Import, Export, List, Delete, Modify) takes Workflow's place,
+    and Job → New asks what to attach. Modify opens a new job named for the change, with the
+    request to export that version and help change it already written.
+  - Credentials are filed per attachment: `gmlw creds set <name> <ENV_VAR>`.
 - **`GMLW_HOME` puts everything gmlw keeps in another folder.** Handy for a development
-  build that should not share your real ledger, config and workflows. Only gmlw's own
+  build that should not share your real ledger, config and attachments. Only gmlw's own
   folder moves: the clients it launches still read their settings and login from your
   home.
+
+### Changed
+- **Your workflows become attachments, once, on the first command after upgrading.** Each
+  folder under `~/.gmlw/workflows/` is imported as `<name>@1.0.0`, its `workflow.md` the
+  main file with the old shared base in front so it behaves as before, and with the files it
+  reads (scripts, references); authoring leftovers (`draft.md`, `parking-lot.md`, `*.bak*`),
+  caches and client permission folders stay out. Credentials keep working under the same
+  name. `[startup.workflow]` and interceptors bound to `workflow` are renamed in
+  `config.toml`, comments kept. The old folder is not touched: delete it when you are done
+  with it. A workflow that writes into its own folder while it runs must move that to the
+  job's folder first, since an attachment is read-only.
+- Sessions that ran a workflow show its name as their attachment, without a version, and
+  authoring jobs are now ordinary jobs. The ledger is upgraded in place on first use.
+
+### Removed
+- `gmlw workflow` (`new`, `edit`, `resume`, `drafts`, `list`, `import`, `export`),
+  `gmlw run`, `gmlw start --workflow`/`-w`, `--guided`/`--quick`, the menu's Workflow
+  screens, the `workflow` and `authoring` context modes with their `base`/`steps` sources
+  and the `technical` compressor kind. Writing a workflow is a session with
+  `workflow-creator`; running one is `gmlw start <job> --attach <name>`.
+- `gmlw help job-vs-workflow` and `start-vs-run`, replaced by `gmlw help job-vs-attachment`.
 
 ### Fixed
 - **Vibe was never metered on a fresh install.** The wrapper reroutes vibe through the relay

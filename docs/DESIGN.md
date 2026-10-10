@@ -11,7 +11,7 @@ document.*
 
 A **metering wrapper around an ML coding CLI.** You enter at a **job** — a piece of
 work you tag — and the wrapper mints a named, resumable **session** on the client,
-optionally driven by a **workflow** (a small operating context you author once),
+optionally started with an **attachment** (a versioned block of specification),
 records **every turn's tokens and cost** through a local metering relay, and hands
 you the client exactly as you know it.
 
@@ -32,9 +32,9 @@ follows their conventions: a single `src/` package, hexagonal internals, `nox`
 (lint · imports · typecheck · tests · coverage · sonar · green), `ruff@100`, strict
 `pyright`, Apache-2.0, public and forkable.
 
-The wrapper is **not** a stripped-down workflow tool. It is its own product: sessions
-+ launch + metering out of the box, with the workflow as an *optional* enrichment,
-not its identity. `gmlw start <job>` with no workflow is already the whole wrapper.
+The wrapper is **not** a stripped-down process-orchestration tool. It is its own product: sessions
++ launch + metering out of the box, with an attachment as an *optional* enrichment,
+not its identity. `gmlw start <job>` with nothing attached is already the whole wrapper.
 
 ## 3. The hexagon
 
@@ -89,7 +89,7 @@ nothing about the filesystem, the client, or HTTP.
 **Identifiers** (validated `str` subclasses, raise `IdentifierError` on bad input)
 - **`JobId`** — `[A-Za-z0-9][A-Za-z0-9_-]{0,63}`. Constructed at the CLI boundary so a
   path-unsafe job id fails early, before any store is touched (CWE-22 defence).
-- **`WorkflowName`** — lowercase kebab `[a-z0-9][a-z0-9-]*`.
+- **`AttachmentName`** — lowercase kebab `[a-z0-9][a-z0-9-]*`.
 - **`EnvVarName`** — POSIX `[A-Za-z_][A-Za-z0-9_]*`.
 
 **Domain services** (pure)
@@ -107,14 +107,14 @@ nothing about the filesystem, the client, or HTTP.
 
 | Use case | What it does |
 |---|---|
-| `StartJob` | validate (workflow/caller/resume), mint or resume a session, launch the client |
-| `ListJobs` | the jobs with recorded activity (authoring sessions hidden) |
+| `StartJob` | validate (attachment/caller/resume), mint or resume a session, launch the client |
+| `ListJobs` | the jobs with recorded activity |
 | `ListSessions` | a job's sessions |
 | `ExportUsage` | per-turn rows + per-model totals + per-session cost for a job |
 | `RenderStatusline` | one live status block from the client's native payload |
-| `NewWorkflow` | author a workflow via the create-workflow interview (an authoring session) |
-| `ListWorkflows` | the runnable workflows |
-| `SetCredential` | store a per-workflow credential (0600) |
+| `ImportAttachment` | unpack a zip, check its manifest, store a new immutable version |
+| `ExportAttachment` / `ListAttachments` / `DeleteAttachment` | the rest of the store's verbs |
+| `SetCredential` | store a per-attachment credential (0600) |
 | `Bootstrap` | first-run self-init of `~/.gmlw` (idempotent) |
 | `FirstRunInit` | first-run flow: detect installed clients, seed a filled config, choose a default (and persona) |
 | `CheckClientReady` | preflight a client — installed and logged in — returning install/login guidance |
@@ -122,7 +122,7 @@ nothing about the filesystem, the client, or HTTP.
 | `ListPlugins` | the installed plugins under `~/.gmlw/plugins/<id>/` |
 | `RenderGreeting` | the free, local host greeting voiced at launch |
 
-`StartJob` **validates before it persists** — a rejected start (unknown workflow,
+`StartJob` **validates before it persists** — a rejected start (unknown or changed attachment,
 resume unsupported) records no session, so there are no ghost sessions.
 
 ## 6. Outbound ports (what the app needs)
@@ -134,10 +134,11 @@ resume unsupported) records no session, so there are no ghost sessions.
 | `PerTurnMeteringPort` | append/read per-turn `TurnUsage` for a job |
 | `UsageStorePort` | record/read a session's cumulative cost (monotonic) |
 | `TranscriptPort` | persist a call's request/response/usage (opt-in provenance) |
-| `WorkflowSourcePort` | seed defaults; read/create/compile workflows |
-| `CredentialsStorePort` | resolve/set per-workflow credentials |
+| `ContextCompilerPort` | compose a session's operating context (snapshot, profile, rules, attachment) |
+| `AttachmentStorePort` | stage, store, hash-check, export and delete attachment versions |
+| `CredentialsStorePort` | resolve/set per-attachment credentials |
 | `ClientStatusParserPort` | parse a client's native status payload → `ClientStatus` |
-| `InterceptorPort` | transform a named target (`profile`/`rules`/`workflow`/`context` at compile time; `request`/`response` on the wire) |
+| `InterceptorPort` | transform a named target (`profile`/`rules`/`attachment`/`context` at compile time; `request`/`response` on the wire) |
 | `HookPort` | run an action at a lifecycle seam bracketing the client run (`pre-launch` / `post-session`) |
 | `WorkspaceInspectorPort` | report the run's folder + git state |
 | `LayoutSeederPort` | create the runtime dirs + a default config, missing-only |
@@ -211,13 +212,11 @@ change is a full store reset). Tables:
 
 | Table | Holds |
 |---|---|
-| `jobs` | `job`, `kind` (`work` \| `authoring`), `created_at` |
-| `sessions` | `session_id` (`<job>_NNN`), `job`, `client`, `uuid` |
+| `jobs` | `job`, `kind`, `created_at` |
+| `sessions` | `session_id` (`<job>_NNN`), `job`, `client`, `uuid`, the attachment's name, version and hash |
 | `turns` | one row per metered turn: tokens (incl. cache), `cost_usd`, `model`, timing |
 | `session_costs` | per-session cumulative cost (monotonic upsert — highest wins) |
-
-Authoring sessions share the DB but are tagged `kind = 'authoring'`, so they never
-appear in `gmlw jobs` and their spend is its own bucket.
+| `attachments` | one row per imported version: name, version, description, main file, SHA-256 |
 
 **Context** — the exact compiled context a session launched with is written to
 `~/.gmlw/contexts/<job>/<session>.context.md` (atomic write). A durable, inspectable
@@ -231,13 +230,13 @@ with no knowledge of the ledger.
 
 Config and credentials stay as files (`config.toml`, `credentials.toml`), not in the DB.
 
-## 10. Workflows — optional operating context
+## 10. Context, and attachments
 
-A workflow is a set of markdown files compiled, in fixed order, into one blob and
+A new session's operating context is compiled, in fixed order, into one blob and
 injected at launch (Claude: `--append-system-prompt-file`):
 
 ```
-session snapshot → profile/* → role rules → environment rules → _common/base.md → workflow steps
+session snapshot → profile/* → role rules → environment rules → attachment (if any)
 ```
 
 Each stage passes through the **interceptor chain**, so a transform like context
@@ -247,7 +246,7 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
   naming the active environment, role, persona and job. At the moment a session starts
   exactly one of each is in play, so the frame is scalars rather than anything to resolve;
   it is never compressed, because a paraphrase would make it wrong rather than shorter.
-- **Rules are scoped to the user, never to a workflow** — see
+- **Rules are scoped to the user, never to an attachment** — see
   [CONCEPTS.md § Rules](CONCEPTS.md#rules) for the full mechanism. The environment
   composes last in the pipeline above and outranks the role on conflict.
 
@@ -264,10 +263,13 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
   records through `generic-ml-cache` so the same source replays for free — the lossy
   lever for large contexts, gated by `[compress]` + a source's `compression = true`,
   non-destructive on failure. The repo ships no prompt, so it is inert until configured.
-- **Authoring** (`gmlw workflow new`) runs the shipped **create-workflow** meta-workflow
-  as a normal (metered) authoring session, kept out of `gmlw jobs`.
+- **Attachment (optional, verbatim):** the main file of the chosen version, introduced by a
+  paragraph naming it, its version and its folder; its other files stay in the store, opened
+  to the client with `--add-dir`, and are read when the text sends the session there. The
+  version's hash is checked before it is used. See [ATTACHMENTS.md](ATTACHMENTS.md).
+- **Writing one** is an ordinary session with the shipped `workflow-creator` attachment,
+  imported into the store like any other at every start.
 
-Hidden folders `_common` and `create-workflow` are not listed as runnable workflows;
 `profile/` has a `me/` subdir (place-specific context lives per-environment under
 `environments/<env>/` — the old `profile/company/` is migrated there on first run).
 
@@ -281,7 +283,7 @@ Seeded on first run, fully commented, every section optional:
 | `[callers]` | override a client with a `module:Class` / `/path.py:Class` spec or plugin id | none |
 | `[[interceptors]]` | bind an interceptor spec to a `target` | none |
 | `[[hooks]]` | bind a hook spec to a lifecycle `phase` (`pre-launch` / `post-session`), optional `client` scope | none |
-| `[startup.<mode>]` | per-mode (default / workflow / authoring) source activation + compression matrix | built-in |
+| `[startup.<mode>]` | per-mode (default / attachment) source activation + compression matrix | built-in |
 | `[companion]` | the persona gmlw adopts (host greeting + the `persona` source) | off |
 | `[compress]` | compressor adapter / model / effort + `[compress.prompts]` (typed per-source prompts) | off |
 | `[transcript]` | enable the opt-in transcript + its root | off |
@@ -296,8 +298,8 @@ body) and returns text; a hook performs an *action* at a lifecycle *seam* and re
 nothing. The `HookRunner` runs the hooks bound to a phase — `pre-launch` (after the context
 is compiled and the caller resolved, before the client starts) or `post-session` (after the
 client exits, with its exit code) — filtered by an optional `client` scope, in declared
-order. Both use cases that launch a client (`start`, `workflow new`) route through the same
-`run_with_hooks` sequence, so the seams bracket every run. Hooks are **best-effort**: a
+order. Every launch routes through the same `run_with_hooks` sequence, so the seams bracket
+every run. Hooks are **best-effort**: a
 failing hook is logged and skipped, never breaking a launch or its teardown.
 
 ## 12. The home — `~/.gmlw`
@@ -307,11 +309,11 @@ Created owner-only (`0700`) on first run:
 ```
 ~/.gmlw/
   config.toml                     tool settings (trusted-code boundary)
-  credentials.toml                per-workflow secrets (0600)
-  ledger.db                       jobs · sessions · turns · session costs (SQLite, WAL)
+  credentials.toml                per-attachment secrets (0600)
+  ledger.db                       jobs · sessions · turns · session costs · attachments
   contexts/<job>/<session>.context.md   the context a session launched with
   transcripts/<job>/<session>/    opt-in per-call in/out/usage trio
-  workflows/  _common/ · create-workflow/ · <name>/
+  attachments/<name>/<version>/   imported attachments, read-only
   profile/    me/*.md (incl. learned.md)
   environments/<env>/*.md           place-specific context (migrated from profile/company)
   personas/   *.md                user-authored personas (built-ins are packaged)
@@ -333,12 +335,12 @@ src/generic_ml_wrapper/
 │   │                      · persona_parser · session_naming · statusline_renderer
 │   ├── port/
 │   │   ├── inbound/       start_job · list_jobs · list_sessions · export_usage
-│   │   │                  · render_statusline · new_workflow · list_workflows
+│   │   │                  · render_statusline · import/export/list/delete_attachment
 │   │   │                  · set_credential · bootstrap · first_run_init
 │   │   │                  · check_client_ready · list_personas · list_plugins
 │   │   │                  · render_greeting
 │   │   └── outbound/      cli_caller · session_store · per_turn_metering · usage_store
-│   │                      · transcript · workflow_source · credentials_store
+│   │                      · transcript · context_compiler · attachment_store · credentials_store
 │   │                      · client_status · interceptor · workspace · layout_seeder
 │   │                      · context_compressor · persona_source · plugin_source
 │   │                      · client_detector · client_chooser · persona_chooser
@@ -359,7 +361,8 @@ src/generic_ml_wrapper/
 │       ├── status/        claude_status_parser · cursor_status_parser
 │       ├── persona/       filesystem_persona_source
 │       ├── plugin/        filesystem_plugin_source
-│       ├── workflow/      filesystem_workflow_source
+│       ├── context/       filesystem_context_compiler
+│       ├── attachment/    filesystem_attachment_store · packaged_attachments
 │       ├── workspace/     local_workspace_inspector
 │       └── bootstrap/     filesystem_layout_seeder
 └── common/                config · paths · log · spec_loader
@@ -375,7 +378,7 @@ kind. Do not conflate them.
 
 **Transforms — `InterceptorPort` (built).** A *filter in a pipe*: `intercept(text,
 target) -> text`. Bound to a **data channel** (a `target` that exists *in the flow* —
-the compile sections `profile`/`rules`/`workflow`/`context`, the wire bodies
+the compile sections `profile`/`rules`/`attachment`/`context`, the wire bodies
 `request`/`response`). Content passes *through* it and comes out changed; **its value
 is its return**, and matching interceptors **compose in a chain** (B sees A's output).
 A transform that does nothing returns its input (identity). Anonymising a `request`
@@ -405,7 +408,7 @@ mechanism for a client, rather than extending one point of it.)
    dedicated public identity; `secret-audit.sh` gates every publish.
 2. **Dependencies point inward.** domain ← usecase ← ports; adapters depend on ports,
    never the reverse. Enforced by import-linter.
-3. **The workflow is optional.** `gmlw start <job>` with no workflow is the pure wrapper.
+3. **The attachment is optional.** `gmlw start <job>` with nothing attached is the pure wrapper.
 4. **Fail loud on overwriting user files; skip-with-warning on our own append logs.**
    An unparseable `settings.json` / `credentials.toml` aborts rather than being
    destroyed; a configured-but-unloadable spec errors rather than silently no-ops.
@@ -418,5 +421,5 @@ mechanism for a client, rather than extending one point of it.)
 ## See also
 
 - [CONCEPTS.md](CONCEPTS.md) — the user-facing mental model this architecture serves.
-- [CLI.md](CLI.md) · [CONFIGURATION.md](CONFIGURATION.md) · [WORKFLOWS.md](WORKFLOWS.md)
+- [CLI.md](CLI.md) · [CONFIGURATION.md](CONFIGURATION.md) · [ATTACHMENTS.md](ATTACHMENTS.md)
 - [../README.md](../README.md) · [../SECURITY.md](../SECURITY.md) · [../CONTRIBUTING.md](../CONTRIBUTING.md)

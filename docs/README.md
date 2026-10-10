@@ -14,8 +14,8 @@ Where to look, in the order most people need it.
 
 - **[USER_GUIDE.md](USER_GUIDE.md)** — task-oriented recipes: track a ticket, resume a
   session, compare cost by model, record a rule, and more.
-- **[WORKFLOWS.md](WORKFLOWS.md)** — author a workflow, its file layout, scripting a
-  mechanical step, per-workflow credentials.
+- **[ATTACHMENTS.md](ATTACHMENTS.md)** — what an attachment is, its format, importing and
+  versions, how a session uses one, and how older workflows were brought over.
 
 ## Reference
 

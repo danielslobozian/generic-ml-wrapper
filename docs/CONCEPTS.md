@@ -1,7 +1,7 @@
 # Concepts
 
 The mental model behind `gmlw`, in one place. Read this once, before the task-oriented
-[User guide](USER_GUIDE.md) or the reference docs — the pieces here (job, workflow,
+[User guide](USER_GUIDE.md) or the reference docs — the pieces here (job, attachment,
 the four context axes, rules, why clients differ) recur across every other doc, and
 this is where each is explained in full rather than re-derived.
 
@@ -19,15 +19,14 @@ job  ──►  sessions  ──►  turns ──► tokens + cost
                     └───► transcript (opt-in: in / out / usage per call)
 ```
 
-A **workflow** is optional and orthogonal to this: it's a compiled operating context
-you author once and launch a job with, so you don't re-explain standing instructions
-every session. `gmlw start <job>` with no workflow is already the whole wrapper —
-metered, recorded, status-lined. See [WORKFLOWS.md](WORKFLOWS.md) for authoring one.
-
-`run <workflow>` vs `start <job> -w <workflow>` is the other axis worth naming: `start`
-enters a job you return to; `run` launches a *recurring procedure* whose job is named
-after the workflow itself (`gmlw help start-vs-run` from the CLI covers the same
-ground).
+An **attachment** is optional and orthogonal to this: a block of specification — a
+method, a procedure, a checklist — that a session starts with, so you don't re-explain
+standing instructions every session. You write it however you like, import it once, and
+gmlw keeps every version unchanged; each session picks one (`gmlw start <job> --attach
+<name>`). `gmlw start <job>` with nothing attached is already the whole wrapper — metered,
+recorded, status-lined. A workflow is one kind of attachment, and `workflow-creator`, which
+gmlw ships, helps you write one. See [ATTACHMENTS.md](ATTACHMENTS.md) (`gmlw help
+job-vs-attachment` from the CLI covers the same ground).
 
 <div align="center">
 <img src="images/gmlw-help.gif" alt="gmlw help — the built-in concept explainer" width="760">
@@ -59,7 +58,7 @@ the `[startup.<mode>]` matrix — see [CONFIGURATION.md](CONFIGURATION.md).
 A **rule** is a reusable reflex you've demanded — a standard held on every future run,
 not a one-off decision about a single task. Because a rule is a projection of *you*, it
 lives on exactly one of the two axes above that describe you, never globally and never
-per-workflow:
+per-attachment:
 
 | Axis | Folder | What belongs there |
 | --- | --- | --- |
@@ -74,10 +73,10 @@ axis, an explicit `Precedence: <n>` decides (higher wins).
 A rule is **active from the moment it is recorded** — you demanded it, so it applies
 immediately. Setting `status: draft` is your own off-switch, for retiring a rule later
 without deleting it; a draft is injected into no session. There is deliberately **no
-global rule tier and no per-workflow rule tier**: a workflow that behaves wrongly is
-fixed in the workflow itself, not patched by a rule beside it.
+global rule tier and no per-attachment rule tier**: an attachment that behaves wrongly is
+fixed in the attachment itself, not patched by a rule beside it.
 
-Rule capture is **always-on**, in any session — not only inside a workflow. When
+Rule capture is **always-on**, in any session — with an attachment or without. When
 you're dissatisfied with something and want it to never recur, the client offers to
 record the rule for you: proposing an axis (and letting you redirect it), reading your
 existing rules first so it updates or supersedes a match instead of stacking a
@@ -122,7 +121,7 @@ architecture behind the relay and the per-client caller seam is in
 
 - [../README.md](../README.md) — what `gmlw` is and why.
 - [USER_GUIDE.md](USER_GUIDE.md) — task-oriented recipes built on these concepts.
-- [WORKFLOWS.md](WORKFLOWS.md) — authoring a workflow, file layout, scripts.
+- [ATTACHMENTS.md](ATTACHMENTS.md) — the attachment format, import, versions.
 - [CLIENTS.md](CLIENTS.md) — the concrete per-client capability matrix.
 - [CONFIGURATION.md](CONFIGURATION.md) — every `config.toml` key, including
   `[startup.<mode>]`.

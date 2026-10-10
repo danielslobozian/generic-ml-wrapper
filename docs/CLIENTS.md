@@ -62,7 +62,7 @@ Here three fifths of the cache read was the subagents'. A share that is there bu
 percent shows as `<1%`; a kind they did not use has no parenthesis. `gmlw export <job>`
 has the counts behind it, under totals by agent.
 
-**Context delivery:** Native. Compiled context (workflow blob or startup context) is written
+**Context delivery:** Native. Compiled context (the startup context, with any attachment) is written
 to a context file and passed with `--append-system-prompt-file`, leaving a durable
 provenance artifact under `~/.gmlw/contexts/`.
 
@@ -176,7 +176,7 @@ read the attachment's other files is up to cursor's own permissions.
 - [CONCEPTS.md](CONCEPTS.md) — why these capabilities differ across clients.
 - [CONFIGURATION.md](CONFIGURATION.md) — `[client] default`, `[callers]`, interceptors, and
   the startup context matrix.
-- [WORKFLOWS.md](WORKFLOWS.md) — how compiled context and workflows are assembled and injected.
+- [ATTACHMENTS.md](ATTACHMENTS.md) — how an attachment joins a session's context.
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) — when a client won't launch, meter, or render.
 - [CLI.md](CLI.md) — every `gmlw` command.
 - [DESIGN.md](DESIGN.md) — the caller model and metering relay in depth.

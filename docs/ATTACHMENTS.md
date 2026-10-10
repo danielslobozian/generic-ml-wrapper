@@ -1,8 +1,7 @@
 # Attachments — format and contract
 
-> **Status: draft for review.** Nothing here is implemented yet. Once accepted, this
-> document is the published format: an attachment can be produced against it by any tool,
-> without knowing anything else about gmlw.
+This is the published format: an attachment can be produced against it by any tool, without
+knowing anything else about gmlw. The commands are in [CLI.md](CLI.md#attachment).
 
 ## 1. What an attachment is
 
@@ -95,8 +94,9 @@ imported it, and that is the trust.
 | delete | menu, `gmlw attachment delete <name> <version>` | removes one version |
 | modify | menu only | a shortcut, below |
 
-**Choosing** an attachment and its version happens only when setting up a session. The
-default version is the highest one installed.
+**Choosing** an attachment and its version happens only when setting up a session:
+`gmlw start <job> --attach <name>[@<version>]`, or Job → New in the menu. The default
+version is the highest one installed.
 
 **Modify** is not a gmlw function: the user changes an attachment with whatever made it.
 The menu entry only saves typing. It opens the new-job screen with the job named
@@ -107,7 +107,7 @@ help the user change it. The result comes back through import, as a new version.
 ## 6. What gmlw does at session start
 
 1. **Context.** The main file is added to the startup context after gmlw's own groups, as
-   written. gmlw introduces it with one line of its own, giving the attachment's name,
+   written. gmlw introduces it with a short paragraph of its own, giving the attachment's name,
    version and folder (`~/.gmlw/attachments/<name>/<version>/`, as an absolute path), and
    saying that paths in it are relative to that folder. That line is gmlw's; the
    attachment does not contain it.
@@ -115,12 +115,21 @@ help the user change it. The result comes back through import, as a new version.
    opens the store to the session with the client's own flag, `--add-dir` on claude, codex
    and vibe. Some clients grant write access with it; the read-only files and the hash
    check (§4) still keep a stored version from changing unnoticed.
-3. **Environment.** The attachment's credentials, if the user set any.
+3. **Environment.** The attachment's credentials, if the user set any (below).
 4. **Opening.** The session starts with a short message naming the attachment and its
    version. What the session does next is the attachment's business.
 5. **Record.** The session records the attachment's name, version and hash.
 
 A session's own output, an attachment being written included, goes to the job's folder.
+
+**Credentials.** A secret an attachment or its scripts need is registered under the
+attachment's name, `gmlw creds set <name> <ENV_VAR>`, stored in
+`~/.gmlw/credentials.toml` (mode `0600`) and exported as `ENV_VAR` to a session started with
+that attachment. It is not part of the attachment, so it never travels with an export. See
+[SECURITY.md](../SECURITY.md).
+
+**Scripts.** An attachment may carry scripts; its text tells the session when to run them,
+by their path inside the attachment. gmlw never runs them itself.
 
 ## 7. The provided attachment
 
@@ -130,25 +139,25 @@ and imported, so an upgrade that carries a new version adds it beside the old on
 no other path for its own content. Deleting a provided version brings it back at the next
 start; it is always there to build workflows with.
 
-## 8. Impact on today's gmlw
+## 8. Coming from an older gmlw
 
-**Vocabulary.** The word "workflow" leaves gmlw: code, commands, flags, menu, messages,
-docs and configuration. It stays only in `workflow-creator`'s own content, in the ledger's
-past migrations (old databases replay them), and in past CHANGELOG entries. A test searches
-`src`, `tests` and `docs` and fails on any other occurrence.
+Older versions had *workflows*, kept as folders under `~/.gmlw/workflows/`. On the first
+command after upgrading, gmlw imports each of them once, as `<name>@1.0.0`:
 
-**Ledger.** It gains a table of imported versions: name, version, description, main file,
-hash, import time. Sessions already record a workflow name (migration 3), used only for
-display; the new migration renames that column to `attachment` and adds
-`attachment_version` and `attachment_hash`. Existing rows keep their name, with no version
-or hash, and show as recorded before attachments. A session that ran a version deleted
-since keeps its record.
+- its `workflow.md` is the main file, with the old shared base (`_common/base.md`) put in
+  front of it, so it behaves as it did;
+- its other files come along — scripts, references, anything it reads — except authoring
+  leftovers (`draft.md`, `parking-lot.md`, `*.bak*` copies), caches, and the clients'
+  permission folders (`.claude/`, `.codex/`, `.cursor/`);
+- its description comes from its `.about.toml`;
+- its credentials keep working: they are filed under the same name.
 
-**Authoring.** Today's special code for creating and editing workflows, its guided mode and
-its temporary folders, is removed: creating a workflow is a session with `workflow-creator`
-attached. Today's shared `_common/base.md` is no longer delivered by gmlw; what it says
-belongs to the workflows `workflow-creator` produces.
+The old folder is never written to: delete it when you no longer need it. A workflow that
+wrote into its own folder while running (state, logs) cannot do so as an attachment, which
+is read-only; move that data to the job's folder, for instance in a session with
+`workflow-creator`, and import the result as a new version.
 
-**Home folder.** A one-time migration of `~/.gmlw`: each folder under `workflows/` is
-imported as an attachment at `1.0.0`; per-workflow credentials become per-attachment; the
-`workflow` interceptor stage and the configuration keys that name workflows are renamed.
+Sessions that ran a workflow keep showing its name, without a version. Old config keys
+(`[startup.workflow]`, an interceptor bound to `workflow`) are renamed to their attachment
+equivalents, with your comments kept. `gmlw workflow …`, `gmlw run` and `--workflow` are
+gone: creating a workflow is a session with `workflow-creator` attached.
