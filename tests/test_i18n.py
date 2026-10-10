@@ -116,3 +116,31 @@ def test_the_job_id_hint_still_offers_underscores_because_job_ids_allow_them() -
     assert JobId("a_b") == "a_b"
     for lang in SUPPORTED_LANGUAGES:
         assert "underscore" in _catalog(lang)["tui.newjob.invalid"].lower(), lang
+
+
+def test_shipped_translates_text_still_as_shipped() -> None:
+    loc = Localizer("fr", {"k": "Bonjour"}, {"k": "Hello"})
+    assert loc.shipped("k", "Hello") == "Bonjour"
+
+
+def test_shipped_leaves_edited_text_as_written() -> None:
+    loc = Localizer("fr", {"k": "Bonjour"}, {"k": "Hello"})
+    assert loc.shipped("k", "Hello there") == "Hello there"  # the user's own words
+    assert loc.shipped("unknown", "Hello") == "Hello"  # no catalogue entry at all
+
+
+def test_shipped_persona_descriptions_match_the_seeded_files() -> None:
+    # The catalogue's English must be the packaged frontmatter word for word, or
+    # `shipped` would never recognise an unedited persona and nothing would be translated.
+    personas = resources.files("generic_ml_wrapper").joinpath("resources", "personas")
+    english = _catalog("en")
+    french = _catalog("fr")
+    for entry in personas.iterdir():
+        if not entry.name.endswith(".md") or entry.name.startswith("_"):
+            continue
+        name = entry.name.removesuffix(".md")
+        lines = entry.read_text(encoding="utf-8").splitlines()
+        description = next(line for line in lines if line.startswith("description:"))
+        key = f"persona.description.{name}"
+        assert english[key] == description.removeprefix("description:").strip()
+        assert french[key] != english[key]  # and it really is translated

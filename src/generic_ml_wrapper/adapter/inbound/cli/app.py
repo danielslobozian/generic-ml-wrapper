@@ -791,7 +791,11 @@ def format_personas(personas: list[Persona], loc: i18n.Localizer | None = None) 
     lines = [loc.t("persona.count", count=len(personas)), ""]
     width = max(len(persona.name) for persona in personas)
     lines += [
-        loc.t("persona.row", name=f"{persona.name:<{width}}", description=persona.description)
+        loc.t(
+            "persona.row",
+            name=f"{persona.name:<{width}}",
+            description=loc.shipped(f"persona.description.{persona.name}", persona.description),
+        )
         for persona in personas
     ]
     return "\n".join(lines)
@@ -962,22 +966,26 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
     )
     if _incomplete_command_help(parser, args):  # e.g. `gmlw attachment` -> show its help
         return 0
-    # The init gate: on a real command (not the statusline hot path or bare help), an
-    # un-initialised or legacy install (`[init] version` absent) is funnelled through the
-    # forced setup before the requested command runs. `gmlw init` is exempt — it *is* the
-    # setup, run by the dispatch below; bootstrapping ahead of it would seed a config that
-    # init then mistook for a legacy one. Once initialised, just ensure the layout.
-    if args.command not in (None, "statusline", "help"):
+    # The init gate: on a real command or bare `gmlw` (not the statusline hot path or bare
+    # help), an un-initialised or legacy install (`[init] version` absent) is funnelled
+    # through the forced setup before the requested command runs. When the setup itself runs
+    # below — `gmlw init`, or bare `gmlw` on a first run — nothing runs ahead of it:
+    # bootstrapping first would seed a config that init then mistook for a legacy one, and
+    # the setup runs its own migrations. Once initialised, just ensure the layout. Bare
+    # `gmlw` is the usual way in, so skipping it here left an upgraded install without its
+    # provided attachments and its legacy import until some other command ran.
+    if args.command not in ("statusline", "help"):
         needs_init = config.init_version() is None
-        if needs_init and args.command != "init":
+        setup_runs_below = args.command == "init" or (args.command is None and needs_init)
+        if needs_init and not setup_runs_below:
             _announce_init(build_init().execute())
         elif not needs_init:
             build_bootstrap().execute()
         # Wrap the old profile/company layout into the active environment. Runs after init
         # has persisted the environment (or reads the existing one), once per command, and
         # is a no-op once the old layout is gone — catching installs initialised before the
-        # migration existed. The `init` command runs its own below (after it writes config).
-        if args.command != "init":
+        # migration existed.
+        if not setup_runs_below:
             _announce_migration(build_migrate_layout().execute())
             _announce_slug_migration(build_migrate_slugs().execute())
             _announce_legacy_migration(build_migrate_legacy_workflows().execute())
@@ -1854,6 +1862,7 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
     catalog = build_axis_catalog()
 
     t = i18n.active().t
+    shipped = i18n.active().shipped
 
     def _switcher(
         label_key: str, key: str, choices: list[SwitchChoice], kind: AxisKind | None = None
@@ -1886,7 +1895,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         )
 
     personas = [
-        SwitchChoice(p.name, p.name, p.description) for p in build_list_personas().execute()
+        SwitchChoice(p.name, p.name, shipped(f"persona.description.{p.name}", p.description))
+        for p in build_list_personas().execute()
     ]
     environments = [
         SwitchChoice(e.slug, e.label, e.description) for e in catalog.list(AxisKind.ENVIRONMENT)

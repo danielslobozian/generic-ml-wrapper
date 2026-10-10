@@ -30,15 +30,20 @@ _DEFAULT = "en"
 class Localizer:
     """A resolved string catalogue for one language, English-merged, with parameters."""
 
-    def __init__(self, lang: str, catalog: dict[str, str]) -> None:
+    def __init__(
+        self, lang: str, catalog: dict[str, str], english: dict[str, str] | None = None
+    ) -> None:
         """Bind a language code to its (already English-merged) catalogue.
 
         Args:
             lang: The resolved language code (one of ``SUPPORTED_LANGUAGES``).
             catalog: Flat ``dotted.key -> template`` map, English keys already merged in.
+            english: The English catalogue alone, which :meth:`shipped` compares against;
+                ``None`` when ``catalog`` is the English one.
         """
         self.lang = lang
         self._catalog = catalog
+        self._english = catalog if english is None else english
 
     def t(self, key: str, /, **params: object) -> str:
         """Return the template for ``key``, formatted with ``params``.
@@ -63,6 +68,23 @@ class Localizer:
             return template.format(**params)
         except (KeyError, IndexError, ValueError):
             return template
+
+    def shipped(self, key: str, text: str) -> str:
+        """Translate a text gmlw shipped in English, unless the user has since changed it.
+
+        Some text reaches the user from files gmlw seeds into ``~/.gmlw`` and the user may
+        edit, such as a persona's description. Such text is translated only while it is
+        still word for word the English that ``key`` holds; once edited, it is the user's
+        own words and is shown as written.
+
+        Args:
+            key: The catalogue key holding the shipped English, and its translations.
+            text: The text as it stands now.
+
+        Returns:
+            The translation, or ``text`` itself.
+        """
+        return self._catalog[key] if self._english.get(key) == text else text
 
 
 def resolve_language(env_lang: str | None, default: str = _DEFAULT) -> str:
@@ -92,7 +114,7 @@ def load_localizer(lang: str) -> Localizer:
     """
     base = _read_catalog(_DEFAULT)
     catalog = base if lang == _DEFAULT else {**base, **_read_catalog(lang)}
-    return Localizer(lang, catalog)
+    return Localizer(lang, catalog, base)
 
 
 def _read_catalog(lang: str) -> dict[str, str]:
