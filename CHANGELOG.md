@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-10
+
 ### Added
 - **The export tells the main conversation's turns from its agents'.** A session that
   starts agents (subagents) spends much of its tokens in them, and until now their turns
@@ -123,13 +125,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the old one, and the other way round. A setting with a screen of its own is now changed
   there only; Get/Set/List keep the settings that have nowhere else to go. `gmlw config
   set` still reaches every key.
-- **A workflow command that failed still wrote to your home.** Five commands installed
-  the packaged workflows into `~/.gmlw/workflows` *before* checking whether they could
-  proceed, so `gmlw workflow export ghost` printed `unknown workflow` and still created
-  `_common/` and `create-workflow/`. Each command now checks first: `export` and `edit` no
-  longer install anything (what they would install is reserved and refused anyway),
-  `new` validates the name before installing, and `start --workflow` refuses an unknown
-  workflow before installing. `import` already validated first.
 - **A delete that could not remove a session's files said it had, and could not be retried.**
   The recorded rows were removed and committed first, then the files — with every file
   error discarded. A permission error or a read-only mount left the files on disk, the
@@ -142,18 +137,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - One stuck item no longer takes the batch with it. `gmlw jobs delete` and
     `gmlw sessions <job> delete` list what stayed, marked `✗ not removed`, print
     `removed N of M`, and exit `1`. The menu shows the same summary.
-- **Replacing a workflow by import could leave you with neither the old one nor the new.**
-  The installed workflow was moved aside first, and only then was the archive unpacked and
-  checked. An archive that was not a workflow — the wrong file, a truncated download —
-  displaced the old one and installed nothing.
-  - The archive is now inspected before anything moves. A file that is missing, is not a
-    zip, or carries no top-level `workflow.md` is refused with the installed workflow
-    exactly where it was.
-  - If unpacking still fails part way (a full disk), the old workflow is put back and
-    whatever the failed attempt wrote is discarded rather than merged into it.
-  - Two replacements of the same workflow within one second no longer nest the older
-    backup inside the newer one; the second gets a `-2` suffix and both sit side by side.
-
 ## [0.11.0] - 2026-08-02
 
 Things can be removed now. Until this release gmlw only ever accumulated: every job that had
@@ -856,7 +839,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.0...v0.9.1

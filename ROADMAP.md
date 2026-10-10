@@ -418,6 +418,31 @@ places where the menu let go of the terminal mid-task.
   and return to the list they were asked from. A *launch* still ends gmlw, because a client
   owned the terminal and the session is over when it is.
 
+### 0.12.0 — attachments, and seeing where the tokens go
+Workflows were gmlw's own notion, with their own authoring code, drafts and commands, and
+the menu had grown around them. They are gone. What a session starts with is now an
+**attachment**: a versioned block of specification gmlw stores and never changes, and that
+it treats the same whether you wrote it by hand, generated it, or wrote it in a gmlw
+session. Alongside, the numbers got sharper: what kind of tokens a session spends, how much
+of it its agents spend, and when the connection to the client's API failed.
+
+- **Attachments** — a zip with a `manifest.yaml`; `gmlw attachment import / export / list /
+  delete`; every version kept, read-only, hash-checked before use. `gmlw start <job> --attach
+  <name>[@<version>]` delivers its main file after your profile and rules, and opens the store
+  to the client so the session reads the rest when needed. Each session records what it ran.
+- **`workflow-creator`** — the one attachment gmlw ships: it writes a workflow, or a new
+  version of one, as a zip ready to import. In the menu, **Attachments → Modify** sets that
+  session up for you.
+- **Upgrade without loss** — existing workflows are imported once as `<name>@1.0.0`; the old
+  folder is left untouched.
+- **Tokens by kind, and by agent** — the status line shows input, output, cache read and cache
+  write, each with the agents' share; `gmlw export` separates the main conversation's turns
+  from each agent's.
+- **Connection incidents** — recorded per session, shown by `gmlw health` and the **Health**
+  menu, day by day.
+- **Job tags** — `gmlw jobs tag`, `--tag` on start, and filtering by tag in the CLI and menu.
+- **`GMLW_HOME`** — a development build can keep its own ledger and config.
+
 ## Planned
 
 _Next milestone not yet chosen._
