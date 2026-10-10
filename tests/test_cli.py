@@ -2485,3 +2485,20 @@ def test_a_tui_launch_carries_the_attachment_and_the_note(
         "1.0.0",
         "modify notes@1.0.0",
     )
+
+
+def test_old_workflows_are_imported_and_announced_on_the_next_command(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    folder = paths.LEGACY_WORKFLOWS / "doc-review"
+    folder.mkdir(parents=True)
+    (folder / "workflow.md").write_text("# doc-review", encoding="utf-8")
+
+    assert app.main(["attachment", "list"]) == 0
+
+    captured = capsys.readouterr()
+    assert "now attachments: doc-review@1.0.0" in captured.err
+    assert "delete it when you no longer need it" in captured.err
+    assert "doc-review  1.0.0" in captured.out
+    assert app.main(["attachment", "list"]) == 0
+    assert "now attachments" not in capsys.readouterr().err  # once only

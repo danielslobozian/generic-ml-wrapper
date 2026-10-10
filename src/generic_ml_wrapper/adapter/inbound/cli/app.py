@@ -48,6 +48,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
 )
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.migration import (
+    LegacyMigrationReport,
     MigrationReport,
     SlugMigrationReport,
 )
@@ -110,6 +111,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_list_sessions,
     build_localizer,
     build_migrate_layout,
+    build_migrate_legacy_workflows,
     build_migrate_slugs,
     build_render_statusline,
     build_report_health,
@@ -978,6 +980,7 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
         if args.command != "init":
             _announce_migration(build_migrate_layout().execute())
             _announce_slug_migration(build_migrate_slugs().execute())
+            _announce_legacy_migration(build_migrate_legacy_workflows().execute())
     try:
         if args.command is None:  # bare `gmlw`: first run → init, thereafter → the index
             return _index()
@@ -1111,6 +1114,29 @@ def _announce_slug_migration(report: SlugMigrationReport) -> None:
     print(loc.t("migration.slugs", count=len(report.renamed), items=items), file=sys.stderr)
 
 
+def _announce_legacy_migration(report: LegacyMigrationReport) -> None:
+    """Narrate the one-time import of old workflows as attachments, when it did anything.
+
+    Args:
+        report: What was imported, left out and rewritten.
+    """
+    if not report.did_anything:
+        return
+    loc = i18n.active()
+    if report.imported:
+        items = ", ".join(report.imported)
+        print(
+            loc.t("migration.legacy.imported", count=len(report.imported), items=items),
+            file=sys.stderr,
+        )
+    for name, reason in report.skipped:
+        print(loc.t("migration.legacy.skipped", name=name, reason=loc.t(reason)), file=sys.stderr)
+    if report.config_rewritten:
+        print(loc.t("migration.legacy.config"), file=sys.stderr)
+    if report.folder:
+        print(loc.t("migration.legacy.folder", folder=report.folder), file=sys.stderr)
+
+
 def _run_init() -> int:
     """Run the setup interview, then the layout/slug migrations — the ``gmlw init`` flow.
 
@@ -1121,6 +1147,7 @@ def _run_init() -> int:
     _announce_init(build_init().execute())
     _announce_migration(build_migrate_layout().execute())
     _announce_slug_migration(build_migrate_slugs().execute())
+    _announce_legacy_migration(build_migrate_legacy_workflows().execute())
     print(i18n.t("init.reinit_hint"), file=sys.stderr)  # how to re-run setup from the menu
     return 0
 

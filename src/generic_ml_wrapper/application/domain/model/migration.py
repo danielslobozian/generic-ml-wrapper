@@ -53,3 +53,30 @@ class SlugMigrationReport:
     def did_anything(self) -> bool:
         """Whether anything was renamed (else the migration was a no-op)."""
         return bool(self.renamed)
+
+
+def _empty_reasons() -> list[tuple[str, str]]:
+    """A typed empty-list factory for the (name, reason) pairs."""
+    return []
+
+
+@dataclass(frozen=True)
+class LegacyMigrationReport:
+    """What the one-time move from the old ``workflows/`` folder to attachments did.
+
+    Attributes:
+        imported: ``name@version`` for each folder imported as an attachment (in order).
+        skipped: ``(name, reason)`` for each folder left out, with the catalogue key of why.
+        config_rewritten: Whether ``config.toml`` had old keys renamed.
+        folder: The old folder, left in place for the user to delete; empty when absent.
+    """
+
+    imported: list[str] = field(default_factory=_empty)
+    skipped: list[tuple[str, str]] = field(default_factory=_empty_reasons)
+    config_rewritten: bool = False
+    folder: str = ""
+
+    @property
+    def did_anything(self) -> bool:
+        """Whether the migration imported, skipped or rewrote anything."""
+        return bool(self.imported or self.skipped or self.config_rewritten)

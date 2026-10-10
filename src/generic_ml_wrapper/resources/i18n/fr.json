@@ -544,5 +544,9 @@
   "help.job_vs_attachment.summary": "en quoi un job diffère d'une pièce jointe",
   "help.job_vs_attachment.body": "Un job est une unité de travail à laquelle vous revenez — il regroupe des sessions liées et leur usage enregistré (p. ex. « checkout-refactor »). Une pièce jointe est un bloc de spécification avec lequel une session peut démarrer — une méthode, une procédure, une liste de vérification (p. ex. « doc-review ») ; gmlw garde chaque version que vous importez, inchangée.\nVous démarrez des sessions sur des jobs ; vous leur joignez des pièces jointes, une par session.\nVoir : gmlw jobs, gmlw attachment list",
   "cli.arg.creds_attachment": "la pièce jointe à laquelle appartient l'identifiant",
-  "tui.att.import.keys": "⏎ importer · Échap annuler"
+  "tui.att.import.keys": "⏎ importer · Échap annuler",
+  "migration.legacy.imported": "gmlw : vos {count} workflow(s) sont maintenant des pièces jointes : {items}. Démarrez-en une avec : gmlw start <job> --attach <nom>",
+  "migration.legacy.skipped": "gmlw : {name} n'a pas été importé : {reason}",
+  "migration.legacy.config": "gmlw : config.toml dit maintenant attachment là où il disait workflow.",
+  "migration.legacy.folder": "gmlw : l'ancien dossier {folder} reste tel quel ; supprimez-le quand vous n'en avez plus besoin. Un workflow qui écrit dans son propre dossier doit d'abord déplacer cela dans le dossier du job : une pièce jointe est en lecture seule."
 }

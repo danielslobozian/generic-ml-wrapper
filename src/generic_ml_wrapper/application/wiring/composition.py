@@ -14,6 +14,9 @@ from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.outbound.attachment.filesystem_attachment_store import (
     FilesystemAttachmentStore,
 )
+from generic_ml_wrapper.adapter.outbound.attachment.filesystem_legacy_workflows import (
+    FilesystemLegacyWorkflows,
+)
 from generic_ml_wrapper.adapter.outbound.attachment.packaged_attachments import (
     PackagedAttachments,
 )
@@ -150,6 +153,9 @@ from generic_ml_wrapper.application.usecase.list_plugins import ListPluginsUseCa
 from generic_ml_wrapper.application.usecase.list_rules import ListRulesUseCase
 from generic_ml_wrapper.application.usecase.list_sessions import ListSessionsUseCase
 from generic_ml_wrapper.application.usecase.migrate_layout import MigrateLayoutUseCase
+from generic_ml_wrapper.application.usecase.migrate_legacy_workflows import (
+    MigrateLegacyWorkflowsUseCase,
+)
 from generic_ml_wrapper.application.usecase.migrate_slugs import MigrateSlugsUseCase
 from generic_ml_wrapper.application.usecase.render_greeting import RenderGreetingUseCase
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
@@ -287,6 +293,19 @@ def build_plugin_source() -> FilesystemPluginSource:
 def _attachment_store() -> FilesystemAttachmentStore:
     """The attachment store under ~/.gmlw/attachments, its hashes in the ledger."""
     return FilesystemAttachmentStore(paths.ATTACHMENTS, _ledger())
+
+
+def build_migrate_legacy_workflows() -> MigrateLegacyWorkflowsUseCase:
+    """Build the one-time import of an older gmlw's workflows as attachments.
+
+    Returns:
+        A ready-to-run migration; a no-op once it has run.
+    """
+    store = _attachment_store()
+    return MigrateLegacyWorkflowsUseCase(
+        FilesystemLegacyWorkflows(paths.LEGACY_WORKFLOWS, paths.STATE, config.config_path()),
+        ImportAttachmentUseCase(store),
+    )
 
 
 def build_import_attachment() -> ImportAttachment:

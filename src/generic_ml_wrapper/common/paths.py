@@ -47,6 +47,8 @@ CREDENTIALS = HOME / "credentials.toml"
 # Imported attachments, one read-only folder per version: attachments/<name>/<version>/.
 # Their hashes are in the ledger; see docs/ATTACHMENTS.md.
 ATTACHMENTS = HOME / "attachments"
+# Where an older gmlw kept workflows. Read once, to import them as attachments; never written.
+LEGACY_WORKFLOWS = HOME / "workflows"
 # The generic-ml-cache store the context compressor records/replays through.
 COMPRESS_CACHE = HOME / "compress-cache"
 # Small bits of local UI state (e.g. which one-time exit-receipt hints have been shown).

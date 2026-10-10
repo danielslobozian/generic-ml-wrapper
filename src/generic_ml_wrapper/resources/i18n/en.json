@@ -544,5 +544,9 @@
   "help.job_vs_attachment.summary": "how a job differs from an attachment",
   "help.job_vs_attachment.body": "A job is a unit of work you return to — it groups related sessions and their recorded usage (e.g. 'checkout-refactor'). An attachment is a block of specification a session can start with — a method, a procedure, a checklist (e.g. 'doc-review'); gmlw keeps every version you import, unchanged.\nYou start sessions on jobs; you attach attachments to them, one per session.\nSee: gmlw jobs, gmlw attachment list",
   "cli.arg.creds_attachment": "the attachment the credential belongs to",
-  "tui.att.import.keys": "⏎ import · Esc cancel"
+  "tui.att.import.keys": "⏎ import · Esc cancel",
+  "migration.legacy.imported": "gmlw: your {count} workflow(s) are now attachments: {items}. Start one with: gmlw start <job> --attach <name>",
+  "migration.legacy.skipped": "gmlw: {name} was not imported: {reason}",
+  "migration.legacy.config": "gmlw: config.toml now says attachment where it said workflow.",
+  "migration.legacy.folder": "gmlw: the old {folder} is left as it was; delete it when you no longer need it. A workflow that writes into its own folder must move that to the job's folder first: an attachment is read-only."
 }
