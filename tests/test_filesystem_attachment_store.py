@@ -33,7 +33,11 @@ _MANIFEST = "name: notes\ndescription: Notes.\nversion: {version}\nmain_md_file:
 def _zip(path: Path, files: dict[str, str], *, links: dict[str, str] | None = None) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         for name, text in files.items():
-            archive.writestr(name, text)
+            entry = zipfile.ZipInfo(name)
+            # Kept exactly as given: on Windows ZipInfo turns "\\" into "/", which would
+            # hide the raw backslash entry another tool can write.
+            entry.filename = name
+            archive.writestr(entry, text)
         for name, target in (links or {}).items():
             entry = zipfile.ZipInfo(name)
             entry.external_attr = (stat.S_IFLNK | 0o777) << 16
@@ -201,6 +205,7 @@ def test_any_change_to_a_stored_version_makes_it_invalid(
     elif change == "add":
         (folder / "extra.md").write_text("x")
     elif change == "remove":
+        (folder / "more" / "details.md").chmod(0o644)  # Windows will not delete a read-only file
         (folder / "more" / "details.md").unlink()
     elif change == "folder":
         (folder / "empty").mkdir()
