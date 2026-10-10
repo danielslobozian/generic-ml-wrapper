@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 import stat
 import zipfile
 from typing import TYPE_CHECKING
@@ -33,11 +34,7 @@ _MANIFEST = "name: notes\ndescription: Notes.\nversion: {version}\nmain_md_file:
 def _zip(path: Path, files: dict[str, str], *, links: dict[str, str] | None = None) -> Path:
     with zipfile.ZipFile(path, "w") as archive:
         for name, text in files.items():
-            entry = zipfile.ZipInfo(name)
-            # Kept exactly as given: on Windows ZipInfo turns "\\" into "/", which would
-            # hide the raw backslash entry another tool can write.
-            entry.filename = name
-            archive.writestr(entry, text)
+            archive.writestr(name, text)
         for name, target in (links or {}).items():
             entry = zipfile.ZipInfo(name)
             entry.external_attr = (stat.S_IFLNK | 0o777) << 16
@@ -133,8 +130,15 @@ def test_an_archive_that_is_not_a_valid_attachment_leaves_nothing(
     assert list((tmp_path / "attachments" / ".staging").iterdir()) == []
 
 
+# Python's zipfile turns "\\" into "/" when it reads an archive on Windows, so there the
+# store only ever sees "a/b.md", which is inside the folder and rightly accepted.
+_BACKSLASH = pytest.param(
+    "a\\b.md", marks=pytest.mark.skipif(os.name == "nt", reason="zipfile normalises it")
+)
+
+
 @pytest.mark.parametrize(
-    "entry", ["../escape.md", "/abs.md", "a/../../escape.md", "a\\b.md", "C:x.md"]
+    "entry", ["../escape.md", "/abs.md", "a/../../escape.md", _BACKSLASH, "C:x.md"]
 )
 def test_an_entry_that_would_land_outside_is_refused(
     tmp_path: Path, store: FilesystemAttachmentStore, entry: str
