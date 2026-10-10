@@ -58,3 +58,20 @@ def test_reprompts_on_out_of_range(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_declines_on_end_of_input(monkeypatch: pytest.MonkeyPatch) -> None:
     _wire(monkeypatch, stdin="")
     assert TtyPersonaChooser(_I18N).choose(_PERSONAS) is None
+
+
+def test_shipped_descriptions_speak_the_chosen_language(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Issue #87: the first-run wizard in French listed the personas in English.
+    shipped = Persona(
+        "butler",
+        "A characterful Jeeves — formal, anticipatory, dryly witty, unflappable.",
+        "",
+        "b",
+    )
+    edited = Persona("plain", "My own plain words.", "", "b")
+    err = _wire(monkeypatch, stdin="\n")
+    TtyPersonaChooser(load_localizer("fr")).choose([shipped, edited])
+    shown = err.getvalue()
+    assert "Un Jeeves plein de caractère" in shown
+    assert "Jeeves — formal" not in shown
+    assert "My own plain words." in shown  # an edited description is the user's own

@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.1] - 2026-10-11
+
+### Fixed
+- **Bare `gmlw` prepares the home before opening the menu.** In 0.12.0, typing `gmlw` with
+  no command opened the menu straight away, skipping the steps every other command runs
+  first. An upgraded install therefore showed no attachments: neither `workflow-creator`
+  nor the old workflows had been imported yet, until some other command ran. The menu now
+  opens after them, so the one-time import happens on the first `gmlw` after upgrading.
+- **Persona descriptions speak the chosen language** (#87). The first-run wizard, `gmlw
+  persona list` and the menu showed the five provided personas' descriptions in English
+  whatever the language. They are now translated, as long as their file still holds the
+  description gmlw shipped; a description you edited is shown as you wrote it.
+
 ## [0.12.0] - 2026-10-10
 
 ### Added
@@ -839,7 +852,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.1...HEAD
+[0.12.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.9.1...v0.10.0

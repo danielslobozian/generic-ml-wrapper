@@ -43,7 +43,13 @@ class TtyPersonaChooser(PersonaChooserPort):
         return choose_number(
             loc.t("init.persona.header"),
             [
-                Choice(value=persona.name, label=persona.name, description=persona.description)
+                Choice(
+                    value=persona.name,
+                    label=persona.name,
+                    description=loc.shipped(
+                        f"persona.description.{persona.name}", persona.description
+                    ),
+                )
                 for persona in personas
             ],
             loc,

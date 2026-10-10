@@ -20,7 +20,10 @@ from generic_ml_wrapper.adapter.outbound.caller.status_line_config import Settin
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
-from generic_ml_wrapper.application.domain.model.migration import MigrationReport
+from generic_ml_wrapper.application.domain.model.migration import (
+    LegacyMigrationReport,
+    MigrationReport,
+)
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
@@ -295,6 +298,48 @@ def test_bare_gmlw_fresh_install_runs_init_not_the_menu(monkeypatch: pytest.Monk
     monkeypatch.setattr(app, "_tui", lambda: tui_called.append("tui"))  # must not be called
     assert app.main([]) == 0
     assert tui_called == []
+
+
+class _FakeLegacyMigration:
+    def __init__(self, calls: list[str], report: LegacyMigrationReport | None = None) -> None:
+        self._calls = calls
+        self._report = report if report is not None else LegacyMigrationReport()
+
+    def execute(self) -> LegacyMigrationReport:
+        self._calls.append("legacy")
+        return self._report
+
+
+def test_bare_gmlw_prepares_the_home_before_the_menu(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # Bare gmlw is the usual way in: an upgraded install must get its provided attachments
+    # and its legacy import done before the menu lists them, not on some later command.
+    calls: list[str] = []
+    report = LegacyMigrationReport(imported=["doc-review@1.0.0"])
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
+    monkeypatch.setattr(
+        app, "build_migrate_legacy_workflows", lambda: _FakeLegacyMigration(calls, report)
+    )
+    monkeypatch.setattr(app, "_tui", lambda: (calls.append("tui"), 0)[1])
+    assert app.main([]) == 0
+    assert calls == ["init", "legacy", "tui"]  # bootstrap, then the import, then the menu
+    assert "doc-review@1.0.0" in capsys.readouterr().err
+
+
+def test_bare_gmlw_on_a_fresh_install_leaves_the_preparation_to_init(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The first-run setup runs its own migrations; nothing may run ahead of it.
+    boot: list[str] = []
+    legacy: list[str] = []
+    monkeypatch.setattr(app.config, "init_version", _init_absent)
+    monkeypatch.setattr(app, "build_init", lambda: _FreshInit())
+    monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(boot))
+    monkeypatch.setattr(app, "build_migrate_legacy_workflows", lambda: _FakeLegacyMigration(legacy))
+    assert app.main([]) == 0
+    assert boot == []  # bootstrap never ran ahead of init
+    assert legacy == ["legacy"]  # the import ran once, from the setup
 
 
 def test_init_prints_the_reinit_hint(
