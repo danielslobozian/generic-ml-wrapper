@@ -174,7 +174,7 @@ would break them moved there.
       `USER_GUIDE.md`, `CONCEPTS.md`, `TROUBLESHOOTING.md`, `CLIENTS.md`, `docs/README.md`.
 - [x] `docs/tapes/`: the seed imports a demo attachment; `tui.tape` walks Attachments →
       List; `help.tape` shows `job-vs-attachment`. The GIFs are not re-rendered here (no
-      `vhs` on this machine): run `docs/tapes/render.sh` before the release.
+      `vhs` at first); rendered in the next commit.
 - [x] `README.md`, `SECURITY.md`, `GOVERNANCE.md`; `ROADMAP.md`'s parked item. Released
       versions' entries keep their words. `AGENTS.md`'s "pr-hygiene workflow" is a GitHub
       Actions workflow and stays.
