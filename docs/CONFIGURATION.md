@@ -385,9 +385,10 @@ capability_card = true
 
 Controls the exit receipt's "a newer gmlw is out" notice. At most once every 24
 hours, `gmlw` asks PyPI for the latest published version (a cached, best-effort
-`GET` — never blocking, never breaking the receipt on failure) and prints the
-`uv tool upgrade generic-ml-wrapper` line when a newer one exists. The last check is
-cached at `~/.gmlw/state/update-check.json`.
+`GET` — never blocking, never breaking the receipt on failure) and, when a newer one
+exists, says so and points to `gmlw update`. The last check is cached at
+`~/.gmlw/state/update-check.json`. `gmlw update` itself checks whatever this switch says
+(see [CLI.md](CLI.md#update)).
 
 | Key | Meaning | Default |
 | --- | --- | --- |

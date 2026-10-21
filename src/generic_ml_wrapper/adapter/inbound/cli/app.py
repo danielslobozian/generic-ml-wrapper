@@ -48,6 +48,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     TagName,
 )
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
+from generic_ml_wrapper.application.domain.model.installation import InstallSource
 from generic_ml_wrapper.application.domain.model.migration import (
     LegacyMigrationReport,
     MigrationReport,
@@ -92,6 +93,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_bootstrap,
     build_check_client_ready,
     build_check_for_update,
+    build_command_runner,
     build_config_commands,
     build_create_axis,
     build_delete_attachment,
@@ -135,6 +137,7 @@ if TYPE_CHECKING:
     # Type-only: the tui adapter is imported lazily inside `_tui` (see the note there), so
     # the post-menu handler can be typed without pulling Textual in at CLI startup.
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice, Shelf
+    from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 
 # Set from the Clients screen, which is not a `Switcher`, so it is named here rather than
 # read off one.
@@ -208,6 +211,7 @@ _COMMANDS = frozenset(
         "environment",
         "role",
         "help",
+        "update",
     }
 )
 
@@ -382,6 +386,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     sub.add_parser("statusline", help=i18n.t("cli.cmd.statusline"))
 
     sub.add_parser("tui", help=i18n.t("cli.cmd.tui"))
+
+    update = sub.add_parser("update", help=i18n.t("cli.cmd.update"))
+    update.add_argument("--check", action="store_true", help=i18n.t("cli.flag.update_check"))
 
     attachment = sub.add_parser("attachment", help=i18n.t("cli.cmd.attachment"))
     attachment_sub = attachment.add_subparsers(
@@ -1042,6 +1049,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _jobs_tag(args)
         if args.command == "health":
             return _health(args)
+        if args.command == "update":
+            return _update(args)
         if args.command == "sessions" and args.sessions_command == "delete":
             return _sessions_delete(args)
         view = _view(args)  # the print-and-exit-0 commands (jobs, sessions, export)
@@ -1322,6 +1331,66 @@ def _health(args: argparse.Namespace) -> int:
     report = build_report_health().execute(days=int(args.days), job=job)
     print(_as_json(asdict(report)) if bool(args.json) else format_health(report))
     return 0
+
+
+def _update(args: argparse.Namespace) -> int:
+    """Check for a newer gmlw and, once the user agrees, upgrade it — ``gmlw update``.
+
+    Never upgrades unasked: off a terminal, with ``--check``, or on Windows -- where the
+    running ``gmlw`` cannot replace its own executable -- it only says what to run.
+    """
+    check = build_check_for_update().check_now()
+    print(describe_update(check))
+    command = check.command
+    if check.latest is None:
+        return 1
+    if command is None or bool(args.check):
+        return 0
+    if platform.system() == "Windows":
+        print(i18n.t("update.run_after_exit"))
+        return 0
+    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+        return 0
+    if input(i18n.t("update.confirm")).strip().lower() not in _AFFIRMATIVE:
+        return 0
+    code = build_command_runner().run(command)
+    if code != 0:
+        print(i18n.t("update.failed", code=code), file=sys.stderr)
+    return code
+
+
+def describe_update(check: UpdateCheck, loc: i18n.Localizer | None = None) -> str:
+    """Render what an update check found: the install, then what to do about it.
+
+    Args:
+        check: The update check.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The text to print (no trailing newline).
+    """
+    loc = loc or i18n.active()
+    installation = check.installation
+    unlocated = installation.source is InstallSource.SOURCE and not installation.location
+    key = "unlocated" if unlocated else installation.source.value
+    source = loc.t(f"update.source.{key}", location=installation.location)
+    lines = [
+        loc.t(
+            "update.installed",
+            current=check.current,
+            manager=installation.manager.value,
+            source=source,
+        )
+    ]
+    if check.latest is None:
+        lines.append(loc.t("update.unreachable"))
+    elif not check.newer:
+        lines.append(loc.t("update.current", latest=check.latest))
+    elif check.command is None:
+        lines.append(loc.t("update.available_from_source", latest=check.latest))
+    else:
+        lines.append(loc.t("update.available", latest=check.latest, command=check.command))
+    return "\n".join(lines)
 
 
 def format_health(

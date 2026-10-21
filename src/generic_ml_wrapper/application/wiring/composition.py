@@ -88,10 +88,14 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import Sqli
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
 from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
+from generic_ml_wrapper.adapter.outbound.update.python_installation_inspector import (
+    PythonInstallationInspector,
+)
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspector,
 )
 from generic_ml_wrapper.application.domain.model.context_thresholds import ContextThresholds
+from generic_ml_wrapper.application.domain.model.installation import PACKAGE
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
@@ -127,6 +131,7 @@ from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
+from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
 from generic_ml_wrapper.application.port.outbound.diagnostics import DiagnosticsPort
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
@@ -370,19 +375,29 @@ def build_render_greeting() -> RenderGreeting:
 
 
 def build_check_for_update() -> CheckForUpdate:
-    """Build the CheckForUpdate use case wired to PyPI and its local cache file.
+    """Build the CheckForUpdate use case wired to PyPI, the install's metadata and its cache.
 
     Returns:
         A ready-to-run CheckForUpdate (free, cached, at most one network call a day).
     """
     return CheckForUpdateUseCase(
         checker=PypiVersionChecker(),
+        installation=PythonInstallationInspector(),
         current_version=__version__,
-        package="generic-ml-wrapper",
+        package=PACKAGE,
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
         cache_path=paths.STATE / "update-check.json",
     )
+
+
+def build_command_runner() -> CommandRunnerPort:
+    """Build the runner that runs a command the user agreed to, in their terminal.
+
+    Returns:
+        A shell command runner.
+    """
+    return SubprocessCommandRunner()
 
 
 def _interceptor_chain() -> InterceptorChain:

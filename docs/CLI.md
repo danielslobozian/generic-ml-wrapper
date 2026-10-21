@@ -22,6 +22,7 @@ gmlw export <job> [--json]
 gmlw health [--days N] [--job J] [--json]   # connection incidents of recent sessions
 gmlw health [--days N] [--job J] [--json]
 gmlw clients [--json]                    # supported clients + installed versions
+gmlw update [--check]                    # a newer gmlw? upgrade it once you agree
 gmlw statusline                          # called by the client, not by hand
 gmlw attachment import <zip>
 gmlw attachment export <name> [<version>] [--to FOLDER]
@@ -355,6 +356,38 @@ Example:
 ```
 gmlw clients
 ```
+
+## update
+
+Check PyPI for a newer gmlw and, once you agree, upgrade it.
+
+```
+gmlw update [--check]
+```
+
+- `--check` — only check, and say what to run; never upgrade.
+
+It says how this copy was installed, since that decides how it upgrades:
+
+| Installed | Upgraded with |
+| --- | --- |
+| `uv tool install generic-ml-wrapper` | `uv tool upgrade generic-ml-wrapper` |
+| `pipx install generic-ml-wrapper` | `pipx upgrade generic-ml-wrapper` |
+| `pip` / `uv pip` into an environment | that environment's `pip install --upgrade` (or `uv pip install --python …`) |
+| from git (`git+https://…`) | a reinstall at the release's tag, `@v<version>` |
+| from a local checkout (editable or not) | nothing: update the checkout (`git pull`) and reinstall it |
+
+gmlw tells these apart from the install's own records: PEP 610's `direct_url.json` (a git
+URL or a local directory) and the files `uv tool` and `pipx` leave in their environments.
+
+When a newer release is out, it shows the command and asks `Upgrade now? [y/N]`;
+only a yes runs it. It never asks when nobody can answer (no terminal), and on Windows
+it only shows the command, to run once gmlw has exited: a running program cannot replace
+its own executable there. Nothing is ever upgraded unasked.
+
+`gmlw update` checks whatever `[update] check` says (that switch is for the exit
+receipt's notice), and refreshes the receipt's daily cache. It exits `1` when PyPI
+cannot be reached, and with the upgrade's own exit code when that fails.
 
 ## statusline
 

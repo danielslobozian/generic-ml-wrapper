@@ -129,11 +129,14 @@ On first run the wrapper creates `~/.gmlw/` (mode `0700`) with a commented `conf
 
 ### Update
 
-gmlw does not update itself. It checks PyPI at most once a day (cached, and only if `[update] check` is on — the default) and notes a newer version on the exit receipt when one exists; nothing is downloaded or installed on your behalf. To update:
+gmlw never updates itself unasked. It checks PyPI at most once a day (cached, and only if `[update] check` is on — the default) and notes a newer version on the exit receipt when one exists. To update:
 
 ```sh
-uv tool upgrade generic-ml-wrapper     # or: uv tool install --reinstall generic-ml-wrapper
+gmlw update          # says how gmlw was installed, shows the upgrade command, runs it once you agree
+gmlw update --check  # only check
 ```
+
+It knows a `uv tool`, `pipx`, `pip` or git install apart, and gives each its own command; a local checkout is left to you. See [CLI.md](docs/CLI.md#update).
 
 ## Attachments
 

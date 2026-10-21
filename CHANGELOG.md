@@ -41,6 +41,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   under totals by tool, and `--json` carries `tool_calls` on each turn and `tools` overall.
   Claude, codex and vibe; turns recorded before this version have none.
 
+- **`gmlw update` upgrades gmlw, once you agree.** It checks PyPI, says how this copy
+  was installed (`uv tool`, `pipx`, `pip`/`uv pip`, git, or a local checkout), shows the
+  command that upgrades that install, and asks before running it. A git install is
+  reinstalled at the release's tag; a local checkout is left to you. `--check` only
+  checks. Off a terminal, and on Windows, it only shows the command.
+  - The exit receipt's "a newer gmlw is out" notice now points to `gmlw update`,
+    instead of a `uv tool upgrade` that was wrong for any other install.
+
 ### Fixed
 - **`gmlw config set` writes numbers as numbers.** An integer setting such as
   `logging.max_bytes` was saved as text, which the reader then ignored, so the change had

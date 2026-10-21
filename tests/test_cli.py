@@ -20,6 +20,11 @@ from generic_ml_wrapper.adapter.outbound.caller.status_line_config import Settin
 from generic_ml_wrapper.application.domain.model import client_catalog
 from generic_ml_wrapper.application.domain.model.axis import AxisKind, AxisSelection
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
+from generic_ml_wrapper.application.domain.model.installation import (
+    Installation,
+    InstallManager,
+    InstallSource,
+)
 from generic_ml_wrapper.application.domain.model.migration import (
     LegacyMigrationReport,
     MigrationReport,
@@ -27,11 +32,13 @@ from generic_ml_wrapper.application.domain.model.migration import (
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
+from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import (
     CheckClientReady,
     ClientReadiness,
 )
+from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
 from generic_ml_wrapper.application.port.inbound.config_commands import ConfigCommands
 from generic_ml_wrapper.application.port.inbound.create_axis import (
     AxisExistsError,
@@ -87,6 +94,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
 )
 from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
+from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
 from generic_ml_wrapper.application.wiring import composition
 from generic_ml_wrapper.common import paths
 from generic_ml_wrapper.common.i18n import load_localizer
@@ -185,6 +193,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "environment": ["environment"],
         "role": ["role"],
         "help": ["help"],
+        "update": ["update"],
     }
     assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
     for command, argv in samples.items():
@@ -2632,3 +2641,140 @@ def test_format_usage_totals_the_tools() -> None:
     assert "  ── totals by tool ──" in rows
     assert "  Bash          2 call(s)" in rows
     assert "  WebSearch     1 call(s)" in rows
+
+
+_UV_TOOL = Installation(InstallSource.INDEX, InstallManager.UV_TOOL)
+
+
+class _Update(CheckForUpdate):
+    def __init__(self, latest: str | None, installation: Installation = _UV_TOOL) -> None:
+        self._check = UpdateCheck("0.12.1", latest, installation)
+
+    def execute(self) -> str | None:
+        return None
+
+    def check_now(self) -> UpdateCheck:
+        return self._check
+
+
+class _Runner(CommandRunnerPort):
+    def __init__(self, code: int = 0) -> None:
+        self.ran: list[str] = []
+        self._code = code
+
+    def run(self, command: str) -> int:
+        self.ran.append(command)
+        return self._code
+
+
+def _update(
+    monkeypatch: pytest.MonkeyPatch,
+    latest: str | None,
+    *,
+    installation: Installation = _UV_TOOL,
+    system: str = "Linux",
+    code: int = 0,
+) -> _Runner:
+    runner = _Runner(code)
+    monkeypatch.setattr(app, "build_check_for_update", lambda: _Update(latest, installation))
+    monkeypatch.setattr(app, "build_command_runner", lambda: runner)
+    monkeypatch.setattr(app.platform, "system", lambda: system)
+    return runner
+
+
+def test_update_upgrades_once_the_user_agrees(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = _update(monkeypatch, "0.13.0")
+    _answer(monkeypatch, "y")
+    assert app.main(["update"]) == 0
+    out = capsys.readouterr().out
+    assert "gmlw v0.12.1, installed with uv tool from PyPI." in out
+    assert "v0.13.0 is out. To upgrade:\n  uv tool upgrade generic-ml-wrapper" in out
+    assert runner.ran == ["uv tool upgrade generic-ml-wrapper"]
+
+
+@pytest.mark.parametrize("reply", ["", "n"])
+def test_update_does_nothing_unless_the_user_agrees(
+    monkeypatch: pytest.MonkeyPatch, reply: str
+) -> None:
+    runner = _update(monkeypatch, "0.13.0")
+    _answer(monkeypatch, reply)
+    assert app.main(["update"]) == 0
+    assert runner.ran == []
+
+
+def test_update_never_asks_off_a_terminal_or_with_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _update(monkeypatch, "0.13.0")
+    monkeypatch.setattr("builtins.input", lambda _prompt="": pytest.fail("asked"))
+    assert app.main(["update"]) == 0  # the suite's stdin is no terminal
+    _answer(monkeypatch, "y")
+    assert app.main(["update", "--check"]) == 0
+    assert runner.ran == []
+
+
+def test_update_on_windows_says_to_run_it_after_exiting(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = _update(monkeypatch, "0.13.0", system="Windows")
+    _answer(monkeypatch, "y")
+    assert app.main(["update"]) == 0
+    assert "once gmlw has exited" in capsys.readouterr().out
+    assert runner.ran == []
+
+
+def test_a_failed_upgrade_says_so_and_passes_its_exit_code(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _update(monkeypatch, "0.13.0", code=3)
+    _answer(monkeypatch, "y")
+    assert app.main(["update"]) == 3
+    assert "the upgrade exited with 3" in capsys.readouterr().err
+
+
+def test_update_when_up_to_date_or_unreachable(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _update(monkeypatch, "0.12.1")
+    assert app.main(["update"]) == 0
+    assert "Up to date: v0.12.1 is the latest release." in capsys.readouterr().out
+    _update(monkeypatch, None)
+    assert app.main(["update"]) == 1
+    assert "Could not reach PyPI" in capsys.readouterr().out
+
+
+def test_update_from_source_says_where_to_update(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _update(
+        monkeypatch,
+        "0.13.0",
+        installation=Installation(InstallSource.SOURCE, InstallManager.UV_PIP, "/src/gmlw"),
+    )
+    _answer(monkeypatch, "y")
+    assert app.main(["update"]) == 0
+    assert runner.ran == []
+
+
+@pytest.mark.parametrize(
+    ("installation", "shown"),
+    [
+        (
+            Installation(InstallSource.GIT, InstallManager.PIPX, "https://example.org/g"),
+            "installed with pipx from git (https://example.org/g).",
+        ),
+        (
+            Installation(InstallSource.SOURCE, InstallManager.UV_PIP, "/src/gmlw"),
+            "installed with uv pip from the source at /src/gmlw.",
+        ),
+        (
+            Installation(InstallSource.SOURCE, InstallManager.PIP),
+            "installed with pip from an unbuilt source checkout.",
+        ),
+    ],
+)
+def test_describe_update_names_the_install(installation: Installation, shown: str) -> None:
+    text = app.describe_update(UpdateCheck("0.12.1", "0.13.0", installation))
+    assert shown in text
+
+
+def test_build_command_runner_is_wired() -> None:
+    assert isinstance(composition.build_command_runner(), CommandRunnerPort)
