@@ -11,6 +11,9 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from generic_ml_wrapper.application.domain.model.context_thresholds import (
+        ContextThresholds,
+    )
     from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
@@ -29,13 +32,15 @@ from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInsp
 class RenderStatuslineUseCase(RenderStatusline):
     """Parse the client's status payload, record its session cost, and render a line."""
 
-    def __init__(
+    def __init__(  # noqa: PLR0913  (the use case's full set of injected dependencies)
         self,
         parser: ClientStatusParserPort,
         usage: UsageStorePort,
         workspace: WorkspaceInspectorPort,
         turns: PerTurnMeteringPort,
+        *,
         clock: Callable[[], float] = time.time,
+        thresholds: ContextThresholds | None = None,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -46,12 +51,15 @@ class RenderStatuslineUseCase(RenderStatusline):
             turns: The per-turn store, read for the job's cumulative usage footer.
             clock: Returns the current epoch seconds, for the session/job ages;
                 injectable so tests are deterministic.
+            thresholds: When to colour the context yellow, then red; ``None`` for no
+                colour.
         """
         self._parser = parser
         self._usage = usage
         self._workspace = workspace
         self._turns = turns
         self._clock = clock
+        self._thresholds = thresholds
 
     def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
         """Parse the payload, record usage, and render the status line.
@@ -70,7 +78,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         status = self._parser.parse(_decode(payload_json))
         if job and session and status.session_cost_usd is not None:
             self._usage.record_session_cost(job, session, status.session_cost_usd)
-        line = render_statusline(status, self._workspace.inspect())
+        line = render_statusline(status, self._workspace.inspect(), self._thresholds)
         footer = self._usage_footer(job, session) if job else ""
         if not footer:
             return line

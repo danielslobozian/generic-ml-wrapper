@@ -6,17 +6,27 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.context_thresholds import ContextLevel
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
 
 if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
     from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+    from generic_ml_wrapper.application.domain.model.context_thresholds import (
+        ContextThresholds,
+    )
     from generic_ml_wrapper.application.domain.model.workspace import Workspace
 
 _SEPARATOR = "  ·  "
+# The ANSI colours of a worrying context: yellow, then red. A client that renders the
+# status line in a terminal shows them; ``NO_COLOR`` or ``[statusline] color`` turn them off.
+_PAINT = {ContextLevel.WARN: "\033[33m", ContextLevel.ALERT: "\033[31m"}
+_RESET = "\033[0m"
 
 
-def render_statusline(status: ClientStatus, workspace: Workspace) -> str:
+def render_statusline(
+    status: ClientStatus, workspace: Workspace, thresholds: ContextThresholds | None = None
+) -> str:
     """Render the working environment and client status as a single line.
 
     The wrapper's own facts (git, folder) come first, then the common client
@@ -28,6 +38,8 @@ def render_statusline(status: ClientStatus, workspace: Workspace) -> str:
     Args:
         status: The parsed client status.
         workspace: The working environment the wrapper computed.
+        thresholds: When to colour the context block yellow, then red; ``None`` leaves
+            it uncoloured.
 
     Returns:
         The status line (no trailing newline).
@@ -36,11 +48,21 @@ def render_statusline(status: ClientStatus, workspace: Workspace) -> str:
         _git(workspace),
         _folder(workspace),
         status.model,
-        _context(status),
+        _painted(_context(status), status, thresholds),
         *status.extras,
         None if status.session_cost_usd is None else f"${status.session_cost_usd:.2f}",
     ]
     return _SEPARATOR.join(block for block in blocks if block)
+
+
+def _painted(
+    block: str | None, status: ClientStatus, thresholds: ContextThresholds | None
+) -> str | None:
+    """``block`` in the colour its context's level calls for, when there is one."""
+    if block is None or thresholds is None:
+        return block
+    colour = _PAINT.get(thresholds.level(status))
+    return block if colour is None else f"{colour}{block}{_RESET}"
 
 
 def _context(status: ClientStatus) -> str | None:

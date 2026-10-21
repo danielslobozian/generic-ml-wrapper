@@ -23,9 +23,9 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, Literal, get_args, get_origin
+from typing import TYPE_CHECKING, Annotated, Literal, cast, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_settings import (
     BaseSettings,
     PydanticBaseSettingsSource,
@@ -142,6 +142,24 @@ class UpdateSettings(_Section):
     check: Annotated[bool, Field(description="setting.update.check")] = True
 
 
+class StatuslineSettings(_Section):
+    """The ``[statusline]`` section: when the status line colours the context block."""
+
+    color: Annotated[bool, Field(description="setting.statusline.color")] = True
+    context_warn_percent: Annotated[
+        int, Field(ge=1, le=100, description="setting.statusline.context_warn_percent")
+    ] = 70
+    context_alert_percent: Annotated[
+        int, Field(ge=1, le=100, description="setting.statusline.context_alert_percent")
+    ] = 90
+    context_warn_tokens: Annotated[
+        int, Field(ge=0, description="setting.statusline.context_warn_tokens")
+    ] = 200_000
+    context_alert_tokens: Annotated[
+        int, Field(ge=0, description="setting.statusline.context_alert_tokens")
+    ] = 400_000
+
+
 class AmbientSettings(_Section):
     """The ``[ambient]`` section: optional in-session context injections."""
 
@@ -165,6 +183,7 @@ class GmlwSettings(BaseSettings):
     compress: CompressSettings = CompressSettings()
     hints: HintsSettings = HintsSettings()
     update: UpdateSettings = UpdateSettings()
+    statusline: StatuslineSettings = StatuslineSettings()
     ambient: AmbientSettings = AmbientSettings()
 
     @classmethod
@@ -200,6 +219,7 @@ _SECTIONS: tuple[tuple[str, type[_Section]], ...] = (
     ("compress", CompressSettings),
     ("hints", HintsSettings),
     ("update", UpdateSettings),
+    ("statusline", StatuslineSettings),
     ("ambient", AmbientSettings),
 )
 
@@ -249,7 +269,7 @@ class SettingRow:
 
     Attributes:
         key: The dotted key (e.g. ``profile.default_role``).
-        type_name: A short type label (``str``/``bool``/``choice``/``str?``).
+        type_name: A short type label (``str``/``bool``/``int``/``choice``/``str?``).
         default: The schema default.
         choices: The allowed values, or ``None`` when unconstrained.
         description: A one-line description.
@@ -297,6 +317,8 @@ def _type_name(field: FieldInfo) -> str:
         return "choice"
     if field.annotation is bool:
         return "bool"
+    if field.annotation is int:
+        return "int"
     if _is_table(field):
         return "table"
     if _is_optional_str(field):
@@ -400,7 +422,7 @@ def coerce(key: str, raw: str) -> object:
         raw: The raw value as typed on the command line.
 
     Returns:
-        The coerced value (``str``/``bool``/``None``).
+        The coerced value (``str``/``bool``/``int``/``None``).
 
     Raises:
         UnknownSettingError: If the key is not registered.
@@ -421,6 +443,14 @@ def coerce(key: str, raw: str) -> object:
         if low in _FALSE:
             return False
         raise InvalidSettingValueError(key, raw, ("true", "false"))
+    if field.annotation is int:
+        # Persisted as a TOML integer: the readers ignore a number written as text.
+        # The field's own bounds (ge/le/gt) travel in its metadata.
+        bounded = cast("TypeAdapter[int]", TypeAdapter(Annotated[int, *field.metadata]))
+        try:
+            return bounded.validate_python(int(raw))
+        except (ValueError, ValidationError):
+            raise InvalidSettingValueError(key, raw, None) from None
     if choices is not None:
         if raw not in choices:
             raise InvalidSettingValueError(key, raw, choices)

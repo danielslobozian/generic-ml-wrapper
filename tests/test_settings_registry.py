@@ -35,6 +35,11 @@ def test_registry_covers_the_settable_scalar_keys() -> None:
         "compress.effort",
         "hints.show",
         "update.check",
+        "statusline.color",
+        "statusline.context_warn_percent",
+        "statusline.context_alert_percent",
+        "statusline.context_warn_tokens",
+        "statusline.context_alert_tokens",
         "ambient.capability_card",
     }
 
@@ -70,6 +75,27 @@ def test_coerce_optional_clears_to_none() -> None:
     assert settings_registry.coerce("companion.name", "") is None
     assert settings_registry.coerce("companion.name", "none") is None
     assert settings_registry.coerce("companion.name", "Dan") == "Dan"
+
+
+def test_coerce_int_persists_a_number_within_its_bounds() -> None:
+    assert settings_registry.coerce("statusline.context_warn_tokens", "300000") == 300_000
+    assert settings_registry.coerce("logging.max_bytes", "2000000") == 2_000_000
+    rows = {row.key: row for row in settings_registry.registry_rows()}
+    assert rows["statusline.context_warn_percent"].type_name == "int"
+
+
+@pytest.mark.parametrize(
+    ("key", "raw"),
+    [
+        ("statusline.context_warn_percent", "lots"),
+        ("statusline.context_warn_percent", "101"),
+        ("statusline.context_warn_tokens", "-1"),
+        ("logging.max_bytes", "0"),
+    ],
+)
+def test_coerce_int_rejects_text_and_out_of_bounds(key: str, raw: str) -> None:
+    with pytest.raises(settings_registry.InvalidSettingValueError):
+        settings_registry.coerce(key, raw)
 
 
 def test_coerce_required_string_rejects_empty() -> None:

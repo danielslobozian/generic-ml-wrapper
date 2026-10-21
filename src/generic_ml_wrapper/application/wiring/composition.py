@@ -91,6 +91,7 @@ from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import Pypi
 from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector import (
     LocalGitWorkspaceInspector,
 )
+from generic_ml_wrapper.application.domain.model.context_thresholds import ContextThresholds
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
@@ -742,7 +743,19 @@ def build_render_statusline(client: str | None = None) -> RenderStatusline:
         usage=SqliteUsageStore(_ledger()),
         workspace=LocalGitWorkspaceInspector(),
         turns=SqlitePerTurnStore(_ledger()),
+        thresholds=_context_thresholds(),
     )
+
+
+def _context_thresholds() -> ContextThresholds | None:
+    """When the status line colours its context, or ``None`` when it must not colour.
+
+    Colour is off with ``[statusline] color = false``, and whenever ``NO_COLOR`` is set to
+    anything (the no-color.org convention every colouring CLI is expected to honour).
+    """
+    if os.environ.get("NO_COLOR") or not config.statusline_color():
+        return None
+    return ContextThresholds(*config.context_thresholds())
 
 
 def _status_parser(client: str | None) -> ClientStatusParserPort:

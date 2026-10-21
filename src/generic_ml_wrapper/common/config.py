@@ -82,6 +82,11 @@ def current_values(path: Path | None = None) -> dict[str, object]:
         "compress.effort": compress_settings.effort,
         "hints.show": hints_show(path),
         "update.check": update_check(path),
+        "statusline.color": statusline_color(path),
+        **{
+            f"statusline.{name}": value
+            for name, value in zip(_CONTEXT_THRESHOLD_KEYS, context_thresholds(path), strict=True)
+        },
         "ambient.capability_card": ambient_capability_card(path),
     }
 
@@ -110,6 +115,51 @@ def update_check(path: Path | None = None) -> bool:
     """
     value = _table(_load(path), "update").get("check")
     return value if isinstance(value, bool) else True
+
+
+def statusline_color(path: Path | None = None) -> bool:
+    """Return whether the status line colours its context block (``[statusline] color``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The ``[statusline] color`` value, or ``True`` when unset.
+    """
+    value = _table(_load(path), "statusline").get("color")
+    return value if isinstance(value, bool) else True
+
+
+# The ``[statusline]`` context thresholds, in the order ``context_thresholds`` returns them.
+_CONTEXT_THRESHOLD_KEYS = (
+    "context_warn_percent",
+    "context_alert_percent",
+    "context_warn_tokens",
+    "context_alert_tokens",
+)
+
+
+def context_thresholds(path: Path | None = None) -> tuple[int, int, int, int]:
+    """Return the context fills that turn the status line yellow and red.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        ``(warn_percent, alert_percent, warn_tokens, alert_tokens)`` from ``[statusline]``,
+        each falling back to its default when unset or ill-typed. A token threshold of
+        ``0`` turns that rule off.
+    """
+    table = _table(_load(path), "statusline")
+    values: list[int] = []
+    for name in _CONTEXT_THRESHOLD_KEYS:
+        value = table.get(name)
+        # `bool` is an `int` in Python; exclude it so `= true` reads as malformed.
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            values.append(value)
+        else:
+            values.append(cast("int", settings_registry.default_for(f"statusline.{name}")))
+    return values[0], values[1], values[2], values[3]
 
 
 def ambient_capability_card(path: Path | None = None) -> bool:
