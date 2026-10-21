@@ -152,10 +152,12 @@ class StatuslineSettings(_Section):
     context_alert_percent: Annotated[
         int, Field(ge=1, le=100, description="setting.statusline.context_alert_percent")
     ] = 90
-    context_warn_tokens: Annotated[
+    # These count a model's tokens, not secrets: the scanner's hard-coded-token rule
+    # matches on the name alone.
+    context_warn_tokens: Annotated[  # nosemgrep
         int, Field(ge=0, description="setting.statusline.context_warn_tokens")
     ] = 200_000
-    context_alert_tokens: Annotated[
+    context_alert_tokens: Annotated[  # nosemgrep
         int, Field(ge=0, description="setting.statusline.context_alert_tokens")
     ] = 400_000
 
