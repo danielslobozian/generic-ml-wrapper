@@ -16,9 +16,11 @@ agent caused a main turn (see :func:`read_origin`).
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from typing import cast
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import (
     CAUSED_BY_AGENT,
     MAIN,
@@ -61,10 +63,31 @@ def read_usage(text: str) -> StreamUsage | None:
         event = cast("dict[str, object]", decoded)
         if event.get("type") != "response.completed":
             continue
-        usage = _usage(event.get("response"))
+        response = event.get("response")
+        usage = _usage(response)
         if usage is not None:
-            return usage
+            return replace(usage, tool_calls=_tool_calls(_get(response, "output")))
     return None
+
+
+def _tool_calls(output: object) -> ToolCalls:
+    """The tools a response's output items call, by name.
+
+    A function or custom tool carries its name; a built-in one is named by its item type
+    (``web_search_call`` is ``web_search``).
+    """
+    if not isinstance(output, list):
+        return ToolCalls()
+    names: list[str] = []
+    for item in cast("list[object]", output):
+        kind = _as_str(_get(item, "type")) or ""
+        if kind in _CALLS:
+            name = _as_str(_get(item, "name"))
+            if name is not None:
+                names.append(name)
+        elif kind.endswith("_call"):
+            names.append(kind.removesuffix("_call"))
+    return ToolCalls.of(names)
 
 
 def read_session_id(text: str) -> str | None:

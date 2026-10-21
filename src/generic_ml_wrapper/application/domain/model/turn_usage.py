@@ -5,8 +5,9 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 
 
@@ -32,6 +33,7 @@ class TurnUsage:
         agent: The agent's name when the client gives one, else ``None``.
         caused_by_agent: Whether this main-conversation turn was made only because an
             agent was started or reported back (see ``TurnOrigin``).
+        tool_calls: The tools the turn's response called, by name.
     """
 
     session_id: str
@@ -47,6 +49,7 @@ class TurnUsage:
     role: TurnRole = TurnRole.MAIN
     agent: str | None = None
     caused_by_agent: bool = False
+    tool_calls: ToolCalls = field(default_factory=ToolCalls)
 
     def __post_init__(self) -> None:
         """Reject impossible usage: negative counts, or non-finite/negative amounts."""

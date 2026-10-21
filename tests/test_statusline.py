@@ -14,6 +14,7 @@ from generic_ml_wrapper.application.domain.model.context_thresholds import (
     ContextThresholds,
 )
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.model.workspace import Workspace
@@ -509,3 +510,31 @@ def test_no_color_turns_the_colour_off(monkeypatch: pytest.MonkeyPatch) -> None:
         composition.config, "context_thresholds", lambda: (50, 80, 100_000, 300_000)
     )
     assert composition._context_thresholds() == ContextThresholds(50, 80, 100_000, 300_000)
+
+
+# ── tool calls ──
+def test_the_tools_show_their_total_and_the_three_most_called() -> None:
+    tools = ToolCalls.from_counts({"Bash": 640, "WebSearch": 310, "Read": 180, "Edit": 9})
+    row = render_usage_row("job", "JOB-1", 3, TokenCounts(1, 1), 0.5, tools=tools)
+    assert row == (
+        "  job JOB-1 · 3 turns · ↑ 1  ↓ 1  ⟲ 0  ✎ 0 · "
+        "⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …) · $0.50"
+    )
+
+
+def test_no_tool_calls_leave_the_row_unchanged() -> None:
+    row = render_usage_row("job", "JOB-1", 3, TokenCounts(1, 1), 0.5, tools=ToolCalls())
+    assert "⚒" not in row
+
+
+def test_use_case_counts_the_tools_of_each_row() -> None:
+    turns = FakePerTurnStore(
+        [
+            TurnUsage("JOB-1_001", 1, 1, None, "m", tool_calls=ToolCalls.of(["Bash"])),
+            TurnUsage("JOB-1_002", 1, 1, None, "m", tool_calls=ToolCalls.of(["Bash", "Read"])),
+        ]
+    )
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
+    session, job = out.splitlines()
+    assert "⚒ 2 (Bash 1, Read 1)" in session
+    assert "⚒ 3 (Bash 2, Read 1)" in job

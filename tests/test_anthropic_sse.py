@@ -12,6 +12,7 @@ from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import (
     read_origin,
     read_usage,
 )
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import (
     CAUSED_BY_AGENT,
     MAIN,
@@ -188,3 +189,33 @@ def test_a_subagents_own_turn_is_never_marked_as_caused() -> None:
     system = [{"type": "text", "text": _BILLING + " cc_is_subagent=true;"}]
     body = json.dumps({"system": system, "messages": [_calls("Agent"), _results("Agent")]})
     assert read_origin(body) == TurnOrigin(TurnRole.AGENT)
+
+
+def test_the_tools_a_stream_calls_are_counted_by_name() -> None:
+    stream = [
+        _STREAM[1],
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"text"}}',
+        'data: {"type":"content_block_start","index":1,"content_block":'
+        '{"type":"tool_use","id":"t1","name":"Bash","input":{}}}',
+        'data: {"type":"content_block_start","index":2,"content_block":'
+        '{"type":"server_tool_use","id":"t2","name":"web_search","input":{}}}',
+        'data: {"type":"content_block_start","index":3,"content_block":'
+        '{"type":"tool_use","id":"t3","name":"Bash","input":{}}}',
+    ]
+    usage = extract_usage(stream)
+    assert usage is not None
+    assert usage.tool_calls == ToolCalls((("Bash", 2), ("web_search", 1)))
+
+
+def test_the_tools_a_json_reply_calls_are_counted_by_name() -> None:
+    body = json.dumps(
+        {
+            "id": "msg_1",
+            "model": "m",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "content": [{"type": "text", "text": "x"}, {"type": "tool_use", "name": "Read"}],
+        }
+    )
+    usage = read_usage(body)
+    assert usage is not None
+    assert usage.tool_calls == ToolCalls.of(["Read"])

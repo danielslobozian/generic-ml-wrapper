@@ -295,6 +295,10 @@ started or reported back, each re-reading the whole main context — are named
 `main, for agents` and totalled apart (Claude and codex). In `--json`, every turn carries
 `role` (`main` or `agent`), `agent` and `caused_by_agent`, and `agents` holds the totals.
 
+A **totals by tool** section counts the tools the model called, by name (claude, codex and
+vibe); only the name is recorded. In `--json`, every turn carries `tool_calls`
+(`{"Bash": 2}`), and `tools` holds the totals.
+
 ```
 gmlw export <job> [--json]
 ```

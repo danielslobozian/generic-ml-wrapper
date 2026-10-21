@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
@@ -54,3 +55,10 @@ def test_a_main_turn_an_agent_caused_is_kept(tmp_path: Path) -> None:
     caused = TurnUsage("JOB-1_001", 1, 2, None, None, caused_by_agent=True)
     store.record("JOB-1", caused)
     assert store.turns_for_job("JOB-1") == [caused]
+
+
+def test_the_tools_a_turn_called_are_kept(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    turn = TurnUsage("JOB-1_001", 1, 2, None, None, tool_calls=ToolCalls.of(["Bash", "Bash"]))
+    store.record("JOB-1", turn)
+    assert store.turns_for_job("JOB-1") == [turn]

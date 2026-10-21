@@ -4,6 +4,7 @@
 
 from _conformance import InMemoryIncidentLog, an_incident
 
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.export_usage import (
@@ -153,3 +154,14 @@ def test_the_main_turns_the_agents_caused_are_totalled_apart() -> None:
         AgentTotal(TurnRole.MAIN, None, 1, 30, 3, 0, 1.0, caused_by_agent=True),
     )
     assert [row.caused_by_agent for row in report.turns] == [False, True]
+
+
+def test_the_export_totals_the_tools_and_lists_each_turns() -> None:
+    report = _export(
+        [
+            TurnUsage("S", 1, 1, None, "m", tool_calls=ToolCalls.of(["Bash", "Read"])),
+            TurnUsage("S", 1, 1, None, "m", tool_calls=ToolCalls.of(["Bash"])),
+        ]
+    )
+    assert report.tools == {"Bash": 2, "Read": 1}
+    assert [row.tool_calls for row in report.turns] == [{"Bash": 1, "Read": 1}, {"Bash": 1}]

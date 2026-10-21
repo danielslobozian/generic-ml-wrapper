@@ -2618,3 +2618,17 @@ def test_a_new_job_gets_the_default_tag_unless_tags_are_given(
 ) -> None:
     monkeypatch.setattr(app.config, "default_tag", lambda: default)
     assert app._new_job_tags(explicit) == expected
+
+
+def test_format_usage_totals_the_tools() -> None:
+    report = UsageReport(
+        "JOB-1",
+        turns=(TurnRow(0.0, "gpt", 1.0, 10, 1, 0, "t1", tool_calls={"Bash": 2, "WebSearch": 1}),),
+        models=(ModelTotal("gpt", 1, 10, 1, 0, 1.0),),
+        turn_count=1,
+        tools={"Bash": 2, "WebSearch": 1},
+    )
+    rows = app.format_usage(report).splitlines()
+    assert "  ── totals by tool ──" in rows
+    assert "  Bash          2 call(s)" in rows
+    assert "  WebSearch     1 call(s)" in rows

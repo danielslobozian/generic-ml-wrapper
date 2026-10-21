@@ -15,6 +15,7 @@ import json
 from typing import cast
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 
 _DATA_PREFIX = "data:"
 
@@ -39,10 +40,13 @@ def _from_sse(text: str) -> StreamUsage | None:
     model: str | None = None
     turn_id: str | None = None
     tokens: tuple[int, int, int] | None = None
+    tools: list[str] = []
     for raw in text.splitlines():
         chunk = _data_event(raw)
         if chunk is None:
             continue
+        # A streamed call names its tool once, in its first chunk; the rest carry arguments.
+        tools += _tool_names(_get(_first_choice(chunk), "delta"))
         model = _as_str(chunk.get("model")) or model
         turn_id = _as_str(chunk.get("id")) or turn_id
         seen = _tokens(chunk.get("usage"))
@@ -51,7 +55,7 @@ def _from_sse(text: str) -> StreamUsage | None:
     if tokens is None:
         return None
     fresh, output, cached = tokens
-    return StreamUsage(fresh, output, model, 0, cached, turn_id)
+    return StreamUsage(fresh, output, model, 0, cached, turn_id, ToolCalls.of(tools))
 
 
 def _from_json(text: str) -> StreamUsage | None:
@@ -67,8 +71,30 @@ def _from_json(text: str) -> StreamUsage | None:
         return None
     fresh, output, cached = tokens
     return StreamUsage(
-        fresh, output, _as_str(envelope.get("model")), 0, cached, _as_str(envelope.get("id"))
+        fresh,
+        output,
+        _as_str(envelope.get("model")),
+        0,
+        cached,
+        _as_str(envelope.get("id")),
+        ToolCalls.of(_tool_names(_get(_first_choice(envelope), "message"))),
     )
+
+
+def _first_choice(chunk: dict[str, object]) -> object:
+    choices = chunk.get("choices")
+    if isinstance(choices, list) and choices:
+        return cast("list[object]", choices)[0]
+    return None
+
+
+def _tool_names(message: object) -> list[str]:
+    """The tool names a message (or a streamed delta of one) calls."""
+    calls = _get(message, "tool_calls")
+    if not isinstance(calls, list):
+        return []
+    names = (_as_str(_get(_get(call, "function"), "name")) for call in cast("list[object]", calls))
+    return [name for name in names if name is not None]
 
 
 def _data_event(raw: str) -> dict[str, object] | None:
