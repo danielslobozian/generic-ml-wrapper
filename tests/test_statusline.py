@@ -9,6 +9,10 @@ import pytest
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
+from generic_ml_wrapper.application.domain.model.context_thresholds import (
+    ContextLevel,
+    ContextThresholds,
+)
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
@@ -23,6 +27,7 @@ from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTu
 from generic_ml_wrapper.application.port.outbound.usage_store import UsageStorePort
 from generic_ml_wrapper.application.port.outbound.workspace import WorkspaceInspectorPort
 from generic_ml_wrapper.application.usecase.render_statusline import RenderStatuslineUseCase
+from generic_ml_wrapper.application.wiring import composition
 
 _NOW = 1_000_000.0
 _CLAUDE_PAYLOAD: dict[str, object] = {
@@ -440,3 +445,67 @@ def test_token_counts_sum_each_kind_over_the_turns() -> None:
         TurnUsage("S", 5, 3, None, "m", cache_creation_tokens=0, cache_read_tokens=1_200),
     ]
     assert TokenCounts.of(turns) == TokenCounts(15, 5, 2_200, 100)
+
+
+# ── context colour ──
+_YELLOW, _RED, _RESET = "\033[33m", "\033[31m", "\033[0m"
+
+
+@pytest.mark.parametrize(
+    ("tokens", "window", "level"),
+    [
+        (60_000, 200_000, ContextLevel.OK),
+        (140_000, 200_000, ContextLevel.WARN),  # 70% of the window
+        (180_000, 200_000, ContextLevel.ALERT),  # 90%
+        (200_000, 1_000_000, ContextLevel.WARN),  # 20%, but 200k long
+        (400_000, 1_000_000, ContextLevel.ALERT),  # 40%, but 400k long
+    ],
+)
+def test_the_worse_of_the_fill_and_the_size_sets_the_level(
+    tokens: int, window: int, level: ContextLevel
+) -> None:
+    status = _status(context_tokens=tokens, context_window_size=window)
+    assert ContextThresholds().level(status) is level
+
+
+def test_the_reported_percentage_counts_without_token_figures() -> None:
+    assert ContextThresholds().level(_status(context_pct=92)) is ContextLevel.ALERT
+    assert ContextThresholds().level(_status()) is ContextLevel.OK
+
+
+def test_a_zero_size_threshold_turns_that_rule_off() -> None:
+    status = _status(context_tokens=500_000, context_window_size=1_000_000)
+    assert ContextThresholds(warn_tokens=0, alert_tokens=0).level(status) is ContextLevel.OK
+
+
+def test_only_the_context_block_is_painted() -> None:
+    status = _status(model="Opus", context_tokens=450_000, context_window_size=1_000_000)
+    line = render_statusline(status, _NO_WORKSPACE, ContextThresholds())
+    assert line == f"Opus  ·  {_RED}ctx 450k/1M (45%){_RESET}"
+    calm = _status(model="Opus", context_tokens=150_000, context_window_size=1_000_000)
+    assert render_statusline(calm, _NO_WORKSPACE, ContextThresholds()) == (
+        "Opus  ·  ctx 150k/1M (15%)"
+    )
+
+
+def test_without_thresholds_nothing_is_painted() -> None:
+    status = _status(context_tokens=450_000, context_window_size=1_000_000)
+    assert render_statusline(status, _NO_WORKSPACE) == "ctx 450k/1M (45%)"
+
+
+def test_a_warning_is_yellow() -> None:
+    status = _status(context_pct=75)
+    assert render_statusline(status, _NO_WORKSPACE, ContextThresholds()) == (
+        f"{_YELLOW}ctx 75%{_RESET}"
+    )
+
+
+def test_no_color_turns_the_colour_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert composition._context_thresholds() is None
+    monkeypatch.delenv("NO_COLOR")
+    monkeypatch.setattr(composition.config, "statusline_color", lambda: True)
+    monkeypatch.setattr(
+        composition.config, "context_thresholds", lambda: (50, 80, 100_000, 300_000)
+    )
+    assert composition._context_thresholds() == ContextThresholds(50, 80, 100_000, 300_000)

@@ -22,6 +22,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Claude and Codex. gmlw reads only technical markers (tool names, item types, a
     report's tag), never what the messages say.
   - Turns recorded before this version count as the user's.
+- **The status line colours a growing context.** The context block turns yellow, then
+  red, when the window fills up (70%, 90%) or the context grows long (200k, 400k tokens):
+  answers suffer and turns cost more with length, whatever the window. The worse of the
+  two rules wins. All four thresholds, and the colour itself, are set under
+  `[statusline]`; `NO_COLOR` turns the colour off too.
+
+### Fixed
+- **`gmlw config set` writes numbers as numbers.** An integer setting such as
+  `logging.max_bytes` was saved as text, which the reader then ignored, so the change had
+  no effect. It is now checked against its bounds and saved as a TOML integer.
 
 ## [0.12.1] - 2026-10-11
 

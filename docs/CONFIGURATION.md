@@ -393,6 +393,35 @@ cached at `~/.gmlw/state/update-check.json`.
 | --- | --- | --- |
 | `check` | check PyPI for a newer release | `true` |
 
+## `[statusline]`
+
+Controls the colour of the status line's context block (`ctx 412k/1M (41%)`). It turns
+yellow, then red, as the context grows. Two rules decide it, and the worse of the two wins:
+
+- **How full the window is** says how near compaction or the hard limit is.
+- **How long the context is** says how much answers suffer and each turn costs. Both grow
+  with the number of tokens, whatever the window, so a 400k context is long even when the
+  1M window is under half full.
+
+No study or tool agrees on one right threshold; the defaults follow Claude Code's own
+status-line example for the percentage, and are a convention for the size.
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `color` | colour the context block at all | `true` |
+| `context_warn_percent` | window fill that turns it yellow | `70` |
+| `context_alert_percent` | window fill that turns it red | `90` |
+| `context_warn_tokens` | context size that turns it yellow (`0`: rule off) | `200000` |
+| `context_alert_tokens` | context size that turns it red (`0`: rule off) | `400000` |
+
+Setting the `NO_COLOR` environment variable to anything also turns the colour off.
+
+```toml
+[statusline]
+context_warn_tokens = 150000
+context_alert_tokens = 300000
+```
+
 ```toml
 [update]
 check = false

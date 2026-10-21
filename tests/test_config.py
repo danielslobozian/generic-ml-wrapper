@@ -225,3 +225,24 @@ def test_client_args_ignores_a_non_table_value(tmp_path: Path) -> None:
 def test_client_args_drops_entries_that_are_not_strings(tmp_path: Path) -> None:
     path = _write(tmp_path, '[client.args]\nclaude = "--yolo"\ncodex = 42\n')
     assert config.client_args(path) == {"claude": "--yolo"}
+
+
+def test_the_statusline_colours_by_default(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.toml"
+    assert config.statusline_color(missing) is True
+    assert config.context_thresholds(missing) == (70, 90, 200_000, 400_000)
+
+
+def test_the_statusline_thresholds_read_the_config(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path,
+        "[statusline]\ncolor = false\ncontext_warn_percent = 50\ncontext_alert_tokens = 0\n",
+    )
+    assert config.statusline_color(path) is False
+    assert config.context_thresholds(path) == (50, 90, 200_000, 0)
+
+
+def test_an_ill_typed_statusline_threshold_falls_back(tmp_path: Path) -> None:
+    path = _write(tmp_path, '[statusline]\ncontext_warn_tokens = "300000"\ncolor = "no"\n')
+    assert config.context_thresholds(path) == (70, 90, 200_000, 400_000)
+    assert config.statusline_color(path) is True

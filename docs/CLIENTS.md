@@ -41,6 +41,9 @@ and cost to the ledger. `gmlw export <job>` reports it.
 `gmlw statusline`, whose output is produced by the Claude status parser. You do not run
 `gmlw statusline` by hand.
 
+The context block turns yellow, then red, as the context fills the window or grows long;
+see [`[statusline]`](CONFIGURATION.md#statusline) for the thresholds.
+
 Below the live line, the status line shows the session's usage (and the whole job's, once
 it spans several sessions), with the tokens broken down by kind:
 
@@ -97,7 +100,9 @@ cost figures for cursor runs. If you need metering, use claude, codex, or vibe.
 **Status line:** Supported — install only. `gmlw` writes the status-line configuration into
 `~/.cursor/cli-config.json` (same atomic, refuse-if-unparseable handling as claude), and
 Cursor's payload is read by the Cursor status parser. Because nothing is metered, the status
-line reflects only what Cursor itself reports.
+line reflects only what Cursor itself reports. The context colours are sent too; whether
+Cursor renders them is not documented by Cursor (`NO_COLOR` or `[statusline] color = false`
+turns them off).
 
 **Context delivery:** Context is delivered as an instruction pointing at the compiled context
 file. There is no relay in the cursor path.
