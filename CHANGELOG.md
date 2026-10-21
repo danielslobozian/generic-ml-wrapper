@@ -49,6 +49,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - The exit receipt's "a newer gmlw is out" notice now points to `gmlw update`,
     instead of a `uv tool upgrade` that was wrong for any other install.
 
+- **What's new in the menu.** `gmlw tui` has a **What's new** entry showing the release
+  notes, and after an upgrade it opens once on the releases since the one you last saw.
+  The changelog now ships inside the package, so the notes read offline and match the
+  installed copy. The first start after installing records the version without showing
+  anything.
+
 ### Fixed
 - **`gmlw config set` writes numbers as numbers.** An integer setting such as
   `logging.max_bytes` was saved as text, which the reader then ignored, so the change had

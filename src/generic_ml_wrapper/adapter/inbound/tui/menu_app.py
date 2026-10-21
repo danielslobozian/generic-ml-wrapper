@@ -32,7 +32,7 @@ from textual.binding import Binding
 from textual.containers import Container, VerticalScroll
 from textual.coordinate import Coordinate
 from textual.screen import Screen
-from textual.widgets import DataTable, Input, Label, ListItem, ListView, Static
+from textual.widgets import DataTable, Input, Label, ListItem, ListView, Markdown, Static
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
@@ -437,6 +437,7 @@ _TOP_MENU = (
     ("🎛", "tui.config", "menu:config", ""),
     ("📏", "tui.rules", "menu:rules", ""),
     ("🩺", "tui.health", "menu:health", "gmlw health"),
+    ("📰", "tui.whats_new", "menu:whats_new", ""),
     ("🚪", "tui.quit", "quit", ""),
 )
 # The icon per rule axis, so a group reads as a place or a craft at a glance.
@@ -956,16 +957,16 @@ class _MultiSelectScreen(_MenuScreen):
 
 
 class TopMenuScreen(_MenuScreen):
-    """The front door: Job · Attachments · Config · Rules · Health · Quit, under the banner."""
+    """The front door: Job · Attachments · Config · Rules · Health · What's new · Quit."""
 
     show_banner = True
 
     def menu_items(self) -> list[_Item]:
-        """The object rows: Job, Attachments, Config, Rules, Health, Quit."""
+        """The object rows: Job, Attachments, Config, Rules, Health, What's new, Quit."""
         return _menu(_TOP_MENU)
 
     def handle(self, item: _Item) -> None:
-        """Quit, or open the Job/Attachments/Config/Rules/Health sub-menu."""
+        """Quit, or open the Job/Attachments/Config/Rules/Health/What's new screen."""
         if item.action == "quit":
             self.menu_app.exit(None)
         elif item.action == "menu:job":
@@ -978,6 +979,8 @@ class TopMenuScreen(_MenuScreen):
             self.menu_app.push_screen(HealthScreen())
         elif item.action == "menu:attachment":
             self.menu_app.push_screen(AttachmentMenuScreen())
+        elif item.action == "menu:whats_new":
+            self.menu_app.push_screen(WhatsNewScreen(self.menu_app.whats_new()))
 
     def action_back(self) -> None:
         """At the front door, Back leaves gmlw (there is nothing to pop to)."""
@@ -1889,6 +1892,42 @@ class HealthDayScreen(Screen[None]):
 
     def action_back(self) -> None:
         """Pop back to the days."""
+        self.menu_app.pop_screen()
+
+
+class WhatsNewScreen(Screen[None]):
+    """The release notes, as the changelog writes them: every release, or the unseen ones.
+
+    Opened from the top menu for the whole changelog, and on its own once after an upgrade
+    for just the releases that came since -- as an IDE shows what changed in it.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
+
+    def __init__(self, notes: str) -> None:
+        """Bind the screen to the notes' Markdown; empty when there are none to show."""
+        super().__init__()
+        self._notes = notes
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the notes (or why there are none), and the key hints."""
+        t = i18n.active().t
+        yield Static(f"gmlw > {t('tui.whats_new')}", id="crumb")
+        with VerticalScroll(id="report"):
+            yield Markdown(self._notes or t("tui.whats_new.none"), id="notes")
+        yield Static(t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Focus the notes, so the arrows and page keys scroll them."""
+        self.query_one("#report", VerticalScroll).focus()
+
+    def action_back(self) -> None:
+        """Pop back to the menu."""
         self.menu_app.pop_screen()
 
 
@@ -2806,6 +2845,8 @@ class MenuApp(App[MenuChoice | None]):
         shelf: Shelf | None = None,
         default_tag: str | None = None,
         validate_tags: Callable[[Sequence[str]], str | None] | None = None,
+        whats_new: Callable[[], str] | None = None,
+        news: str = "",
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2854,6 +2895,10 @@ class MenuApp(App[MenuChoice | None]):
                 with, or ``None``.
             validate_tags: Validates a new job's typed tags, returning an error message or
                 ``None``; defaults to accepting any.
+            whats_new: Reads every release's notes as Markdown, for the What's new screen;
+                defaults to none.
+            news: The notes of the releases since the last upgrade the user saw, as
+                Markdown, opened over the menu as it starts; empty opens the menu alone.
         """
         super().__init__()
         self.jobs = jobs
@@ -2876,6 +2921,8 @@ class MenuApp(App[MenuChoice | None]):
         self.shelf = shelf
         self.default_tag = default_tag
         self.validate_tags = validate_tags or _accept_any_tags
+        self.whats_new: Callable[[], str] = whats_new or str
+        self.news = news
 
     def attachment_rows(self) -> list[AttachmentRow]:
         """Every stored attachment version, re-read on each call; none when unwired."""
@@ -2936,5 +2983,7 @@ class MenuApp(App[MenuChoice | None]):
                 return
 
     def on_mount(self) -> None:
-        """Open on the top (object) menu."""
+        """Open on the top (object) menu, with what changed over it after an upgrade."""
         self.push_screen(TopMenuScreen())
+        if self.news:
+            self.push_screen(WhatsNewScreen(self.news))

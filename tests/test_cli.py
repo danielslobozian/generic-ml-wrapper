@@ -31,6 +31,7 @@ from generic_ml_wrapper.application.domain.model.migration import (
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.release_note import ReleaseNote
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
@@ -94,6 +95,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
 )
 from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
+from generic_ml_wrapper.application.port.inbound.whats_new import WhatsNew
 from generic_ml_wrapper.application.port.outbound.command_runner import CommandRunnerPort
 from generic_ml_wrapper.application.wiring import composition
 from generic_ml_wrapper.common import paths
@@ -1858,7 +1860,7 @@ def _drive_tui(
     """Run ``_tui`` with ``_run_menu`` scripted; return (exit code, times the menu opened)."""
     passes = {"n": 0}
 
-    def _fake_menu() -> tui.MenuChoice | None:
+    def _fake_menu(_news: str = "") -> tui.MenuChoice | None:
         index = passes["n"]
         passes["n"] += 1
         if index >= len(script):
@@ -2778,3 +2780,43 @@ def test_describe_update_names_the_install(installation: Installation, shown: st
 
 def test_build_command_runner_is_wired() -> None:
     assert isinstance(composition.build_command_runner(), CommandRunnerPort)
+
+
+def test_release_notes_render_as_one_markdown_page() -> None:
+    notes = [
+        ReleaseNote("0.13.0", "2026-11-01", "### Added\n- New."),
+        ReleaseNote("Unreleased", None, "- Soon."),
+    ]
+    assert app.format_release_notes(notes) == (
+        "# 0.13.0 — 2026-11-01\n\n### Added\n- New.\n\n# Unreleased\n\n- Soon."
+    )
+    assert app.format_release_notes([]) == ""
+
+
+def test_the_news_opens_over_the_first_menu_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _News(WhatsNew):
+        def all(self) -> tuple[ReleaseNote, ...]:
+            return ()
+
+        def take_unseen(self) -> tuple[ReleaseNote, ...]:
+            return (ReleaseNote("0.13.0", None, "- New."),)
+
+    given: list[str] = []
+    script = [tui.MenuChoice(action="setup"), None]
+
+    def _fake_menu(news: str = "") -> tui.MenuChoice | None:
+        given.append(news)
+        return script[len(given) - 1]
+
+    monkeypatch.setattr(app.sys, "stdin", _Tty())
+    monkeypatch.setattr(app.sys, "stdout", _Tty())
+    monkeypatch.setattr(app, "build_whats_new", lambda: _News())
+    monkeypatch.setattr(app, "_run_menu", _fake_menu)
+    monkeypatch.setattr(app, "_pause_before_menu", lambda: None)
+
+    def _errand(_choice: tui.MenuChoice) -> int | None:
+        return None  # an errand: back to the menu
+
+    monkeypatch.setattr(app, "_act_on_tui_choice", _errand)
+    assert app._tui() == 0
+    assert given == ["# 0.13.0\n\n- New.", ""]

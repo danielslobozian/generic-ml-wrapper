@@ -122,6 +122,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_set_credential,
     build_start_job,
     build_tag_jobs,
+    build_whats_new,
 )
 from generic_ml_wrapper.common import config, i18n, paths, settings_registry
 from generic_ml_wrapper.common.errors import DomainError
@@ -137,6 +138,7 @@ if TYPE_CHECKING:
     # Type-only: the tui adapter is imported lazily inside `_tui` (see the note there), so
     # the post-menu handler can be typed without pulling Textual in at CLI startup.
     from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice, Shelf
+    from generic_ml_wrapper.application.domain.model.release_note import ReleaseNote
     from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 
 # Set from the Clients screen, which is not a `Switcher`, so it is named here rather than
@@ -1359,6 +1361,27 @@ def _update(args: argparse.Namespace) -> int:
     return code
 
 
+def format_release_notes(notes: Sequence[ReleaseNote], loc: i18n.Localizer | None = None) -> str:
+    """Render release notes as one Markdown page: a heading per release, then its entry.
+
+    Args:
+        notes: The releases, in the order to show them.
+        loc: The localiser to render through; defaults to the active language.
+
+    Returns:
+        The Markdown, or ``""`` when there are no notes.
+    """
+    loc = loc or i18n.active()
+    pages: list[str] = []
+    for note in notes:
+        if note.date is None:
+            heading = loc.t("whats_new.heading", version=note.version)
+        else:
+            heading = loc.t("whats_new.heading_dated", version=note.version, date=note.date)
+        pages.append(f"# {heading}\n\n{note.body}")
+    return "\n\n".join(pages)
+
+
 def describe_update(check: UpdateCheck, loc: i18n.Localizer | None = None) -> str:
     """Render what an update check found: the install, then what to do about it.
 
@@ -1730,8 +1753,12 @@ def _tui() -> int:
     """
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return _capability_index()  # never the menu off a TTY; never recurse back into _index
+    # Taken once: what changed since the last upgrade opens over the first menu only, not
+    # again each time an errand brings the user back to it.
+    news = format_release_notes(build_whats_new().take_unseen())
     while True:
-        choice = _run_menu()
+        choice = _run_menu(news)
+        news = ""
         if choice is None:  # quit from the menu itself
             return 0
         exit_code = _act_on_tui_choice(choice)
@@ -1752,12 +1779,16 @@ def _pause_before_menu() -> None:
         input()
 
 
-def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one per browser's data)
+def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one per browser's data)
     """Build the menu on the current state and run it once.
 
     Rebuilt per pass rather than kept alive: every browser's data is a snapshot taken here,
     so re-entering after an errand is what makes a deleted job leave the list, a new
     attachment appear, and a changed setting show its new value.
+
+    Args:
+        news: The release notes to open over the menu (the ones since the last upgrade
+            the user saw), as Markdown; empty opens the menu alone.
 
     Returns:
         What the user asked for, or ``None`` if they quit.
@@ -2083,6 +2114,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         launch_clients=_launch_clients,
         default_tag=_default_tag(),
         validate_tags=_validate_tags,
+        whats_new=lambda: format_release_notes(build_whats_new().all()),
+        news=news,
     ).run()  # blocks; terminal restored on return
 
 

@@ -87,6 +87,11 @@ packages = ["src/generic_ml_wrapper"]
 # it so the stamped build id ships in the wheel.
 artifacts = ["src/generic_ml_wrapper/_build_info.py"]
 
+[tool.hatch.build.targets.wheel.force-include]
+# The TUI's "What's new" reads the changelog; ship the repository's own, not a copy that
+# could drift from it.
+"CHANGELOG.md" = "generic_ml_wrapper/resources/CHANGELOG.md"
+
 [tool.hatch.build.targets.wheel.hooks.custom]
 # Stamps src/generic_ml_wrapper/_build_info.py with a build timestamp + git sha.
 path = "hatch_build.py"

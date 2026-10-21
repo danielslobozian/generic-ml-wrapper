@@ -580,5 +580,10 @@
   "update.confirm": "  Mettre à jour maintenant ? [o/N] : ",
   "update.run_after_exit": "Lancez-la une fois gmlw fermé : sous Windows, un gmlw en cours d'exécution ne peut pas se remplacer.",
   "update.failed": "gmlw : la mise à jour s'est terminée avec le code {code} ; rien d'autre n'a été modifié.",
-  "update.source.unlocated": "des sources non construites"
+  "update.source.unlocated": "des sources non construites",
+  "tui.whats_new": "Nouveautés",
+  "tui.whats_new.none": "Cette copie de gmlw n'embarque pas de notes de version.",
+  "whats_new.heading": "{version}",
+  "whats_new.heading_dated": "{version} — {date}",
+  "log.whats_new_not_recorded": "impossible d'enregistrer les notes de version comme lues : {error}"
 }
