@@ -2567,3 +2567,54 @@ def test_legacy_workflows_are_imported_and_announced_on_the_next_command(
     assert "doc-review  1.0.0" in captured.out
     assert app.main(["attachment", "list"]) == 0
     assert "now attachments" not in capsys.readouterr().err  # once only
+
+
+def _listed_tags(monkeypatch: pytest.MonkeyPatch) -> list[str | None]:
+    asked: list[str | None] = []
+
+    class _Jobs(ListJobs):
+        def execute(self, tag: str | None = None) -> list[JobSummary]:
+            asked.append(tag)
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
+    return asked
+
+
+def test_jobs_opens_on_the_default_tag(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = _listed_tags(monkeypatch)
+    monkeypatch.setattr(app.config, "default_tag", lambda: "Sprint-30")
+    assert app.main(["jobs"]) == 0
+    assert app.main(["jobs", "--all"]) == 0
+    assert app.main(["jobs", "--tag", "payments"]) == 0
+    assert asked == ["sprint-30", None, "payments"]
+
+
+def test_an_invalid_default_tag_is_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked = _listed_tags(monkeypatch)
+    monkeypatch.setattr(app.config, "default_tag", lambda: "not a tag")
+    assert app.main(["jobs"]) == 0
+    assert asked == [None]
+
+
+def test_jobs_refuses_a_tag_and_all_together() -> None:
+    with pytest.raises(SystemExit):
+        app.build_parser().parse_args(["jobs", "--all", "--tag", "x"])
+
+
+@pytest.mark.parametrize(
+    ("explicit", "default", "expected"),
+    [
+        (None, "sprint-30", ("sprint-30",)),  # a plain start gets the default
+        (["payments"], "sprint-30", ()),  # explicit tags replace it
+        (None, None, ()),
+    ],
+)
+def test_a_new_job_gets_the_default_tag_unless_tags_are_given(
+    monkeypatch: pytest.MonkeyPatch,
+    explicit: list[str] | None,
+    default: str | None,
+    expected: tuple[str, ...],
+) -> None:
+    monkeypatch.setattr(app.config, "default_tag", lambda: default)
+    assert app._new_job_tags(explicit) == expected

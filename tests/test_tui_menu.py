@@ -2390,3 +2390,72 @@ def test_without_attachments_a_new_job_starts_plain() -> None:
     _new_job_attach(app, ())
 
     assert app.return_value == MenuChoice(action="start", job="PROJ-1")
+
+
+_JOB_LIST_ROW = 2  # Job menu: New, Resume, List
+
+
+async def _open_new_job_form(pilot: Pilot[MenuChoice | None]) -> None:
+    await pilot.press("enter")  # Job menu
+    await pilot.press("enter")  # New
+    await pilot.pause()
+    await pilot.press("enter")  # "Type a new name…" -> form
+    await pilot.pause()
+
+
+def test_a_new_job_starts_with_the_default_tag_and_launches_with_its_tags() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, default_tag="sprint-30")
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_new_job_form(pilot)
+            seen["prefilled"] = app.screen.query_one("#newtags", Input).value
+            app.screen.query_one("#name", Input).value = "billing-api"
+            app.screen.query_one("#newtags", Input).value = "sprint-30 payments"
+            await pilot.press("enter")
+            await pilot.pause()
+        seen["choice"] = app.return_value
+
+    asyncio.run(scenario())
+    assert seen["prefilled"] == "sprint-30"
+    assert seen["choice"] == MenuChoice(
+        action="start", job="billing-api", tags=("sprint-30", "payments")
+    )
+
+
+def test_an_invalid_tag_keeps_the_new_job_form_open() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, validate_tags=lambda tags: "bad tag" if "!" in tags else None)
+        async with app.run_test(size=(90, 30)) as pilot:
+            await _open_new_job_form(pilot)
+            app.screen.query_one("#name", Input).value = "billing-api"
+            app.screen.query_one("#newtags", Input).value = "ok !"
+            await pilot.press("enter")
+            await pilot.pause()
+            seen["still_on_form"] = bool(app.screen.query("#newtags"))
+            seen["detail"] = str(app.screen.query_one("#detail", Static).render())
+
+    asyncio.run(scenario())
+    assert seen["still_on_form"] is True
+    assert "bad tag" in str(seen["detail"])
+
+
+def test_the_job_list_opens_on_the_default_tag() -> None:
+    seen: dict[str, object] = {}
+    jobs = [JobChoice("PAY-1", 1, ("sprint-30",)), JobChoice("OLD-1", 1, ("sprint-29",))]
+
+    async def scenario() -> None:
+        app = MenuApp(jobs, default_tag="sprint-30")
+        async with app.run_test(size=(90, 30)) as pilot:
+            await pilot.press("enter")  # Job menu
+            for _ in range(_JOB_LIST_ROW):
+                await pilot.press("down")
+            await pilot.press("enter")  # List
+            await pilot.pause()
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+
+    asyncio.run(scenario())
+    assert str(seen["crumb"]).endswith("> #sprint-30")

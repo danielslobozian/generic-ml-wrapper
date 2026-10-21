@@ -142,6 +142,12 @@ class UpdateSettings(_Section):
     check: Annotated[bool, Field(description="setting.update.check")] = True
 
 
+class JobsSettings(_Section):
+    """The ``[jobs]`` section: the tag the job lists open on and new jobs get."""
+
+    default_tag: Annotated[str | None, Field(description="setting.jobs.default_tag")] = None
+
+
 class StatuslineSettings(_Section):
     """The ``[statusline]`` section: when the status line colours the context block."""
 
@@ -185,6 +191,7 @@ class GmlwSettings(BaseSettings):
     compress: CompressSettings = CompressSettings()
     hints: HintsSettings = HintsSettings()
     update: UpdateSettings = UpdateSettings()
+    jobs: JobsSettings = JobsSettings()
     statusline: StatuslineSettings = StatuslineSettings()
     ambient: AmbientSettings = AmbientSettings()
 
@@ -221,6 +228,7 @@ _SECTIONS: tuple[tuple[str, type[_Section]], ...] = (
     ("compress", CompressSettings),
     ("hints", HintsSettings),
     ("update", UpdateSettings),
+    ("jobs", JobsSettings),
     ("statusline", StatuslineSettings),
     ("ambient", AmbientSettings),
 )

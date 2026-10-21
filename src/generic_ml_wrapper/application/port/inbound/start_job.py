@@ -28,6 +28,8 @@ class StartJobCommand:
             is configured for the client; ``None`` means "use the configured value".
         tags: Tags to put on the job once its session is recorded (kept with any it
             already has), e.g. the sprint it belongs to.
+        new_job_tags: Tags to put on the job only when this start creates it -- the
+            default tag, which must not spread to older jobs as they are reopened.
     """
 
     job: str
@@ -39,6 +41,7 @@ class StartJobCommand:
     note: str | None = None
     client_args: str | None = None
     tags: tuple[str, ...] = ()
+    new_job_tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

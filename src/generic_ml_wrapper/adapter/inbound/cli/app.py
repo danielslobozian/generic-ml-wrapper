@@ -45,6 +45,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
     EnvVarName,
     IdentifierError,
     JobId,
+    TagName,
 )
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.migration import (
@@ -341,7 +342,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     # command with no action print its help, which is right for `attachment` and wrong here.
     jobs = sub.add_parser("jobs", help=i18n.t("cli.cmd.jobs"))
     _add_json_flag(jobs)
-    jobs.add_argument("--tag", default=None, help=i18n.t("cli.flag.jobs_tag"))
+    jobs_filter = jobs.add_mutually_exclusive_group()
+    jobs_filter.add_argument("--tag", default=None, help=i18n.t("cli.flag.jobs_tag"))
+    jobs_filter.add_argument("--all", action="store_true", help=i18n.t("cli.flag.jobs_all"))
     jobs_sub = jobs.add_subparsers(dest="jobs_command", metavar=i18n.t("cli.metavar.action"))
     jobs_delete = jobs_sub.add_parser("delete", help=i18n.t("cli.cmd.jobs_delete"))
     jobs_delete.add_argument("job", nargs="+", help=i18n.t("cli.arg.delete_jobs"))
@@ -1205,7 +1208,11 @@ def _view(args: argparse.Namespace) -> str | None:
     """Render a read-only command's output, or ``None`` if it isn't one."""
     as_json = bool(getattr(args, "json", False))
     if args.command == "jobs":
-        tag = None if args.tag is None else str(args.tag)
+        # No --tag: the default tag filters, unless --all asks for every job.
+        if args.tag is not None:
+            tag: str | None = str(args.tag)
+        else:
+            tag = None if getattr(args, "all", False) else _default_tag()
         summaries = build_list_jobs().execute(tag)
         return (
             _as_json([asdict(s) for s in summaries]) if as_json else format_jobs(summaries, tag=tag)
@@ -1962,6 +1969,14 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         apply=_apply_setting,
     )
 
+    def _validate_tags(tags: Sequence[str]) -> str | None:  # the same, for a new job's tags
+        for tag in tags:
+            try:
+                TagName(tag)
+            except IdentifierError:
+                return t("tui.newjob.tags_invalid", tag=tag)
+        return None
+
     def _validate_job(name: str) -> str | None:  # in-form validation before any teardown
         try:
             JobId(name)
@@ -1990,6 +2005,8 @@ def _run_menu() -> MenuChoice | None:  # noqa: PLR0915  (menu + preflights, one 
         retag_job=_retag_job,
         shelf=shelf,
         launch_clients=_launch_clients,
+        default_tag=_default_tag(),
+        validate_tags=_validate_tags,
     ).run()  # blocks; terminal restored on return
 
 
@@ -2039,6 +2056,7 @@ def _act_on_tui_choice(choice: MenuChoice) -> int | None:
         attachment=choice.attachment,
         attachment_version=choice.attachment_version,
         note=choice.note,
+        tags=choice.tags,
     )
 
 
@@ -2052,6 +2070,7 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; what it attach
     attachment: str | None = None,
     attachment_version: str | None = None,
     note: str | None = None,
+    tags: tuple[str, ...] = (),
 ) -> int:
     """Launch (or resume) a job from the TUI's choice — the hand-off after ``run()`` returns.
 
@@ -2064,6 +2083,8 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; what it attach
         attachment: The attachment to start a new session with, or ``None``.
         attachment_version: That attachment's version, or ``None`` for the highest.
         note: An extra paragraph for the new session's opening message, or ``None``.
+        tags: The tags to put on the job, as typed in the new-job form (which starts with
+            the default tag, so it is not added again here).
 
     Returns:
         The process exit code.
@@ -2076,6 +2097,7 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; what it attach
         attachment=attachment,
         attachment_version=attachment_version,
         note=note,
+        tags=tags,
     )
     # Guard the folder the launch will actually use: a resumed session's stored folder, or
     # the current directory for a new start (or a pre-folder resume, whose cwd is ``None``).
@@ -2102,6 +2124,27 @@ def _tui_launch_job(  # noqa: PLR0913  (the TUI choice, unpacked; what it attach
     return result.exit_code
 
 
+def _default_tag() -> str | None:
+    """The configured ``[jobs] default_tag``, or ``None`` when unset or not a valid tag.
+
+    An invalid one is logged and ignored rather than refusing every start and listing.
+    """
+    raw = config.default_tag()
+    if raw is None:
+        return None
+    try:
+        return TagName(raw)
+    except IdentifierError:
+        log.warning(i18n.t("log.default_tag_invalid", tag=raw))
+        return None
+
+
+def _new_job_tags(explicit: Sequence[str] | None) -> tuple[str, ...]:
+    """The default tag for a job this start creates, unless tags were given explicitly."""
+    default = _default_tag()
+    return () if explicit or default is None else (default,)
+
+
 def _start(args: argparse.Namespace) -> int:
     if args.job is None:  # `gmlw start` with no job — guide instead of an argparse dump
         print(i18n.t("start.needs_job"), file=sys.stderr)
@@ -2116,6 +2159,7 @@ def _start(args: argparse.Namespace) -> int:
         attachment_version=attachment_version,
         client_args=args.client_args,
         tags=tuple(getattr(args, "tag", None) or ()),
+        new_job_tags=_new_job_tags(getattr(args, "tag", None)),
     )
     if not _preflight_cwd():  # deleted working directory — the client would crash on getcwd
         return 2
