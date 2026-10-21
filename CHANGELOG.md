@@ -34,6 +34,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `gmlw start` adds it unless `--tag` names others, and the new-job form starts with it
   filled in. Reopening an older job does not tag it. `gmlw jobs --all` lists every job.
 
+- **Count the tools the model calls.** Every metered turn records the tools its reply
+  called, by name only -- never what a call asked or returned. The status line shows the
+  total and the three most called, for the session and the job:
+  `⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …)`. `gmlw export <job>` lists every tool
+  under totals by tool, and `--json` carries `tool_calls` on each turn and `tools` overall.
+  Claude, codex and vibe; turns recorded before this version have none.
+
 ### Fixed
 - **`gmlw config set` writes numbers as numbers.** An integer setting such as
   `logging.max_bytes` was saved as text, which the reader then ignored, so the change had

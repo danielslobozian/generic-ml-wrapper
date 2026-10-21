@@ -355,6 +355,7 @@ class MeteringRelay:
                 role=origin.role,
                 agent=origin.agent,
                 caused_by_agent=origin.caused_by_agent,
+                tool_calls=usage.tool_calls,
             )
             self._metering.record(self._job, turn)
         if self._transcript is not None:

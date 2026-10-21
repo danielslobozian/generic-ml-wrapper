@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import json
+from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
@@ -27,7 +29,8 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
             connection.execute(
                 "INSERT INTO turns (job, session_id, turn_id, input_tokens, output_tokens, "
                 "cache_creation_tokens, cache_read_tokens, cost_usd, model, timestamp, duration_s, "
-                "role, agent, caused_by_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "role, agent, caused_by_agent, tool_calls) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job,
                     turn.session_id,
@@ -43,6 +46,7 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
                     turn.role.value,
                     turn.agent,
                     int(turn.caused_by_agent),
+                    json.dumps(turn.tool_calls.as_dict()),
                 ),
             )
 
@@ -52,7 +56,7 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
             rows = connection.execute(
                 "SELECT session_id, turn_id, input_tokens, output_tokens, cache_creation_tokens, "
                 "cache_read_tokens, cost_usd, model, timestamp, duration_s, role, agent, "
-                "caused_by_agent FROM turns WHERE job = ? ORDER BY id",
+                "caused_by_agent, tool_calls FROM turns WHERE job = ? ORDER BY id",
                 (job,),
             ).fetchall()
         return [
@@ -70,6 +74,25 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
                 role=TurnRole(row["role"]),
                 agent=row["agent"],
                 caused_by_agent=bool(row["caused_by_agent"]),
+                tool_calls=_tool_calls(row["tool_calls"]),
             )
             for row in rows
         ]
+
+
+def _tool_calls(stored: str) -> ToolCalls:
+    """Read a turn's stored ``{tool: calls}``; anything unreadable counts as none."""
+    try:
+        decoded: object = json.loads(stored)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return ToolCalls()
+    if not isinstance(decoded, dict):
+        return ToolCalls()
+    counts = cast("dict[object, object]", decoded)
+    return ToolCalls.from_counts(
+        {
+            name: calls
+            for name, calls in counts.items()
+            if isinstance(name, str) and isinstance(calls, int) and not isinstance(calls, bool)
+        }
+    )

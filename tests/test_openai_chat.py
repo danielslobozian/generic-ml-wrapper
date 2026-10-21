@@ -4,6 +4,7 @@
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
 from generic_ml_wrapper.adapter.outbound.gateway.openai_chat import read_usage
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 
 # A Mistral (OpenAI Chat Completions) SSE turn: usage rides the final chunk, which
 # carries an empty ``choices`` and the ``usage`` block.
@@ -64,3 +65,29 @@ def test_stream_without_usage_yields_none() -> None:
 def test_non_body_yields_none() -> None:
     assert read_usage("just some text") is None
     assert read_usage("data: not json") is None
+
+
+def test_a_streamed_tool_call_is_counted_once_by_name() -> None:
+    stream = (
+        'data: {"id":"c","choices":[{"delta":{"tool_calls":[{"index":0,"id":"a",'
+        '"function":{"name":"bash","arguments":""}}]}}]}\n\n'
+        'data: {"id":"c","choices":[{"delta":{"tool_calls":[{"index":0,'
+        '"function":{"arguments":"{\\"cmd\\":1}"}}]}}]}\n\n'
+        'data: {"id":"c","choices":[{"delta":{"tool_calls":[{"index":1,"id":"b",'
+        '"function":{"name":"read_file","arguments":""}}]}}]}\n\n'
+        'data: {"id":"c","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":1}}\n\n'
+    )
+    usage = read_usage(stream)
+    assert usage is not None
+    assert usage.tool_calls == ToolCalls((("bash", 1), ("read_file", 1)))
+
+
+def test_the_tools_a_json_reply_calls_are_counted_by_name() -> None:
+    body = (
+        '{"id":"c","model":"m","choices":[{"message":{"tool_calls":['
+        '{"function":{"name":"bash"}},{"function":{"name":"bash"}}]}}],'
+        '"usage":{"prompt_tokens":5,"completion_tokens":1}}'
+    )
+    usage = read_usage(body)
+    assert usage is not None
+    assert usage.tool_calls.as_dict() == {"bash": 2}

@@ -82,6 +82,18 @@ background agent's completion, or its hand-back). gmlw reads only those technica
 markers, never what the messages say. Turns recorded before this version count as the
 user's.
 
+Once the model has called tools, the row also counts them: the total, then the three most
+called.
+
+```
+  session PAY-1_003 (57m) · 86 turns · ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k · ⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …) · $2.50
+```
+
+Only the tool's name is recorded, never what it was asked or what it returned. The names
+are the client's own, so Claude's `WebSearch` (the tool the conversation calls) and
+`web_search` (the searches its helper runs for it) are counted apart. `gmlw export <job>`
+lists every tool.
+
 **Context delivery:** Native. Compiled context (the startup context, with any attachment) is written
 to a context file and passed with `--append-system-prompt-file`, leaving a durable
 provenance artifact under `~/.gmlw/contexts/`.

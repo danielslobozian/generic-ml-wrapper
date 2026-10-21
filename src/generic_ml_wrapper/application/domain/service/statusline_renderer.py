@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.context_thresholds import (
         ContextThresholds,
     )
+    from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
     from generic_ml_wrapper.application.domain.model.workspace import Workspace
 
 _SEPARATOR = "  ·  "
@@ -150,8 +151,10 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     cost_usd: float,
     age_s: float | None = None,
     agents: AgentUsage | None = None,
+    *,
+    tools: ToolCalls | None = None,
 ) -> str:
-    """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · $``.
+    """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · ⚒ · $``.
 
     Used for both the current-session row (``label="session"``) and the whole-job
     total (``label="job"``). Turns/tokens show only when deep-metered (``turns`` > 0);
@@ -173,6 +176,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
             has none -- a session launched but never prompted has no age to show.
         agents: The agents' (subagents') part of ``turns`` and ``tokens``, or ``None``
             when they had none; the turn count and each kind then show their share.
+        tools: The tools those turns called, or ``None``; shown as their total and the
+            most called (``⚒ 48 (Bash 30, Read 12, WebSearch 6, …)``) once there is one.
 
     Returns:
         The footer row (no trailing newline).
@@ -183,6 +188,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
         own, caused = (0, 0) if agents is None else (agents.turns, agents.caused_turns)
         parts.append(f"{turns} turns{_shares(own, caused, turns)}")
         parts.append(render_tokens(tokens, agents))
+        if tools is not None and tools.total:
+            parts.append(render_tools(tools))
     parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
 
@@ -212,6 +219,21 @@ def render_tokens(tokens: TokenCounts, agents: AgentUsage | None = None) -> str:
         f"{mark} {_compact(count)}{_shares(part, extra, count)}"
         for mark, count, part, extra in pairs
     )
+
+
+# How many tools the status line names; the rest are only in the total and the export.
+_TOP_TOOLS = 3
+
+
+def render_tools(tools: ToolCalls) -> str:
+    """The tool calls as their total, then the most called: ``⚒ 48 (Bash 30, Read 12, …)``.
+
+    Commas inside the parenthesis, because the row's own ``·`` separates its fields.
+    """
+    named = [f"{name} {_compact(calls)}" for name, calls in tools.counts[:_TOP_TOOLS]]
+    if len(tools.counts) > _TOP_TOOLS:
+        named.append("…")
+    return f"⚒ {_compact(tools.total)} ({', '.join(named)})"
 
 
 def _shares(own: int, caused: int, whole: int) -> str:

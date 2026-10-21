@@ -109,6 +109,8 @@
   "usage.model_row": "  {model}  {calls} appel(s){tokens}  {duration}s",
   "usage.totals_by_agent": "  ── totaux par agent ──",
   "usage.agent_row": "  {agent}  {calls} appel(s){tokens}  {duration}s",
+  "usage.totals_by_tool": "  ── totaux par outil ──",
+  "usage.tool_row": "  {tool}  {calls} appel(s)",
   "usage.role_main": "principal",
   "usage.role_agent": "agent",
   "usage.role_main_caused": "principal, pour les agents",

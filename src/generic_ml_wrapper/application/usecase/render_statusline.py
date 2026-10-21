@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 
 from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
     render_statusline,
     render_usage_row,
@@ -106,6 +107,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                     costs.get(session, 0.0),
                     self._age(session_turns),
                     AgentUsage.of(session_turns),
+                    tools=ToolCalls.summed(turn.tool_calls for turn in session_turns),
                 )
             )
             spans_other_sessions = any(turn.session_id != session for turn in turns) or any(
@@ -122,6 +124,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                 round(sum(costs.values()), 2),
                 self._age(turns),
                 AgentUsage.of(turns),
+                tools=ToolCalls.summed(turn.tool_calls for turn in turns),
             )
         )
         return "\n".join(rows)

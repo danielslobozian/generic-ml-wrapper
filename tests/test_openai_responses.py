@@ -175,3 +175,21 @@ def test_an_agents_message_to_the_main_thread_causes_the_main_turn() -> None:
 )
 def test_other_main_turns_are_not_caused_by_an_agent(items: tuple[object, ...]) -> None:
     assert read_origin(_main_request(*items)) == MAIN
+
+
+def test_the_tools_a_codex_turn_calls_are_counted_by_name() -> None:
+    output = [
+        {"type": "reasoning"},
+        {"type": "function_call", "name": "exec", "call_id": "1"},
+        {"type": "custom_tool_call", "name": "apply_patch", "call_id": "2"},
+        {"type": "web_search_call", "id": "3"},
+        {"type": "function_call", "name": "exec", "call_id": "4"},
+        {"type": "message", "role": "assistant"},
+    ]
+    completed = {
+        "type": "response.completed",
+        "response": {"id": "r", "model": "m", "usage": {"input_tokens": 1}, "output": output},
+    }
+    usage = read_usage(f"data: {json.dumps(completed)}\n\n")
+    assert usage is not None
+    assert usage.tool_calls.as_dict() == {"exec": 2, "apply_patch": 1, "web_search": 1}

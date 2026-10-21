@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, cast
 
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import (
     CAUSED_BY_AGENT,
     MAIN,
@@ -36,6 +37,9 @@ _SUBAGENT_MARK = "cc_is_subagent=true"
 # The tools that start a Claude Code subagent (``Task`` is its older name). Their result
 # is the launch's acknowledgement for a background agent, the agent's report otherwise.
 _AGENT_TOOLS = frozenset({"Agent", "Task"})
+# The content blocks that call a tool: one the client runs, or one the server runs itself
+# (a web search).
+_TOOL_BLOCKS = frozenset({"tool_use", "server_tool_use"})
 # The tag a line opens with when Claude Code hands the main conversation an agent's
 # report: a background agent's completion, or a subagent's hand-back. The report may
 # follow a line of its own or sit inside a system reminder, so any line counts; a tag
@@ -54,6 +58,7 @@ class StreamUsage:
         cache_creation_tokens: Prompt tokens written to the cache this turn.
         cache_read_tokens: Prompt tokens served from the cache this turn.
         turn_id: The provider's id for this turn, or ``None`` if unreported.
+        tool_calls: The tools the response called, by name.
     """
 
     input_tokens: int
@@ -62,6 +67,7 @@ class StreamUsage:
     cache_creation_tokens: int = 0
     cache_read_tokens: int = 0
     turn_id: str | None = None
+    tool_calls: ToolCalls = field(default_factory=ToolCalls)
 
 
 def read_usage(text: str) -> StreamUsage | None:
@@ -180,6 +186,18 @@ def _from_json(text: str) -> StreamUsage | None:
         _usage_token(usage, "cache_creation_input_tokens") or 0,
         _usage_token(usage, "cache_read_input_tokens") or 0,
         _as_str(envelope.get("id")),
+        _tool_calls(envelope.get("content")),
+    )
+
+
+def _tool_calls(content: object) -> ToolCalls:
+    """The tools a response's content blocks call, by name."""
+    if not isinstance(content, list):
+        return ToolCalls()
+    return ToolCalls.of(
+        name
+        for block in cast("list[object]", content)
+        if _field(block, "type") in _TOOL_BLOCKS and (name := _as_str(_field(block, "name")))
     )
 
 
@@ -199,12 +217,17 @@ def extract_usage(lines: Iterable[str]) -> StreamUsage | None:
     cache_read: int | None = None
     model: str | None = None
     turn_id: str | None = None
+    tools: list[str] = []
     for raw in lines:
         event = _data_event(raw)
         if event is None:
             continue
         kind = event.get("type")
-        if kind == "message_start":
+        if kind == "content_block_start":
+            block = event.get("content_block")
+            if _field(block, "type") in _TOOL_BLOCKS and (name := _as_str(_field(block, "name"))):
+                tools.append(name)
+        elif kind == "message_start":
             message = event.get("message")
             if isinstance(message, dict):
                 fields = cast("dict[str, object]", message)
@@ -221,7 +244,13 @@ def extract_usage(lines: Iterable[str]) -> StreamUsage | None:
     if input_tokens is None and output_tokens is None:
         return None
     return StreamUsage(
-        input_tokens or 0, output_tokens or 0, model, cache_creation or 0, cache_read or 0, turn_id
+        input_tokens or 0,
+        output_tokens or 0,
+        model,
+        cache_creation or 0,
+        cache_read or 0,
+        turn_id,
+        ToolCalls.of(tools),
     )
 
 

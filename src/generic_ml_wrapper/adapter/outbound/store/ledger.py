@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -62,7 +62,8 @@ CREATE TABLE turns (
     duration_s            REAL NOT NULL DEFAULT 0,
     role                  TEXT NOT NULL DEFAULT 'main',  -- 'main' or 'agent'
     agent                 TEXT,                          -- the agent's name, when given
-    caused_by_agent       INTEGER NOT NULL DEFAULT 0     -- 0/1: a main turn an agent caused
+    caused_by_agent       INTEGER NOT NULL DEFAULT 0,    -- 0/1: a main turn an agent caused
+    tool_calls            TEXT NOT NULL DEFAULT '{}'     -- JSON {tool name: calls}
 );
 CREATE INDEX idx_turns_job ON turns(job);
 
@@ -189,6 +190,8 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
     # Which main-conversation turns an agent caused. Existing turns were never told
     # apart, so none count as caused.
     10: ("ALTER TABLE turns ADD COLUMN caused_by_agent INTEGER NOT NULL DEFAULT 0",),
+    # The tools each turn called, by name. Existing turns were never read for them.
+    11: ("ALTER TABLE turns ADD COLUMN tool_calls TEXT NOT NULL DEFAULT '{}'",),
 }
 
 

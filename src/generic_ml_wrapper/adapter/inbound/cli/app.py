@@ -727,6 +727,13 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
             )
             for agent in report.agents
         ]
+    if report.tools:
+        tool_width = max(len(name) for name in report.tools)
+        lines += ["", loc.t("usage.totals_by_tool")]
+        lines += [
+            loc.t("usage.tool_row", tool=f"{name:<{tool_width}}", calls=f"{calls:>4}")
+            for name, calls in report.tools.items()
+        ]
     if report.incidents:
         lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
         lines += [

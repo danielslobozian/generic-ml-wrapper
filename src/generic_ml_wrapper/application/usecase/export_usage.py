@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     AgentTotal,
@@ -70,6 +71,7 @@ class ExportUsageUseCase(ExportUsage):
             duration_s=round(sum(model.duration_s for model in models), 1),
             total_usd=round(sum(cost.cost_usd for cost in session_costs), 2),
             incidents=tuple(self._incidents.incidents(job=job)),
+            tools=ToolCalls.summed(turn.tool_calls for turn in recorded).as_dict(),
         )
 
 
@@ -85,6 +87,7 @@ def _row(turn: TurnUsage) -> TurnRow:
         role=turn.role,
         agent=turn.agent,
         caused_by_agent=turn.caused_by_agent,
+        tool_calls=turn.tool_calls.as_dict(),
     )
 
 

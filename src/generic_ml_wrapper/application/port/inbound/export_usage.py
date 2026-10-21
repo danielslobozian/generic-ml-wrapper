@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
@@ -30,6 +30,7 @@ class TurnRow:
         agent: The agent's name when the client gives one, else ``None``.
         caused_by_agent: Whether this main-conversation turn was made only because an
             agent was started or reported back.
+        tool_calls: The tools the turn called, ``{name: calls}``, most called first.
     """
 
     timestamp: float
@@ -42,6 +43,7 @@ class TurnRow:
     role: TurnRole = TurnRole.MAIN
     agent: str | None = None
     caused_by_agent: bool = False
+    tool_calls: dict[str, int] = field(default_factory=dict[str, int])
 
 
 @dataclass(frozen=True)
@@ -123,6 +125,7 @@ class UsageReport:
         duration_s: The job's total metered duration, in seconds.
         total_usd: The job's total cost across its sessions.
         incidents: The connection incidents seen in its sessions, chronological.
+        tools: The tools the job's turns called, ``{name: calls}``, most called first.
     """
 
     job: str
@@ -137,6 +140,7 @@ class UsageReport:
     duration_s: float = 0.0
     total_usd: float = 0.0
     incidents: tuple[Incident, ...] = ()
+    tools: dict[str, int] = field(default_factory=dict[str, int])
 
 
 class ExportUsage(ABC):
