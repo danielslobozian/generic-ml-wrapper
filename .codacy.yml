@@ -1,0 +1,9 @@
+---
+# .codacy.yml -- Codacy's analysis settings (https://docs.codacy.com/repositories-configure/codacy-configuration-file/).
+#
+# Bandit flags every `assert` (B101), and pytest tests are written with them. Tests are
+# excluded from Bandit only: the other tools, duplication and complexity still see them.
+engines:
+  bandit:
+    exclude_paths:
+      - "tests/**"
