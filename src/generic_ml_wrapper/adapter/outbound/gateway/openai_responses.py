@@ -9,8 +9,8 @@ Codex streams a turn as Server-Sent Events and reports usage once, in the final
 
 The *request* side carries codex's own session id, which is the only way to learn it
 — codex mints it internally and takes no launch flag to set it (see
-:func:`read_session_id`), and which agent of the session made the turn (see
-:func:`read_origin`).
+:func:`read_session_id`), which agent of the session made the turn, and whether an
+agent caused a main turn (see :func:`read_origin`).
 """
 
 from __future__ import annotations
@@ -19,12 +19,24 @@ import json
 from typing import cast
 
 from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import StreamUsage
-from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
+from generic_ml_wrapper.application.domain.model.turn_origin import (
+    CAUSED_BY_AGENT,
+    MAIN,
+    TurnOrigin,
+    TurnRole,
+)
 
 _DATA_PREFIX = "data:"
 _TURN_KEY = "x-codex-turn-metadata"
 # Codex names its agents as a path under the main thread's: "/root", "/root/<agent>".
 _ROOT_AGENT = "/root"
+# The tools that start an agent, give it more work, or wait for its report: their
+# result is a launch's acknowledgement or an agent's report.
+_AGENT_TOOLS = frozenset({"spawn_agent", "followup_task", "wait_agent", "wait"})
+# The input items the model itself produced; what follows the last of them is new.
+_MODEL_ITEMS = frozenset({"reasoning", "function_call", "custom_tool_call"})
+_CALLS = frozenset({"function_call", "custom_tool_call"})
+_CALL_OUTPUTS = frozenset({"function_call_output", "custom_tool_call_output"})
 
 
 def read_usage(text: str) -> StreamUsage | None:
@@ -93,11 +105,16 @@ def read_origin(text: str) -> TurnOrigin:
     ``/root/<name>`` for an agent it spawned, which also has ``thread_source``
     ``subagent``.
 
+    A main turn is caused by an agent when its new input is an agent's message to the
+    main thread, or the result of an agent tool call. Only those technical markers are
+    read -- item types, authors and tool names -- never what the items say.
+
     Args:
         text: The decoded request body.
 
     Returns:
-        The agent and its name (the path below ``/root``), else the main conversation.
+        The agent and its name (the path below ``/root``), else the main conversation --
+        marked as caused by an agent when it is.
     """
     try:
         decoded: object = json.loads(text)
@@ -109,7 +126,31 @@ def read_origin(text: str) -> TurnOrigin:
         return TurnOrigin(TurnRole.AGENT, name.removeprefix(_ROOT_AGENT + "/"))
     if _get(turn, "thread_source") == "subagent":
         return TurnOrigin(TurnRole.AGENT)
-    return MAIN
+    return CAUSED_BY_AGENT if _caused_by_agent(_get(decoded, "input")) else MAIN
+
+
+def _caused_by_agent(items: object) -> bool:
+    """Whether the input the model has not seen yet comes from an agent."""
+    if not isinstance(items, list):
+        return False
+    history = cast("list[object]", items)
+    newest: list[object] = []
+    for item in reversed(history):
+        if _get(item, "type") in _MODEL_ITEMS or _get(item, "role") == "assistant":
+            break
+        newest.append(item)
+    if any(
+        _get(item, "type") == "agent_message" and _get(item, "author") != _ROOT_AGENT
+        for item in newest
+    ):
+        return True
+    answered = {_get(item, "call_id") for item in newest if _get(item, "type") in _CALL_OUTPUTS}
+    return any(
+        _get(item, "type") in _CALLS
+        and _get(item, "name") in _AGENT_TOOLS
+        and _get(item, "call_id") in answered
+        for item in history
+    )
 
 
 def _usage(response: object) -> StreamUsage | None:

@@ -11,9 +11,10 @@ from typing import TYPE_CHECKING, cast
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+
+from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
-from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
-from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
     render_statusline,
     render_usage_row,
@@ -96,8 +97,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                     TokenCounts.of(session_turns),
                     costs.get(session, 0.0),
                     self._age(session_turns),
-                    _agents(session_turns),
-                    _agent_turns(session_turns),
+                    AgentUsage.of(session_turns),
                 )
             )
             spans_other_sessions = any(turn.session_id != session for turn in turns) or any(
@@ -113,8 +113,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                 TokenCounts.of(turns),
                 round(sum(costs.values()), 2),
                 self._age(turns),
-                _agents(turns),
-                _agent_turns(turns),
+                AgentUsage.of(turns),
             )
         )
         return "\n".join(rows)
@@ -141,14 +140,3 @@ def _decode(payload_json: str) -> dict[str, object]:
     except (json.JSONDecodeError, ValueError):
         return {}
     return cast("dict[str, object]", decoded) if isinstance(decoded, dict) else {}
-
-
-def _agents(turns: Sequence[TurnUsage]) -> TokenCounts | None:
-    """The tokens the agents used across ``turns``, or ``None`` when none made a turn."""
-    made = [turn for turn in turns if turn.role is TurnRole.AGENT]
-    return TokenCounts.of(made) if made else None
-
-
-def _agent_turns(turns: Sequence[TurnUsage]) -> int:
-    """How many of ``turns`` the agents made."""
-    return sum(1 for turn in turns if turn.role is TurnRole.AGENT)

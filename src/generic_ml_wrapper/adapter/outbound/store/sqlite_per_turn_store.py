@@ -27,7 +27,7 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
             connection.execute(
                 "INSERT INTO turns (job, session_id, turn_id, input_tokens, output_tokens, "
                 "cache_creation_tokens, cache_read_tokens, cost_usd, model, timestamp, duration_s, "
-                "role, agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "role, agent, caused_by_agent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     job,
                     turn.session_id,
@@ -42,6 +42,7 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
                     turn.duration_s,
                     turn.role.value,
                     turn.agent,
+                    int(turn.caused_by_agent),
                 ),
             )
 
@@ -50,8 +51,8 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
         with self._ledger.connect() as connection:
             rows = connection.execute(
                 "SELECT session_id, turn_id, input_tokens, output_tokens, cache_creation_tokens, "
-                "cache_read_tokens, cost_usd, model, timestamp, duration_s, role, agent "
-                "FROM turns WHERE job = ? ORDER BY id",
+                "cache_read_tokens, cost_usd, model, timestamp, duration_s, role, agent, "
+                "caused_by_agent FROM turns WHERE job = ? ORDER BY id",
                 (job,),
             ).fetchall()
         return [
@@ -68,6 +69,7 @@ class SqlitePerTurnStore(PerTurnMeteringPort):
                 turn_id=row["turn_id"],
                 role=TurnRole(row["role"]),
                 agent=row["agent"],
+                caused_by_agent=bool(row["caused_by_agent"]),
             )
             for row in rows
         ]

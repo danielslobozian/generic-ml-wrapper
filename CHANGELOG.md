@@ -10,6 +10,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The status line shows the agents' share of the turns.** The turn count is now followed
   by the share the agents made, as each kind of token already was: `86 turns (70%)`.
   Without agent turns the count is unchanged.
+- **The status line shows what the agents cost the main conversation.** Starting an agent
+  and receiving its report each make the main conversation take a turn, and each such
+  turn re-reads its whole context. Those turns are now recognised, and their share
+  follows the agents' own after a `+`: `⟲ 8.6M (60% +25%)` -- three fifths of the cache
+  read was the agents', and another quarter was the main conversation re-reading itself
+  for them.
+  - `gmlw export <job>` names those turns `main, for agents` and totals them apart;
+    `--json` carries `caused_by_agent` on each turn. Codex has no status line, so the
+    export is where its figures show.
+  - Claude and Codex. gmlw reads only technical markers (tool names, item types, a
+    report's tag), never what the messages say.
+  - Turns recorded before this version count as the user's.
 
 ## [0.12.1] - 2026-10-11
 

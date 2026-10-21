@@ -678,11 +678,14 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
         default=len(_UNKNOWN_LABEL),
     )
     # Who made each turn, shown only once a job has agent turns to tell apart.
-    who = {(a.role, a.agent): _who(a.role, a.agent, loc) for a in report.agents}
+    who = {
+        (a.role, a.agent, a.caused_by_agent): _who(a.role, a.agent, a.caused_by_agent, loc)
+        for a in report.agents
+    }
     who_width = max((len(label) for label in who.values()), default=0)
     lines = [loc.t("usage.header", job=report.job, count=report.turn_count), ""]
     for turn in report.turns:
-        label = who.get((turn.role, turn.agent))
+        label = who.get((turn.role, turn.agent, turn.caused_by_agent))
         lines.append(
             loc.t(
                 "usage.turn_row",
@@ -714,7 +717,7 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
         lines += [
             loc.t(
                 "usage.agent_row",
-                agent=f"{who[agent.role, agent.agent]:<{who_width}}",
+                agent=f"{who[agent.role, agent.agent, agent.caused_by_agent]:<{who_width}}",
                 calls=f"{agent.calls:>3}",
                 tokens=_tokens(agent.input_tokens, agent.output_tokens, agent.cache_tokens, loc),
                 duration=f"{agent.duration_s:.1f}",
@@ -755,11 +758,16 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
 _UNKNOWN_LABEL = "(unknown)"
 
 
-def _who(role: TurnRole, agent: str | None, loc: i18n.Localizer) -> str:
-    """Name the side of a session a turn came from: main, the agent's name, or agent."""
+def _who(role: TurnRole, agent: str | None, caused_by_agent: bool, loc: i18n.Localizer) -> str:
+    """Name the side of a session a turn came from: main, the agent's name, or agent.
+
+    The main conversation's turns the agents caused are named apart from its others.
+    """
     if agent is not None:
         return agent
-    return loc.t("usage.role_main" if role is TurnRole.MAIN else "usage.role_agent")
+    if role is TurnRole.AGENT:
+        return loc.t("usage.role_agent")
+    return loc.t("usage.role_main_caused" if caused_by_agent else "usage.role_main")
 
 
 def _clock(timestamp: float) -> str:

@@ -28,10 +28,17 @@ class TurnOrigin:
         role: The main conversation or an agent.
         agent: The agent's name when the client gives one, else ``None``; always
             ``None`` for the main conversation.
+        caused_by_agent: Whether a main-conversation turn was made only because an
+            agent was started or reported back -- the request's newest input is that
+            launch's acknowledgement or that report. Such a turn re-reads the whole
+            main context, so it is part of what the agents cost; always ``False`` for
+            an agent's own turns, which count as theirs already.
     """
 
     role: TurnRole = TurnRole.MAIN
     agent: str | None = None
+    caused_by_agent: bool = False
 
 
 MAIN = TurnOrigin()
+CAUSED_BY_AGENT = TurnOrigin(caused_by_agent=True)

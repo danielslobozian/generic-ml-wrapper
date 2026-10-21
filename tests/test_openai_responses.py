@@ -12,7 +12,12 @@ from generic_ml_wrapper.adapter.outbound.gateway.openai_responses import (
     read_session_id,
     read_usage,
 )
-from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
+from generic_ml_wrapper.application.domain.model.turn_origin import (
+    CAUSED_BY_AGENT,
+    MAIN,
+    TurnOrigin,
+    TurnRole,
+)
 
 # The usage shape from a real billed Codex turn (from the cursor-codex reference).
 _STREAM = (
@@ -119,3 +124,54 @@ def test_a_subagent_without_a_name_is_still_an_agent() -> None:
 )
 def test_the_root_thread_and_unreadable_requests_are_main(body: str) -> None:
     assert read_origin(body) == MAIN
+
+
+def _main_request(*items: object) -> str:
+    metadata = {"x-codex-turn-metadata": json.dumps({"agent_name": "/root"})}
+    return json.dumps({"model": "gpt", "client_metadata": metadata, "input": list(items)})
+
+
+def _call(name: str) -> dict[str, object]:
+    return {"type": "function_call", "name": name, "call_id": f"c_{name}", "arguments": "{}"}
+
+
+def _output(name: str) -> dict[str, object]:
+    return {"type": "function_call_output", "call_id": f"c_{name}", "output": "x"}
+
+
+_PROMPT: dict[str, object] = {
+    "type": "message",
+    "role": "user",
+    "content": [{"type": "input_text", "text": "go"}],
+}
+_REPORT: dict[str, object] = {
+    "type": "agent_message",
+    "author": "/root/worker",
+    "recipient": "/root",
+    "content": [],
+}
+
+
+@pytest.mark.parametrize("tool", ["spawn_agent", "followup_task", "wait_agent", "wait"])
+def test_the_result_of_an_agent_call_causes_the_main_turn(tool: str) -> None:
+    body = _main_request(_PROMPT, {"type": "reasoning"}, _call(tool), _output(tool))
+    assert read_origin(body) == CAUSED_BY_AGENT
+
+
+def test_an_agents_message_to_the_main_thread_causes_the_main_turn() -> None:
+    body = _main_request(_PROMPT, {"type": "message", "role": "assistant", "content": []}, _REPORT)
+    assert read_origin(body) == CAUSED_BY_AGENT
+
+
+@pytest.mark.parametrize(
+    "items",
+    [
+        (_PROMPT,),  # the user's own prompt
+        (_PROMPT, _call("exec"), _output("exec")),  # another tool
+        (_call("wait_agent"), _output("wait_agent"), _call("exec"), _output("exec")),  # older
+        (_PROMPT, {**_REPORT, "author": "/root"}),  # the main thread's own message
+        (_call("wait_agent"), _output("wait_agent"), _PROMPT, {"type": "reasoning"}),
+    ],
+)
+def test_other_main_turns_are_not_caused_by_an_agent(items: tuple[object, ...]) -> None:
+    assert read_origin(_main_request(*items)) == MAIN

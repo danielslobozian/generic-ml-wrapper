@@ -30,6 +30,8 @@ class TurnUsage:
         turn_id: The provider's id for this turn, or ``None``.
         role: Whether the main conversation or an agent made the turn.
         agent: The agent's name when the client gives one, else ``None``.
+        caused_by_agent: Whether this main-conversation turn was made only because an
+            agent was started or reported back (see ``TurnOrigin``).
     """
 
     session_id: str
@@ -44,6 +46,7 @@ class TurnUsage:
     turn_id: str | None = None
     role: TurnRole = TurnRole.MAIN
     agent: str | None = None
+    caused_by_agent: bool = False
 
     def __post_init__(self) -> None:
         """Reject impossible usage: negative counts, or non-finite/negative amounts."""

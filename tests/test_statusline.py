@@ -7,6 +7,7 @@ import json
 import pytest
 
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
+from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
 from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
@@ -197,7 +198,7 @@ def test_each_token_count_compacts_to_k_m_g() -> None:
 
 def test_each_kind_the_agents_used_shows_their_share() -> None:
     tokens = TokenCounts(182_000, 96_000, 8_600_000, 240_000)
-    agents = TokenCounts(40_000, 0, 5_160_000, 240_000)
+    agents = AgentUsage(tokens=TokenCounts(40_000, 0, 5_160_000, 240_000))
     # output untouched by agents: no parenthesis; cache write all theirs: 100%
     assert render_tokens(tokens, agents) == ("↑ 182k (22%)  ↓ 96k  ⟲ 8.6M (60%)  ✎ 240k (100%)")
 
@@ -214,19 +215,32 @@ def test_each_kind_the_agents_used_shows_their_share() -> None:
 def test_a_share_is_a_whole_percentage_that_never_misleads(
     part: int, whole: int, share: str
 ) -> None:
-    assert render_tokens(TokenCounts(input=whole), TokenCounts(input=part)) == (
+    assert render_tokens(TokenCounts(input=whole), AgentUsage(tokens=TokenCounts(input=part))) == (
         f"↑ 1k ({share})  ↓ 0  ⟲ 0  ✎ 0"
     )
 
 
 def test_the_agents_share_of_the_turns_follows_the_turn_count() -> None:
-    row = render_usage_row("job", "JOB-1", 412, _TOKENS, 0.43, agents=_TOKENS, agent_turns=292)
+    row = render_usage_row("job", "JOB-1", 412, _TOKENS, 0.43, agents=AgentUsage(292, _TOKENS))
     assert row.startswith("  job JOB-1 · 412 turns (71%) · ")
 
 
 def test_no_agent_turns_leaves_the_turn_count_bare() -> None:
-    row = render_usage_row("job", "JOB-1", 3, _TOKENS, 0.43, agent_turns=0)
+    row = render_usage_row("job", "JOB-1", 3, _TOKENS, 0.43)
     assert " · 3 turns · " in row
+
+
+def test_the_main_turns_the_agents_caused_follow_their_own_share() -> None:
+    tokens = TokenCounts(182_000, 96_000, 8_600_000, 240_000)
+    agents = AgentUsage(
+        60, TokenCounts(40_000, 0, 5_160_000, 0), 10, TokenCounts(9_100, 2_880, 2_150_000, 0)
+    )
+    row = render_usage_row("session", "PAY-1_003", 86, tokens, 2.5, agents=agents)
+    # output untouched by the agents themselves: only what they caused
+    assert row == (
+        "  session PAY-1_003 · 86 turns (70% +12%) · "
+        "↑ 182k (22% +5%)  ↓ 96k (+3%)  ⟲ 8.6M (60% +25%)  ✎ 240k · $2.50"
+    )
 
 
 def test_render_usage_row_without_turns_shows_only_cost() -> None:
@@ -306,6 +320,19 @@ def test_use_case_shows_the_agents_share_on_each_row_that_has_agent_turns() -> N
     assert out == (
         "  session JOB-1_002 · 1 turns · ↑ 300  ↓ 40  ⟲ 0  ✎ 0 · $0.00\n"
         "  job JOB-1 · 2 turns (50%) · ↑ 400 (25%)  ↓ 60 (33%)  ⟲ 0  ✎ 0 · $0.00"
+    )
+
+
+def test_use_case_shows_the_share_of_the_main_turns_the_agents_caused() -> None:
+    turns = FakePerTurnStore(
+        [
+            TurnUsage("JOB-1_001", 300, 40, None, "m"),  # the user's prompt
+            TurnUsage("JOB-1_001", 100, 20, None, "m", caused_by_agent=True),  # a report
+        ]
+    )
+    out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
+    assert (
+        out == "  session JOB-1_001 · 2 turns (+50%) · ↑ 400 (+25%)  ↓ 60 (+33%)  ⟲ 0  ✎ 0 · $0.00"
     )
 
 

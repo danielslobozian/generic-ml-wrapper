@@ -703,6 +703,25 @@ def test_format_usage_names_who_made_each_turn_and_totals_by_agent() -> None:
     assert "  search_space    1 call(s)  20+2 tok  1.0s" in rows
 
 
+def test_format_usage_names_the_main_turns_the_agents_caused() -> None:
+    report = UsageReport(
+        "JOB-1",
+        turns=(
+            TurnRow(0.0, "gpt", 1.0, 10, 1, 0, "t1"),
+            TurnRow(0.0, "gpt", 1.0, 20, 2, 0, "t2", caused_by_agent=True),
+        ),
+        models=(ModelTotal("gpt", 2, 30, 3, 0, 2.0),),
+        agents=(
+            AgentTotal(TurnRole.MAIN, None, 1, 10, 1, 0, 1.0),
+            AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 0, 1.0, caused_by_agent=True),
+        ),
+        turn_count=2,
+    )
+    rows = app.format_usage(report).splitlines()
+    assert any("main, for agents  gpt" in row and "[t2]" in row for row in rows)
+    assert "  main, for agents    1 call(s)  20+2 tok  1.0s" in rows
+
+
 def test_format_usage_unmetered_timestamp_shows_dashes() -> None:
     assert "--:--:--" in app.format_usage(_report())  # timestamp 0.0 → placeholder
 

@@ -111,6 +111,7 @@
   "usage.agent_row": "  {agent}  {calls} call(s){tokens}  {duration}s",
   "usage.role_main": "main",
   "usage.role_agent": "agent",
+  "usage.role_main_caused": "main, for agents",
   "usage.cost_by_session": "  ── cost by session ──",
   "usage.incidents": "  ── connection incidents ──  {count}  ({lost} connection lost · {cut} stream cut)",
   "usage.cost_row": "  {session}  ${cost}",

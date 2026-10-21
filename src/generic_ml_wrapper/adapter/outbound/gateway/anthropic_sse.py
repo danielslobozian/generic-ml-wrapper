@@ -8,17 +8,23 @@ Anthropic streams a turn as Server-Sent Events. Usage is split across two events
 the raw ``data:`` lines a relay tees off the response, so the relay can record a
 turn without buffering or re-encoding the body.
 
-The *request* tells a subagent's turn from the main conversation's (see
-:func:`read_origin`).
+The *request* tells a subagent's turn from the main conversation's, and a main turn an
+agent caused from the others (see :func:`read_origin`).
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
-from generic_ml_wrapper.application.domain.model.turn_origin import MAIN, TurnOrigin, TurnRole
+from generic_ml_wrapper.application.domain.model.turn_origin import (
+    CAUSED_BY_AGENT,
+    MAIN,
+    TurnOrigin,
+    TurnRole,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -27,6 +33,14 @@ _DATA_PREFIX = "data:"
 # Claude Code's billing line, the first system block of every request it sends,
 # carries this only on a subagent's calls -- its web-search helpers included.
 _SUBAGENT_MARK = "cc_is_subagent=true"
+# The tools that start a Claude Code subagent (``Task`` is its older name). Their result
+# is the launch's acknowledgement for a background agent, the agent's report otherwise.
+_AGENT_TOOLS = frozenset({"Agent", "Task"})
+# The tag a line opens with when Claude Code hands the main conversation an agent's
+# report: a background agent's completion, or a subagent's hand-back. The report may
+# follow a line of its own or sit inside a system reminder, so any line counts; a tag
+# quoted mid-sentence does not.
+_AGENT_REPORT = re.compile(r"^\s*<(?:task-notification|agent-message)\b", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -74,11 +88,16 @@ def read_origin(text: str) -> TurnOrigin:
     (``x-anthropic-billing-header: ...``); a subagent's adds ``cc_is_subagent=true``.
     Subagents carry no name on the wire, so the origin never has one.
 
+    A main turn is caused by an agent when the newest message answers an agent tool
+    call or carries an agent's report. Only those technical markers are read --
+    tool names and a message's opening tag -- never what the messages say.
+
     Args:
         text: The decoded request body.
 
     Returns:
-        An agent origin when the mark is present, else the main conversation.
+        An agent origin when the mark is present, else the main conversation --
+        marked as caused by an agent when it is.
     """
     try:
         decoded: object = json.loads(text)
@@ -86,14 +105,52 @@ def read_origin(text: str) -> TurnOrigin:
         return MAIN
     if not isinstance(decoded, dict):
         return MAIN
-    system = cast("dict[str, object]", decoded).get("system")
+    request = cast("dict[str, object]", decoded)
+    system = request.get("system")
     if isinstance(system, str):
         marked = _SUBAGENT_MARK in system
     elif isinstance(system, list):
         marked = any(_SUBAGENT_MARK in _block_text(block) for block in cast("list[object]", system))
     else:
         marked = False
-    return TurnOrigin(TurnRole.AGENT) if marked else MAIN
+    if marked:
+        return TurnOrigin(TurnRole.AGENT)
+    return CAUSED_BY_AGENT if _caused_by_agent(request.get("messages")) else MAIN
+
+
+def _caused_by_agent(messages: object) -> bool:
+    """Whether the newest message answers an agent tool call or carries a report."""
+    if not isinstance(messages, list) or not messages:
+        return False
+    history = cast("list[object]", messages)
+    newest = _blocks(history[-1])
+    if any(_AGENT_REPORT.search(_block_text(block)) for block in newest):
+        return True
+    answered = {
+        call
+        for block in newest
+        if _field(block, "type") == "tool_result"
+        and (call := _as_str(_field(block, "tool_use_id"))) is not None
+    }
+    calls = _blocks(history[-2]) if len(history) > 1 else []
+    return any(
+        _field(block, "type") == "tool_use"
+        and _field(block, "name") in _AGENT_TOOLS
+        and _field(block, "id") in answered
+        for block in calls
+    )
+
+
+def _blocks(message: object) -> list[object]:
+    """A message's content as blocks; a plain-string content is one text block."""
+    content = _field(message, "content")
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}]
+    return cast("list[object]", content) if isinstance(content, list) else []
+
+
+def _field(block: object, key: str) -> object:
+    return cast("dict[str, object]", block).get(key) if isinstance(block, dict) else None
 
 
 def _block_text(block: object) -> str:

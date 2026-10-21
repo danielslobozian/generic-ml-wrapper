@@ -271,8 +271,11 @@ When agents (subagents) did part of the work, each turn also says who made it �
 the agent's name, or `agent` when the client does not name them — and a **totals by
 agent** section adds them up. Claude marks its subagents' calls but does not name them;
 codex names each one; vibe does not tell them apart, so its turns all count as `main`.
-In `--json`, every turn carries `role` (`main` or `agent`) and `agent`, and `agents`
-holds the totals.
+
+The main conversation's turns that the agents caused — made only because an agent was
+started or reported back, each re-reading the whole main context — are named
+`main, for agents` and totalled apart (Claude and codex). In `--json`, every turn carries
+`role` (`main` or `agent`), `agent` and `caused_by_agent`, and `agents` holds the totals.
 
 ```
 gmlw export <job> [--json]
