@@ -111,6 +111,7 @@
   "usage.agent_row": "  {agent}  {calls} appel(s){tokens}  {duration}s",
   "usage.role_main": "principal",
   "usage.role_agent": "agent",
+  "usage.role_main_caused": "principal, pour les agents",
   "usage.cost_by_session": "  ── coût par session ──",
   "usage.incidents": "  ── incidents de connexion ──  {count}  ({lost} connexion perdue · {cut} flux coupé)",
   "usage.cost_row": "  {session}  {cost} $",

@@ -139,3 +139,17 @@ def test_agent_totals_put_main_first_then_unnamed_then_named_agents() -> None:
         (agent, "zeta"),
         (TurnRole.MAIN, None),
     ]
+
+
+def test_the_main_turns_the_agents_caused_are_totalled_apart() -> None:
+    report = _export(
+        [
+            TurnUsage("S", 20, 2, None, "m", duration_s=2.0),
+            TurnUsage("S", 30, 3, None, "m", duration_s=1.0, caused_by_agent=True),
+        ]
+    )
+    assert report.agents == (
+        AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 0, 2.0),
+        AgentTotal(TurnRole.MAIN, None, 1, 30, 3, 0, 1.0, caused_by_agent=True),
+    )
+    assert [row.caused_by_agent for row in report.turns] == [False, True]

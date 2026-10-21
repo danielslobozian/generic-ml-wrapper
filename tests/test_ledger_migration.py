@@ -180,6 +180,7 @@ def test_v8_sessions_show_what_they_ran_before_attachments(tmp_path: Path) -> No
             "INSERT INTO sessions (session_id, job, client, workflow) "
             "VALUES ('T-1_001', 'T-1', 'claude', 'review'), ('T-1_002', 'T-1', 'claude', NULL)"
         )
+        _drop_columns_added_after_v9(connection)
         connection.execute("PRAGMA user_version = 8")
 
     with Ledger(db).connect() as connection:
@@ -194,9 +195,43 @@ def test_v8_authoring_jobs_become_ordinary_jobs(tmp_path: Path) -> None:
     db = tmp_path / "ledger.db"
     with Ledger(db).connect() as connection:
         connection.execute("INSERT INTO jobs (job, kind) VALUES ('create-x_001', 'authoring')")
+        _drop_columns_added_after_v9(connection)
         connection.execute("PRAGMA user_version = 8")
 
     with Ledger(db).connect() as connection:
         kinds = [row["kind"] for row in connection.execute("SELECT kind FROM jobs")]
 
     assert kinds == ["work"]
+
+
+def _drop_columns_added_after_v9(connection: sqlite3.Connection) -> None:
+    """Take a fresh database back to v9's columns, so a test can start it from v8 or v9.
+
+    The table is rebuilt rather than altered: SQLite refuses to drop a column whose
+    definition ends in a comment.
+    """
+    connection.execute(
+        "CREATE TABLE turns_v9 AS SELECT id, job, session_id, turn_id, input_tokens, "
+        "output_tokens, cache_creation_tokens, cache_read_tokens, cost_usd, model, timestamp, "
+        "duration_s, role, agent FROM turns"
+    )
+    connection.execute("DROP TABLE turns")
+    connection.execute("ALTER TABLE turns_v9 RENAME TO turns")
+
+
+def test_v9_turns_were_not_caused_by_an_agent(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    with Ledger(db).connect() as connection:
+        _drop_columns_added_after_v9(connection)
+        connection.execute(
+            "INSERT INTO turns (job, session_id, input_tokens, output_tokens) "
+            "VALUES ('T-1', 'T-1_001', 10, 2)"
+        )
+        connection.execute("PRAGMA user_version = 9")
+
+    with Ledger(db).connect() as connection:
+        caused = [row["caused_by_agent"] for row in connection.execute("SELECT * FROM turns")]
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+    assert caused == [0]
+    assert version == SCHEMA_VERSION

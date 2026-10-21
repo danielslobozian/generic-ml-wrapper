@@ -47,3 +47,10 @@ def test_the_agent_that_made_a_turn_is_kept(tmp_path: Path) -> None:
     for turn in (main, named, unnamed):
         store.record("JOB-1", turn)
     assert store.turns_for_job("JOB-1") == [main, named, unnamed]
+
+
+def test_a_main_turn_an_agent_caused_is_kept(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    caused = TurnUsage("JOB-1_001", 1, 2, None, None, caused_by_agent=True)
+    store.record("JOB-1", caused)
+    assert store.turns_for_job("JOB-1") == [caused]

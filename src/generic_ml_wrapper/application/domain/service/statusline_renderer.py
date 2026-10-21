@@ -6,9 +6,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
+
 if TYPE_CHECKING:
+    from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
     from generic_ml_wrapper.application.domain.model.client_status import ClientStatus
-    from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
     from generic_ml_wrapper.application.domain.model.workspace import Workspace
 
 _SEPARATOR = "  ·  "
@@ -125,8 +127,7 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     tokens: TokenCounts,
     cost_usd: float,
     age_s: float | None = None,
-    agents: TokenCounts | None = None,
-    agent_turns: int = 0,
+    agents: AgentUsage | None = None,
 ) -> str:
     """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · $``.
 
@@ -148,10 +149,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
         cost_usd: The scope's cumulative cost.
         age_s: How long ago this scope's first recorded turn was, or ``None`` when it
             has none -- a session launched but never prompted has no age to show.
-        agents: The part of ``tokens`` the agents (subagents) used, or ``None`` when
-            no agent made a turn; each kind then shows its share of the total.
-        agent_turns: How many of ``turns`` the agents made; when any, the turn count is
-            followed by their share of it, the way each token kind is.
+        agents: The agents' (subagents') part of ``turns`` and ``tokens``, or ``None``
+            when they had none; the turn count and each kind then show their share.
 
     Returns:
         The footer row (no trailing newline).
@@ -159,14 +158,14 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     head = f"{label} {name}" if age_s is None else f"{label} {name} ({format_age(age_s)})"
     parts = [head]
     if turns:
-        share = f" ({_share(agent_turns, turns)})" if agent_turns else ""
-        parts.append(f"{turns} turns{share}")
+        own, caused = (0, 0) if agents is None else (agents.turns, agents.caused_turns)
+        parts.append(f"{turns} turns{_shares(own, caused, turns)}")
         parts.append(render_tokens(tokens, agents))
     parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
 
 
-def render_tokens(tokens: TokenCounts, agents: TokenCounts | None = None) -> str:
+def render_tokens(tokens: TokenCounts, agents: AgentUsage | None = None) -> str:
     """The four token counts as ``↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k``.
 
     A space after each mark, so a narrow glyph never runs into its number; two between
@@ -176,18 +175,32 @@ def render_tokens(tokens: TokenCounts, agents: TokenCounts | None = None) -> str
     With ``agents``, each kind the agents used is followed by their share of it --
     ``⟲ 8.6M (60%)`` -- the total staying the first number read. A share is a
     percentage rather than a count: it answers "how much of this was the agents" at a
-    glance, and it is the same width whatever the unit.
+    glance, and it is the same width whatever the unit. The share of the main turns
+    they caused follows it with a ``+``: ``⟲ 8.6M (60% +25%)``.
     """
+    own = TokenCounts() if agents is None else agents.tokens
+    caused = TokenCounts() if agents is None else agents.caused_tokens
     pairs = (
-        ("↑", tokens.input, 0 if agents is None else agents.input),
-        ("↓", tokens.output, 0 if agents is None else agents.output),
-        ("⟲", tokens.cache_read, 0 if agents is None else agents.cache_read),
-        ("✎", tokens.cache_write, 0 if agents is None else agents.cache_write),
+        ("↑", tokens.input, own.input, caused.input),
+        ("↓", tokens.output, own.output, caused.output),
+        ("⟲", tokens.cache_read, own.cache_read, caused.cache_read),
+        ("✎", tokens.cache_write, own.cache_write, caused.cache_write),
     )
     return "  ".join(
-        f"{mark} {_compact(count)}" + ("" if part == 0 else f" ({_share(part, count)})")
-        for mark, count, part in pairs
+        f"{mark} {_compact(count)}{_shares(part, extra, count)}"
+        for mark, count, part, extra in pairs
     )
+
+
+def _shares(own: int, caused: int, whole: int) -> str:
+    """`` (60% +25%)``: the agents' own share of ``whole``, then the one they caused.
+
+    Each is left out when it is nothing, and the parenthesis too when both are.
+    """
+    shares = [_share(own, whole)] if own else []
+    if caused:
+        shares.append(f"+{_share(caused, whole)}")
+    return f" ({' '.join(shares)})" if shares else ""
 
 
 def _share(part: int, whole: int) -> str:

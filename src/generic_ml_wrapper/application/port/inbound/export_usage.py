@@ -28,6 +28,8 @@ class TurnRow:
         turn_id: The provider's id for the turn, or ``None``.
         role: Whether the main conversation or an agent made the turn.
         agent: The agent's name when the client gives one, else ``None``.
+        caused_by_agent: Whether this main-conversation turn was made only because an
+            agent was started or reported back.
     """
 
     timestamp: float
@@ -39,6 +41,7 @@ class TurnRow:
     turn_id: str | None
     role: TurnRole = TurnRole.MAIN
     agent: str | None = None
+    caused_by_agent: bool = False
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,8 @@ class AgentTotal:
         output_tokens: Total completion tokens.
         cache_tokens: Total cache prompt tokens.
         duration_s: Total duration, in seconds.
+        caused_by_agent: Whether these are the main conversation's turns the agents
+            caused, counted apart from its others.
     """
 
     role: TurnRole
@@ -84,6 +89,7 @@ class AgentTotal:
     output_tokens: int
     cache_tokens: int
     duration_s: float
+    caused_by_agent: bool = False
 
 
 @dataclass(frozen=True)

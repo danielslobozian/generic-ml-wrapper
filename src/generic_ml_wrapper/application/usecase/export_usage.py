@@ -84,6 +84,7 @@ def _row(turn: TurnUsage) -> TurnRow:
         turn_id=turn.turn_id,
         role=turn.role,
         agent=turn.agent,
+        caused_by_agent=turn.caused_by_agent,
     )
 
 
@@ -105,28 +106,31 @@ def _model_totals(recorded: list[TurnUsage]) -> tuple[ModelTotal, ...]:
 
 
 def _agent_totals(recorded: list[TurnUsage]) -> tuple[AgentTotal, ...]:
-    if all(turn.role is TurnRole.MAIN for turn in recorded):
+    if all(turn.role is TurnRole.MAIN and not turn.caused_by_agent for turn in recorded):
         return ()
-    # (role, agent) -> [calls, input, output, cache, duration]
-    totals: dict[tuple[TurnRole, str | None], list[float]] = {}
+    # (role, agent, caused_by_agent) -> [calls, input, output, cache, duration]
+    totals: dict[tuple[TurnRole, str | None, bool], list[float]] = {}
     for turn in recorded:
-        acc = totals.setdefault((turn.role, turn.agent), [0, 0, 0, 0, 0.0])
+        key = (turn.role, turn.agent, turn.caused_by_agent)
+        acc = totals.setdefault(key, [0, 0, 0, 0, 0.0])
         acc[0] += 1
         acc[1] += turn.input_tokens
         acc[2] += turn.output_tokens
         acc[3] += turn.cache_creation_tokens + turn.cache_read_tokens
         acc[4] += turn.duration_s
-    # The main conversation first, then the agents: unnamed before named, by name.
-    order = sorted(totals, key=lambda key: (key[0] is TurnRole.AGENT, key[1] or ""))
+    # The main conversation first -- its turns the agents caused right after its others --
+    # then the agents: unnamed before named, by name.
+    order = sorted(totals, key=lambda key: (key[0] is TurnRole.AGENT, key[1] or "", key[2]))
     return tuple(
         AgentTotal(
             role,
             agent,
-            int(totals[role, agent][0]),
-            int(totals[role, agent][1]),
-            int(totals[role, agent][2]),
-            int(totals[role, agent][3]),
-            round(totals[role, agent][4], 1),
+            int(totals[role, agent, caused][0]),
+            int(totals[role, agent, caused][1]),
+            int(totals[role, agent, caused][2]),
+            int(totals[role, agent, caused][3]),
+            round(totals[role, agent, caused][4], 1),
+            caused,
         )
-        for role, agent in order
+        for role, agent, caused in order
     )

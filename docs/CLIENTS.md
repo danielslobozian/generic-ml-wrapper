@@ -63,6 +63,22 @@ Here the subagents made seven turns in ten, and three fifths of the cache read w
 percent shows as `<1%`; a kind they did not use has no parenthesis. `gmlw export <job>`
 has the counts behind it, under totals by agent.
 
+Subagents also cost the main conversation turns of its own. Starting one, and receiving
+its report, each make the main conversation take a turn, and every such turn re-reads its
+whole context: a session at 800k tokens that starts 100 agents, each reporting back once,
+re-reads 160M tokens of cache for them. The share of those turns follows the subagents'
+own, after a `+`:
+
+```
+  session PAY-1_003 (57m) · 86 turns (70% +12%) · ↑ 182k (22% +5%)  ↓ 96k (8% +3%)  ⟲ 8.6M (60% +25%)  ✎ 240k (31% +4%) · $2.50
+```
+
+A main turn counts as caused by a subagent when the newest message is the result of a
+subagent call (`Agent`, or `Task` in older versions) or a subagent's report (a
+background agent's completion, or its hand-back). gmlw reads only those technical
+markers, never what the messages say. Turns recorded before this version count as the
+user's.
+
 **Context delivery:** Native. Compiled context (the startup context, with any attachment) is written
 to a context file and passed with `--append-system-prompt-file`, leaving a durable
 provenance artifact under `~/.gmlw/contexts/`.
