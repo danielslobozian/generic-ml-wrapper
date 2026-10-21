@@ -219,6 +219,16 @@ def test_a_share_is_a_whole_percentage_that_never_misleads(
     )
 
 
+def test_the_agents_share_of_the_turns_follows_the_turn_count() -> None:
+    row = render_usage_row("job", "JOB-1", 412, _TOKENS, 0.43, agents=_TOKENS, agent_turns=292)
+    assert row.startswith("  job JOB-1 · 412 turns (71%) · ")
+
+
+def test_no_agent_turns_leaves_the_turn_count_bare() -> None:
+    row = render_usage_row("job", "JOB-1", 3, _TOKENS, 0.43, agent_turns=0)
+    assert " · 3 turns · " in row
+
+
 def test_render_usage_row_without_turns_shows_only_cost() -> None:
     assert render_usage_row("job", "JOB-1", 0, TokenCounts(), 0.43) == "  job JOB-1 · $0.43"
 
@@ -295,7 +305,7 @@ def test_use_case_shows_the_agents_share_on_each_row_that_has_agent_turns() -> N
     # the session had no agent turns: today's line; the job did: shares
     assert out == (
         "  session JOB-1_002 · 1 turns · ↑ 300  ↓ 40  ⟲ 0  ✎ 0 · $0.00\n"
-        "  job JOB-1 · 2 turns · ↑ 400 (25%)  ↓ 60 (33%)  ⟲ 0  ✎ 0 · $0.00"
+        "  job JOB-1 · 2 turns (50%) · ↑ 400 (25%)  ↓ 60 (33%)  ⟲ 0  ✎ 0 · $0.00"
     )
 
 
