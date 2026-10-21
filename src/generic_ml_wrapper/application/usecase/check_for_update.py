@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 Daniel Slobozian
 # SPDX-License-Identifier: Apache-2.0
-"""The CheckForUpdate use case: a cached, rate-limited PyPI version check."""
+"""The CheckForUpdate use case: a cached, rate-limited PyPI version check, or one asked for."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import json
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck, is_newer
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
 from generic_ml_wrapper.common import i18n
 from generic_ml_wrapper.common.log import log
@@ -16,24 +17,12 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from generic_ml_wrapper.application.port.outbound.installation import InstallationPort
     from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
 
 # How long a cached "latest" answer is trusted before checking PyPI again. Not user-
 # configurable -- [update] check is the one knob, matching [hints]'s single on/off key.
 _TTL = timedelta(hours=24)
-
-
-def _parse_version(value: str) -> tuple[int, ...] | None:
-    """Parse a plain ``X.Y.Z`` version string into a comparable tuple, or ``None``.
-
-    gmlw's own versions are always plain dotted integers (see ``RELEASE.md`` /
-    ``bump_version.py``); an unparseable string degrades to "not newer" rather than
-    raising, so a malformed or unexpected PyPI response never breaks the receipt.
-    """
-    try:
-        return tuple(int(part) for part in value.split("."))
-    except ValueError:
-        return None
 
 
 class CheckForUpdateUseCase(CheckForUpdate):
@@ -48,6 +37,7 @@ class CheckForUpdateUseCase(CheckForUpdate):
         self,
         *,
         checker: VersionCheckPort,
+        installation: InstallationPort,
         current_version: str,
         package: str,
         enabled: Callable[[], bool],
@@ -58,6 +48,7 @@ class CheckForUpdateUseCase(CheckForUpdate):
 
         Args:
             checker: Reads the package's latest published version.
+            installation: Finds out how the running gmlw was installed.
             current_version: The running gmlw version (``__version__``).
             package: The distribution name to check (``"generic-ml-wrapper"``).
             enabled: Resolves ``[update] check`` -- ``False`` short-circuits before
@@ -66,6 +57,7 @@ class CheckForUpdateUseCase(CheckForUpdate):
             cache_path: Where the last-checked timestamp and version are cached.
         """
         self._checker = checker
+        self._installation = installation
         self._current_version = current_version
         self._package = package
         self._enabled = enabled
@@ -90,15 +82,18 @@ class CheckForUpdateUseCase(CheckForUpdate):
             if latest is None:
                 return None
             self._write_cache(now, latest)
-        return latest if self._is_newer(latest) else None
+        return latest if is_newer(latest, self._current_version) else None
 
-    def _is_newer(self, latest: str) -> bool:
-        """Return whether ``latest`` is a newer version than the one running."""
-        latest_parsed = _parse_version(latest)
-        current_parsed = _parse_version(self._current_version)
-        if latest_parsed is None or current_parsed is None:
-            return False
-        return latest_parsed > current_parsed
+    def check_now(self) -> UpdateCheck:
+        """Check PyPI now, bypassing the cache and the switch; refresh the cache on success.
+
+        Returns:
+            The running and latest versions and the installation.
+        """
+        latest = self._checker.latest_version(self._package)
+        if latest is not None:
+            self._write_cache(self._clock(), latest)
+        return UpdateCheck(self._current_version, latest, self._installation.inspect())
 
     def _read_cache(self) -> tuple[datetime, str] | None:
         """Return ``(checked_at, latest)`` from the cache file, or ``None`` if unusable.

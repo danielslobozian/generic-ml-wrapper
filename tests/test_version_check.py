@@ -8,6 +8,12 @@ import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from generic_ml_wrapper.application.domain.model.installation import (
+    Installation,
+    InstallManager,
+    InstallSource,
+)
+from generic_ml_wrapper.application.port.outbound.installation import InstallationPort
 from generic_ml_wrapper.application.port.outbound.version_check import VersionCheckPort
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
 
@@ -24,6 +30,14 @@ class _Checker(VersionCheckPort):
         return self.latest
 
 
+_INSTALLATION = Installation(InstallSource.INDEX, InstallManager.UV_TOOL)
+
+
+class _Installation(InstallationPort):
+    def inspect(self) -> Installation:
+        return _INSTALLATION
+
+
 def _use_case(
     tmp_path: Path,
     *,
@@ -34,6 +48,7 @@ def _use_case(
 ) -> CheckForUpdateUseCase:
     return CheckForUpdateUseCase(
         checker=checker,
+        installation=_Installation(),
         current_version=current_version,
         package="generic-ml-wrapper",
         enabled=lambda: enabled,
@@ -117,3 +132,23 @@ def test_malformed_cache_file_is_ignored_like_a_missing_one(tmp_path: Path) -> N
     result = _use_case(tmp_path, checker=checker).execute()
     assert result == "2.0.0"
     assert checker.calls == 1
+
+
+def test_checking_now_bypasses_a_fresh_cache_and_the_switch(tmp_path: Path) -> None:
+    cache_path = tmp_path / "update-check.json"
+    cache_path.write_text(
+        json.dumps({"checked_at": (_NOW - timedelta(hours=1)).isoformat(), "latest": "2.0.0"}),
+        encoding="utf-8",
+    )
+    checker = _Checker("3.0.0")
+    check = _use_case(tmp_path, checker=checker, enabled=False).check_now()
+    assert (check.current, check.latest, check.installation) == ("1.0.0", "3.0.0", _INSTALLATION)
+    assert checker.calls == 1
+    # ...and refreshes the cache the receipt reads.
+    assert json.loads(cache_path.read_text(encoding="utf-8"))["latest"] == "3.0.0"
+
+
+def test_checking_now_when_pypi_is_unreachable_keeps_the_cache(tmp_path: Path) -> None:
+    check = _use_case(tmp_path, checker=_Checker(None)).check_now()
+    assert check.latest is None
+    assert not (tmp_path / "update-check.json").exists()
