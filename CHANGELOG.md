@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The status line shows the agents' share of the turns.** The turn count is now followed
+  by the share the agents made, as each kind of token already was: `86 turns (70%)`.
+  Without agent turns the count is unchanged.
+
 ## [0.12.1] - 2026-10-11
 
 ### Fixed

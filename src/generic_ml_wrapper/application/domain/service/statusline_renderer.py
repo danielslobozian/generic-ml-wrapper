@@ -126,6 +126,7 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     cost_usd: float,
     age_s: float | None = None,
     agents: TokenCounts | None = None,
+    agent_turns: int = 0,
 ) -> str:
     """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · $``.
 
@@ -149,6 +150,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
             has none -- a session launched but never prompted has no age to show.
         agents: The part of ``tokens`` the agents (subagents) used, or ``None`` when
             no agent made a turn; each kind then shows its share of the total.
+        agent_turns: How many of ``turns`` the agents made; when any, the turn count is
+            followed by their share of it, the way each token kind is.
 
     Returns:
         The footer row (no trailing newline).
@@ -156,7 +159,8 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     head = f"{label} {name}" if age_s is None else f"{label} {name} ({format_age(age_s)})"
     parts = [head]
     if turns:
-        parts.append(f"{turns} turns")
+        share = f" ({_share(agent_turns, turns)})" if agent_turns else ""
+        parts.append(f"{turns} turns{share}")
         parts.append(render_tokens(tokens, agents))
     parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
