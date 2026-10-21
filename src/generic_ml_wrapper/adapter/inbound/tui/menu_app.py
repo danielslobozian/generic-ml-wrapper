@@ -21,7 +21,7 @@ it any earlier and they would freeze in English. :func:`_key` marks every such l
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar, cast
@@ -60,6 +60,11 @@ def _accept_any_job(_name: str) -> str | None:
     return None
 
 
+def _accept_any_tags(_tags: Sequence[str]) -> str | None:
+    """Default new-job-tags validator when the app runs unwired (tests): accept anything."""
+    return None
+
+
 def _no_sessions(_job: str) -> list[SessionChoice]:
     """Default session lister when the app runs unwired (tests): no sessions."""
     return []
@@ -94,8 +99,8 @@ class MenuChoice:
     ``None`` to use the configured default -- a per-launch choice, exactly like ``--client``
     on the CLI, and never a change to the default itself. ``attachment`` and
     ``attachment_version`` are what a new session starts with, like ``--attach``; ``note``
-    is an extra line for its opening message (the Modify shortcut's request). A ``None``
-    return means "do nothing".
+    is an extra line for its opening message (the Modify shortcut's request); ``tags`` are
+    put on the job, like ``--tag``. A ``None`` return means "do nothing".
 
     Only things that need the terminal come back this way. Deleting does not -- it happens
     in the app, through an injected :class:`Deleter`, because leaving the menu to answer a
@@ -109,6 +114,7 @@ class MenuChoice:
     attachment: str | None = None
     attachment_version: str | None = None
     note: str | None = None
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -996,7 +1002,8 @@ class JobMenuScreen(_MenuScreen):
         elif item.action == "job:new":
             self.menu_app.push_screen(NewSessionScreen())
         elif item.action == "job:list":
-            self.menu_app.push_screen(JobListScreen())
+            # Opens on the default tag (a sprint), when one is set; its first row clears it.
+            self.menu_app.push_screen(JobListScreen(self.menu_app.default_tag))
         elif item.action == "job:export":
             self.menu_app.push_screen(JobExportScreen())
         elif item.action == "job:delete":
@@ -1479,12 +1486,14 @@ class NewSessionScreen(_MenuScreen):
 
 
 class NewJobScreen(Screen[None]):
-    """Name a new job, then launch a fresh session on it — a text-entry *launcher*.
+    """Name a new job and its tags, then launch a fresh session on it — a *launcher*.
 
     Unlike the create form (a browser that stays in the TUI), a valid name exits the whole
     app with a ``start`` choice; the CLI wiring then launches the client, exactly like
-    ``gmlw start <job>``. The name is validated in-form (via the injected ``validate_job``)
-    so an unusable name never tears the menu down only to fail at the prompt. Esc cancels.
+    ``gmlw start <job> --tag …``. The tags field starts with the default tag, so a sprint's
+    jobs are tagged without typing it, and clearing it leaves the job untagged. The name and
+    tags are validated in-form (via the injected ``validate_job`` and ``validate_tags``) so
+    an unusable one never tears the menu down only to fail at the prompt. Esc cancels.
     """
 
     BINDINGS: ClassVar[list[Binding]] = [_key("escape", "cancel", "tui.key.cancel")]
@@ -1510,6 +1519,8 @@ class NewJobScreen(Screen[None]):
         t = i18n.active().t
         yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.new')}", id="crumb")
         yield Input(self._name, placeholder=t("tui.newjob.placeholder"), id="name")
+        default = self.menu_app.default_tag
+        yield Input(default or "", placeholder=t("tui.newjob.tags_placeholder"), id="newtags")
         with Container(id="status"):
             yield Static(t("tui.newjob.hint"), id="detail")
             yield Static(t("tui.newjob.keys"), id="keys")
@@ -1518,16 +1529,19 @@ class NewJobScreen(Screen[None]):
         """Focus the input so the user can just start typing."""
         self.query_one("#name", Input).focus()
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Validate the typed name; launch on success, explain and stay on failure."""
-        name = event.value.strip()
+    def on_input_submitted(self, _event: Input.Submitted) -> None:
+        """Validate the name and tags (Enter in either field); launch, or explain and stay."""
+        name = self.query_one("#name", Input).value.strip()
+        tags = tuple(self.query_one("#newtags", Input).value.split())
         error = (
             i18n.active().t("tui.newjob.empty") if not name else self.menu_app.validate_job(name)
         )
+        if error is None:
+            error = self.menu_app.validate_tags(tags)
         if error is not None:
             self.query_one("#detail", Static).update(f"✗ {error}")
             return
-        self.menu_app.launch(MenuChoice(action="start", job=name, note=self._note))
+        self.menu_app.launch(MenuChoice(action="start", job=name, note=self._note, tags=tags))
 
     def action_cancel(self) -> None:
         """Abandon the form and return to the Job menu."""
@@ -2747,6 +2761,7 @@ class MenuApp(App[MenuChoice | None]):
     #banner { padding: 1 1 0 1; height: auto; }  /* the Rich Panel carries its own colour */
     #crumb  { dock: top; padding: 0 1; color: $text-muted; }
     #name   { margin: 1 2; }
+    #newtags { margin: 0 2 1 2; }
     #menu   { height: 1fr; background: transparent; }
     #empty  { height: 1fr; padding: 1 2; color: $text-muted; }
     #report  { height: 1fr; padding: 0 1; }
@@ -2789,6 +2804,8 @@ class MenuApp(App[MenuChoice | None]):
         retag_job: Callable[[str, str], str | None] | None = None,
         launch_clients: Callable[[], list[ClientChoice]] | None = None,
         shelf: Shelf | None = None,
+        default_tag: str | None = None,
+        validate_tags: Callable[[Sequence[str]], str | None] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2833,6 +2850,10 @@ class MenuApp(App[MenuChoice | None]):
                 default -- the behaviour before the picker existed.
             shelf: The attachment store's calls, for the Attachments menu and the attach
                 step of a new session; ``None`` leaves both without attachments.
+            default_tag: The tag the job list opens filtered on and a new job's tags start
+                with, or ``None``.
+            validate_tags: Validates a new job's typed tags, returning an error message or
+                ``None``; defaults to accepting any.
         """
         super().__init__()
         self.jobs = jobs
@@ -2853,6 +2874,8 @@ class MenuApp(App[MenuChoice | None]):
         self.retag_job = retag_job
         self.launch_clients = launch_clients or _no_clients
         self.shelf = shelf
+        self.default_tag = default_tag
+        self.validate_tags = validate_tags or _accept_any_tags
 
     def attachment_rows(self) -> list[AttachmentRow]:
         """Every stored attachment version, re-read on each call; none when unwired."""

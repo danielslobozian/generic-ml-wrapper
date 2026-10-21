@@ -393,6 +393,20 @@ cached at `~/.gmlw/state/update-check.json`.
 | --- | --- | --- |
 | `check` | check PyPI for a newer release | `true` |
 
+## `[jobs]`
+
+The tag your work belongs to for now, such as the current sprint. Job lists open
+filtered on it, and new jobs get it; see [the default tag](CLI.md#the-default-tag).
+
+| Key | Meaning | Default |
+| --- | --- | --- |
+| `default_tag` | the tag job lists open on and new jobs get | unset |
+
+```toml
+[jobs]
+default_tag = "sprint-30"
+```
+
 ## `[statusline]`
 
 Controls the colour of the status line's context block (`ctx 412k/1M (41%)`). It turns

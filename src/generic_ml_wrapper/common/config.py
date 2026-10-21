@@ -82,6 +82,7 @@ def current_values(path: Path | None = None) -> dict[str, object]:
         "compress.effort": compress_settings.effort,
         "hints.show": hints_show(path),
         "update.check": update_check(path),
+        "jobs.default_tag": default_tag(path),
         "statusline.color": statusline_color(path),
         **{
             f"statusline.{name}": value
@@ -115,6 +116,22 @@ def update_check(path: Path | None = None) -> bool:
     """
     value = _table(_load(path), "update").get("check")
     return value if isinstance(value, bool) else True
+
+
+def default_tag(path: Path | None = None) -> str | None:
+    """Return the tag the job lists open on and new jobs get (``[jobs] default_tag``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        The tag as written, or ``None`` when unset or not a string. Whether it is a valid
+        tag name is checked where it is used.
+    """
+    value = _table(_load(path), "jobs").get("default_tag")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
 
 
 def statusline_color(path: Path | None = None) -> bool:

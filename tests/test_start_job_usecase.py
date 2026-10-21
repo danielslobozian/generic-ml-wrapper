@@ -474,6 +474,22 @@ def test_start_tags_the_job_once_its_session_is_recorded() -> None:
     assert tags.tags_by_job() == {"PAY-1": ("payments", "sprint-42")}
 
 
+def test_the_default_tag_goes_on_a_job_this_start_creates() -> None:
+    tags = InMemoryJobTagStore()
+    _use_case(FakeStore(), FakeProvider(), tags=tags).execute(
+        StartJobCommand(job="PAY-1", client="claude", new_job_tags=("sprint-30",))
+    )
+    assert tags.tags_by_job() == {"PAY-1": ("sprint-30",)}
+
+
+def test_the_default_tag_does_not_spread_to_an_existing_job() -> None:
+    tags = InMemoryJobTagStore()
+    _use_case(FakeStore(ids=["PAY-1_001"]), FakeProvider(), tags=tags).execute(
+        StartJobCommand(job="PAY-1", client="claude", new_job_tags=("sprint-30",))
+    )
+    assert tags.tags_by_job() == {}
+
+
 def test_an_invalid_tag_is_refused_before_a_session_is_spent() -> None:
     store = FakeStore()
     provider = FakeProvider()

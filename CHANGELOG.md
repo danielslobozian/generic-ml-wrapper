@@ -28,6 +28,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   two rules wins. All four thresholds, and the colour itself, are set under
   `[statusline]`; `NO_COLOR` turns the colour off too.
 
+- **Tag a job as you create it, and work inside one tag.** The menu's new-job form has a
+  tags field. A default tag (`gmlw config set jobs.default_tag sprint-30`) makes
+  `gmlw jobs` and the menu's job list open on that tag's jobs, and goes on every new job:
+  `gmlw start` adds it unless `--tag` names others, and the new-job form starts with it
+  filled in. Reopening an older job does not tag it. `gmlw jobs --all` lists every job.
+
 ### Fixed
 - **`gmlw config set` writes numbers as numbers.** An integer setting such as
   `logging.max_bytes` was saved as text, which the reader then ignored, so the change had

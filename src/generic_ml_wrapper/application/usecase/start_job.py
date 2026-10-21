@@ -113,7 +113,9 @@ class StartJobUseCase(StartJob):
             IdentifierError: If a requested tag is not a valid tag name.
         """
         # Checked before anything happens, so a typo in a tag never costs a session.
-        tags = sorted({TagName(tag) for tag in command.tags})
+        new_job = not self._store.ids_for_job(command.job)
+        wanted = command.tags + (command.new_job_tags if new_job else ())
+        tags = sorted({TagName(tag) for tag in wanted})
         run, session = self._resolve(command)
         run = self._with_client_args(run, command.client_args)
         attached: Attachment | None = None

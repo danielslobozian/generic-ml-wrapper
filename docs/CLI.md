@@ -12,7 +12,7 @@ cross-links to [CONFIGURATION.md](CONFIGURATION.md), [ATTACHMENTS.md](ATTACHMENT
 gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
 gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--attach NAME[@VERSION]] [--tag T]...
-gmlw jobs [--tag T] [--json]
+gmlw jobs [--tag T | --all] [--json]
 gmlw jobs tag <job> <tag> [<tag>...]           # e.g. the sprint it belongs to
 gmlw jobs untag <job> <tag> [<tag>...]
 gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything under it
@@ -121,7 +121,8 @@ gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest]
 - `--resume-latest` — resume the job's most recent session instead of starting a new one.
   Not every client supports resume; unsupported clients report an error.
 - `--tag T` — tag the job, e.g. with its sprint; repeat for several. Kept with any tags
-  it already has. See [jobs tag](#jobs-tag-and-untag).
+  it already has. See [jobs tag](#jobs-tag-and-untag). Without `--tag`, a job this start
+  creates gets the [default tag](#the-default-tag), if one is set.
 - `--attach NAME[@VERSION]` — start the new session with an attachment (list them with
   `gmlw attachment list`); without `@VERSION`, the highest. Its main file follows gmlw's
   own context, the session opens on a message naming it, and the attachment store is
@@ -147,10 +148,12 @@ gmlw start billing-api --resume-latest
 List the jobs with recorded activity.
 
 ```
-gmlw jobs [--tag T] [--json]
+gmlw jobs [--tag T | --all] [--json]
 ```
 
 - `--tag T` — list only the jobs carrying tag `T` (see [jobs tag](#jobs-tag-and-untag)).
+  Without it, the list is narrowed to the [default tag](#the-default-tag), if one is set.
+- `--all` — list every job, ignoring the default tag.
 - `--json` — output as JSON instead of text; each job carries its `tags`.
 
 Example:
@@ -177,8 +180,23 @@ gmlw jobs untag <job> <tag> [<tag>...]
   characters. Case does not matter: `Sprint-42` and `sprint-42` are the same tag.
 
 Each prints the job's tags as they now stand. A new job can be tagged as it starts, with
-`gmlw start <job> --tag sprint-42`. In `gmlw tui`, Job → List shows each job's tags,
-filters by one, and `t` edits the highlighted job's tags.
+`gmlw start <job> --tag sprint-42`, or in the tags field of `gmlw tui`'s Job → New. In
+`gmlw tui`, Job → List shows each job's tags, filters by one, and `t` edits the
+highlighted job's tags.
+
+#### The default tag
+
+When most of your work belongs to one tag for a while, a sprint say, make it the default:
+
+```
+gmlw config set jobs.default_tag sprint-30
+```
+
+Then `gmlw jobs` and the menu's Job → List open on that sprint's jobs (`gmlw jobs --all`,
+or the list's first row, shows the rest). A new job gets the tag too: `gmlw start` adds it
+unless `--tag` names others, and the menu's new-job form starts with it filled in, to keep
+or clear. Reopening an older job does not give it the tag. Clear the default with
+`gmlw config set jobs.default_tag none`.
 
 ### jobs delete
 
