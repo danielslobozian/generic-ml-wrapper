@@ -34,9 +34,10 @@ _DATA_PREFIX = "data:"
 # Claude Code's billing line, the first system block of every request it sends,
 # carries this only on a subagent's calls -- its web-search helpers included.
 _SUBAGENT_MARK = "cc_is_subagent=true"
-# The tools that start a Claude Code subagent (``Task`` is its older name). Their result
-# is the launch's acknowledgement for a background agent, the agent's report otherwise.
-_AGENT_TOOLS = frozenset({"Agent", "Task"})
+# The tools that start Claude Code subagents (``Task`` is ``Agent``'s older name;
+# ``Workflow`` starts a script's agents). Their result is the launch's acknowledgement for
+# background agents, the agent's report otherwise.
+_AGENT_TOOLS = frozenset({"Agent", "Task", "Workflow"})
 # The content blocks that call a tool: one the client runs, or one the server runs itself
 # (a web search).
 _TOOL_BLOCKS = frozenset({"tool_use", "server_tool_use"})

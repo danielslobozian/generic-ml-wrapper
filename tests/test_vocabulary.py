@@ -19,8 +19,16 @@ _SUFFIXES = frozenset({".py", ".md", ".json", ".toml", ".yaml", ".tape", ".sh", 
 _WORD = re.compile("workflow", re.IGNORECASE)
 
 # Names that contain the word without being the notion: the attachment gmlw ships, the
-# sibling project, GitHub Actions links.
-_NAMES = ("workflow-creator", "workflow_creator", "generic-ml-workflow", "actions/workflow")
+# sibling project, GitHub Actions links, and Claude Code's tool that starts a script's
+# agents, quoted as code.
+_NAMES = (
+    "workflow-creator",
+    "workflow_creator",
+    "generic-ml-workflow",
+    "actions/workflow",
+    '"Workflow"',
+    "`Workflow`",
+)
 
 # Whole files where the word is the subject.
 _FILES = (
