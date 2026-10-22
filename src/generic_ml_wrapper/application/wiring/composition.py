@@ -87,6 +87,7 @@ from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import Sqlite
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_session_store import SqliteSessionStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_usage_store import SqliteUsageStore
+from generic_ml_wrapper.adapter.outbound.update.packaged_changelog import PackagedChangelog
 from generic_ml_wrapper.adapter.outbound.update.pypi_version_checker import PypiVersionChecker
 from generic_ml_wrapper.adapter.outbound.update.python_installation_inspector import (
     PythonInstallationInspector,
@@ -128,6 +129,7 @@ from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUs
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
 from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
+from generic_ml_wrapper.application.port.inbound.whats_new import WhatsNew
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
 from generic_ml_wrapper.application.port.outbound.axis_catalog import AxisCatalogPort
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
@@ -171,6 +173,7 @@ from generic_ml_wrapper.application.usecase.set_credential import SetCredentialU
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
 from generic_ml_wrapper.application.usecase.tag_jobs import TagJobsUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
+from generic_ml_wrapper.application.usecase.whats_new import WhatsNewUseCase
 from generic_ml_wrapper.common import config, paths
 from generic_ml_wrapper.common.i18n import (
     SUPPORTED_LANGUAGES,
@@ -388,6 +391,19 @@ def build_check_for_update() -> CheckForUpdate:
         enabled=config.update_check,
         clock=lambda: datetime.now(UTC),
         cache_path=paths.STATE / "update-check.json",
+    )
+
+
+def build_whats_new() -> WhatsNew:
+    """Build the WhatsNew use case wired to the packaged changelog and its seen-record.
+
+    Returns:
+        A ready-to-run WhatsNew.
+    """
+    return WhatsNewUseCase(
+        source=PackagedChangelog(),
+        current_version=__version__,
+        state_path=paths.STATE / "whats-new.json",
     )
 
 

@@ -405,7 +405,7 @@ status line is installed and parsed.
 ## tui
 
 Open the interactive, full-screen menu — an alternative to the flag CLI. It is
-object-first (**Job · Attachments · Config · Rules · Health**), you navigate with the arrow keys, and
+object-first (**Job · Attachments · Config · Rules · Health · What's new**), you navigate with the arrow keys, and
 each row shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too**
 (once initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
 capability index.
@@ -452,6 +452,14 @@ Only clients you can actually launch on are listed:
   client as `claude`, usable here and with `--client cursor-mitm`. gmlw cannot `PATH`-check
   a caller it did not write, so a configured one is always offered — configuring it is the
   statement that it works. See [CONFIGURATION.md](CONFIGURATION.md) for `[callers]`.
+
+**What's new** shows the release notes: the changelog that ships inside gmlw, so it
+reads offline and always matches the copy you run. After an upgrade, the menu opens once
+on just the releases since the one you last saw (as an IDE shows what changed in it);
+`Esc` returns to the menu, and the next start opens on the menu alone. The very first
+start records the version without showing anything — there is nothing earlier to compare
+with. What was last shown is kept in `~/.gmlw/state/whats-new.json`. The notes are written
+in English, whatever the menu's language.
 
 **Only Setup leaves the menu.** Deleting, exporting an attachment, and importing one all ask
 and act in place, and leave you on the screen you were working on. `Config > Setup` is an

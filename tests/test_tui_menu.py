@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import cast
 
 from textual.pilot import Pilot
-from textual.widgets import DataTable, Input, ListItem, ListView, Static
+from textual.widgets import DataTable, Input, ListItem, ListView, Markdown, Static
 
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     AttachmentRow,
@@ -2092,7 +2092,7 @@ async def _open_health(pilot: Pilot[MenuChoice | None]) -> None:
     await pilot.pause()
 
 
-def test_the_top_menu_offers_health_above_quit() -> None:
+def test_the_top_menu_offers_health_and_whats_new_above_quit() -> None:
     seen: list[str] = []
 
     async def scenario() -> None:
@@ -2102,7 +2102,7 @@ def test_the_top_menu_offers_health_above_quit() -> None:
             seen.extend(r.item.title for r in app.screen.query(_Row))
 
     asyncio.run(scenario())
-    assert seen[-2:] == ["Health", "Quit"]
+    assert seen[-3:] == ["Health", "What's new", "Quit"]
 
 
 def test_health_lists_each_day_marking_the_bad_ones() -> None:
@@ -2459,3 +2459,66 @@ def test_the_job_list_opens_on_the_default_tag() -> None:
 
     asyncio.run(scenario())
     assert str(seen["crumb"]).endswith("> #sprint-30")
+
+
+_NOTES = "# 0.13.0 — 2026-11-01\n\n### Added\n- **gmlw update** upgrades gmlw."
+
+
+def _markdown_text(app: MenuApp) -> str:
+    """The source of the Markdown the What's new screen shows."""
+    return app.screen.query_one("#notes", Markdown).source
+
+
+def test_whats_new_opens_from_the_top_menu_and_escape_returns() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, whats_new=lambda: _NOTES)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            assert type(app.screen).__name__ == "TopMenuScreen"  # no news: the menu alone
+            await pilot.press("down", "down", "down", "down", "down", "enter")
+            await pilot.pause()
+            seen["screen"] = type(app.screen).__name__
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["notes"] = _markdown_text(app)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["back"] = type(app.screen).__name__
+
+    asyncio.run(scenario())
+    assert seen["screen"] == "WhatsNewScreen"
+    assert str(seen["crumb"]).endswith("What's new")
+    assert seen["notes"] == _NOTES
+    assert seen["back"] == "TopMenuScreen"
+
+
+def test_the_news_since_an_upgrade_opens_over_the_menu() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, news=_NOTES)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause()
+            seen["screen"] = type(app.screen).__name__
+            seen["notes"] = _markdown_text(app)
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["back"] = type(app.screen).__name__
+
+    asyncio.run(scenario())
+    assert seen == {"screen": "WhatsNewScreen", "notes": _NOTES, "back": "TopMenuScreen"}
+
+
+def test_whats_new_says_so_when_there_are_no_notes() -> None:
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.press("down", "down", "down", "down", "down", "enter")
+            await pilot.pause()
+            seen.append(_markdown_text(app))
+
+    asyncio.run(scenario())
+    assert "no release notes" in seen[0]

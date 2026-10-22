@@ -580,5 +580,10 @@
   "update.confirm": "  Upgrade now? [y/N]: ",
   "update.run_after_exit": "Run it once gmlw has exited: a running gmlw cannot replace itself on Windows.",
   "update.failed": "gmlw: the upgrade exited with {code}; nothing else was changed.",
-  "update.source.unlocated": "an unbuilt source checkout"
+  "update.source.unlocated": "an unbuilt source checkout",
+  "tui.whats_new": "What's new",
+  "tui.whats_new.none": "This copy of gmlw ships no release notes.",
+  "whats_new.heading": "{version}",
+  "whats_new.heading_dated": "{version} — {date}",
+  "log.whats_new_not_recorded": "could not record the release notes as shown: {error}"
 }
