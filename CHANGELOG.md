@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-23
+
 ### Added
 - **The status line shows the agents' share of the turns.** The turn count is now followed
   by the share the agents made, as each kind of token already was: `86 turns (70%)`.
@@ -909,7 +911,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.1...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.0...v0.12.1
 [0.12.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.10.0...v0.11.0
