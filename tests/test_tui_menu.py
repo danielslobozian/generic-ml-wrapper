@@ -9,13 +9,16 @@ The repo has no pytest-asyncio, so each scenario is wrapped in ``asyncio.run`` -
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import cast
 
+import pytest
 from textual.pilot import Pilot
 from textual.widgets import DataTable, Input, ListItem, ListView, Markdown, Static
 
+from generic_ml_wrapper.adapter.inbound.tui import menu_app
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     AttachmentRow,
     ClientChoice,
@@ -2522,3 +2525,24 @@ def test_whats_new_says_so_when_there_are_no_notes() -> None:
 
     asyncio.run(scenario())
     assert "no release notes" in seen[0]
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        menu_app._TOP_MENU,
+        menu_app._JOB_MENU,
+        menu_app._DELETE_MENU,
+        menu_app._ATTACHMENT_MENU,
+        menu_app._CONFIG_MENU,
+    ],
+)
+def test_every_menu_entry_has_a_title_and_a_subtitle(rows: tuple[tuple[str, ...], ...]) -> None:
+    # A missing key renders as the key itself, which no other test would notice.
+    catalog = json.loads(
+        (Path(menu_app.__file__).parents[3] / "resources" / "i18n" / "en.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    missing = [k for _, key, *_ in rows for k in (key, f"{key}.d") if k not in catalog]
+    assert not missing

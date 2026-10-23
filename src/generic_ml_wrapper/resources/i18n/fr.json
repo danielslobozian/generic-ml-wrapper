@@ -582,6 +582,7 @@
   "update.failed": "gmlw : la mise à jour s'est terminée avec le code {code} ; rien d'autre n'a été modifié.",
   "update.source.unlocated": "des sources non construites",
   "tui.whats_new": "Nouveautés",
+  "tui.whats_new.d": "Les notes de version, les plus récentes d'abord",
   "tui.whats_new.none": "Cette copie de gmlw n'embarque pas de notes de version.",
   "whats_new.heading": "{version}",
   "whats_new.heading_dated": "{version} — {date}",

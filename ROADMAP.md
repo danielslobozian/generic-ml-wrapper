@@ -443,6 +443,25 @@ of it its agents spend, and when the connection to the client's API failed.
 - **Job tags** — `gmlw jobs tag`, `--tag` on start, and filtering by tag in the CLI and menu.
 - **`GMLW_HOME`** — a development build can keep its own ledger and config.
 
+### 0.13.0 — what the agents really cost, and staying current
+The status line now tells the whole story of a session's agents: their share of the turns,
+and the turns the main conversation takes only because an agent started or reported back --
+each of which re-reads the whole context. gmlw also learned to keep itself up to date, and
+to say what changed.
+
+- **Agents' share of turns, and their cost to the main conversation** — every kind on the
+  status line gains a second share: `86 turns (70% +12%)`; `gmlw export` names those turns
+  `main, for agents`. A Workflow script's launch counts too.
+- **A context that changes colour** — yellow, then red, by percentage or absolute size,
+  thresholds configurable under `[statusline]`.
+- **Tool calls by name** — `⚒ 1.1k (Bash 640, …)` for the session and the job, and in
+  `gmlw export`. Names only, never the calls.
+- **Tags at creation, and a default tag** — tag a job in the new-job form; `[jobs]
+  default_tag` filters the list and `gmlw jobs`, and tags every new job.
+- **`gmlw update`** — finds how this copy was installed (PyPI or git; uv tool, pipx, uv pip,
+  pip) and, once you agree, runs the matching upgrade.
+- **What's new** — a menu entry with the release notes, opened once after an upgrade.
+
 ## Planned
 
 _Next milestone not yet chosen._
