@@ -56,6 +56,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   anything.
 
 ### Fixed
+- **Launching a Workflow script counts as the agents' doing.** The main turn that takes
+  the launch's acknowledgement was counted as the user's; it is now among the main turns
+  caused by agents, as for an `Agent` launch.
 - **`gmlw config set` writes numbers as numbers.** An integer setting such as
   `logging.max_bytes` was saved as text, which the reader then ignored, so the change had
   no effect. It is now checked against its bounds and saved as a TOML integer.

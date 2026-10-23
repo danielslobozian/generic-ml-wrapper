@@ -165,7 +165,7 @@ def test_an_agents_report_causes_the_main_turn(newest: object) -> None:
     )
 
 
-@pytest.mark.parametrize("tool", ["Agent", "Task"])
+@pytest.mark.parametrize("tool", ["Agent", "Task", "Workflow"])
 def test_the_result_of_an_agent_call_causes_the_main_turn(tool: str) -> None:
     body = _conversation({"role": "user", "content": "go"}, _calls(tool, "Bash"), _results(tool))
     assert read_origin(body) == CAUSED_BY_AGENT

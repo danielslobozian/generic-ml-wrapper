@@ -77,7 +77,8 @@ own, after a `+`:
 ```
 
 A main turn counts as caused by a subagent when the newest message is the result of a
-subagent call (`Agent`, or `Task` in older versions) or a subagent's report (a
+subagent call (`Agent`, or `Task` in older versions, or a `Workflow` script's launch) or
+a subagent's report (a
 background agent's completion, or its hand-back). gmlw reads only those technical
 markers, never what the messages say. Turns recorded before this version count as the
 user's.
