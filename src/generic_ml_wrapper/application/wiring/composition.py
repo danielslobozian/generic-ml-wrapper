@@ -69,6 +69,7 @@ from generic_ml_wrapper.adapter.outbound.persona.filesystem_persona_source impor
 from generic_ml_wrapper.adapter.outbound.plugin.filesystem_plugin_source import (
     FilesystemPluginSource,
 )
+from generic_ml_wrapper.adapter.outbound.session_file.client_session_files import ClientSessionFiles
 from generic_ml_wrapper.adapter.outbound.status.claude_status_parser import ClaudeStatusParser
 from generic_ml_wrapper.adapter.outbound.status.cursor_status_parser import CursorStatusParser
 from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import (
@@ -100,6 +101,7 @@ from generic_ml_wrapper.application.domain.model.installation import PACKAGE
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
+from generic_ml_wrapper.application.port.inbound.analyze_session import AnalyzeSession
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
@@ -138,6 +140,7 @@ from generic_ml_wrapper.application.port.outbound.diagnostics import Diagnostics
 from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
+from generic_ml_wrapper.application.usecase.analyze_session import AnalyzeSessionUseCase
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
@@ -510,6 +513,15 @@ def build_list_jobs() -> ListJobs:
         A ready-to-run ListJobs.
     """
     return ListJobsUseCase(store=SqliteSessionStore(_ledger()), tags=SqliteJobTagStore(_ledger()))
+
+
+def build_analyze_session() -> AnalyzeSession:
+    """Build the AnalyzeSession use case over the ledger's sessions and the clients' files.
+
+    Returns:
+        A ready-to-run AnalyzeSession.
+    """
+    return AnalyzeSessionUseCase(store=SqliteSessionStore(_ledger()), files=ClientSessionFiles())
 
 
 def build_report_health() -> ReportHealth:
