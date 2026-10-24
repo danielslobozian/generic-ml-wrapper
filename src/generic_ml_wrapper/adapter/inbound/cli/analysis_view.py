@@ -39,7 +39,7 @@ def format_analysis(analysis: SessionAnalysis, loc: i18n.Localizer | None = None
         loc.t("analyze.title", session=analysis.session_id, client=analysis.client)
         if analysis.session_id is not None
         else loc.t("analyze.title_outside", client=analysis.client),
-        loc.t("analyze.file", path=_home_relative(analysis.source)),
+        loc.t("analyze.file", path=home_relative(analysis.source)),
     ]
     if analysis.started_at is not None and analysis.ended_at is not None:
         lines.append(
@@ -110,7 +110,7 @@ def _when(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp).astimezone().strftime("%Y-%m-%d %H:%M")
 
 
-def _home_relative(source: str) -> str:
+def home_relative(source: str) -> str:
     """``source`` with the home folder written ``~``, as the status line writes folders."""
     path = Path(source)
     try:

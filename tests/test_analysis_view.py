@@ -21,6 +21,7 @@ from generic_ml_wrapper.application.domain.service.session_analyzer import analy
 from generic_ml_wrapper.application.port.inbound.analyze_session import (
     AnalyzeSession,
     NothingToAnalyzeError,
+    RecentSession,
 )
 from generic_ml_wrapper.common import i18n
 
@@ -82,6 +83,9 @@ class _Fixed(AnalyzeSession):
         if self._result is None:
             raise NothingToAnalyzeError("analyze.error.nothing", target=target)
         return self._result
+
+    def recent(self, limit: int = 30) -> tuple[RecentSession, ...]:
+        return ()
 
 
 def test_the_command_prints_json_for_other_tools(

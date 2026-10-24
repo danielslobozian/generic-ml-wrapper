@@ -6,7 +6,7 @@ import pytest
 from _conformance import InMemorySessionStore
 
 from generic_ml_wrapper.application.domain.model.session import Session
-from generic_ml_wrapper.application.domain.model.session_analysis import SessionRecord
+from generic_ml_wrapper.application.domain.model.session_analysis import SessionFile, SessionRecord
 from generic_ml_wrapper.application.port.inbound.analyze_session import (
     NothingToAnalyzeError,
     SessionFileUnavailableError,
@@ -18,8 +18,9 @@ from generic_ml_wrapper.application.usecase.analyze_session import AnalyzeSessio
 class FakeFiles(SessionFilesPort):
     """Files keyed by path; a session's file is ``/<client>/<uuid>``."""
 
-    def __init__(self, *paths: str) -> None:
+    def __init__(self, *paths: str, recent: tuple[SessionFile, ...] = ()) -> None:
         self._paths = set(paths)
+        self._recent = recent
 
     def analyzable_clients(self) -> frozenset[str]:
         return frozenset({"claude", "codex"})
@@ -27,6 +28,9 @@ class FakeFiles(SessionFilesPort):
     def locate(self, client: str, uuid: str) -> str | None:
         path = f"/{client}/{uuid}"
         return path if path in self._paths else None
+
+    def recent(self, limit: int) -> list[SessionFile]:
+        return list(self._recent[:limit])
 
     def read(self, source: str) -> SessionRecord | None:
         if source not in self._paths:
@@ -104,3 +108,21 @@ def test_a_job_with_no_readable_session_says_so() -> None:
         use_case.execute("j")
 
     assert raised.value.catalogue_key == "analyze.error.job_unavailable"
+
+
+def test_recent_files_are_matched_to_the_gmlw_session_that_ran_them() -> None:
+    files = (
+        SessionFile("claude", "/claude/u-1", 3.0, uuid="u-1"),
+        SessionFile("codex", "/codex/u-1", 2.0, uuid="u-1"),  # same id, other client: no match
+        SessionFile("codex", "/codex/x", 1.0),  # no id read
+    )
+    use_case = AnalyzeSessionUseCase(
+        _store(Session("j_001", "j", "claude", "u-1")), FakeFiles(recent=files)
+    )
+
+    recent = use_case.recent(limit=2)
+
+    assert [(r.file.source, r.session_id) for r in recent] == [
+        ("/claude/u-1", "j_001"),
+        ("/codex/u-1", None),
+    ]

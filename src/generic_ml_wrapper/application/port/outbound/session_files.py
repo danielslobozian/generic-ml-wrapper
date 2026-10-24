@@ -8,7 +8,10 @@ from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.session_analysis import SessionRecord
+    from generic_ml_wrapper.application.domain.model.session_analysis import (
+        SessionFile,
+        SessionRecord,
+    )
 
 
 class SessionFilesPort(ABC):
@@ -41,4 +44,12 @@ class SessionFilesPort(ABC):
         Returns:
             The session's record, or ``None`` when the file is missing, unreadable, or
             not a session file of an analysable client.
+        """
+
+    @abstractmethod
+    def recent(self, limit: int) -> list[SessionFile]:
+        """The session files the analysable clients wrote last, newest first.
+
+        Args:
+            limit: How many at most.
         """

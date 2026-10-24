@@ -5,12 +5,29 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.common.errors import DomainError
 
 if TYPE_CHECKING:
-    from generic_ml_wrapper.application.domain.model.session_analysis import SessionAnalysis
+    from generic_ml_wrapper.application.domain.model.session_analysis import (
+        SessionAnalysis,
+        SessionFile,
+    )
+
+
+@dataclass(frozen=True)
+class RecentSession:
+    """A session file on this machine, and the gmlw session it belongs to, if any.
+
+    Attributes:
+        file: The client's session file.
+        session_id: The gmlw session that ran it, or ``None`` for one run outside gmlw.
+    """
+
+    file: SessionFile
+    session_id: str | None = None
 
 
 class NothingToAnalyzeError(DomainError, ValueError):
@@ -41,4 +58,15 @@ class AnalyzeSession(ABC):
             SessionFileUnavailableError: The session (or every session of the job) has no
                 readable file: its client is not analysable, it never got the client's
                 id, or the client no longer has it.
+        """
+
+    @abstractmethod
+    def recent(self, limit: int = 30) -> tuple[RecentSession, ...]:
+        """The session files Claude Code and Codex wrote last on this machine, newest first.
+
+        Args:
+            limit: How many at most.
+
+        Returns:
+            Each file, with the gmlw session it belongs to when gmlw ran it.
         """

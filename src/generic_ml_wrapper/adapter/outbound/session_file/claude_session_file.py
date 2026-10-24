@@ -31,6 +31,7 @@ from generic_ml_wrapper.application.domain.model.session_analysis import (
     RecordedCall,
     RecordedPrompt,
     RecordedToolCall,
+    SessionFile,
     SessionRecord,
 )
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
@@ -43,6 +44,8 @@ CLIENT = "claude"
 _NOT_A_MODEL = "<synthetic>"
 # The record types that are part of the conversation; the rest are Claude's bookkeeping.
 _CONVERSATION = frozenset({"user", "assistant", "system"})
+# How many of a file's first records are looked through for the folder it ran in.
+_HEAD = 20
 
 
 @dataclass
@@ -181,3 +184,13 @@ def _blocks(record: object) -> list[object]:
     """The content blocks of a record's message (none when its content is plain text)."""
     content = get(record, "message", "content")
     return cast("list[object]", content) if isinstance(content, list) else []
+
+
+def describe(path: Path, modified_at: float) -> SessionFile:
+    """List the file at ``path``: its session id is its name; its folder, the first ``cwd``."""
+    folder = None
+    for position, record in enumerate(records(path)):
+        folder = text(record, "cwd")
+        if folder is not None or position >= _HEAD:
+            break
+    return SessionFile(CLIENT, str(path), modified_at, uuid=path.stem, folder=folder)

@@ -26,6 +26,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import ClassVar, cast
 
+from rich.text import Text
 from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -73,6 +74,11 @@ def _no_sessions(_job: str) -> list[SessionChoice]:
 def _no_usage_view(job: str) -> UsageView:
     """Default usage view when the app runs unwired (tests): an empty report."""
     return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
+
+
+def _no_analysis(_target: str) -> str:
+    """Default when the app runs unwired (tests): no analysis to show."""
+    return i18n.active().t("tui.analysis.unwired")
 
 
 def _no_clients() -> list[ClientChoice]:
@@ -340,6 +346,22 @@ class HealthDayView:
 
 
 @dataclass(frozen=True)
+class RecentSessionView:
+    """A session file on this machine, pre-rendered for the Session analysis list.
+
+    ``target`` is what to analyse (the file's path); ``when``, ``client`` and ``folder``
+    are already rendered by the wiring; ``session_id`` is the gmlw session that ran it, or
+    empty for a session run outside gmlw.
+    """
+
+    target: str
+    when: str
+    client: str
+    folder: str
+    session_id: str = ""
+
+
+@dataclass(frozen=True)
 class UsageView:
     """A job's usage, pre-rendered for the Export summary view.
 
@@ -437,6 +459,7 @@ _TOP_MENU = (
     ("🎛", "tui.config", "menu:config", ""),
     ("📏", "tui.rules", "menu:rules", ""),
     ("🩺", "tui.health", "menu:health", "gmlw health"),
+    ("🔬", "tui.analysis", "menu:analysis", "gmlw analyze <session | job | file>"),
     ("📰", "tui.whats_new", "menu:whats_new", ""),
     ("🚪", "tui.quit", "quit", ""),
 )
@@ -977,6 +1000,8 @@ class TopMenuScreen(_MenuScreen):
             self.menu_app.push_screen(RulesMenuScreen())
         elif item.action == "menu:health":
             self.menu_app.push_screen(HealthScreen())
+        elif item.action == "menu:analysis":
+            self.menu_app.push_screen(AnalysisMenuScreen())
         elif item.action == "menu:attachment":
             self.menu_app.push_screen(AttachmentMenuScreen())
         elif item.action == "menu:whats_new":
@@ -1892,6 +1917,180 @@ class HealthDayScreen(Screen[None]):
 
     def action_back(self) -> None:
         """Pop back to the days."""
+        self.menu_app.pop_screen()
+
+
+_ANALYSIS_MENU = (
+    ("🗂", "tui.analysis.gmlw", "analysis:gmlw", "gmlw analyze <job>_NNN"),
+    ("📄", "tui.analysis.files", "analysis:files", "gmlw analyze <file>"),
+)
+
+
+def _analysis_crumb(*steps: str) -> str:
+    """Breadcrumb: gmlw > Session analysis > the steps taken."""
+    return " > ".join(("gmlw", i18n.active().t("tui.analysis"), *steps))
+
+
+class AnalysisMenuScreen(_MenuScreen):
+    """Session analysis: a session gmlw ran, or any session file on this machine."""
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Session analysis."""
+        return _analysis_crumb()
+
+    def menu_items(self) -> list[_Item]:
+        """The two ways to pick the session."""
+        return _menu(_ANALYSIS_MENU)
+
+    def handle(self, item: _Item) -> None:
+        """Open the job list, or the list of recent session files."""
+        if item.action == "analysis:gmlw":
+            self.menu_app.push_screen(AnalysisJobScreen())
+        elif item.action == "analysis:files":
+            self.menu_app.push_screen(AnalysisFilesScreen())
+
+
+class AnalysisJobScreen(_MenuScreen):
+    """Pick the job whose session to analyse."""
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Session analysis > A gmlw session."""
+        return _analysis_crumb(i18n.active().t("tui.analysis.gmlw"))
+
+    def menu_items(self) -> list[_Item]:
+        """One row per job."""
+        t = i18n.active().t
+        return [
+            _Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
+            for j in self.menu_app.jobs
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Picking a job lists its sessions."""
+        if item.action == "pick":
+            self.menu_app.push_screen(AnalysisSessionScreen(item.payload))
+
+
+class AnalysisSessionScreen(_MenuScreen):
+    """Pick which session of a job to analyse: date · client · folder, newest last."""
+
+    def __init__(self, job: str) -> None:
+        """Bind the picker to the job whose sessions it lists."""
+        super().__init__()
+        self._job = job
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Session analysis > A gmlw session > <job>."""
+        return _analysis_crumb(i18n.active().t("tui.analysis.gmlw"), self._job)
+
+    def menu_items(self) -> list[_Item]:
+        """One row per session of the job."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "🔬",
+                s.session_id,
+                f"{s.date} · {s.client} · {s.cwd or t('tui.resume.no_folder')}",
+                "analysis:pick",
+                example=f"gmlw analyze {s.session_id}",
+                payload=s.session_id,
+            )
+            for s in self.menu_app.sessions_for(self._job)
+        ]
+
+    def initial_index(self) -> int:
+        """Open on the newest session."""
+        return max(len(self.menu_app.sessions_for(self._job)) - 1, 0)
+
+    def handle(self, item: _Item) -> None:
+        """Analyse the picked session."""
+        if item.action == "analysis:pick":
+            crumb = _analysis_crumb(i18n.active().t("tui.analysis.gmlw"), item.payload)
+            self.menu_app.push_screen(AnalysisReportScreen(item.payload, crumb))
+
+
+class AnalysisFilesScreen(_MenuScreen):
+    """Pick a session file Claude Code or Codex wrote on this machine, newest first.
+
+    A file a gmlw session ran is analysed as that session, so it is named as one.
+    """
+
+    empty_key = "tui.analysis.no_files"
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Session analysis > A session file on this machine."""
+        return _analysis_crumb(i18n.active().t("tui.analysis.files"))
+
+    def menu_items(self) -> list[_Item]:
+        """One row per recent file: when · client · folder, and its gmlw session if any."""
+        t = i18n.active().t
+        return [
+            _Item(
+                "🔬",
+                f"{f.when} · {f.client}",
+                f"{f.folder} · {f.session_id or t('tui.analysis.outside')}",
+                "analysis:pick",
+                example=f"gmlw analyze {f.session_id or f.target}",
+                payload=f.session_id or f.target,  # a gmlw session's file reads as that session
+            )
+            for f in self.menu_app.recent_sessions()
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Analyse the picked file."""
+        if item.action == "analysis:pick":
+            crumb = _analysis_crumb(i18n.active().t("tui.analysis.files"), item.title)
+            self.menu_app.push_screen(AnalysisReportScreen(item.payload, crumb))
+
+
+class AnalysisReportScreen(Screen[None]):
+    """One session's analysis, read on a worker thread (a long session's file is large)."""
+
+    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
+
+    def __init__(self, target: str, crumb: str) -> None:
+        """Bind the screen to what to analyse, and the breadcrumb that led here."""
+        super().__init__()
+        self._target = target
+        self._crumb = crumb
+
+    @property
+    def menu_app(self) -> MenuApp:
+        """The owning app, narrowed from Textual's generic ``App`` to :class:`MenuApp`."""
+        return cast("MenuApp", self.app)  # pyright: ignore[reportUnknownMemberType]
+
+    def compose(self) -> ComposeResult:
+        """A breadcrumb, the (initially loading) report, and the key hints."""
+        yield Static(self._crumb, id="crumb")
+        with VerticalScroll(id="report"):
+            yield Static("", id="analysis")
+        yield Static(i18n.active().t("tui.export.keys"), id="keys")
+
+    def on_mount(self) -> None:
+        """Show the spinner and read the session off the event loop."""
+        report = self.query_one("#report", VerticalScroll)
+        report.loading = True
+        report.focus()
+        self._load()
+
+    @work(thread=True, exclusive=True)
+    def _load(self) -> str:
+        """Analyse the session (returns the text; never touches widgets)."""
+        return self.menu_app.analyze(self._target)
+
+    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Show the analysis when it lands, or that it failed."""
+        if event.state is WorkerState.SUCCESS:
+            text = cast("str", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
+            self.query_one("#analysis", Static).update(Text(text))
+        elif event.state is WorkerState.ERROR:
+            self.query_one("#analysis", Static).update(i18n.active().t("tui.analysis.failed"))
+        else:
+            return
+        self.query_one("#report", VerticalScroll).loading = False
+
+    def action_back(self) -> None:
+        """Pop back to the list."""
         self.menu_app.pop_screen()
 
 
@@ -2847,6 +3046,8 @@ class MenuApp(App[MenuChoice | None]):
         validate_tags: Callable[[Sequence[str]], str | None] | None = None,
         whats_new: Callable[[], str] | None = None,
         news: str = "",
+        analyze: Callable[[str], str] | None = None,
+        recent_sessions: Callable[[], list[RecentSessionView]] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -2899,6 +3100,11 @@ class MenuApp(App[MenuChoice | None]):
                 defaults to none.
             news: The notes of the releases since the last upgrade the user saw, as
                 Markdown, opened over the menu as it starts; empty opens the menu alone.
+            analyze: Renders the analysis of a gmlw session id or a session file's path,
+                for the Session analysis screens (on a worker thread); defaults to saying
+                it is not available.
+            recent_sessions: Lists the session files Claude Code and Codex wrote last, for
+                the Session analysis list; defaults to none.
         """
         super().__init__()
         self.jobs = jobs
@@ -2907,6 +3113,8 @@ class MenuApp(App[MenuChoice | None]):
         self.sessions_for = sessions_for or _no_sessions
         self.usage_view = usage_view or _no_usage_view
         self.health: Callable[[], list[HealthDayView]] = health or list
+        self.analyze: Callable[[str], str] = analyze or _no_analysis
+        self.recent_sessions: Callable[[], list[RecentSessionView]] = recent_sessions or list
         self.save_usage = save_usage or _no_save
         self.rules = rules or _no_rules
         self._rule_cache: tuple[RuleGroup, ...] | None = None

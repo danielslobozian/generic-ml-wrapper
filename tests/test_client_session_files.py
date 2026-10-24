@@ -3,6 +3,7 @@
 """Tests for finding and reading Claude Code's and Codex's own session files."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -215,3 +216,36 @@ def test_a_file_no_client_wrote_or_no_file_at_all_reads_as_nothing(tmp_path: Pat
     assert files.read(str(stranger)) is None
     assert files.read(str(tmp_path / "missing.jsonl")) is None
     assert files.read(str(tmp_path)) is None
+
+
+def test_recent_lists_both_clients_newest_first_with_id_and_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    claude = _write(
+        tmp_path / "claude" / "projects" / "p" / "s-1.jsonl",
+        [{"type": "custom-title"}, {"type": "user", "cwd": "/work/a", "sessionId": "s-1"}],
+    )
+    _write(claude.with_suffix("") / "subagents" / "agent-a.jsonl", [{"cwd": "/work/a"}])
+    rollout = _codex_rollout(tmp_path / "codex" / "sessions")
+    os.utime(claude, (1_000, 1_000))
+    os.utime(rollout, (2_000, 2_000))
+
+    listed = ClientSessionFiles().recent(5)
+
+    assert [(f.client, f.source, f.modified_at, f.uuid) for f in listed] == [
+        ("codex", str(rollout), 2_000, "c-1"),
+        ("claude", str(claude), 1_000, "s-1"),  # its agent's file is part of it, not listed
+    ]
+    assert listed[1].folder == "/work/a"
+    assert ClientSessionFiles().recent(1) == listed[:1]
+
+
+def test_recent_finds_nothing_where_no_client_ever_ran(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "none"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "none"))
+
+    assert ClientSessionFiles().recent(5) == []
