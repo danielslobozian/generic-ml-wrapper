@@ -7,6 +7,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Jobs can be listed by the latest worked on.** `s` in `gmlw tui`'s Job → List switches
+  between by name and latest worked on first, and keeps the choice (`[jobs] sort`), so every
+  job list opens in it from then on; the header says which. `gmlw jobs` follows it, and
+  `gmlw jobs --sort name|recent` orders one listing without saving.
+- **Jobs and sessions show when they were last worked on.** Each job says
+  `last worked 2026-10-24 18:40` (its latest turn) or `no turn yet`; each session says when it
+  `started` and when it was `last worked`, in `gmlw jobs`, `gmlw sessions` and the menu.
 - **`gmlw analyze` shows what a session did.** Give it a gmlw session, a job, or a
   Claude Code / Codex session file run outside gmlw: it reads the client's own session
   file and shows the requests (main and agents), your prompts, the tokens by kind, how
@@ -17,6 +24,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     of the latest session files on this machine, gmlw's or not.
 
 ### Changed
+- **Session start times are shown in local time.** They were the ledger's UTC.
 - **Codex's status line shows the session's tokens and cost.** The line gmlw sets for codex
   now ends with the session's input and output tokens and codex's estimated cost, as
   gmlw's own line does for claude.

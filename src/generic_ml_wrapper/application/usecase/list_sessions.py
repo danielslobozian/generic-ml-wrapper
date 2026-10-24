@@ -52,8 +52,11 @@ class ListSessionsUseCase(ListSessions):
         # is a hot-ish path (it also feeds the TUI's pickers) and the alternative is one
         # query per row.
         turns_per_session: dict[str, int] = {}
+        last_turn: dict[str, float] = {}
         for turn in self._turns.turns_for_job(job):
             turns_per_session[turn.session_id] = turns_per_session.get(turn.session_id, 0) + 1
+            if turn.timestamp > last_turn.get(turn.session_id, 0.0):
+                last_turn[turn.session_id] = turn.timestamp
         costs = self._usage.session_costs(job)
         incidents_per_session: dict[str, int] = {}
         for incident in self._incidents.incidents(job=job):
@@ -75,6 +78,7 @@ class ListSessionsUseCase(ListSessions):
                     else session.attachment
                 ),
                 incidents=incidents_per_session.get(session.session_id, 0),
+                last_worked_at=last_turn.get(session.session_id),
             )
             for session in self._store.sessions_for_job(job)
         ]

@@ -36,6 +36,7 @@ def test_registry_covers_the_settable_scalar_keys() -> None:
         "hints.show",
         "update.check",
         "jobs.default_tag",
+        "jobs.sort",
         "statusline.color",
         "statusline.context_warn_percent",
         "statusline.context_alert_percent",

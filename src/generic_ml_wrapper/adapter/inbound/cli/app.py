@@ -51,6 +51,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import (
 )
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.installation import InstallSource
+from generic_ml_wrapper.application.domain.model.job_order import JobOrder
 from generic_ml_wrapper.application.domain.model.migration import (
     LegacyMigrationReport,
     MigrationReport,
@@ -363,6 +364,9 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     jobs_filter = jobs.add_mutually_exclusive_group()
     jobs_filter.add_argument("--tag", default=None, help=i18n.t("cli.flag.jobs_tag"))
     jobs_filter.add_argument("--all", action="store_true", help=i18n.t("cli.flag.jobs_all"))
+    jobs.add_argument(
+        "--sort", choices=config.JOB_SORTS, default=None, help=i18n.t("cli.flag.jobs_sort")
+    )
     jobs_sub = jobs.add_subparsers(dest="jobs_command", metavar=i18n.t("cli.metavar.action"))
     jobs_delete = jobs_sub.add_parser("delete", help=i18n.t("cli.cmd.jobs_delete"))
     jobs_delete.add_argument("job", nargs="+", help=i18n.t("cli.arg.delete_jobs"))
@@ -509,7 +513,11 @@ def _add_help_parser(sub: _SubParsers) -> None:
 
 
 def format_jobs(
-    summaries: list[JobSummary], loc: i18n.Localizer | None = None, *, tag: str | None = None
+    summaries: list[JobSummary],
+    loc: i18n.Localizer | None = None,
+    *,
+    tag: str | None = None,
+    order: JobOrder = JobOrder.NAME,
 ) -> str:
     """Render the job summaries as human-readable lines.
 
@@ -518,6 +526,7 @@ def format_jobs(
         loc: The localiser to render through; defaults to the active language.
         tag: The tag the list was filtered on, if any -- so an empty result says that no
             job carries it, rather than that there are no jobs at all.
+        order: The order the summaries are in, named in the heading.
 
     Returns:
         The text to print (no trailing newline).
@@ -525,20 +534,57 @@ def format_jobs(
     loc = loc or i18n.active()
     if not summaries:
         return loc.t("jobs.none") if tag is None else loc.t("jobs.none_tagged", tag=tag)
-    lines = [loc.t("jobs.count", count=len(summaries)), ""]
+    lines = [loc.t(f"jobs.count.{order.value}", count=len(summaries)), ""]
     width = max(len(summary.job) for summary in summaries)
     counts = [loc.t("jobs.sessions", count=summary.session_count) for summary in summaries]
     count_width = max(len(count) for count in counts)
+    worked = [last_worked(summary.last_worked_at, loc) for summary in summaries]
+    worked_width = max(len(text) for text in worked)
     lines += [
         loc.t(
             "jobs.row",
             job=f"{summary.job:<{width}}",
             sessions=f"{count:<{count_width}}",
+            worked=f"{when:<{worked_width}}",
             tags=format_tags(summary.tags),
         ).rstrip()
-        for summary, count in zip(summaries, counts, strict=True)
+        for summary, count, when in zip(summaries, counts, worked, strict=True)
     ]
     return "\n".join(lines)
+
+
+def last_worked(moment: float | None, loc: i18n.Localizer | None = None) -> str:
+    """``last worked 2026-10-24 18:40`` in local time, or that there is no turn yet."""
+    loc = loc or i18n.active()
+    if moment is None:
+        return loc.t("jobs.never_worked")
+    return loc.t("jobs.last_worked", when=_minute(moment))
+
+
+def started(created_at: str | None, loc: i18n.Localizer | None = None) -> str:
+    """``started 2026-10-23 19:02`` in local time, from the ledger's UTC record."""
+    loc = loc or i18n.active()
+    return loc.t("sessions.started", when=_local_minute(created_at) or "?")
+
+
+def _local_minute(created_at: str | None) -> str:
+    """A session's recorded start (UTC, as the ledger writes it) as a local ``YYYY-MM-DD HH:MM``.
+
+    Empty when unset; the raw minute when it cannot be read.
+    """
+    if not created_at:
+        return ""
+    try:
+        moment = datetime.fromisoformat(created_at)
+    except ValueError:
+        return created_at[:16]
+    moment = moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+    return _minute(moment.timestamp())
+
+
+def _minute(moment: float) -> str:
+    """An epoch time as a local ``YYYY-MM-DD HH:MM``."""
+    return datetime.fromtimestamp(moment).astimezone().strftime("%Y-%m-%d %H:%M")
 
 
 def format_tags(tags: Sequence[str]) -> str:
@@ -569,13 +615,20 @@ def format_sessions(
     usage_width = max(len(usage) for usage in usages)
     attached = [session.attachment or loc.t("sessions.no_attachment") for session in sessions]
     attached_width = max(len(name) for name in attached)
-    for session, usage, attachment in zip(sessions, usages, attached, strict=True):
+    starts = [started(session.created_at, loc) for session in sessions]
+    start_width = max(len(text) for text in starts)
+    workeds = [last_worked(session.last_worked_at, loc) for session in sessions]
+    worked_width = max(len(text) for text in workeds)
+    for session, usage, attachment, start, worked in zip(
+        sessions, usages, attached, starts, workeds, strict=True
+    ):
         resumable = loc.t("clients.yes") if session.resumable else loc.t("clients.no")
         lines.append(
             loc.t(
                 "sessions.row",
                 session=f"{session.session_id:<{session_width}}",
-                date=f"{(session.created_at or '')[:16]:<16}",  # YYYY-MM-DD HH:MM (blank if unset)
+                date=f"{start:<{start_width}}",
+                worked=f"{worked:<{worked_width}}",
                 client=f"{session.client:<{client_width}}",
                 resumable=f"{resumable:<3}",
                 usage=f"{usage:<{usage_width}}",
@@ -1255,9 +1308,13 @@ def _view(args: argparse.Namespace) -> str | None:
             tag: str | None = str(args.tag)
         else:
             tag = None if getattr(args, "all", False) else _default_tag()
-        summaries = build_list_jobs().execute(tag)
+        # No --sort: the saved order. A flag orders this one listing; it is not saved.
+        order = JobOrder(args.sort or config.job_sort())
+        summaries = build_list_jobs().execute(tag, order)
         return (
-            _as_json([asdict(s) for s in summaries]) if as_json else format_jobs(summaries, tag=tag)
+            _as_json([asdict(s) for s in summaries])
+            if as_json
+            else format_jobs(summaries, tag=tag, order=order)
         )
     if args.command == "sessions":
         job = JobId(args.job)
@@ -1371,6 +1428,11 @@ def _analyze(args: argparse.Namespace) -> int:
     else:
         print("\n\n".join(format_analysis(analysis) for analysis in analyses))
     return 0
+
+
+def _save_job_order(order: str) -> None:
+    """Keep the job lists' order (``[jobs] sort``), as the job list's ``s`` key switches it."""
+    build_config_commands().set("jobs.sort", order)
 
 
 def _analysis_text(target: str) -> str:
@@ -1879,10 +1941,15 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
         UsageView,
     )
 
-    def _job_choices() -> list[JobChoice]:
+    def _job_choices() -> list[JobChoice]:  # in the saved order, re-read after `s` changes it
         return [
-            JobChoice(job=s.job, session_count=s.session_count, tags=s.tags)
-            for s in build_list_jobs().execute()
+            JobChoice(
+                job=s.job,
+                session_count=s.session_count,
+                tags=s.tags,
+                last_worked="" if s.last_worked_at is None else _minute(s.last_worked_at),
+            )
+            for s in build_list_jobs().execute(order=JobOrder(config.job_sort()))
         ]
 
     def _retag_job(job: str, line: str) -> str | None:  # the menu's tag editor: words in, kept
@@ -1955,7 +2022,8 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
                 client=s.client,
                 cwd=s.cwd,
                 resumable=s.resumable,
-                date=(s.created_at or "")[:16],  # "YYYY-MM-DD HH:MM"
+                date=_local_minute(s.created_at),
+                last_worked="" if s.last_worked_at is None else _minute(s.last_worked_at),
                 is_latest=(i == len(summaries) - 1),
                 usage=format_session_usage(s),  # rendered here: the app holds no formatter
                 attachment=s.attachment,
@@ -2187,6 +2255,8 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
         news=news,
         analyze=_analysis_text,
         recent_sessions=_recent_session_views,
+        job_order=config.job_sort(),
+        set_job_order=_save_job_order,
     ).run()  # blocks; terminal restored on return
 
 

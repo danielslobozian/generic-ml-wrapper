@@ -26,6 +26,8 @@ class SessionSummary:
             session recorded before attachments), or ``None`` for a plain session.
         incidents: How many connection incidents it suffered (lost connections and
             cut-off answers).
+        last_worked_at: When its latest metered turn happened, epoch seconds, or ``None``
+            when it has none.
     """
 
     session_id: str
@@ -37,6 +39,7 @@ class SessionSummary:
     cost_usd: float = 0.0
     attachment: str | None = None
     incidents: int = 0
+    last_worked_at: float | None = None
 
 
 class ListSessions(ABC):

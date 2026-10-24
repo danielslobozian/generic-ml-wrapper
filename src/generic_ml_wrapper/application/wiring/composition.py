@@ -83,6 +83,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store impor
 )
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_incident_log import SqliteIncidentLog
+from generic_ml_wrapper.adapter.outbound.store.sqlite_job_activity import SqliteJobActivity
 from generic_ml_wrapper.adapter.outbound.store.sqlite_job_tag_store import SqliteJobTagStore
 from generic_ml_wrapper.adapter.outbound.store.sqlite_ledger_purge import SqliteLedgerPurge
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
@@ -512,7 +513,11 @@ def build_list_jobs() -> ListJobs:
     Returns:
         A ready-to-run ListJobs.
     """
-    return ListJobsUseCase(store=SqliteSessionStore(_ledger()), tags=SqliteJobTagStore(_ledger()))
+    return ListJobsUseCase(
+        store=SqliteSessionStore(_ledger()),
+        tags=SqliteJobTagStore(_ledger()),
+        activity=SqliteJobActivity(_ledger()),
+    )
 
 
 def build_analyze_session() -> AnalyzeSession:

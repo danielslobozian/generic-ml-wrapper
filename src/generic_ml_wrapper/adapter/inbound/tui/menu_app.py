@@ -125,11 +125,16 @@ class MenuChoice:
 
 @dataclass(frozen=True)
 class JobChoice:
-    """A job the user can resume, how many sessions it has, and the tags it carries."""
+    """A job the user can resume, how many sessions it has, and the tags it carries.
+
+    ``last_worked`` is when it was last worked on, already rendered (``YYYY-MM-DD HH:MM``),
+    or empty when it never was.
+    """
 
     job: str
     session_count: int
     tags: tuple[str, ...] = ()
+    last_worked: str = ""
 
 
 @dataclass(frozen=True)
@@ -142,7 +147,8 @@ class SessionChoice:
     "empty" when it never ran a turn), formatted by the wiring so the CLI listing and this
     app cannot describe the same session two different ways. ``attachment`` is what it was
     started with (``name@version``), or ``None`` for a plain session -- a resume continues
-    with it.
+    with it. ``date`` is when it started and ``last_worked`` when its latest turn ran (both
+    ``YYYY-MM-DD HH:MM``, local); ``last_worked`` is empty for a session with no turn.
     """
 
     session_id: str
@@ -153,6 +159,7 @@ class SessionChoice:
     is_latest: bool
     usage: str = ""
     attachment: str | None = None
+    last_worked: str = ""
 
 
 @dataclass(frozen=True)
@@ -396,6 +403,13 @@ class ClientRow:
     default: str
     name: str = ""
     note: str = ""
+
+
+def _when_worked(started: str, last_worked: str) -> str:
+    """``started … · last worked …`` (or ``no turn yet``), each labelled so neither is misread."""
+    t = i18n.active().t
+    worked = t("jobs.last_worked", when=last_worked) if last_worked else t("jobs.never_worked")
+    return f"{t('sessions.started', when=started)} · {worked}"
 
 
 @dataclass(frozen=True)
@@ -1647,7 +1661,7 @@ class SessionPickerScreen(_MenuScreen):
                 _Item(
                     icon,
                     title,
-                    f"{s.date} · {client} · {where}",
+                    f"{_when_worked(s.date, s.last_worked)} · {client} · {where}",
                     "resume:pick",
                     payload=s.session_id,
                     note=note,
@@ -1683,6 +1697,7 @@ class JobListScreen(_MenuScreen):
     BINDINGS: ClassVar[list[Binding]] = [
         *_MenuScreen.BINDINGS,
         _key("t", "edit_tags", "tui.key.tags"),
+        _key("s", "toggle_sort", "tui.key.sort"),
     ]
     keys_key = "tui.keys.joblist"
 
@@ -1695,7 +1710,8 @@ class JobListScreen(_MenuScreen):
         """Breadcrumb: gmlw > Job > List, then the tag when the list is filtered."""
         t = i18n.active().t
         crumb = f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
-        return crumb if self._tag is None else f"{crumb} > #{self._tag}"
+        crumb = crumb if self._tag is None else f"{crumb} > #{self._tag}"
+        return f"{crumb}  ·  {t(f'tui.joblist.sorted.{self.menu_app.job_order}')}"
 
     def menu_items(self) -> list[_Item]:
         """The filter row (when there are tags), then one row per job, tags in its subtitle."""
@@ -1718,8 +1734,13 @@ class JobListScreen(_MenuScreen):
             if self._tag is not None and self._tag not in j.tags:
                 continue
             sessions = t("tui.sessions", count=j.session_count)
+            worked = (
+                t("jobs.last_worked", when=j.last_worked)
+                if j.last_worked
+                else t("jobs.never_worked")
+            )
             tags = " ".join(f"#{tag}" for tag in j.tags)
-            subtitle = f"{sessions} · {tags}" if tags else sessions
+            subtitle = " · ".join(part for part in (sessions, worked, tags) if part)
             items.append(_Item("🗂", j.job, subtitle, "joblist:job", payload=j.job))
         return items
 
@@ -1732,6 +1753,21 @@ class JobListScreen(_MenuScreen):
         elif item.action == "joblist:all":
             self.menu_app.pop_screen()
             self.menu_app.push_screen(JobListScreen())
+
+    def action_toggle_sort(self) -> None:
+        """Switch between by name and latest worked on first, and keep the choice.
+
+        The order is saved (``[jobs] sort``), so every job list opens in it from now on --
+        here, in the other pickers, and in ``gmlw jobs``.
+        """
+        if self.menu_app.set_job_order is None:
+            return
+        order = "recent" if self.menu_app.job_order == "name" else "name"
+        self.menu_app.set_job_order(order)
+        self.menu_app.job_order = order
+        self.menu_app.refresh_jobs()
+        self.menu_app.pop_screen()
+        self.menu_app.push_screen(JobListScreen(self._tag))
 
     def action_edit_tags(self) -> None:
         """Edit the highlighted job's tags (a no-op on the filter row, or when unwired)."""
@@ -1990,7 +2026,8 @@ class AnalysisSessionScreen(_MenuScreen):
             _Item(
                 "🔬",
                 s.session_id,
-                f"{s.date} · {s.client} · {s.cwd or t('tui.resume.no_folder')}",
+                f"{_when_worked(s.date, s.last_worked)} · {s.client} · "
+                f"{s.cwd or t('tui.resume.no_folder')}",
                 "analysis:pick",
                 example=f"gmlw analyze {s.session_id}",
                 payload=s.session_id,
@@ -2165,6 +2202,7 @@ class SessionListScreen(Screen[None]):
         table.add_columns(
             t("tui.joblist.col.session"),
             t("tui.joblist.col.date"),
+            t("tui.joblist.col.last_worked"),
             t("tui.joblist.col.client"),
             t("tui.joblist.col.folder"),
             t("tui.joblist.col.resumable"),
@@ -2173,7 +2211,8 @@ class SessionListScreen(Screen[None]):
             session = f"{s.session_id} · {t('tui.resume.latest')}" if s.is_latest else s.session_id
             folder = s.cwd if s.cwd else t("tui.resume.no_folder")
             resumable = t("clients.yes") if s.resumable else t("clients.no")
-            table.add_row(session, s.date, s.client, folder, resumable)
+            worked = s.last_worked or t("jobs.never_worked")
+            table.add_row(session, s.date, worked, s.client, folder, resumable)
 
     def action_back(self) -> None:
         """Pop back to the job picker."""
@@ -3048,6 +3087,8 @@ class MenuApp(App[MenuChoice | None]):
         news: str = "",
         analyze: Callable[[str], str] | None = None,
         recent_sessions: Callable[[], list[RecentSessionView]] | None = None,
+        job_order: str = "name",
+        set_job_order: Callable[[str], None] | None = None,
     ) -> None:
         """Bind the injected data the browsers read from and the callbacks they invoke.
 
@@ -3105,6 +3146,11 @@ class MenuApp(App[MenuChoice | None]):
                 it is not available.
             recent_sessions: Lists the session files Claude Code and Codex wrote last, for
                 the Session analysis list; defaults to none.
+            job_order: The order ``jobs`` is in, ``name`` or ``recent``, named in the job
+                list's header.
+            set_job_order: Saves the order the job list's ``s`` key switches to; the jobs
+                are then re-read through ``reload_jobs``, which returns them in it.
+                ``None`` leaves the key without effect.
         """
         super().__init__()
         self.jobs = jobs
@@ -3115,6 +3161,8 @@ class MenuApp(App[MenuChoice | None]):
         self.health: Callable[[], list[HealthDayView]] = health or list
         self.analyze: Callable[[str], str] = analyze or _no_analysis
         self.recent_sessions: Callable[[], list[RecentSessionView]] = recent_sessions or list
+        self.job_order = job_order
+        self.set_job_order = set_job_order
         self.save_usage = save_usage or _no_save
         self.rules = rules or _no_rules
         self._rule_cache: tuple[RuleGroup, ...] | None = None
