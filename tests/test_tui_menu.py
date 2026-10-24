@@ -2726,3 +2726,88 @@ def test_a_jobs_sessions_show_when_each_started_and_was_last_worked_on() -> None
     assert rows[0][1:3] == ["Started", "Last worked"]
     assert rows[1][1:3] == ["2026-10-20 09:00", "2026-10-20 11:30"]
     assert rows[2][1:3] == ["2026-10-24 18:00", "no turn yet"]
+
+
+# ── New and Resume pick jobs as List does: by tag, in the saved order ──
+@pytest.mark.parametrize(
+    ("verb_row", "first_row", "screen"),
+    [(0, "Type a new name…", "NewSessionScreen"), (1, "", "JobPickerScreen")],
+)
+def test_new_and_resume_open_on_the_default_tag_and_can_clear_it(
+    verb_row: int, first_row: str, screen: str
+) -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_TAGGED_JOBS, default_tag="sprint-42")
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("enter", *["down"] * verb_row, "enter")  # Job → New / Resume
+            await pilot.pause()
+            seen["screen"] = type(app.screen).__name__
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            rows = [r.item for r in app.screen.query(_Row)]
+            seen["titles"] = [r.title for r in rows]
+            clear = next(i for i, r in enumerate(rows) if r.action == "jobs:all")
+            await pilot.press(*["down"] * clear, "enter")  # show every job again
+            await pilot.pause()
+            seen["after"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["screen"] == screen
+    assert str(seen["crumb"]).endswith("> #sprint-42  ·  by name")
+    lead = [first_row] if first_row else []
+    assert seen["titles"] == [*lead, "Showing #sprint-42", "alpha"]
+    assert seen["after"] == [*lead, "Filter by tag…", "alpha", "beta", "gamma"]
+
+
+def test_resume_filters_by_a_picked_tag_and_stays_the_resume_picker() -> None:
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = MenuApp(_TAGGED_JOBS)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("enter", "down", "enter")  # Job → Resume
+            await pilot.pause()
+            await pilot.press("enter")  # Filter by tag…
+            await pilot.pause()
+            seen["tags"] = [r.item.title for r in app.screen.query(_Row)]
+            await pilot.press("down", "enter")  # #sprint-41
+            await pilot.pause()
+            seen["screen"] = type(app.screen).__name__
+            seen["titles"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert seen["tags"] == ["#payments", "#sprint-41", "#sprint-42"]
+    assert seen["screen"] == "JobPickerScreen"
+    assert seen["titles"] == ["Showing #sprint-41", "beta"]
+
+
+def test_s_in_new_switches_the_order_and_keeps_it() -> None:
+    saved: list[str] = []
+    seen: dict[str, object] = {}
+    by_name = [JobChoice("alpha", 1, last_worked="2026-10-20 09:00"), JobChoice("beta", 1)]
+    by_recent = by_name[:]
+
+    async def scenario() -> None:
+        app = MenuApp(
+            by_name,
+            set_job_order=saved.append,
+            reload_jobs=lambda: by_recent if saved[-1:] == ["recent"] else by_name,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            await pilot.press("enter", "enter")  # Job → New
+            await pilot.pause()
+            await pilot.press("s")
+            await pilot.pause()
+            seen["screen"] = type(app.screen).__name__
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["rows"] = [(r.item.title, r.item.subtitle) for r in app.screen.query(_Row)][1:]
+
+    asyncio.run(scenario())
+    assert saved == ["recent"]
+    assert seen["screen"] == "NewSessionScreen"
+    assert str(seen["crumb"]).endswith("New  ·  latest worked on first")
+    assert seen["rows"] == [
+        ("alpha", "1 sessions · last worked 2026-10-20 09:00"),
+        ("beta", "1 sessions · no turn yet"),
+    ]
