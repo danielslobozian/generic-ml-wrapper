@@ -1,6 +1,7 @@
 """Seed a demo ~/.gmlw ledger for the README demo GIFs. No secrets, no network."""
 
 import sys
+from datetime import UTC, datetime
 import tempfile
 import zipfile
 from pathlib import Path
@@ -54,6 +55,14 @@ for sid, uuid, sturns, cost in data:
     for t in sturns:
         turns.record(JOB, t)
     costs.record_session_cost(JOB, sid, cost)
+    # The ledger stamps a session's start with the time it is recorded; date it a minute
+    # before its first turn instead, so "started" and "last worked" read as one session.
+    started = datetime.fromtimestamp(sturns[0].timestamp - 60, tz=UTC)
+    with ledger.connect() as connection:
+        connection.execute(
+            "UPDATE sessions SET created_at = ? WHERE session_id = ?",
+            (started.strftime("%Y-%m-%d %H:%M:%S"), sid),
+        )
 
 # A demo attachment, so the TUI's Attachments > List browser has more than the one gmlw
 # ships. Imported the way a user's would be: a zip with its manifest at the root.
