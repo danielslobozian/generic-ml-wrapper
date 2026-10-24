@@ -42,74 +42,53 @@ def _usage(base: int) -> dict[str, int]:
     }
 
 
+def _user(second: int, **fields: object) -> dict[str, object]:
+    return {"type": "user", "timestamp": _at(second), **fields}
+
+
+def _answer(second: int, message_id: str, model: str, **message: object) -> dict[str, object]:
+    return {
+        "type": "assistant",
+        "timestamp": _at(second),
+        "message": {"id": message_id, "model": model, **message},
+    }
+
+
 def _claude_session(projects: Path) -> Path:
     """A Claude Code session: two prompts, one tool call, an answer in two blocks, an agent."""
+    human = {"origin": {"kind": "human"}, "message": {"content": _CONTENT}}
     main = _write(
         projects / "-home-u-proj" / "s-1.jsonl",
         [
             {"type": "custom-title", "sessionId": "s-1"},  # bookkeeping: no timestamp
-            {
-                "type": "user",
-                "sessionId": "s-1",
-                "timestamp": _at(0),
-                "origin": {"kind": "human"},
-                "message": {"content": _CONTENT},
-            },
-            {
-                "type": "assistant",
-                "timestamp": _at(2),
-                "message": {
-                    "id": "m-1",
-                    "model": "claude-opus-5-5",
-                    "usage": _usage(1),
-                    "content": [{"type": "text", "text": _CONTENT}],
-                },
-            },
-            {  # the same answer's second block repeats its usage: counted once
-                "type": "assistant",
-                "timestamp": _at(3),
-                "message": {
-                    "id": "m-1",
-                    "model": "claude-opus-5-5",
-                    "usage": _usage(1),
-                    "content": [{"type": "tool_use", "id": "t-1", "name": "Bash", "input": {}}],
-                },
-            },
-            {
-                "type": "user",
-                "timestamp": _at(5),
-                "message": {"content": [{"type": "tool_result", "tool_use_id": "t-1"}]},
-            },
-            {
-                "type": "user",
-                "timestamp": _at(6),
-                "origin": {"kind": "task-notification"},  # an agent reporting: not a prompt
-                "message": {"content": _CONTENT},
-            },
-            {
-                "type": "assistant",
-                "timestamp": _at(9),
-                "message": {"id": "m-2", "model": "<synthetic>", "usage": _usage(10)},
-            },
-            {
-                "type": "user",
-                "timestamp": _at(20),
-                "origin": {"kind": "human"},
-                "message": {"content": _CONTENT},
-            },
+            _user(0, sessionId="s-1", **human),
+            _answer(
+                2,
+                "m-1",
+                "claude-opus-5-5",
+                usage=_usage(1),
+                content=[{"type": "text", "text": _CONTENT}],
+            ),
+            # The same answer's second block repeats its usage: counted once.
+            _answer(
+                3,
+                "m-1",
+                "claude-opus-5-5",
+                usage=_usage(1),
+                content=[{"type": "tool_use", "id": "t-1", "name": "Bash"}],
+            ),
+            _user(5, message={"content": [{"type": "tool_result", "tool_use_id": "t-1"}]}),
+            # An agent reporting back: not a prompt.
+            _user(6, origin={"kind": "task-notification"}, message={"content": _CONTENT}),
+            _answer(9, "m-2", "<synthetic>", usage=_usage(10)),
+            _user(20, **human),
         ],
         tail='{"type": "assistant", "timest',  # a line still being written
     )
+    agent = _answer(7, "m-3", "claude-haiku-5-5", usage=_usage(100))
     _write(
         projects / "-home-u-proj" / "s-1" / "subagents" / "agent-a.jsonl",
-        [
-            {
-                "type": "assistant",
-                "isSidechain": True,
-                "timestamp": _at(7),
-                "message": {"id": "m-3", "model": "claude-haiku-5-5", "usage": _usage(100)},
-            }
-        ],
+        [{**agent, "isSidechain": True}],
     )
     return main
 
@@ -160,67 +139,39 @@ def test_an_older_claude_file_without_origin_tells_prompts_from_tool_results(
     assert record.prompts == (RecordedPrompt(_epoch(0), _epoch(2)),)
 
 
+def _line(kind: str, second: int, **payload: object) -> dict[str, object]:
+    return {"type": kind, "timestamp": _at(second), "payload": payload}
+
+
+def _usage_record(
+    second: int, thread: str, fresh_and_cached: int, cached: int, output: int
+) -> dict[str, object]:
+    usage = {
+        "input_tokens": fresh_and_cached,
+        "cached_input_tokens": cached,
+        "output_tokens": output,
+    }
+    return _line("token_usage_record", second, thread_id=thread, usage=usage)
+
+
 def _codex_rollout(sessions: Path) -> Path:
     """A Codex rollout: one prompt answered, one task codex started itself, an agent request."""
+    by_user = {"turn_trigger": "user"}
     return _write(
         sessions / "2026" / "10" / "24" / "rollout-2026-10-24T10-00-00-c-1.jsonl",
         [
-            {"type": "session_meta", "timestamp": _at(0), "payload": {"id": "c-1"}},
-            {"type": "turn_context", "timestamp": _at(1), "payload": {"model": "gpt-6"}},
-            {
-                "type": "event_msg",
-                "timestamp": _at(1),
-                "payload": {
-                    "type": "task_started",
-                    "turn_id": "u-1",
-                    "turn_attribution": {"turn_trigger": "user"},
-                },
-            },
-            {
-                "type": "event_msg",
-                "timestamp": _at(2),
-                "payload": {"type": "task_started", "turn_id": "x-1", "turn_attribution": {}},
-            },
-            {
-                "type": "token_usage_record",
-                "timestamp": _at(3),
-                "payload": {
-                    "thread_id": "c-1",
-                    "usage": {"input_tokens": 100, "cached_input_tokens": 80, "output_tokens": 5},
-                },
-            },
-            {
-                "type": "token_usage_record",
-                "timestamp": _at(4),
-                "payload": {
-                    "thread_id": "agent-thread",
-                    "usage": {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 1},
-                },
-            },
-            {
-                "type": "response_item",
-                "timestamp": _at(5),
-                "payload": {"type": "custom_tool_call", "name": "exec", "call_id": "k-1"},
-            },
-            {
-                "type": "response_item",
-                "timestamp": _at(7),
-                "payload": {
-                    "type": "custom_tool_call_output",
-                    "call_id": "k-1",
-                    "output": _CONTENT,
-                },
-            },
-            {
-                "type": "response_item",
-                "timestamp": _at(8),
-                "payload": {"type": "function_call", "name": "spawn_agent", "call_id": "k-2"},
-            },
-            {
-                "type": "event_msg",
-                "timestamp": _at(12),
-                "payload": {"type": "turn_aborted", "turn_id": "u-1"},
-            },
+            _line("session_meta", 0, id="c-1"),
+            _line("turn_context", 1, model="gpt-6"),
+            _line("event_msg", 1, type="task_started", turn_id="u-1", turn_attribution=by_user),
+            _line("event_msg", 2, type="task_started", turn_id="x-1", turn_attribution={}),
+            _usage_record(3, "c-1", 100, 80, 5),
+            _usage_record(4, "agent-thread", 10, 0, 1),
+            _line("response_item", 5, type="custom_tool_call", name="exec", call_id="k-1"),
+            _line(
+                "response_item", 7, type="custom_tool_call_output", call_id="k-1", output=_CONTENT
+            ),
+            _line("response_item", 8, type="function_call", name="spawn_agent", call_id="k-2"),
+            _line("event_msg", 12, type="turn_aborted", turn_id="u-1"),
         ],
     )
 
