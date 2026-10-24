@@ -28,6 +28,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 )
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
+from generic_ml_wrapper.adapter.inbound.cli.process_title import name_the_process
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
@@ -926,11 +927,14 @@ def main(argv: list[str] | None = None) -> int:
     """Run the CLI, returning a clean exit code instead of dumping a traceback.
 
     Args:
-        argv: Arguments to parse; defaults to ``sys.argv[1:]``.
+        argv: Arguments to parse; defaults to ``sys.argv[1:]``. Left out only by the
+            ``gmlw`` console script, which is also when the process is renamed ``gmlw``
+            -- a caller passing its own arguments keeps its own process name.
 
     Returns:
         The process exit code.
     """
+    restore_title = name_the_process() if argv is None else None
     try:
         return _dispatch(sys.argv[1:] if argv is None else argv)
     except KeyboardInterrupt:
@@ -939,6 +943,9 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as error:  # noqa: BLE001  last resort: no traceback reaches the user
         print(i18n.t("error.unexpected", error=error), file=sys.stderr)
         return 1
+    finally:
+        if restore_title is not None:
+            restore_title()
 
 
 def _render_error(error: Exception) -> str:
