@@ -127,7 +127,7 @@ gmlw start [job] [--client CLIENT] [--client-args ARGS] [--resume-latest]
 - `--attach NAME[@VERSION]` — start the new session with an attachment (list them with
   `gmlw attachment list`); without `@VERSION`, the highest. Its main file follows gmlw's
   own context, the session opens on a message naming it, and the attachment store is
-  opened to the client (`--add-dir`) so its other files can be read. A version changed
+  opened to the client (`--add-dir`; codex reads it without) so its other files can be read. A version changed
   since its import is refused before any session is spent. `gmlw sessions <job>` shows
   `name@version` for each session that ran one; a resume reopens the store. See
   [ATTACHMENTS.md](ATTACHMENTS.md).

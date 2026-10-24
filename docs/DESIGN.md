@@ -265,7 +265,7 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
   non-destructive on failure. The repo ships no prompt, so it is inert until configured.
 - **Attachment (optional, verbatim):** the main file of the chosen version, introduced by a
   paragraph naming it, its version and its folder; its other files stay in the store, opened
-  to the client with `--add-dir`, and are read when the text sends the session there. The
+  to the client with `--add-dir` (codex reads it without), and are read when the text sends the session there. The
   version's hash is checked before it is used. See [ATTACHMENTS.md](ATTACHMENTS.md).
 - **Writing one** is an ordinary session with the shipped `workflow-creator` attachment,
   imported into the store like any other at every start.

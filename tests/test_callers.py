@@ -805,12 +805,58 @@ def test_claude_reopens_the_extra_folders_on_resume() -> None:
     assert caller.command() == [BINARY, "--add-dir", _STORE, "--resume", "u-1"]
 
 
-def test_codex_opens_the_extra_folders_after_its_subcommand() -> None:
+def test_codex_gets_no_extra_folders_but_a_writable_workspace() -> None:
+    # Codex's --add-dir adds a *writable* folder, and under its read-only sandbox codex
+    # refuses to start with one; it reads the store without it.
     fresh = _codex(_with_dirs(_run(resume=False, uuid=None))).command("hi")
-    assert fresh[:3] == ["codex", "--add-dir", _STORE]
+    assert "--add-dir" not in fresh
+    assert fresh[:3] == ["codex", "--sandbox", "workspace-write"]
     assert fresh[-1] == "hi"
     resumed = _codex(_with_dirs(_run(resume=True, uuid="c-1"))).command()
-    assert resumed[:5] == ["codex", "resume", "c-1", "--add-dir", _STORE]
+    assert resumed[:5] == ["codex", "resume", "c-1", "--sandbox", "workspace-write"]
+
+
+@pytest.mark.parametrize(
+    "client_args",
+    [
+        ("-s", "read-only"),
+        ("--sandbox", "danger-full-access"),
+        ("--sandbox=read-only",),
+        ("--dangerously-bypass-approvals-and-sandbox",),
+        ("-c", 'sandbox_mode="read-only"'),
+        ("--config", "default_permissions=:read-only"),
+    ],
+)
+def test_codex_leaves_a_sandbox_chosen_in_the_client_args(client_args: tuple[str, ...]) -> None:
+    run = replace(_run(resume=False, uuid=None), client_args=client_args)
+    argv = _codex(run).command()
+    assert argv.count("--sandbox") == client_args.count("--sandbox")
+    assert "workspace-write" not in argv
+
+
+def test_codex_unrelated_client_args_still_get_the_writable_workspace() -> None:
+    run = replace(_run(resume=False, uuid=None), client_args=("-c", 'model="o3"', "read-only"))
+    assert _codex(run).command()[1:3] == ["--sandbox", "workspace-write"]
+
+
+@pytest.mark.parametrize("key", ["sandbox_mode", "default_permissions"])
+def test_codex_leaves_a_sandbox_chosen_in_its_own_config(
+    key: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "config.toml").write_text(f'{key} = "read-only"\n', encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    assert "--sandbox" not in _codex(_run(resume=False, uuid=None)).command()
+
+
+def test_an_unreadable_codex_config_does_not_stop_the_launch(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    (tmp_path / "config.toml").write_text("not = [valid toml", encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    assert _codex(_run(resume=False, uuid=None)).command()[1:3] == [
+        "--sandbox",
+        "workspace-write",
+    ]
 
 
 def test_vibe_opens_the_extra_folders() -> None:

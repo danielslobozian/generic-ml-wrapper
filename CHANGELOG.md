@@ -13,6 +13,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   is titled `gmlw` while it runs, and gets its previous title back on exit. A client's
   own title still wins while it runs.
 
+### Fixed
+- **Codex starts with an attachment, and can write in its job folder.** gmlw passed the
+  attachment store to codex with `--add-dir`, which codex takes as a *writable* folder; in a
+  folder codex does not trust it runs read-only and refused to start ("Error adding
+  directories"). gmlw now launches codex with `--sandbox workspace-write` and no `--add-dir`:
+  the job folder is writable, the attachments readable but not writable. A sandbox you chose
+  (in `[client.args]` or codex's `config.toml`) still wins; a
+  `codex = "--sandbox workspace-write"` line added as a workaround can go.
+
 ## [0.13.0] - 2026-10-23
 
 ### Added
