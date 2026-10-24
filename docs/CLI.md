@@ -12,7 +12,7 @@ cross-links to [CONFIGURATION.md](CONFIGURATION.md), [ATTACHMENTS.md](ATTACHMENT
 gmlw init                                # forced first-run setup (auto-runs when needed)
 gmlw <job>                              # shorthand for: gmlw start <job>
 gmlw start [job] [--client X] [--client-args ARGS] [--resume-latest] [--attach NAME[@VERSION]] [--tag T]...
-gmlw jobs [--tag T | --all] [--json]
+gmlw jobs [--tag T | --all] [--sort name|recent] [--json]
 gmlw jobs tag <job> <tag> [<tag>...]           # e.g. the sprint it belongs to
 gmlw jobs untag <job> <tag> [<tag>...]
 gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything under it
@@ -149,13 +149,20 @@ gmlw start billing-api --resume-latest
 List the jobs with recorded activity.
 
 ```
-gmlw jobs [--tag T | --all] [--json]
+gmlw jobs [--tag T | --all] [--sort name|recent] [--json]
 ```
 
 - `--tag T` — list only the jobs carrying tag `T` (see [jobs tag](#jobs-tag-and-untag)).
   Without it, the list is narrowed to the [default tag](#the-default-tag), if one is set.
 - `--all` — list every job, ignoring the default tag.
-- `--json` — output as JSON instead of text; each job carries its `tags`.
+- `--sort name|recent` — order this listing by name, or the latest worked on first; without
+  it, the [saved order](#the-job-order). The flag is not saved.
+- `--json` — output as JSON instead of text; each job carries its `tags` and
+  `last_worked_at` (epoch seconds, or `null`).
+
+Each job shows when it was last worked on (`last worked 2026-10-24 18:40`, local time): its
+latest metered turn, or its latest session's start when it has none (a cursor session, say),
+or `no turn yet`.
 
 Example:
 
@@ -184,6 +191,14 @@ Each prints the job's tags as they now stand. A new job can be tagged as it star
 `gmlw start <job> --tag sprint-42`, or in the tags field of `gmlw tui`'s Job → New. In
 `gmlw tui`, Job → List shows each job's tags, filters by one, and `t` edits the
 highlighted job's tags.
+
+#### The job order
+
+Job lists are shown by name, or the latest worked on first. In `gmlw tui`, `s` in Job → List
+switches between the two and keeps the choice: every job list opens in it from then on —
+the menu's other job pickers, and `gmlw jobs` too. The list's header says which order it is
+in. The choice is the `[jobs] sort` setting, so `gmlw config set jobs.sort recent` does the
+same.
 
 #### The default tag
 
@@ -247,7 +262,11 @@ gmlw sessions <job> [--json]
 ```
 
 - `job` (positional, required) — the job identifier.
-- `--json` — output as JSON instead of text.
+- `--json` — output as JSON instead of text; each session carries `last_worked_at` (epoch
+  seconds, or `null`).
+
+Each session shows when it `started` and when it was `last worked` — its latest metered
+turn — both in local time, or `no turn yet`.
 
 Example:
 

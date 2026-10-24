@@ -143,9 +143,10 @@ class UpdateSettings(_Section):
 
 
 class JobsSettings(_Section):
-    """The ``[jobs]`` section: the tag the job lists open on and new jobs get."""
+    """The ``[jobs]`` section: the tag the job lists open on and new jobs get, and their order."""
 
     default_tag: Annotated[str | None, Field(description="setting.jobs.default_tag")] = None
+    sort: Annotated[Literal["name", "recent"], Field(description="setting.jobs.sort")] = "name"
 
 
 class StatuslineSettings(_Section):

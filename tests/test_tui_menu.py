@@ -1969,8 +1969,8 @@ def test_the_resume_picker_shows_the_attachment_a_session_ran() -> None:
 
     asyncio.run(scenario())
     assert seen == [
-        "2026-07-24 09:00 · claude · /work/a",
-        "2026-07-25 10:00 · claude · mr-review@1.0.0 · /work/b",
+        "started 2026-07-24 09:00 · no turn yet · claude · /work/a",
+        "started 2026-07-25 10:00 · no turn yet · claude · mr-review@1.0.0 · /work/b",
     ]
 
 
@@ -1994,9 +1994,9 @@ def test_the_job_list_shows_tags_and_offers_a_filter() -> None:
     asyncio.run(scenario())
     assert seen[0][0] == "Filter by tag…"
     assert seen[1:] == [
-        ("alpha", "3 sessions · #payments #sprint-42"),
-        ("beta", "1 sessions · #sprint-41"),
-        ("gamma", "2 sessions"),
+        ("alpha", "3 sessions · no turn yet · #payments #sprint-42"),
+        ("beta", "1 sessions · no turn yet · #sprint-41"),
+        ("gamma", "2 sessions · no turn yet"),
     ]
 
 
@@ -2033,7 +2033,7 @@ def test_filtering_by_a_tag_narrows_the_list_and_can_be_cleared() -> None:
 
     asyncio.run(scenario())
     assert seen["tags"] == ["#payments", "#sprint-41", "#sprint-42"]
-    assert str(seen["crumb"]).endswith("List > #sprint-42")
+    assert str(seen["crumb"]).endswith("List > #sprint-42  ·  by name")
     assert seen["filtered"] == ["Showing #sprint-42", "alpha"]
     assert seen["cleared"] == ["Filter by tag…", "alpha", "beta", "gamma"]
 
@@ -2072,7 +2072,9 @@ def test_t_edits_the_highlighted_jobs_tags() -> None:
     assert seen["prefilled"] == "payments sprint-42"
     assert "invalid tag" in str(seen["error"])
     assert kept == [("alpha", "sprint-43")]
-    assert ("alpha", "3 sessions · #sprint-43") in cast("list[tuple[str, str]]", seen["rows"])
+    assert ("alpha", "3 sessions · no turn yet · #sprint-43") in cast(
+        "list[tuple[str, str]]", seen["rows"]
+    )
 
 
 # ── Health ──
@@ -2462,7 +2464,7 @@ def test_the_job_list_opens_on_the_default_tag() -> None:
             seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
 
     asyncio.run(scenario())
-    assert str(seen["crumb"]).endswith("> #sprint-30")
+    assert str(seen["crumb"]).endswith("> #sprint-30  ·  by name")
 
 
 _NOTES = "# 0.13.0 — 2026-11-01\n\n### Added\n- **gmlw update** upgrades gmlw."
@@ -2652,3 +2654,75 @@ def test_analysis_says_so_when_it_is_not_wired() -> None:
         "No Claude Code or Codex session file found on this machine.",
         "Session analysis is not available here.",
     ]
+
+
+# ── Job order and when jobs were last worked on ──
+def test_s_switches_the_job_order_keeps_it_and_shows_it() -> None:
+    saved: list[str] = []
+    seen: dict[str, object] = {}
+    by_name = [
+        JobChoice("alpha", 1, last_worked="2026-10-20 09:00"),
+        JobChoice("beta", 1, last_worked="2026-10-24 18:40"),
+        JobChoice("gamma", 1),
+    ]
+    by_recent = [by_name[1], by_name[0], by_name[2]]
+
+    async def scenario() -> None:
+        app = MenuApp(
+            by_name,
+            job_order="name",
+            set_job_order=saved.append,
+            reload_jobs=lambda: by_recent if saved[-1:] == ["recent"] else by_name,
+        )
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_job_list(pilot)
+            seen["before"] = str(app.screen.query_one("#crumb", Static).render())
+            await pilot.press("s")
+            await pilot.pause()
+            seen["after"] = str(app.screen.query_one("#crumb", Static).render())
+            seen["rows"] = [(r.item.title, r.item.subtitle) for r in app.screen.query(_Row)]
+            await pilot.press("s")
+            await pilot.pause()
+            seen["back"] = [r.item.title for r in app.screen.query(_Row)]
+
+    asyncio.run(scenario())
+    assert str(seen["before"]).endswith("·  by name")
+    assert str(seen["after"]).endswith("·  latest worked on first")
+    assert seen["rows"] == [
+        ("beta", "1 sessions · last worked 2026-10-24 18:40"),
+        ("alpha", "1 sessions · last worked 2026-10-20 09:00"),
+        ("gamma", "1 sessions · no turn yet"),
+    ]
+    assert saved == ["recent", "name"]
+    assert seen["back"] == ["alpha", "beta", "gamma"]
+
+
+def test_a_jobs_sessions_show_when_each_started_and_was_last_worked_on() -> None:
+    sessions = [
+        SessionChoice(
+            "alpha_001",
+            "claude",
+            "/w",
+            True,
+            "2026-10-20 09:00",
+            False,
+            last_worked="2026-10-20 11:30",
+        ),
+        SessionChoice("alpha_002", "claude", "/w", True, "2026-10-24 18:00", True),
+    ]
+    rows: list[list[str]] = []
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, sessions_for=lambda _job: sessions)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await _open_job_list(pilot)
+            await pilot.press("enter")  # alpha → its sessions
+            await pilot.pause()
+            table = cast("DataTable[str]", app.screen.query_one("#session_table", DataTable))
+            rows.append([str(column.label) for column in table.columns.values()])
+            rows.extend([str(cell) for cell in table.get_row_at(i)] for i in range(table.row_count))
+
+    asyncio.run(scenario())
+    assert rows[0][1:3] == ["Started", "Last worked"]
+    assert rows[1][1:3] == ["2026-10-20 09:00", "2026-10-20 11:30"]
+    assert rows[2][1:3] == ["2026-10-24 18:00", "no turn yet"]

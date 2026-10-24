@@ -396,17 +396,23 @@ exists, says so and points to `gmlw update`. The last check is cached at
 
 ## `[jobs]`
 
-The tag your work belongs to for now, such as the current sprint. Job lists open
-filtered on it, and new jobs get it; see [the default tag](CLI.md#the-default-tag).
+The tag your work belongs to for now, such as the current sprint, and the order job lists
+are shown in. Job lists open filtered on the tag, and new jobs get it; see
+[the default tag](CLI.md#the-default-tag).
 
 | Key | Meaning | Default |
 | --- | --- | --- |
 | `default_tag` | the tag job lists open on and new jobs get | unset |
+| `sort` | the order of job lists: `name`, or `recent` (the latest worked on first) | `name` |
 
 ```toml
 [jobs]
 default_tag = "sprint-30"
+sort = "recent"
 ```
+
+The job list's `s` key in `gmlw tui` switches `sort` and keeps the choice; see
+[the job order](CLI.md#the-job-order).
 
 ## `[statusline]`
 

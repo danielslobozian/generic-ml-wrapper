@@ -4,6 +4,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.common import config
 
@@ -246,3 +248,16 @@ def test_an_ill_typed_statusline_threshold_falls_back(tmp_path: Path) -> None:
     path = _write(tmp_path, '[statusline]\ncontext_warn_tokens = "300000"\ncolor = "no"\n')
     assert config.context_thresholds(path) == (70, 90, 200_000, 400_000)
     assert config.statusline_color(path) is True
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [("", "name"), ('[jobs]\nsort = "recent"\n', "recent"), ('[jobs]\nsort = "size"\n', "name")],
+)
+def test_the_job_order_is_read_and_anything_unknown_falls_back_to_by_name(
+    tmp_path: Path, body: str, expected: str
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(body, encoding="utf-8")
+
+    assert config.job_sort(path) == expected

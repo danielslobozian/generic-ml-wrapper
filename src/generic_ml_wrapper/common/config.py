@@ -83,6 +83,7 @@ def current_values(path: Path | None = None) -> dict[str, object]:
         "hints.show": hints_show(path),
         "update.check": update_check(path),
         "jobs.default_tag": default_tag(path),
+        "jobs.sort": job_sort(path),
         "statusline.color": statusline_color(path),
         **{
             f"statusline.{name}": value
@@ -116,6 +117,23 @@ def update_check(path: Path | None = None) -> bool:
     """
     value = _table(_load(path), "update").get("check")
     return value if isinstance(value, bool) else True
+
+
+#: The orders a job list can take: by name, or the latest worked on first.
+JOB_SORTS = ("name", "recent")
+
+
+def job_sort(path: Path | None = None) -> str:
+    """Return the order job lists are shown in (``[jobs] sort``).
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        ``"name"`` or ``"recent"``; ``"name"`` when unset or not one of the two.
+    """
+    value = _table(_load(path), "jobs").get("sort")
+    return value if isinstance(value, str) and value in JOB_SORTS else JOB_SORTS[0]
 
 
 def default_tag(path: Path | None = None) -> str | None:

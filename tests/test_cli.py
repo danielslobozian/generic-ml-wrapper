@@ -25,6 +25,7 @@ from generic_ml_wrapper.application.domain.model.installation import (
     InstallManager,
     InstallSource,
 )
+from generic_ml_wrapper.application.domain.model.job_order import JobOrder
 from generic_ml_wrapper.application.domain.model.migration import (
     LegacyMigrationReport,
     MigrationReport,
@@ -458,7 +459,7 @@ def test_format_jobs_lists_each_summary() -> None:
     text = app.format_jobs(
         [JobSummary("JOB-1", 2), JobSummary("JOB-2", 1)],
     )
-    assert "2 job(s):" in text
+    assert "2 job(s), by name:" in text
     assert "JOB-1" in text
     assert "2 session(s)" in text
 
@@ -475,7 +476,9 @@ def test_jobs_command_prints_the_summaries(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
@@ -489,12 +492,16 @@ def test_jobs_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             return [JobSummary("JOB-7", 3)]
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
     assert app.main(["jobs", "--json"]) == 0
-    assert json.loads(capsys.readouterr().out) == [{"job": "JOB-7", "session_count": 3, "tags": []}]
+    assert json.loads(capsys.readouterr().out) == [
+        {"job": "JOB-7", "session_count": 3, "tags": [], "last_worked_at": None}
+    ]
 
 
 class _FakeListClients(ListClients):
@@ -546,7 +553,9 @@ def test_jobs_command_json_empty_is_an_empty_array(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
@@ -579,7 +588,10 @@ def test_format_sessions_lists_each() -> None:
     assert "JOB-1_001" in text
     assert "claude" in text
     assert "/work/a" in text  # folder
-    assert "2026-07-24 09:00" in text  # date, trimmed to the minute
+    # The ledger's UTC start, in local time, trimmed to the minute and labelled.
+    local = datetime(2026, 7, 24, 9, tzinfo=UTC).astimezone().strftime("%Y-%m-%d %H:%M")
+    assert f"started {local}" in text
+    assert "no turn yet" in text
     assert "yes" in text  # resumable
 
 
@@ -636,6 +648,7 @@ def test_sessions_command_json_output(
             "cost_usd": 0.0,
             "attachment": None,
             "incidents": 0,
+            "last_worked_at": None,
         }
     ]
 
@@ -840,7 +853,9 @@ def test_main_self_initializes_on_a_real_command(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(app, "build_bootstrap", lambda: _RecordingBootstrap(calls))
 
     class _Jobs(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
@@ -898,7 +913,9 @@ def _fresh_outcome(
 
 def _stub_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Jobs(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             return []
 
     monkeypatch.setattr(app, "build_list_jobs", lambda: _Jobs())
@@ -2000,7 +2017,9 @@ def test_the_menu_reloads_its_job_list_on_request(monkeypatch: pytest.MonkeyPatc
             return None
 
     class _Jobs(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             return [JobSummary(job="beta", session_count=1)]
 
     monkeypatch.setattr(app.sys, "stdin", _Tty())
@@ -2226,7 +2245,9 @@ def test_jobs_tag_filter_reaches_the_use_case(
     asked: list[str | None] = []
 
     class _Jobs(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             asked.append(tag)
             return []
 
@@ -2243,7 +2264,42 @@ def test_format_jobs_shows_each_jobs_tags() -> None:
     )
     first, second = text.splitlines()[2:]
     assert first.endswith("#payments #sprint-42")
-    assert second.endswith("1 session(s)")  # no trailing gap for an untagged job
+    assert second.endswith("no turn yet")  # no trailing gap for an untagged job
+
+
+def test_format_jobs_names_its_order_and_when_each_job_was_last_worked_on() -> None:
+    moment = datetime(2026, 10, 24, 16, 40, tzinfo=UTC).timestamp()
+    local = datetime.fromtimestamp(moment).astimezone().strftime("%Y-%m-%d %H:%M")
+
+    text = app.format_jobs(
+        [JobSummary("PAY-1", 3, last_worked_at=moment), JobSummary("PAY-2", 1)],
+        order=JobOrder.RECENT,
+    )
+
+    heading, _, first, second = text.splitlines()
+    assert heading == "2 job(s), latest worked on first:"
+    assert f"last worked {local}" in first
+    assert "no turn yet" in second
+
+
+def test_jobs_follow_the_saved_order_unless_a_flag_orders_this_listing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    asked: list[JobOrder] = []
+
+    class FakeUseCase(ListJobs):
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
+            asked.append(order)
+            return []
+
+    monkeypatch.setattr(app, "build_list_jobs", lambda: FakeUseCase())
+    monkeypatch.setattr(app.config, "job_sort", lambda: "recent")
+
+    assert app.main(["jobs"]) == 0
+    assert app.main(["jobs", "--sort", "name"]) == 0
+    assert asked == [JobOrder.RECENT, JobOrder.NAME]
 
 
 def test_start_passes_its_tags_on(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -2585,7 +2641,9 @@ def _listed_tags(monkeypatch: pytest.MonkeyPatch) -> list[str | None]:
     asked: list[str | None] = []
 
     class _Jobs(ListJobs):
-        def execute(self, tag: str | None = None) -> list[JobSummary]:
+        def execute(
+            self, tag: str | None = None, order: JobOrder = JobOrder.NAME
+        ) -> list[JobSummary]:
             asked.append(tag)
             return []
 

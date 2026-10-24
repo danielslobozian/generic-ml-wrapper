@@ -147,3 +147,20 @@ def test_a_session_shows_the_attachment_version_it_ran() -> None:
     summaries = _use_case(FakeStore(sessions)).execute("JOB-1")
 
     assert [summary.attachment for summary in summaries] == ["notes@1.2.0", "review", None]
+
+
+def test_each_session_was_last_worked_on_at_its_latest_timed_turn() -> None:
+    store = FakeStore(
+        [
+            Session("JOB-1_001", "JOB-1", "claude", "u-1"),
+            Session("JOB-1_002", "JOB-1", "claude", "u-2"),
+        ]
+    )
+    turns = InMemoryPerTurnStore()
+    for session, moment in (("JOB-1_001", 300.0), ("JOB-1_001", 100.0), ("JOB-1_002", 0.0)):
+        turns.record("JOB-1", TurnUsage(session, 10, 5, 0.01, "sonnet", timestamp=moment))
+
+    first, second = _use_case(store, turns).execute("JOB-1")
+
+    assert first.last_worked_at == 300.0
+    assert second.last_worked_at is None  # a turn recorded without a time says nothing
