@@ -462,6 +462,21 @@ to say what changed.
   pip) and, once you agree, runs the matching upgrade.
 - **What's new** — a menu entry with the release notes, opened once after an upgrade.
 
+### 0.13.1 — what a session did, and finding your latest work
+gmlw can now show what any Claude Code or Codex session did -- one it ran, or one run
+without it -- from the client's own file and its metadata only. Job lists can lead with the
+latest work, and every job and session says when it was last worked on.
+
+- **`gmlw analyze` and the Session analysis menu** — requests (main and agents), prompts,
+  tokens by kind, answer times, tool calls and their durations; for a session, a job, or any
+  session file on the machine. Never reads what anyone wrote; calls no model.
+- **Jobs by the latest worked on** — `s` in the job list switches the order and keeps it
+  (`[jobs] sort`); `gmlw jobs --sort` for one listing.
+- **Last worked on** — on every job and session, next to when it started.
+- **Codex** — starts with an attachment (workspace-write, no `--add-dir`), and its status line
+  shows the session's tokens and cost.
+- **`gmlw` in the terminal title** — the process is named `gmlw`, not the interpreter path.
+
 ## Planned
 
 _Next milestone not yet chosen._

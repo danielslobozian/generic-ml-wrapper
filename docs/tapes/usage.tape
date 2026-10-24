@@ -3,8 +3,8 @@
 Output "docs/images/gmlw-usage.gif"
 
 Set Shell "bash"
-Set FontSize 18
-Set Width 1200
+Set FontSize 16
+Set Width 1400
 Set Height 820
 Set Padding 22
 Set Theme "Catppuccin Mocha"
