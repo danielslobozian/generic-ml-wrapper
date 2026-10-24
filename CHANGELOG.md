@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The terminal shows `gmlw`, not the interpreter path.** gmlw renames its process
+  `gmlw`, so a terminal's title bar and `ps`/`top` no longer show
+  `…/uv/tools/generic-ml-wrapper/bin/python3 …/.local/bin/gmlw`. On Windows the console
+  is titled `gmlw` while it runs, and gets its previous title back on exit. A client's
+  own title still wins while it runs.
+
 ## [0.13.0] - 2026-10-23
 
 ### Added
