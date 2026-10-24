@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.2] - 2026-10-24
+
 ### Added
 - **Tags and the job order where you pick a job.** Job → New and Job → Resume in `gmlw tui`
   now do what Job → List does: they open on the default tag, a row above the jobs filters
@@ -956,7 +958,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.1...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.2...HEAD
+[0.13.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.1...v0.13.0
 [0.12.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.0...v0.12.1

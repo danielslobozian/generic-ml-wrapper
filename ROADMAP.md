@@ -477,6 +477,10 @@ latest work, and every job and session says when it was last worked on.
   shows the session's tokens and cost.
 - **`gmlw` in the terminal title** — the process is named `gmlw`, not the interpreter path.
 
+### 0.13.2 — tags and the job order where you pick a job
+Job → New and Job → Resume now open on the default tag, filter by another, and take `s` to
+switch and keep the job order -- as Job → List already did.
+
 ## Planned
 
 _Next milestone not yet chosen._
