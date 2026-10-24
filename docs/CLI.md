@@ -189,15 +189,15 @@ gmlw jobs untag <job> <tag> [<tag>...]
 
 Each prints the job's tags as they now stand. A new job can be tagged as it starts, with
 `gmlw start <job> --tag sprint-42`, or in the tags field of `gmlw tui`'s Job → New. In
-`gmlw tui`, Job → List shows each job's tags, filters by one, and `t` edits the
-highlighted job's tags.
+`gmlw tui`, Job → New, Resume and List show each job's tags and filter by one; in List, `t`
+edits the highlighted job's tags.
 
 #### The job order
 
-Job lists are shown by name, or the latest worked on first. In `gmlw tui`, `s` in Job → List
-switches between the two and keeps the choice: every job list opens in it from then on —
-the menu's other job pickers, and `gmlw jobs` too. The list's header says which order it is
-in. The choice is the `[jobs] sort` setting, so `gmlw config set jobs.sort recent` does the
+Job lists are shown by name, or the latest worked on first. In `gmlw tui`, `s` in Job → New,
+Resume or List switches between the two and keeps the choice: every job list opens in it
+from then on — the menu's other job pickers, and `gmlw jobs` too. The header says which order
+the jobs are in. The choice is the `[jobs] sort` setting, so `gmlw config set jobs.sort recent` does the
 same.
 
 #### The default tag
@@ -208,8 +208,8 @@ When most of your work belongs to one tag for a while, a sprint say, make it the
 gmlw config set jobs.default_tag sprint-30
 ```
 
-Then `gmlw jobs` and the menu's Job → List open on that sprint's jobs (`gmlw jobs --all`,
-or the list's first row, shows the rest). A new job gets the tag too: `gmlw start` adds it
+Then `gmlw jobs` and the menu's Job → New, Resume and List open on that sprint's jobs
+(`gmlw jobs --all`, or the tag row above the jobs, shows the rest). A new job gets the tag too: `gmlw start` adds it
 unless `--tag` names others, and the menu's new-job form starts with it filled in, to keep
 or clear. Reopening an older job does not give it the tag. Clear the default with
 `gmlw config set jobs.default_tag none`.

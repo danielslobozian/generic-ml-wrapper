@@ -359,6 +359,7 @@
   "tui.keys": "↑↓ déplacer · ⏎ choisir · Échap retour · q quitter",
   "tui.keys.multi": "↑↓ déplacer · espace basculer · ⏎ supprimer · Échap retour · q quitter",
   "tui.keys.joblist": "↑↓ déplacer · ⏎ ouvrir · t tags · s trier · Échap retour · q quitter",
+  "tui.keys.jobs": "↑↓ déplacer · ⏎ choisir · s trier · Échap retour · q quitter",
   "tui.empty": "Rien pour l'instant.",
   "tui.stub": "« {title} » n'est pas encore actif — essayez Job > Reprendre, ou un sélecteur Config.",
   "tui.new": "Nouveau…",

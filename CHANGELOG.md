@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **Tags and the job order where you pick a job.** Job → New and Job → Resume in `gmlw tui`
+  now do what Job → List does: they open on the default tag, a row above the jobs filters
+  by another tag or shows them all, `s` switches between by name and latest worked on first
+  (and keeps the choice), and each job says when it was last worked on.
+
 ## [0.13.1] - 2026-10-24
 
 ### Added

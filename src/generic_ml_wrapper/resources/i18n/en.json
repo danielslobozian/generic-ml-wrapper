@@ -359,6 +359,7 @@
   "tui.keys": "↑↓ move · ⏎ select · Esc back · q quit",
   "tui.keys.multi": "↑↓ move · space toggle · ⏎ delete · Esc back · q quit",
   "tui.keys.joblist": "↑↓ move · ⏎ open · t tags · s sort · Esc back · q quit",
+  "tui.keys.jobs": "↑↓ move · ⏎ select · s sort · Esc back · q quit",
   "tui.empty": "Nothing here yet.",
   "tui.stub": "'{title}' isn't wired yet — try Job > Resume, or a Config switcher.",
   "tui.new": "New…",

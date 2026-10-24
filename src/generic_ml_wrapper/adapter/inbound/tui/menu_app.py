@@ -1039,12 +1039,12 @@ class JobMenuScreen(_MenuScreen):
 
     def handle(self, item: _Item) -> None:
         """New and Resume launch, List and Export browse; any other Job verb is stubbed."""
+        # New, Resume and List all open on the default tag (a sprint), when one is set.
         if item.action == "job:resume":
-            self.menu_app.push_screen(JobPickerScreen())
+            self.menu_app.push_screen(JobPickerScreen(self.menu_app.default_tag))
         elif item.action == "job:new":
-            self.menu_app.push_screen(NewSessionScreen())
+            self.menu_app.push_screen(NewSessionScreen(self.menu_app.default_tag))
         elif item.action == "job:list":
-            # Opens on the default tag (a sprint), when one is set; its first row clears it.
             self.menu_app.push_screen(JobListScreen(self.menu_app.default_tag))
         elif item.action == "job:export":
             self.menu_app.push_screen(JobExportScreen())
@@ -1473,7 +1473,97 @@ class ConfigInputScreen(Screen[None]):
         self.menu_app.pop_screen()
 
 
-class NewSessionScreen(_MenuScreen):
+class _JobsScreen(_MenuScreen):
+    """A screen of jobs to choose from: narrowed to a tag, in the saved order.
+
+    The three places a job is picked -- New, Resume and List -- behave alike: the jobs open
+    on the default tag (a sprint, say), a row above them filters by another tag or clears
+    the filter, ``s`` switches between by name and latest worked on first and keeps the
+    choice, and each job says when it was last worked on.
+    """
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        *_MenuScreen.BINDINGS,
+        _key("s", "toggle_sort", "tui.key.sort"),
+    ]
+    keys_key = "tui.keys.jobs"
+    # The breadcrumb's last step (an i18n key) after ``gmlw > Job``.
+    verb_key: ClassVar[str] = "tui.job.list"
+
+    def __init__(self, tag: str | None = None) -> None:
+        """Bind the screen to the tag its jobs are narrowed to, or ``None`` for every job."""
+        super().__init__()
+        self.tag = tag
+
+    def place(self) -> str:
+        """``gmlw > Job > <verb>``, then the tag when the jobs are filtered."""
+        t = i18n.active().t
+        crumb = f"gmlw > {t('tui.job')} > {t(self.verb_key)}"
+        return crumb if self.tag is None else f"{crumb} > #{self.tag}"
+
+    def header_text(self) -> str:
+        """The breadcrumb, then the order the jobs are in."""
+        t = i18n.active().t
+        return f"{self.place()}  ·  {t(f'tui.joblist.sorted.{self.menu_app.job_order}')}"
+
+    def filter_rows(self) -> list[_Item]:
+        """The row that clears the filter, or the one that filters (when any job has tags)."""
+        t = i18n.active().t
+        if self.tag is not None:
+            showing = t("tui.joblist.showing", tag=f"#{self.tag}")
+            return [_Item("🏷", showing, t("tui.joblist.show_all"), "jobs:all")]
+        if any(j.tags for j in self.menu_app.jobs):
+            return [_Item("🏷", t("tui.joblist.filter"), t("tui.joblist.filter.d"), "jobs:filter")]
+        return []
+
+    def shown_jobs(self) -> list[JobChoice]:
+        """The jobs, in the saved order, narrowed to the tag."""
+        return [j for j in self.menu_app.jobs if self.tag is None or self.tag in j.tags]
+
+    @staticmethod
+    def job_subtitle(job: JobChoice) -> str:
+        """``3 sessions · last worked 2026-10-24 18:40 · #sprint-42``."""
+        t = i18n.active().t
+        sessions = t("tui.sessions", count=job.session_count)
+        worked = (
+            t("jobs.last_worked", when=job.last_worked)
+            if job.last_worked
+            else t("jobs.never_worked")
+        )
+        tags = " ".join(f"#{tag}" for tag in job.tags)
+        return " · ".join(part for part in (sessions, worked, tags) if part)
+
+    def handle_filter(self, item: _Item) -> bool:
+        """Act on the filter row, if ``item`` is one; ``True`` when it was."""
+        if item.action == "jobs:filter":
+            self.menu_app.push_screen(TagFilterScreen(type(self), self.place()))
+            return True
+        if item.action == "jobs:all":
+            self.reopen(None)
+            return True
+        return False
+
+    def reopen(self, tag: str | None) -> None:
+        """Replace this screen with the same one, narrowed to ``tag``, in the current order."""
+        self.menu_app.pop_screen()
+        self.menu_app.push_screen(type(self)(tag))
+
+    def action_toggle_sort(self) -> None:
+        """Switch between by name and latest worked on first, and keep the choice.
+
+        The order is saved (``[jobs] sort``), so every job list opens in it from now on --
+        here, in the other job screens, and in ``gmlw jobs``.
+        """
+        if self.menu_app.set_job_order is None:
+            return
+        order = "recent" if self.menu_app.job_order == "name" else "name"
+        self.menu_app.set_job_order(order)
+        self.menu_app.job_order = order
+        self.menu_app.refresh_jobs()
+        self.reopen(self.tag)
+
+
+class NewSessionScreen(_JobsScreen):
     """Which job the fresh session belongs to: one you already have, or a new name.
 
     ``Job > New`` used to be the text field alone, which made starting more work on a job
@@ -1489,13 +1579,10 @@ class NewSessionScreen(_MenuScreen):
     has always done, which is why nothing new had to be built underneath this.
     """
 
-    def header_text(self) -> str:
-        """Breadcrumb: gmlw > Job > New."""
-        t = i18n.active().t
-        return f"gmlw > {t('tui.job')} > {t('tui.job.new')}"
+    verb_key = "tui.job.new"
 
     def menu_items(self) -> list[_Item]:
-        """The type-a-name row, then one row per job already recorded."""
+        """The type-a-name row, the tag filter, then one row per job already recorded."""
         t = i18n.active().t
         rows = [
             _Item(
@@ -1504,27 +1591,53 @@ class NewSessionScreen(_MenuScreen):
                 t("tui.newsession.type.d"),
                 "session:type",
                 "gmlw start <job>",
-            )
+            ),
+            *self.filter_rows(),
         ]
         rows += [
             _Item(
                 "🗂",
                 job.job,
-                t("tui.sessions", count=job.session_count),
+                self.job_subtitle(job),
                 "session:job",
                 f"gmlw start {job.job}",
                 payload=job.job,
             )
-            for job in self.menu_app.jobs
+            for job in self.shown_jobs()
         ]
         return rows
 
     def handle(self, item: _Item) -> None:
         """Typing opens the name form; an existing job goes on to the client step."""
+        if self.handle_filter(item):
+            return
         if item.action == "session:type":
             self.menu_app.push_screen(NewJobScreen())
         elif item.action == "session:job":
             self.menu_app.launch(MenuChoice(action="start", job=item.payload))
+
+
+class JobPickerScreen(_JobsScreen):
+    """Resume step: pick a job; selecting one hands the resume choice back to the wiring."""
+
+    verb_key = "tui.job.resume"
+
+    def menu_items(self) -> list[_Item]:
+        """The tag filter, then one row per resumable job, carrying the job id as payload."""
+        return [
+            *self.filter_rows(),
+            *(
+                _Item("⏵", j.job, self.job_subtitle(j), "pick", payload=j.job)
+                for j in self.shown_jobs()
+            ),
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Picking a job opens its session picker (choose which session to resume)."""
+        if self.handle_filter(item):
+            return
+        if item.action == "pick":
+            self.menu_app.push_screen(SessionPickerScreen(item.payload))
 
 
 class NewJobScreen(Screen[None]):
@@ -1588,28 +1701,6 @@ class NewJobScreen(Screen[None]):
     def action_cancel(self) -> None:
         """Abandon the form and return to the Job menu."""
         self.menu_app.pop_screen()
-
-
-class JobPickerScreen(_MenuScreen):
-    """Resume step: pick a job; selecting one hands the resume choice back to the wiring."""
-
-    def header_text(self) -> str:
-        """Breadcrumb: gmlw > Job > Resume (localised)."""
-        t = i18n.active().t
-        return f"gmlw > {t('tui.job')} > {t('tui.job.resume')}"
-
-    def menu_items(self) -> list[_Item]:
-        """One row per resumable job, carrying the job id as payload."""
-        t = i18n.active().t
-        return [
-            _Item("⏵", j.job, t("tui.sessions", count=j.session_count), "pick", payload=j.job)
-            for j in self.menu_app.jobs
-        ]
-
-    def handle(self, item: _Item) -> None:
-        """Picking a job opens its session picker (choose which session to resume)."""
-        if item.action == "pick":
-            self.menu_app.push_screen(SessionPickerScreen(item.payload))
 
 
 class SessionPickerScreen(_MenuScreen):
@@ -1684,106 +1775,57 @@ class SessionPickerScreen(_MenuScreen):
             self.menu_app.exit(MenuChoice(action="resume", job=self._job, session=item.payload))
 
 
-class JobListScreen(_MenuScreen):
+class JobListScreen(_JobsScreen):
     """Browse the jobs with recorded activity; drill into one to see its sessions.
 
     A read-only *browser* (a sibling of :class:`JobPickerScreen` without the launch): selecting
     a job opens its :class:`SessionListScreen`. Reuses the injected ``jobs`` -- no new wiring.
-
-    Jobs show their tags, and the list can be narrowed to one tag (a sprint, say): the first
-    row filters, or clears the filter. ``t`` edits the highlighted job's tags in place.
+    ``t`` edits the highlighted job's tags in place.
     """
 
     BINDINGS: ClassVar[list[Binding]] = [
-        *_MenuScreen.BINDINGS,
+        *_JobsScreen.BINDINGS,
         _key("t", "edit_tags", "tui.key.tags"),
-        _key("s", "toggle_sort", "tui.key.sort"),
     ]
     keys_key = "tui.keys.joblist"
 
-    def __init__(self, tag: str | None = None) -> None:
-        """Bind the list to the tag it is narrowed to, or ``None`` for every job."""
-        super().__init__()
-        self._tag = tag
-
-    def header_text(self) -> str:
-        """Breadcrumb: gmlw > Job > List, then the tag when the list is filtered."""
-        t = i18n.active().t
-        crumb = f"gmlw > {t('tui.job')} > {t('tui.job.list')}"
-        crumb = crumb if self._tag is None else f"{crumb} > #{self._tag}"
-        return f"{crumb}  ·  {t(f'tui.joblist.sorted.{self.menu_app.job_order}')}"
-
     def menu_items(self) -> list[_Item]:
-        """The filter row (when there are tags), then one row per job, tags in its subtitle."""
-        t = i18n.active().t
-        items: list[_Item] = []
-        if self._tag is not None:
-            items.append(
-                _Item(
-                    "🏷",
-                    t("tui.joblist.showing", tag=f"#{self._tag}"),
-                    t("tui.joblist.show_all"),
-                    "joblist:all",
-                )
-            )
-        elif any(j.tags for j in self.menu_app.jobs):
-            items.append(
-                _Item("🏷", t("tui.joblist.filter"), t("tui.joblist.filter.d"), "joblist:filter")
-            )
-        for j in self.menu_app.jobs:
-            if self._tag is not None and self._tag not in j.tags:
-                continue
-            sessions = t("tui.sessions", count=j.session_count)
-            worked = (
-                t("jobs.last_worked", when=j.last_worked)
-                if j.last_worked
-                else t("jobs.never_worked")
-            )
-            tags = " ".join(f"#{tag}" for tag in j.tags)
-            subtitle = " · ".join(part for part in (sessions, worked, tags) if part)
-            items.append(_Item("🗂", j.job, subtitle, "joblist:job", payload=j.job))
-        return items
+        """The tag filter, then one row per job, tags in its subtitle."""
+        return [
+            *self.filter_rows(),
+            *(
+                _Item("🗂", j.job, self.job_subtitle(j), "joblist:job", payload=j.job)
+                for j in self.shown_jobs()
+            ),
+        ]
 
     def handle(self, item: _Item) -> None:
         """A job opens its sessions; the first row filters by a tag, or clears the filter."""
+        if self.handle_filter(item):
+            return
         if item.action == "joblist:job":
             self.menu_app.push_screen(SessionListScreen(item.payload))
-        elif item.action == "joblist:filter":
-            self.menu_app.push_screen(TagFilterScreen())
-        elif item.action == "joblist:all":
-            self.menu_app.pop_screen()
-            self.menu_app.push_screen(JobListScreen())
-
-    def action_toggle_sort(self) -> None:
-        """Switch between by name and latest worked on first, and keep the choice.
-
-        The order is saved (``[jobs] sort``), so every job list opens in it from now on --
-        here, in the other pickers, and in ``gmlw jobs``.
-        """
-        if self.menu_app.set_job_order is None:
-            return
-        order = "recent" if self.menu_app.job_order == "name" else "name"
-        self.menu_app.set_job_order(order)
-        self.menu_app.job_order = order
-        self.menu_app.refresh_jobs()
-        self.menu_app.pop_screen()
-        self.menu_app.push_screen(JobListScreen(self._tag))
 
     def action_edit_tags(self) -> None:
         """Edit the highlighted job's tags (a no-op on the filter row, or when unwired)."""
         item = self._highlighted()
         if item is None or item.action != "joblist:job" or self.menu_app.retag_job is None:
             return
-        self.menu_app.push_screen(JobTagsScreen(item.payload, self._tag))
+        self.menu_app.push_screen(JobTagsScreen(item.payload, self.tag))
 
 
 class TagFilterScreen(_MenuScreen):
-    """Pick the tag to narrow the job list to: every tag in use, with how many jobs carry it."""
+    """Pick the tag to narrow a job screen to: every tag in use, with how many jobs carry it."""
+
+    def __init__(self, target: type[_JobsScreen], crumb: str) -> None:
+        """Bind the picker to the job screen it narrows, and that screen's breadcrumb."""
+        super().__init__()
+        self._target = target
+        self._crumb = crumb
 
     def header_text(self) -> str:
-        """Breadcrumb: gmlw > Job > List > Tag."""
-        t = i18n.active().t
-        return f"gmlw > {t('tui.job')} > {t('tui.job.list')} > {t('tui.joblist.tag')}"
+        """Breadcrumb: the job screen's, then Tag."""
+        return f"{self._crumb} > {i18n.active().t('tui.joblist.tag')}"
 
     def menu_items(self) -> list[_Item]:
         """One row per tag in use, alphabetically."""
@@ -1798,11 +1840,11 @@ class TagFilterScreen(_MenuScreen):
         ]
 
     def handle(self, item: _Item) -> None:
-        """Replace the job list underneath with one narrowed to the chosen tag."""
+        """Replace the job screen underneath with one narrowed to the chosen tag."""
         if item.action == "tag:pick":
             self.menu_app.pop_screen()  # this picker
-            self.menu_app.pop_screen()  # the unfiltered list
-            self.menu_app.push_screen(JobListScreen(item.payload))
+            self.menu_app.pop_screen()  # the unfiltered job screen
+            self.menu_app.push_screen(self._target(item.payload))
 
 
 class JobTagsScreen(Screen[None]):
