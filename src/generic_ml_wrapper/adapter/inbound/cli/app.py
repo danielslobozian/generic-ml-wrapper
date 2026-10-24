@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from generic_ml_wrapper import __version__
+from generic_ml_wrapper.adapter.inbound.cli.analysis_view import format_analysis
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
 from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
     TOPICS,
@@ -59,6 +60,10 @@ from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.service.attachment_context import modify_request
+from generic_ml_wrapper.application.port.inbound.analyze_session import (
+    NothingToAnalyzeError,
+    SessionFileUnavailableError,
+)
 from generic_ml_wrapper.application.port.inbound.check_client_ready import ClientReadiness
 from generic_ml_wrapper.application.port.inbound.config_commands import (
     ConfigCommands,
@@ -90,6 +95,7 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobResult,
 )
 from generic_ml_wrapper.application.wiring.composition import (
+    build_analyze_session,
     build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
@@ -203,6 +209,7 @@ _COMMANDS = frozenset(
         "sessions",
         "export",
         "health",
+        "analyze",
         "clients",
         "statusline",
         "tui",
@@ -382,6 +389,10 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     health.add_argument("--days", type=int, default=7, help=i18n.t("cli.flag.health_days"))
     health.add_argument("--job", default=None, help=i18n.t("cli.flag.health_job"))
     _add_json_flag(health)
+
+    analyze = sub.add_parser("analyze", help=i18n.t("cli.cmd.analyze"))
+    analyze.add_argument("target", help=i18n.t("cli.arg.analyze_target"))
+    _add_json_flag(analyze)
 
     clients = sub.add_parser("clients", help=i18n.t("cli.cmd.clients"))
     _add_json_flag(clients)
@@ -1058,6 +1069,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _jobs_tag(args)
         if args.command == "health":
             return _health(args)
+        if args.command == "analyze":
+            return _analyze(args)
         if args.command == "update":
             return _update(args)
         if args.command == "sessions" and args.sessions_command == "delete":
@@ -1339,6 +1352,20 @@ def _health(args: argparse.Namespace) -> int:
     job = None if args.job is None else JobId(args.job)
     report = build_report_health().execute(days=int(args.days), job=job)
     print(_as_json(asdict(report)) if bool(args.json) else format_health(report))
+    return 0
+
+
+def _analyze(args: argparse.Namespace) -> int:
+    """Show what sessions did, from their clients' own files — ``gmlw analyze``."""
+    try:
+        analyses = build_analyze_session().execute(str(args.target))
+    except (NothingToAnalyzeError, SessionFileUnavailableError) as error:
+        print(_render_error(error), file=sys.stderr)
+        return 2
+    if bool(args.json):
+        print(_as_json([asdict(analysis) for analysis in analyses]))
+    else:
+        print("\n\n".join(format_analysis(analysis) for analysis in analyses))
     return 0
 
 

@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **`gmlw analyze` shows what a session did.** Give it a gmlw session, a job, or a
+  Claude Code / Codex session file run outside gmlw: it reads the client's own session
+  file and shows the requests (main and agents), your prompts, the tokens by kind, how
+  long answers took (min, median, average, max), and the tool calls by name with how long
+  they took. `--json` for other tools. Metadata only: what you, the model or a tool wrote
+  is never read, and no model is called.
+
 ### Changed
 - **The terminal shows `gmlw`, not the interpreter path.** gmlw renames its process
   `gmlw`, so a terminal's title bar and `ps`/`top` no longer show

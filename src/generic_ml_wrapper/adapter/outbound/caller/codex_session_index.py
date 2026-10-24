@@ -60,10 +60,20 @@ def knows(uuid: str, *, root: Path | None = None) -> bool:
     Returns:
         ``True`` if a rollout file for that session exists.
     """
+    return rollout(uuid, root=root) is not None
+
+
+def rollout(uuid: str, *, root: Path | None = None) -> Path | None:
+    """The rollout file in which codex keeps session ``uuid``, or ``None`` if it has none.
+
+    Args:
+        uuid: The client-side session id to look for.
+        root: The codex home to search; defaults to :func:`home`.
+    """
     sessions = (root or home()) / _SESSIONS
     if not uuid or not sessions.is_dir():
-        return False
-    return any(sessions.rglob(f"rollout-*-{uuid}.jsonl"))
+        return None
+    return next(sessions.rglob(f"rollout-*-{uuid}.jsonl"), None)
 
 
 def register(name: str, uuid: str, *, root: Path | None = None) -> bool:

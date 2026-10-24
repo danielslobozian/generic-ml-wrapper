@@ -184,6 +184,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "sessions": ["sessions", "J"],
         "export": ["export", "J"],
         "health": ["health"],
+        "analyze": ["analyze", "J_001"],
         "clients": ["clients"],
         "statusline": ["statusline"],
         "tui": ["tui"],

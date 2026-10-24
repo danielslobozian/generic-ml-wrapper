@@ -20,7 +20,7 @@ gmlw sessions <job> [--json]
 gmlw sessions <job> delete <session> [...] [--yes]
 gmlw export <job> [--json]
 gmlw health [--days N] [--job J] [--json]   # connection incidents of recent sessions
-gmlw health [--days N] [--job J] [--json]
+gmlw analyze <session | job | file> [--json]   # what a session did, from its client's file
 gmlw clients [--json]                    # supported clients + installed versions
 gmlw update [--check]                    # a newer gmlw? upgrade it once you agree
 gmlw statusline                          # called by the client, not by hand
@@ -336,6 +336,44 @@ gmlw health [--days N] [--job J] [--json]
 `gmlw export <job>` lists them. In `gmlw tui`, **Health** shows the last two weeks one
 day per row (✅ quiet, ⚠ incidents); a bad day opens its incidents as a table. Incidents are recorded from this version on; earlier
 ones are only in `~/.gmlw/logs/gmlw.log`.
+
+## analyze
+
+Show what a session did, read from the session file its client keeps:
+
+```
+gmlw analyze <session | job | file> [--json]
+```
+
+- `<session>` — a gmlw session (`<job>_NNN`).
+- `<job>` — every session of the job, one after the other. A session without a file to read
+  is left out (it never got the client's id, the client no longer has it, or it ran on a
+  client that cannot be analysed).
+- `<file>` — a Claude Code (`~/.claude/projects/…/<id>.jsonl`) or Codex
+  (`~/.codex/sessions/…/rollout-….jsonl`) session file: a session run outside gmlw.
+- `--json` — output as JSON instead of text.
+
+```
+Session billing-api_003 · claude
+  file        ~/.claude/projects/-home-me-billing-api/1f0c….jsonl
+  when        2026-10-23 19:02 → 2026-10-24 13:12 (18h10m)
+  models      claude-opus-5-5
+  turns       158 (main 150 · agents 8)    prompts 21
+  tokens      ↑ 356  ↓ 101.6k  ⟲ 22.3M  ✎ 484.7k
+  answers     min 8.9s · median 1m · avg 2m · max 7m
+  tools       ⚒ 144 (Bash 132, Write 7, Edit 4, …)
+  tool time   Bash: median 0.1s · max 2m  (131 returned)
+```
+
+- **turns** — requests to the model, the agents' included; **prompts** — the messages you
+  sent.
+- **answers** — from a prompt to the end of its answer.
+- **tool time** — from a tool call to its result, including any time it waited for your
+  approval.
+
+Claude Code and Codex only. Only metadata is read — record types, timestamps, token counts,
+tool names — never what you, the model or a tool wrote. It calls no model and costs no
+tokens.
 
 ## clients
 
