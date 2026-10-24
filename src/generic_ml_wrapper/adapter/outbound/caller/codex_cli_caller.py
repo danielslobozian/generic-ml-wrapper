@@ -26,18 +26,22 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 BINARY = "codex"
-# Codex's status-line items, chosen to mirror gmlw's own first line block for block
-# and in the same left-to-right order:
+# Codex's status-line items, chosen to mirror gmlw's own two lines block for block and in
+# the same left-to-right order, on codex's single line:
 #
 #   git <repo>/<branch>  ·  folder  ·  model  ·  ctx …/<window> (<pct>%)  ·  quota 5h · wk
 #   project-name,git-branch current-dir model  context-window-size,context-used
 #                                                            five-hour-limit,weekly-limit
+#   session …  ↑ <in>  ↓ <out>  …  $<cost>
+#              total-input-tokens,total-output-tokens  estimated-thread-cost
 #
 # Only items with a true equivalent are listed. gmlw's short sha, dirty count, the
-# context numerator, the quota reset countdown and cost have no codex key and are
-# absent rather than approximated: `branch-changes` is commits-vs-default-branch, not
-# working-tree dirt, and `used-tokens` is session-cumulative, not window occupancy, so
-# either would answer a different question than the block it stood in for.
+# context numerator, the quota reset countdown, the cache figures and the turn and tool
+# counts have no codex key and are absent rather than approximated: `branch-changes` is
+# commits-vs-default-branch, not working-tree dirt, and `used-tokens` is
+# session-cumulative, not window occupancy, so either would answer a different question
+# than the block it stood in for. The cost is codex's own estimate (it knows its model's
+# price), as gmlw's is its own.
 #
 # Polarity is codex's to decide — it reports the rate limits as remaining where gmlw
 # shows consumed. Both say how the allowance is going, and gmlw's own rendering does
@@ -56,6 +60,9 @@ _STATUS_LINE = (
     "context-used",
     "five-hour-limit",
     "weekly-limit",
+    "total-input-tokens",
+    "total-output-tokens",
+    "estimated-thread-cost",
 )
 # The launch flags and config.toml keys by which the user has already chosen codex's
 # sandbox. Any of them leaves the choice to the user; without one, gmlw asks for
@@ -187,9 +194,9 @@ class CodexCliCaller(CliCaller):
     def _status_line_flags(self) -> list[str]:
         """Override codex's status line so it reads like the one gmlw gives claude.
 
-        Chosen to mirror the wrapper's own line block for block, in the same order:
-        branch, folder, model, context fill, then the usage windows. Cost has no codex
-        key and is simply absent — codex does not know what a turn cost.
+        Chosen to mirror the wrapper's own lines block for block, in the same order:
+        branch, folder, model, context fill, the usage windows, then the session's
+        tokens in and out and its estimated cost.
 
         ``context-used`` rather than ``context-remaining`` deliberately: gmlw shows
         consumption everywhere else, and a bar that reads "22% left" where the eye is

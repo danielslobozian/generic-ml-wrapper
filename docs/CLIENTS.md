@@ -17,7 +17,7 @@ section for the client you use.
 | ------ | ------ | -------- | ------ | ----------- | ---------------- |
 | claude | `claude` | Yes — Anthropic SSE | Yes | Yes | Native `--append-system-prompt-file` + `--session-id` |
 | cursor | `cursor-agent` | **No** | Yes | Yes | Context-file instruction; status-line install only, no relay |
-| codex | `codex` | Yes — OpenAI Responses | Yes — once bound | No | Initial instruction; relay → `chatgpt.com/backend-api/codex` |
+| codex | `codex` | Yes — OpenAI Responses | Yes — once bound | Codex's own, set by gmlw | Initial instruction; relay → `chatgpt.com/backend-api/codex` |
 | vibe | `vibe` | Yes — Mistral / Chat Completions | **No** | No | Initial instruction; throwaway `VIBE_HOME` repointed at the relay |
 
 You install and log into each client yourself. `gmlw` is not a sandbox and ships no
@@ -138,9 +138,12 @@ never completed a turn has no id and cannot be resumed, and deleting the session
 itself takes the resume with it (`can_resume` re-checks that index rather than promising a
 resume that would silently open a fresh, empty session).
 
-**Status line:** **Not supported.** Codex has no status-line surface the wrapper can install
-into, so no live `gmlw statusline` output during codex runs. Metering is still recorded — use
-`gmlw export <job>` after the fact.
+**Status line:** Codex's own, set for the launch. Codex runs no status-line command, so there
+is no live `gmlw statusline` during codex runs; instead gmlw passes `-c tui.status_line=…`,
+choosing codex's built-in items that match its own line: branch, folder, model, context
+fill, the 5-hour and weekly limits, the session's input and output tokens, and codex's
+estimated cost. Nothing is written to codex's config. The cache figures, turn counts and
+agent shares have no codex item; read them with `gmlw export <job>` or `gmlw analyze`.
 
 **Context delivery:** Context is delivered as an initial instruction at launch (not a native
 system-prompt file). Requests then flow through the relay to the Responses endpoint.
@@ -184,7 +187,8 @@ same throwaway-`VIBE_HOME` relay path used for metering.
 
 A session started with `--attach` reads its attachment's files from `~/.gmlw/attachments`,
 outside the project folder. gmlw opens that folder with each client's own flag:
-`--add-dir` on claude, codex and vibe, on start and on resume. Claude's `--add-dir` also
+`--add-dir` on claude and vibe, on start and on resume. Codex reads it without one (its
+`--add-dir` adds a *writable* folder, see [codex](#codex)). Claude's `--add-dir` also
 grants write access; the store's files are read-only, and a version changed anyway is
 refused at its next use. cursor-agent gets no such flag, so whether a cursor session can
 read the attachment's other files is up to cursor's own permissions.
@@ -196,7 +200,7 @@ read the attachment's other files is up to cursor's own permissions.
 - **Want resume and a status line but don't need wrapper metering?** **cursor** works, with the
   clear caveat that cost/token numbers won't be captured.
 - **Want metering on OpenAI models?** **codex** meters fully and resumes once a session has
-  taken its first turn; there is no status line, so read costs with `gmlw export`.
+  taken its first turn; its own status line shows tokens and cost, `gmlw export` the rest.
 - **Want metering on Mistral models?** **vibe** meters fully, but every run is a fresh session
   (no resume) and there is no status line.
 
@@ -208,7 +212,8 @@ read the attachment's other files is up to cursor's own permissions.
   first, so a session that never completed a turn — or that you deleted in codex itself — has
   nothing to attach to.
 - **Vibe does not resume.** Throwaway `VIBE_HOME` keeps no durable session; every run is fresh.
-- **Codex and vibe have no status line.** Use `gmlw export <job>` for their numbers instead.
+- **Codex's status line is its own**, limited to its built-in items; **vibe has none.** Use
+  `gmlw export <job>` for the full numbers.
 - **Not a sandbox.** Every client runs as you, with your credentials; on the loopback relay hop
   the client's API key is briefly in cleartext to you/root before HTTPS is re-established
   upstream. See [../SECURITY.md](../SECURITY.md).

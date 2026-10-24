@@ -735,10 +735,11 @@ def test_codex_launches_with_the_gmlw_status_line() -> None:
     argv = _codex(_codex_run()).command()
     flag = argv[argv.index("-c") + 1]
     assert flag.startswith("tui.status_line=[")
-    # Order is the point: it mirrors gmlw's own line block for block.
+    # Order is the point: it mirrors gmlw's own lines block for block.
     assert flag == (
         'tui.status_line=["project-name","git-branch","current-dir","model",'
-        '"context-window-size","context-used","five-hour-limit","weekly-limit"]'
+        '"context-window-size","context-used","five-hour-limit","weekly-limit",'
+        '"total-input-tokens","total-output-tokens","estimated-thread-cost"]'
     )
 
 

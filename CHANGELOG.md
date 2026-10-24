@@ -17,6 +17,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     of the latest session files on this machine, gmlw's or not.
 
 ### Changed
+- **Codex's status line shows the session's tokens and cost.** The line gmlw sets for codex
+  now ends with the session's input and output tokens and codex's estimated cost, as
+  gmlw's own line does for claude.
 - **The terminal shows `gmlw`, not the interpreter path.** gmlw renames its process
   `gmlw`, so a terminal's title bar and `ps`/`top` no longer show
   `…/uv/tools/generic-ml-wrapper/bin/python3 …/.local/bin/gmlw`. On Windows the console
