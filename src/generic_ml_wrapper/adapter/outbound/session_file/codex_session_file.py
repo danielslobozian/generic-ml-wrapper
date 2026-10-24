@@ -21,6 +21,7 @@ from generic_ml_wrapper.application.domain.model.session_analysis import (
     RecordedCall,
     RecordedPrompt,
     RecordedToolCall,
+    SessionFile,
     SessionRecord,
 )
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
@@ -133,3 +134,17 @@ def _call(record: object, session: str | None, model: str | None) -> RecordedCal
 def _by_user(record: object) -> bool:
     """Whether a task was started by the user's message (rather than by codex itself)."""
     return text(record, "payload", "turn_attribution", "turn_trigger") == "user"
+
+
+def describe(path: Path, modified_at: float) -> SessionFile:
+    """List the rollout at ``path`` from its ``session_meta``: the session's id and folder."""
+    meta = next(records(path), None)
+    if meta is None or text(meta, "type") != SESSION_META:
+        return SessionFile(CLIENT, str(path), modified_at)
+    return SessionFile(
+        CLIENT,
+        str(path),
+        modified_at,
+        uuid=text(meta, "payload", "id"),
+        folder=text(meta, "payload", "cwd"),
+    )

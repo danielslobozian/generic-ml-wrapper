@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
 
 from generic_ml_wrapper import __version__
-from generic_ml_wrapper.adapter.inbound.cli.analysis_view import format_analysis
+from generic_ml_wrapper.adapter.inbound.cli.analysis_view import format_analysis, home_relative
 from generic_ml_wrapper.adapter.inbound.cli.banner import banner
 from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
     TOPICS,
@@ -144,7 +144,11 @@ if TYPE_CHECKING:
 
     # Type-only: the tui adapter is imported lazily inside `_tui` (see the note there), so
     # the post-menu handler can be typed without pulling Textual in at CLI startup.
-    from generic_ml_wrapper.adapter.inbound.tui.menu_app import MenuChoice, Shelf
+    from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
+        MenuChoice,
+        RecentSessionView,
+        Shelf,
+    )
     from generic_ml_wrapper.application.domain.model.release_note import ReleaseNote
     from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 
@@ -1369,6 +1373,37 @@ def _analyze(args: argparse.Namespace) -> int:
     return 0
 
 
+def _analysis_text(target: str) -> str:
+    """The Session analysis screen's text for ``target``, or why it cannot be analysed."""
+    try:
+        analyses = build_analyze_session().execute(target)
+    except (NothingToAnalyzeError, SessionFileUnavailableError) as error:
+        return _render_error(error)
+    return "\n\n".join(format_analysis(analysis) for analysis in analyses)
+
+
+def _recent_session_views() -> list[RecentSessionView]:
+    """The latest session files, rendered for the Session analysis list."""
+    from generic_ml_wrapper.adapter.inbound.tui.menu_app import (  # noqa: PLC0415  lazy: tui adapter
+        RecentSessionView,
+    )
+
+    return [
+        RecentSessionView(
+            target=recent.file.source,
+            when=datetime.fromtimestamp(recent.file.modified_at)
+            .astimezone()
+            .strftime("%Y-%m-%d %H:%M"),
+            client=recent.file.client,
+            folder=home_relative(recent.file.folder)
+            if recent.file.folder
+            else i18n.t("tui.resume.no_folder"),
+            session_id=recent.session_id or "",
+        )
+        for recent in build_analyze_session().recent()
+    ]
+
+
 def _update(args: argparse.Namespace) -> int:
     """Check for a newer gmlw and, once the user agrees, upgrade it — ``gmlw update``.
 
@@ -2150,6 +2185,8 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
         validate_tags=_validate_tags,
         whats_new=lambda: format_release_notes(build_whats_new().all()),
         news=news,
+        analyze=_analysis_text,
+        recent_sessions=_recent_session_views,
     ).run()  # blocks; terminal restored on return
 
 

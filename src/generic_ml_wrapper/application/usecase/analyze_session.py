@@ -10,6 +10,7 @@ from generic_ml_wrapper.application.domain.service.session_analyzer import analy
 from generic_ml_wrapper.application.port.inbound.analyze_session import (
     AnalyzeSession,
     NothingToAnalyzeError,
+    RecentSession,
     SessionFileUnavailableError,
 )
 
@@ -44,6 +45,21 @@ class AnalyzeSessionUseCase(AnalyzeSession):
         if record is None:
             raise NothingToAnalyzeError("analyze.error.nothing", target=target)
         return (analyze(record),)
+
+    def recent(self, limit: int = 30) -> tuple[RecentSession, ...]:
+        """The latest session files, each with the gmlw session that ran it, if any."""
+        by_uuid = {
+            (session.client, session.uuid): session.session_id
+            for job in self._store.jobs()
+            for session in self._store.sessions_for_job(job)
+            if session.uuid is not None
+        }
+        return tuple(
+            RecentSession(
+                found, None if found.uuid is None else by_uuid.get((found.client, found.uuid))
+            )
+            for found in self._files.recent(limit)
+        )
 
     def _session(self, target: str) -> Session | None:
         """The gmlw session named ``target``, or ``None`` when it names none."""

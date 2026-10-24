@@ -92,6 +92,25 @@ class SessionRecord:
 
 
 @dataclass(frozen=True)
+class SessionFile:
+    """A session file a client keeps, as listed before it is read.
+
+    Attributes:
+        client: The client that wrote it.
+        source: Its path.
+        modified_at: When it was last written, epoch seconds.
+        uuid: The client's own id for the session, or ``None`` when the file does not say.
+        folder: The folder the session ran in, or ``None`` when the file does not say.
+    """
+
+    client: str
+    source: str
+    modified_at: float
+    uuid: str | None = None
+    folder: str | None = None
+
+
+@dataclass(frozen=True)
 class DurationStats:
     """The spread of some durations, in seconds.
 

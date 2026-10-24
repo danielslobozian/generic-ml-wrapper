@@ -32,6 +32,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     JobChoice,
     MenuApp,
     MenuChoice,
+    RecentSessionView,
     SessionChoice,
     Shelf,
     SwitchChoice,
@@ -2095,7 +2096,7 @@ async def _open_health(pilot: Pilot[MenuChoice | None]) -> None:
     await pilot.pause()
 
 
-def test_the_top_menu_offers_health_and_whats_new_above_quit() -> None:
+def test_the_top_menu_offers_health_analysis_and_whats_new_above_quit() -> None:
     seen: list[str] = []
 
     async def scenario() -> None:
@@ -2105,7 +2106,7 @@ def test_the_top_menu_offers_health_and_whats_new_above_quit() -> None:
             seen.extend(r.item.title for r in app.screen.query(_Row))
 
     asyncio.run(scenario())
-    assert seen[-3:] == ["Health", "What's new", "Quit"]
+    assert seen[-4:] == ["Health", "Session analysis", "What's new", "Quit"]
 
 
 def test_health_lists_each_day_marking_the_bad_ones() -> None:
@@ -2480,7 +2481,7 @@ def test_whats_new_opens_from_the_top_menu_and_escape_returns() -> None:
         async with app.run_test(size=(100, 40)) as pilot:
             await pilot.pause()
             assert type(app.screen).__name__ == "TopMenuScreen"  # no news: the menu alone
-            await pilot.press("down", "down", "down", "down", "down", "enter")
+            await pilot.press(*["down"] * 6, "enter")
             await pilot.pause()
             seen["screen"] = type(app.screen).__name__
             seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
@@ -2519,7 +2520,7 @@ def test_whats_new_says_so_when_there_are_no_notes() -> None:
     async def scenario() -> None:
         app = MenuApp(_JOBS)
         async with app.run_test(size=(100, 40)) as pilot:
-            await pilot.press("down", "down", "down", "down", "down", "enter")
+            await pilot.press(*["down"] * 6, "enter")
             await pilot.pause()
             seen.append(_markdown_text(app))
 
@@ -2546,3 +2547,108 @@ def test_every_menu_entry_has_a_title_and_a_subtitle(rows: tuple[tuple[str, ...]
     )
     missing = [k for _, key, *_ in rows for k in (key, f"{key}.d") if k not in catalog]
     assert not missing
+
+
+# ── Session analysis ──
+_RECENT = [
+    RecentSessionView("/c/s-1.jsonl", "2026-10-24 13:12", "claude", "~/work/a", "alpha_001"),
+    RecentSessionView("/x/r.jsonl", "2026-10-23 09:00", "codex", "~/scratch"),
+]
+
+
+async def _open_analysis(pilot: Pilot[MenuChoice | None]) -> None:
+    """Top → Session analysis (the row under Health)."""
+    await pilot.press(*["down"] * 5, "enter")
+    await pilot.pause()
+
+
+def _analysis_app(analysed: list[str]) -> MenuApp:
+    def analyze(target: str) -> str:
+        analysed.append(target)
+        return f"Session [{target}] · claude"  # brackets: shown as text, never as markup
+
+    return MenuApp(
+        _JOBS,
+        sessions_for=lambda _job: _SESSIONS,
+        analyze=analyze,
+        recent_sessions=lambda: list(_RECENT),
+    )
+
+
+async def _report_text(pilot: Pilot[MenuChoice | None], app: MenuApp) -> str:
+    await pilot.pause()
+    await _drain_workers(app)
+    await pilot.pause()
+    return str(app.screen.query_one("#analysis", Static).render())
+
+
+def test_a_gmlw_session_is_analysed_after_picking_its_job() -> None:
+    analysed: list[str] = []
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _analysis_app(analysed)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_analysis(pilot)
+            await pilot.press("enter")  # A gmlw session → jobs
+            await pilot.pause()
+            await pilot.press("enter")  # alpha → its sessions, on the newest
+            await pilot.pause()
+            seen["rows"] = [r.item.title for r in app.screen.query(_Row)]
+            await pilot.press("enter")
+            seen["text"] = await _report_text(pilot, app)
+            seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            await pilot.press("escape")
+            await pilot.pause()
+            seen["back"] = type(app.screen).__name__
+
+    asyncio.run(scenario())
+    assert seen["rows"] == ["alpha_001", "alpha_002", "alpha_003"]
+    assert analysed == ["alpha_003"]
+    assert seen["text"] == "Session [alpha_003] · claude"
+    assert str(seen["crumb"]).endswith("Session analysis > A gmlw session > alpha_003")
+    assert seen["back"] == "AnalysisSessionScreen"
+
+
+def test_a_session_file_on_this_machine_is_analysed_by_its_path() -> None:
+    analysed: list[str] = []
+    seen: dict[str, object] = {}
+
+    async def scenario() -> None:
+        app = _analysis_app(analysed)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_analysis(pilot)
+            await pilot.press("down", "enter")  # A session file on this machine
+            await pilot.pause()
+            seen["rows"] = [(r.item.title, r.item.subtitle) for r in app.screen.query(_Row)]
+            await pilot.press("enter")  # the one gmlw ran: analysed as its session
+            await _report_text(pilot, app)
+            await pilot.press("escape", "down", "enter")  # the one run outside gmlw
+            await _report_text(pilot, app)
+
+    asyncio.run(scenario())
+    assert seen["rows"] == [
+        ("2026-10-24 13:12 · claude", "~/work/a · alpha_001"),
+        ("2026-10-23 09:00 · codex", "~/scratch · outside gmlw"),
+    ]
+    assert analysed == ["alpha_001", "/x/r.jsonl"]
+
+
+def test_analysis_says_so_when_it_is_not_wired() -> None:
+    seen: list[str] = []
+
+    async def scenario() -> None:
+        app = MenuApp(_JOBS, sessions_for=lambda _job: _SESSIONS)
+        async with app.run_test(size=(120, 40)) as pilot:
+            await _open_analysis(pilot)
+            await pilot.press("down", "enter")
+            await pilot.pause()
+            seen.append(str(app.screen.query_one("#empty", Static).render()))
+            await pilot.press("escape", "up", "enter", "enter", "enter")
+            seen.append(await _report_text(pilot, app))
+
+    asyncio.run(scenario())
+    assert seen == [
+        "No Claude Code or Codex session file found on this machine.",
+        "Session analysis is not available here.",
+    ]

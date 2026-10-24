@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import codex_session_index
 from generic_ml_wrapper.adapter.outbound.session_file import (
@@ -13,8 +14,14 @@ from generic_ml_wrapper.adapter.outbound.session_file import (
     codex_session_file,
 )
 from generic_ml_wrapper.adapter.outbound.session_file.jsonl import records
-from generic_ml_wrapper.application.domain.model.session_analysis import SessionRecord
+from generic_ml_wrapper.application.domain.model.session_analysis import (
+    SessionFile,
+    SessionRecord,
+)
 from generic_ml_wrapper.application.port.outbound.session_files import SessionFilesPort
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # How many of a file's first records are looked at to tell whose it is: Claude opens with
 # bookkeeping records that carry no session id.
@@ -44,6 +51,37 @@ class ClientSessionFiles(SessionFilesPort):
             found = None
         return None if found is None else str(found)
 
+    def recent(self, limit: int) -> list[SessionFile]:
+        """The latest Claude Code and Codex session files, newest first.
+
+        Claude's agents' files (in ``<id>/subagents/``) are part of their session, not
+        sessions of their own, so only the files directly in a project folder are listed.
+        """
+        found = [
+            *(
+                (path, claude_session_file.describe)
+                for path in _files(claude_home() / "projects", "*/*.jsonl")
+            ),
+            *(
+                (path, codex_session_file.describe)
+                for path in _files(codex_session_index.home() / "sessions", "**/rollout-*.jsonl")
+            ),
+        ]
+        dated: list[tuple[float, Path, Callable[[Path, float], SessionFile]]] = []
+        for path, describe in found:
+            try:
+                dated.append((path.stat().st_mtime, path, describe))
+            except OSError:
+                continue
+        dated.sort(key=lambda entry: entry[0], reverse=True)
+        listed: list[SessionFile] = []
+        for modified_at, path, describe in dated[: max(limit, 0)]:
+            try:
+                listed.append(describe(path, modified_at))
+            except OSError:
+                continue
+        return listed
+
     def read(self, source: str) -> SessionRecord | None:
         """Read ``source`` with the reader of the client that wrote it, if any."""
         path = Path(source).expanduser()
@@ -56,6 +94,11 @@ class ClientSessionFiles(SessionFilesPort):
         except OSError:
             return None
         return None
+
+
+def _files(root: Path, pattern: str) -> list[Path]:
+    """The files under ``root`` matching ``pattern``; none when ``root`` is missing."""
+    return [path for path in root.glob(pattern) if path.is_file()] if root.is_dir() else []
 
 
 def _client_of(path: Path) -> str | None:

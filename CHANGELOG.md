@@ -13,6 +13,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   long answers took (min, median, average, max), and the tool calls by name with how long
   they took. `--json` for other tools. Metadata only: what you, the model or a tool wrote
   is never read, and no model is called.
+  - In `gmlw tui`, **Session analysis** picks a gmlw session (a job, then a session) or one
+    of the latest session files on this machine, gmlw's or not.
 
 ### Changed
 - **The terminal shows `gmlw`, not the interpreter path.** gmlw renames its process

@@ -371,6 +371,10 @@ Session billing-api_003 · claude
 - **tool time** — from a tool call to its result, including any time it waited for your
   approval.
 
+In `gmlw tui`, **Session analysis** offers the same: pick **A gmlw session** (a job, then one
+of its sessions), or **A session file on this machine** — the latest Claude Code and Codex
+sessions, newest first, each named by the gmlw session that ran it or marked *outside gmlw*.
+
 Claude Code and Codex only. Only metadata is read — record types, timestamps, token counts,
 tool names — never what you, the model or a tool wrote. It calls no model and costs no
 tokens.
@@ -443,7 +447,7 @@ status line is installed and parsed.
 ## tui
 
 Open the interactive, full-screen menu — an alternative to the flag CLI. It is
-object-first (**Job · Attachments · Config · Rules · Health · What's new**), you navigate with the arrow keys, and
+object-first (**Job · Attachments · Config · Rules · Health · Session analysis · What's new**), you navigate with the arrow keys, and
 each row shows the equivalent command. On a terminal, **bare `gmlw` opens this menu too**
 (once initialised) — `gmlw tui` is the explicit alias; off a terminal, both fall back to the
 capability index.
