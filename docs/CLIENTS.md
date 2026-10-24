@@ -145,6 +145,13 @@ into, so no live `gmlw statusline` output during codex runs. Metering is still r
 **Context delivery:** Context is delivered as an initial instruction at launch (not a native
 system-prompt file). Requests then flow through the relay to the Responses endpoint.
 
+**Sandbox:** gmlw launches codex with `--sandbox workspace-write`, so the session can write
+in its job folder even where codex would fall back to read-only (a folder it does not
+trust). The attachment store stays readable but not writable, and is not passed with
+`--add-dir`: that flag adds a *writable* folder. A sandbox you chose yourself wins: `-s`,
+`--sandbox` or `--dangerously-bypass-approvals-and-sandbox` in `[client.args]`, or
+`sandbox_mode` / `default_permissions` in codex's `config.toml`.
+
 ## vibe
 
 **Binary:** `vibe` (Mistral's CLI). Install it and log in yourself first.

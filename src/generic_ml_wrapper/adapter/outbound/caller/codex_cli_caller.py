@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import tomllib
 from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.caller import codex_session_index, context_file
@@ -56,6 +57,11 @@ _STATUS_LINE = (
     "five-hour-limit",
     "weekly-limit",
 )
+# The launch flags and config.toml keys by which the user has already chosen codex's
+# sandbox. Any of them leaves the choice to the user; without one, gmlw asks for
+# workspace-write (see ``_sandbox_flags``).
+_SANDBOX_FLAGS = ("-s", "--sandbox", "--dangerously-bypass-approvals-and-sandbox")
+_SANDBOX_KEYS = ("sandbox_mode", "default_permissions")
 # ChatGPT-sign-in upstream (the verified default). API-key mode would target
 # api.openai.com with a /v1 prefix; a config-driven option is a later follow-up.
 _UPSTREAM = "https://chatgpt.com"
@@ -201,6 +207,24 @@ class CodexCliCaller(CliCaller):
         items = ",".join(f'"{item}"' for item in _STATUS_LINE)
         return ["-c", f"tui.status_line=[{items}]"]
 
+    def _sandbox_flags(self) -> list[str]:
+        """Ask for the workspace-write sandbox, unless the user has chosen one.
+
+        Codex falls back to its read-only sandbox in a folder it does not trust, and a
+        session there cannot write in its own job folder. workspace-write makes the job
+        folder writable and nothing else: the attachment store stays readable (codex
+        reads anywhere) but not writable, as an attachment is read-only.
+
+        That is also why the store is not passed with ``--add-dir``: codex's flag adds a
+        *writable* folder, and under read-only codex 0.163 refuses to start with one.
+
+        A sandbox the user chose -- in ``[client.args]``, or as ``sandbox_mode`` or
+        ``default_permissions`` in codex's ``config.toml`` -- is left alone.
+        """
+        if _chooses_a_sandbox(self.run.client_args) or _sandbox_configured():
+            return []
+        return ["--sandbox", "workspace-write"]
+
     def _provider_flags(self) -> list[str]:
         if self._relay is None:
             return []
@@ -236,7 +260,7 @@ class CodexCliCaller(CliCaller):
         head = [BINARY, "resume", self.run.uuid] if self.run.resume and self.run.uuid else [BINARY]
         argv = [
             *head,
-            *self.extra_dir_flags(),
+            *self._sandbox_flags(),
             *self._status_line_flags(),
             *self._provider_flags(),
             *self.run.client_args,
@@ -278,3 +302,23 @@ def _codex_path_map(path: str) -> str:
 def _codex_metered(method: str, path: str) -> bool:
     """A metered codex turn: ``POST`` to the Responses endpoint."""
     return method == "POST" and path.split("?", 1)[0].endswith("/responses")
+
+
+def _chooses_a_sandbox(client_args: tuple[str, ...]) -> bool:
+    """Whether the user's launch arguments already choose codex's sandbox."""
+    for previous, token in zip(("", *client_args), client_args, strict=False):
+        if token in _SANDBOX_FLAGS or token.startswith("--sandbox="):
+            return True
+        if previous in ("-c", "--config") and token.split("=", 1)[0].strip() in _SANDBOX_KEYS:
+            return True
+    return False
+
+
+def _sandbox_configured() -> bool:
+    """Whether codex's own ``config.toml`` chooses a sandbox (unreadable counts as no)."""
+    try:
+        with (codex_session_index.home() / "config.toml").open("rb") as config:
+            settings = tomllib.load(config)
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    return any(key in settings for key in _SANDBOX_KEYS)

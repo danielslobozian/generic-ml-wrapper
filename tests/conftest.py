@@ -22,6 +22,8 @@ def _isolate_gmlw_home(
     dynamically over every ``Path`` constant rooted at HOME, so a path newly added to
     ``paths`` is isolated automatically without editing this fixture.
     """
+    # Codex's own home too: the codex caller reads its config.toml.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path_factory.mktemp("codex-home")))
     real_home = paths.HOME
     fake_home = tmp_path_factory.mktemp("gmlw-home")
     for name in dir(paths):

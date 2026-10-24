@@ -30,8 +30,8 @@ class CliCaller(ABC):
         """The run's extra folders as launch flags, one ``flag <dir>`` pair per folder.
 
         For a client whose flag opens a folder outside the working one to the session
-        (``--add-dir`` on claude, codex and vibe). A client without such a flag leaves
-        this unused.
+        (``--add-dir`` on claude and vibe). A client without such a flag, or that reads
+        outside its folder without one (codex), leaves this unused.
 
         Args:
             flag: The client's flag.
