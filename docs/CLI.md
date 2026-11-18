@@ -18,7 +18,7 @@ gmlw jobs untag <job> <tag> [<tag>...]
 gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything under it
 gmlw sessions <job> [--json]
 gmlw sessions <job> delete <session> [...] [--yes]
-gmlw export <job> [--session S]... [--by model|agent|session|tool] [--json]
+gmlw export <job> [--session S]... [--tag K=V]... [--by model|agent|session|tool|tag|tag:K] [--json]
 gmlw health [--days N] [--job J] [--json]   # connection incidents of recent sessions
 gmlw analyze <session | job | file> [--json]   # what a session did, from its client's file
 gmlw clients [--json]                    # supported clients + installed versions
@@ -321,20 +321,41 @@ A **totals by tool** section counts the tools the model called, by name (claude,
 vibe); only the name is recorded. In `--json`, every turn carries `tool_calls`
 (`{"Bash": 2}`), and `tools` holds the totals (`[{"tool": "Bash", "calls": 2}]`).
 
+**Tagging the steps of a run.** To see what each step of a multi-step run used, write a
+`gmlw-execution` object into the conversation (in a prompt, a script that drives the
+client, or the instructions an agent is given):
+
+```
+gmlw-execution: {"pipeline": "release", "step": "build"}
+```
+
+Every turn after it is tagged with each of its key/value pairs, until a later object
+replaces it; `gmlw-execution: {}` ends the tagging. The object is JSON and its keys are
+yours: one, two or ten. A client resends the conversation with every request, so the
+gateway takes the *last* object in each request. Two things follow: a compaction that
+drops the object drops the tags with it, and an agent's turns are tagged only if the
+object is in the agent's own context. gmlw reads the marker and its object, never what
+the messages say. A **totals by tag** section adds the tagged turns up, value by value,
+and counts each key's untagged turns apart; in `--json`, every turn carries
+`execution_tags` and `execution_tags` at the top holds the totals.
+
 **For tools and dashboards, use `--json`.** Every count is a raw integer, every turn
 carries its `session_id`, and each grouping is a list of rows with the same fields:
 `calls`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`,
 `duration_s` (and `cost_usd` for a session, `null` when its client reported none).
 
 ```
-gmlw export <job> [--session S]... [--by model|agent|session|tool] [--json]
+gmlw export <job> [--session S]... [--tag K=V]... [--by model|agent|session|tool|tag|tag:K] [--json]
 ```
 
 - `job` (positional, required) — the job identifier.
 - `--session S` — only this session; repeat it for several. The totals are then those
   sessions' totals.
-- `--by` — only the totals by one grouping, without the per-turn rows. With `--json`
-  the output is `{"job", "sessions_filter", "by", "rows"}`.
+- `--tag K=V` — only the turns tagged `K=V`; repeat it to require several. A cost is a
+  whole session's, so a report narrowed by tag shows none.
+- `--by` — only the totals by one grouping, without the per-turn rows: `model`, `agent`,
+  `session`, `tool`, `tag` (every key) or `tag:K` (one key). With `--json` the output is
+  `{"job", "sessions_filter", "tags_filter", "by", "rows"}`.
 - `--json` — output as JSON instead of text.
 
 Examples:
@@ -342,10 +363,11 @@ Examples:
 ```
 gmlw export billing-api --json
 gmlw export billing-api --session billing-api_003 --by model --json
+gmlw export billing-api --tag pipeline=release --by tag:step
 ```
 
 In `gmlw tui`, Job → Export → *job* → View summary shows the same report for reading:
-a totals line, then a tab each for model, agent, tool and session (`←`/`→` to switch),
+a totals line, then a tab each for model, agent, tool, session and tags (`←`/`→` to switch),
 with token counts in k/M/G and each row's share of all the tokens.
 
 ## health

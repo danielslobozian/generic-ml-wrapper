@@ -60,6 +60,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
     SessionTotal,
+    TagTotal,
     ToolTotal,
     TurnRow,
     UsageReport,
@@ -758,7 +759,9 @@ def test_export_command_prints_the_report(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ExportUsage):
-        def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
+        def execute(
+            self, job: str, sessions: Sequence[str] = (), tags: Sequence[tuple[str, str]] = ()
+        ) -> UsageReport:
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
@@ -772,7 +775,9 @@ def test_export_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ExportUsage):
-        def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
+        def execute(
+            self, job: str, sessions: Sequence[str] = (), tags: Sequence[tuple[str, str]] = ()
+        ) -> UsageReport:
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
@@ -792,18 +797,20 @@ def test_export_command_json_output(
 def test_export_by_a_grouping_gives_its_rows_alone(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    seen: list[tuple[str, tuple[str, ...]]] = []
+    seen: list[tuple[str, tuple[str, ...], tuple[tuple[str, str], ...]]] = []
 
     class FakeUseCase(ExportUsage):
-        def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
-            seen.append((job, tuple(sessions)))
+        def execute(
+            self, job: str, sessions: Sequence[str] = (), tags: Sequence[tuple[str, str]] = ()
+        ) -> UsageReport:
+            seen.append((job, tuple(sessions), tuple(tags)))
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
-    argv = ["export", "JOB-1", "--session", "JOB-1_001", "--by", "model", "--json"]
-    assert app.main(argv) == 0
+    argv = ["export", "JOB-1", "--session", "JOB-1_001", "--tag", "step=2", "--by", "model"]
+    assert app.main([*argv, "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert seen == [("JOB-1", ("JOB-1_001",))]
+    assert seen == [("JOB-1", ("JOB-1_001",), (("step", "2"),))]
     assert payload["by"] == "model"
     assert [row["model"] for row in payload["rows"]] == ["claude-opus-4-8", "claude-sonnet-5"]
     assert payload["rows"][0]["cache_read_tokens"] == 35813
@@ -2914,3 +2921,32 @@ def test_the_news_opens_over_the_first_menu_only(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(app, "_act_on_tui_choice", _errand)
     assert app._tui() == 0
     assert given == ["# 0.13.0\n\n- New.", ""]
+
+
+def test_format_usage_totals_by_tag_and_names_the_untagged_turns() -> None:
+    report = UsageReport(
+        "JOB-1",
+        execution_tags=(
+            TagTotal("step", "1", 2, 60, 2, 0, 0, 1.0),
+            TagTotal("step", None, 1, 80, 1, 0, 0, 0.5),
+            TagTotal("pipeline", "review", 2, 30, 2, 0, 0, 1.0),
+        ),
+        turn_count=3,
+        tags_filter=("pipeline=review",),
+    )
+    rows = app.format_usage(report, by="tag:step").splitlines()
+    assert "  ── totals by tag ──" in rows
+    assert "  step=1             2 call(s)  ↑ 60  ↓ 2  ⟲ 0  ✎ 0  1.0s" in rows
+    assert "  step (untagged)    1 call(s)  ↑ 80  ↓ 1  ⟲ 0  ✎ 0  0.5s" in rows
+    assert not any("pipeline=review" in row and "call(s)" in row for row in rows)
+    assert "  tags: pipeline=review" in rows
+    assert "no cost" in rows[-1]
+
+
+@pytest.mark.parametrize("argv", [["--tag", "step"], ["--by", "colour"], ["--by", "tag:"]])
+def test_export_refuses_an_unreadable_tag_or_grouping(
+    argv: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit):
+        app.main(["export", "JOB-1", *argv])
+    assert "--" in capsys.readouterr().err

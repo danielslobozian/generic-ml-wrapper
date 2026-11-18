@@ -14,6 +14,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     ExportUsage,
     ModelTotal,
     SessionTotal,
+    TagTotal,
     ToolTotal,
     TurnRow,
     UsageReport,
@@ -49,32 +50,46 @@ class ExportUsageUseCase(ExportUsage):
         self._turns = turns
         self._incidents = incidents
 
-    def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
+    def execute(
+        self, job: str, sessions: Sequence[str] = (), tags: Sequence[tuple[str, str]] = ()
+    ) -> UsageReport:
         """Build a job's usage report.
 
         Args:
             job: The job identifier.
             sessions: Narrow the report to these sessions; empty for all of them.
+            tags: Narrow the report to the turns carrying every one of these
+                ``(key, value)`` tags; empty for every turn.
 
         Returns:
-            Per-turn rows (chronological), totals by model, agent, session and tool, and
-            the job's totals.
+            Per-turn rows (chronological), totals by model, agent, session, tool and tag,
+            and the job's totals. A cost is a whole session's, as its client reported it,
+            so a report narrowed by tag carries none.
         """
         wanted = set(sessions)
 
         def kept(session: str) -> bool:
             return not wanted or session in wanted
 
-        recorded = [turn for turn in self._turns.turns_for_job(job) if kept(turn.session_id)]
-        costs = {
-            session: cost
-            for session, cost in self._usage.session_costs(job).items()
-            if kept(session)
-        }
+        recorded = [
+            turn
+            for turn in self._turns.turns_for_job(job)
+            if kept(turn.session_id) and all(turn.execution_tags.has(*tag) for tag in tags)
+        ]
+        costs = (
+            {}
+            if tags
+            else {
+                session: cost
+                for session, cost in self._usage.session_costs(job).items()
+                if kept(session)
+            }
+        )
         whole = _Sum.of(recorded)
         return UsageReport(
             job=job,
             sessions_filter=tuple(sessions),
+            tags_filter=tuple(f"{key}={value}" for key, value in tags),
             turns=tuple(sorted((_row(turn) for turn in recorded), key=lambda row: row.timestamp)),
             models=_model_totals(recorded),
             agents=_agent_totals(recorded),
@@ -83,6 +98,7 @@ class ExportUsageUseCase(ExportUsage):
                 ToolTotal(tool, calls)
                 for tool, calls in ToolCalls.summed(turn.tool_calls for turn in recorded).counts
             ),
+            execution_tags=_tag_totals(recorded),
             turn_count=whole.calls,
             input_tokens=whole.input_tokens,
             output_tokens=whole.output_tokens,
@@ -137,6 +153,7 @@ def _row(turn: TurnUsage) -> TurnRow:
         agent=turn.agent,
         caused_by_agent=turn.caused_by_agent,
         tool_calls=turn.tool_calls.as_dict(),
+        execution_tags=turn.execution_tags.as_dict(),
     )
 
 
@@ -173,6 +190,24 @@ def _session_totals(recorded: list[TurnUsage], costs: dict[str, float]) -> tuple
         SessionTotal(session, *_fields(_Sum.of(turns)), costs.get(session))
         for session, turns in sorted(by_session.items())
     )
+
+
+def _tag_totals(recorded: list[TurnUsage]) -> tuple[TagTotal, ...]:
+    """For each tag key, by key: each value's turns, by value, then the turns without it."""
+    keys = sorted({key for turn in recorded for key, _ in turn.execution_tags.pairs})
+    totals: list[TagTotal] = []
+    for key in keys:
+        by_value: dict[str | None, list[TurnUsage]] = {}
+        for turn in recorded:
+            by_value.setdefault(turn.execution_tags.get(key), []).append(turn)
+        untagged = by_value.pop(None, [])
+        groups: list[tuple[str | None, list[TurnUsage]]] = sorted(
+            by_value.items(), key=lambda item: item[0] or ""
+        )
+        if untagged:
+            groups.append((None, untagged))
+        totals += [TagTotal(key, value, *_fields(_Sum.of(turns))) for value, turns in groups]
+    return tuple(totals)
 
 
 def _fields(total: _Sum) -> tuple[int, int, int, int, int, float]:

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from generic_ml_wrapper.adapter.outbound.store.ledger import Ledger
 from generic_ml_wrapper.adapter.outbound.store.sqlite_per_turn_store import SqlitePerTurnStore
+from generic_ml_wrapper.application.domain.model.execution_tags import ExecutionTags
 from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
@@ -60,5 +61,13 @@ def test_a_main_turn_an_agent_caused_is_kept(tmp_path: Path) -> None:
 def test_the_tools_a_turn_called_are_kept(tmp_path: Path) -> None:
     store = _store(tmp_path)
     turn = TurnUsage("JOB-1_001", 1, 2, None, None, tool_calls=ToolCalls.of(["Bash", "Bash"]))
+    store.record("JOB-1", turn)
+    assert store.turns_for_job("JOB-1") == [turn]
+
+
+def test_the_execution_tags_a_turn_ran_under_are_kept(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    tags = ExecutionTags.from_mapping({"workflow": "review", "step": "2"})
+    turn = TurnUsage("JOB-1_001", 1, 2, None, None, execution_tags=tags)
     store.record("JOB-1", turn)
     assert store.turns_for_job("JOB-1") == [turn]

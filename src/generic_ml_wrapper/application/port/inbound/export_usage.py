@@ -37,6 +37,7 @@ class TurnRow:
         caused_by_agent: Whether this main-conversation turn was made only because an
             agent was started or reported back.
         tool_calls: The tools the turn called, ``{name: calls}``, most called first.
+        execution_tags: The ``gmlw-execution`` tags the turn ran under, ``{key: value}``.
     """
 
     timestamp: float
@@ -52,6 +53,7 @@ class TurnRow:
     agent: str | None = None
     caused_by_agent: bool = False
     tool_calls: dict[str, int] = field(default_factory=dict[str, int])
+    execution_tags: dict[str, str] = field(default_factory=dict[str, str])
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,31 @@ class SessionTotal:
 
 
 @dataclass(frozen=True)
+class TagTotal:
+    """The totals of the turns that carried one tag value -- or none for that key.
+
+    Attributes:
+        key: The tag's key.
+        value: The tag's value; ``None`` for the turns that had no tag with this key.
+        calls: How many turns.
+        input_tokens: Total fresh prompt tokens.
+        output_tokens: Total completion tokens.
+        cache_read_tokens: Total prompt tokens read back from the cache.
+        cache_write_tokens: Total prompt tokens written to the cache.
+        duration_s: Total duration, in seconds.
+    """
+
+    key: str
+    value: str | None
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int  # nosemgrep
+    cache_write_tokens: int  # nosemgrep
+    duration_s: float
+
+
+@dataclass(frozen=True)
 class ToolTotal:
     """How often the job's turns called one tool.
 
@@ -156,6 +183,8 @@ class UsageReport:
     Attributes:
         job: The job identifier.
         sessions_filter: The sessions the report was narrowed to; empty for all of them.
+        tags_filter: The ``key=value`` tags the report was narrowed to (a turn must carry
+            all of them); empty for every turn.
         turns: Every metered turn, chronological.
         models: Totals by model, sorted by model name.
         agents: Totals by agent -- the main conversation first, then each agent by
@@ -163,6 +192,8 @@ class UsageReport:
         sessions: Totals by session, sorted by session id: every session with a metered
             turn or a recorded cost.
         tools: Calls by tool, most called first.
+        execution_tags: Totals by tag: for each key, by key, each of its values, then the
+            turns without it; empty when no turn was tagged.
         turn_count: The number of metered turns.
         input_tokens: The job's total fresh prompt tokens.
         output_tokens: The job's total completion tokens.
@@ -175,11 +206,13 @@ class UsageReport:
 
     job: str
     sessions_filter: tuple[str, ...] = ()
+    tags_filter: tuple[str, ...] = ()
     turns: tuple[TurnRow, ...] = ()
     models: tuple[ModelTotal, ...] = ()
     agents: tuple[AgentTotal, ...] = ()
     sessions: tuple[SessionTotal, ...] = ()
     tools: tuple[ToolTotal, ...] = ()
+    execution_tags: tuple[TagTotal, ...] = ()
     turn_count: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
@@ -194,12 +227,16 @@ class ExportUsage(ABC):
     """Report the usage recorded for a job."""
 
     @abstractmethod
-    def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
+    def execute(
+        self, job: str, sessions: Sequence[str] = (), tags: Sequence[tuple[str, str]] = ()
+    ) -> UsageReport:
         """Build a job's usage report.
 
         Args:
             job: The job identifier.
             sessions: Narrow the report to these sessions; empty for all of them.
+            tags: Narrow the report to the turns carrying every one of these
+                ``(key, value)`` tags; empty for every turn.
 
         Returns:
             The job's per-turn rows, its totals by model, agent, session and tool, and
