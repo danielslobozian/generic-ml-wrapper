@@ -10,4 +10,4 @@ for the architecture the use cases will fill in.
 
 from __future__ import annotations
 
-__version__ = "0.13.2"
+__version__ = "0.14.0"

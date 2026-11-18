@@ -6,19 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-19
+
 ### Added
 - **Old transcripts can be archived.** `gmlw transcripts archive` packs each session
   folder not written to for a week (`--older-than DAYS` to change it, `--dry-run` to see
   what would go) into a `tar.xz` archive about forty times smaller, checked before the
   folder is removed. Resuming an archived session starts a fresh folder, numbered on from
   the archive.
-
-### Fixed
-- **Resuming a session no longer overwrites its transcript.** Each run numbered its calls
-  from `call_001` again, so a resumed session's calls replaced the first run's. Numbers now
-  run on from the last call already kept.
-
-### Added
 - **Usage by step.** Write `gmlw-execution: {"pipeline": "release", "step": "build"}`
   into a conversation and every turn after it is tagged with those key/value
   pairs, until a later object replaces it (`{}` ends it). `gmlw export` totals by tag
@@ -32,6 +27,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **The usage view reads at a glance.** `gmlw tui` → Job → Export → View summary shows a
   totals line (turns, time, tokens by kind in k/M/G, the agents' share, cost), then a tab
   each for model, agent, tool and session, with each row's share of all the tokens.
+- **The status line can be laid out.** `gmlw tui` → Config → Status line shows, hides and
+  reorders its blocks, with a tab for the live line and one for the session and job
+  rows; on the rows, the agents' share can be turned off field by field. The choice is
+  saved in `[statusline] line`, `rows` and `agents`, and applies to Claude Code and
+  Cursor.
 
 ### Changed
 - **The usage report keeps cache reads and writes apart.** They mean different things (the
@@ -40,15 +40,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   turn also carries its `session_id`. In the JSON, `session_costs` becomes `sessions`
   (each session's tokens, time and reported cost) and `tools` becomes a list of
   `{"tool", "calls"}` rows. The text report shows tokens as `↑ ↓ ⟲ ✎` in k/M/G.
-
-### Added
-- **The status line can be laid out.** `gmlw tui` → Config → Status line shows, hides and
-  reorders its blocks, with a tab for the live line and one for the session and job
-  rows; on the rows, the agents' share can be turned off field by field. The choice is
-  saved in `[statusline] line`, `rows` and `agents`, and applies to Claude Code and
-  Cursor.
-
-### Changed
 - **The status line reads cost first.** The live line now runs model, context, quota and
   cost, then git and the folder. On the session and job rows the cost follows the name
   instead of closing the row, and the two rows are padded to one width so the job's
@@ -58,6 +49,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   has; `⏎` opens its versions. Delete still lists every version, to tick several. When a
   new session asks what to attach, `⏎` starts the latest version, as `--attach <name>`
   does, and `→` opens the versions to pick another.
+
+### Fixed
+- **Resuming a session no longer overwrites its transcript.** Each run numbered its calls
+  from `call_001` again, so a resumed session's calls replaced the first run's. Numbers now
+  run on from the last call already kept.
 
 ## [0.13.2] - 2026-10-24
 
@@ -1011,7 +1007,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.2...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.12.1...v0.13.0
