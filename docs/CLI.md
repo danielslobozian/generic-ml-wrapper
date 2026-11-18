@@ -488,7 +488,9 @@ environment and role rule axes; **Attachments** covers Import, Export (the zip l
 folder gmlw was started from), List, Delete, and Modify — which opens Job → New with a job
 named `modify_<name>_v<version>` (editable), lets you attach what to work with (typically
 `workflow-creator`), and starts the session asking the client to export that version here
-and help change it.
+and help change it. List, Export and Modify show each attachment once, with its highest
+version and how many it has; `⏎` opens its versions, highest first. Delete lists every
+version, so several can be ticked at once.
 
 **Every launch ends with a client step** — Job → New and Attachments → Modify both
 ask which client to run on before starting, the menu's equivalent of `--client`. It opens
@@ -499,8 +501,9 @@ session relaunches on the client it was made with.
 
 **Job → New then asks what to attach**, the menu's equivalent of `--attach`. It opens on
 **Nothing attached**, so a plain start is still `⏎`; below it are your attachments (one row
-per name, with its highest version). An attachment with several versions asks which, highest first; a version that
-changed since its import is shown but cannot be picked. The choice is recorded on the
+per name, with its highest version). `⏎` on one starts its latest version, as
+`--attach <name>` does; `→` opens its versions, highest first, to pick another. A version
+that changed since its import is shown but cannot be picked. The choice is recorded on the
 session and shown in the resume picker. It is skipped when there is nothing to attach, and
 on a resume.
 

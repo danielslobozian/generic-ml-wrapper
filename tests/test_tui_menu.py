@@ -2221,27 +2221,31 @@ def _titles(app: MenuApp) -> list[str]:
     return [row.item.title for row in app.screen.query(_Row)]
 
 
-def test_attachments_list_shows_every_version_and_marks_a_changed_one() -> None:
+def test_attachments_list_shows_each_attachment_once_then_its_versions() -> None:
     app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
         async with app.run_test(size=(100, 40)) as pilot:
             await _open_attachments(pilot, 2)
-            seen["titles"] = _titles(app)
-            seen["subtitles"] = [row.item.subtitle for row in app.screen.query(_Row)]
+            seen["names"] = _titles(app)
+            seen["name_subtitles"] = [row.item.subtitle for row in app.screen.query(_Row)]
             seen["crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            await pilot.press("enter")  # notes → its versions
+            await pilot.pause()
+            seen["versions"] = _titles(app)
+            seen["version_crumb"] = str(app.screen.query_one("#crumb", Static).render())
+            await pilot.press("escape", "down", "down", "enter")  # back, broken → versions
+            await pilot.pause()
+            seen["broken"] = [row.item.subtitle for row in app.screen.query(_Row)]
 
     asyncio.run(scenario())
-    assert seen["titles"] == [
-        "notes  1.0.0",
-        "notes  2.10.0",
-        "notes  2.9.0",
-        "workflow-creator  1.0.0",
-        "broken  1.0.0",
-    ]
-    assert "changed since its import" in cast("list[str]", seen["subtitles"])[-1]
+    assert seen["names"] == ["notes", "workflow-creator", "broken"]
+    assert cast("list[str]", seen["name_subtitles"])[0].startswith("2.10.0 · 3 version(s)")
     assert str(seen["crumb"]).endswith("Attachments > List")
+    assert seen["versions"] == ["notes  2.10.0", "notes  2.9.0", "notes  1.0.0"]
+    assert str(seen["version_crumb"]).endswith("Attachments > List > notes")
+    assert "changed since its import" in cast("list[str]", seen["broken"])[0]
 
 
 def test_attachments_import_reports_back_on_the_menu(tmp_path: Path) -> None:
@@ -2290,7 +2294,7 @@ def test_attachments_export_writes_the_picked_version_and_stays() -> None:
     async def scenario() -> None:
         async with app.run_test(size=(100, 40)) as pilot:
             await _open_attachments(pilot, 1)
-            await pilot.press("down", "enter")  # notes 2.10.0
+            await pilot.press("enter", "enter")  # notes → 2.10.0, the highest
             await pilot.pause()
             seen["detail"] = str(app.screen.query_one("#detail", Static).render())
 
@@ -2322,7 +2326,7 @@ def test_modify_opens_a_new_job_named_for_the_work_and_carries_the_request() -> 
     async def scenario() -> None:
         async with app.run_test(size=(100, 40)) as pilot:
             await _open_attachments(pilot, 4)
-            await pilot.press("down", "enter")  # notes 2.10.0
+            await pilot.press("enter", "enter")  # notes → 2.10.0, the highest
             await pilot.pause()
             seen["name"] = app.screen.query_one("#name", Input).value
             await pilot.press("enter")  # keep the proposed name
@@ -2357,18 +2361,34 @@ def _new_job_attach(app: MenuApp, picks: tuple[str, ...]) -> None:
     asyncio.run(scenario())
 
 
-def test_an_attachment_with_several_versions_asks_which_highest_first() -> None:
+def test_enter_on_an_attachment_starts_its_latest_version() -> None:
     app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
-    _new_job_attach(app, ("down", "enter", "enter"))
+    _new_job_attach(app, ("down", "enter"))
 
     assert app.return_value == MenuChoice(
         action="start", job="PROJ-1", attachment="notes", attachment_version="2.10.0"
     )
 
 
+def test_right_opens_the_versions_highest_first() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    _new_job_attach(app, ("down", "right", "down", "enter"))
+
+    assert app.return_value == MenuChoice(
+        action="start", job="PROJ-1", attachment="notes", attachment_version="2.9.0"
+    )
+
+
+def test_right_on_nothing_attached_does_nothing() -> None:
+    app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
+    _new_job_attach(app, ("right", "enter"))
+
+    assert app.return_value == MenuChoice(action="start", job="PROJ-1")
+
+
 def test_an_older_version_can_be_picked() -> None:
     app = MenuApp(_JOBS, shelf=_FakeShelf(_ROWS).shelf())
-    _new_job_attach(app, ("down", "enter", "down", "down", "enter"))
+    _new_job_attach(app, ("down", "right", "down", "down", "enter"))
 
     assert app.return_value == MenuChoice(
         action="start", job="PROJ-1", attachment="notes", attachment_version="1.0.0"

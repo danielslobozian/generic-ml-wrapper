@@ -386,6 +386,8 @@
   "tui.attach.crumb": "Joindre",
   "tui.attach.none": "Rien de joint",
   "tui.attach.none.d": "une session simple — ⏎ pour la lancer",
+  "tui.attach.keys": "↑↓ déplacer · ⏎ dernière version · → choisir la version · Échap retour · q quitter",
+  "tui.key.versions": "Versions",
   "tui.confirm.keep": "Non, les garder",
   "tui.confirm.keep.d": "Revenir sans rien supprimer",
   "tui.confirm.delete": "Oui, supprimer",
