@@ -10,7 +10,8 @@ from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     AgentTotal,
     ModelTotal,
-    SessionCost,
+    SessionTotal,
+    ToolTotal,
     UsageReport,
 )
 from generic_ml_wrapper.application.port.outbound.per_turn_metering import PerTurnMeteringPort
@@ -47,16 +48,49 @@ def test_empty_report() -> None:
     assert report.job == "JOB-1"
     assert report.turns == ()
     assert report.models == ()
-    assert report.session_costs == ()
+    assert report.sessions == ()
     assert report.turn_count == 0
     assert report.total_usd == 0.0
 
 
-def test_costs_become_sorted_session_cost_rows() -> None:
+def test_costs_become_sorted_session_rows() -> None:
     store = FakeUsageStore({"JOB-1_002": 0.09, "JOB-1_001": 0.43})
     report = ExportUsageUseCase(store, FakeTurnStore(), InMemoryIncidentLog()).execute("JOB-1")
-    assert report.session_costs == (SessionCost("JOB-1_001", 0.43), SessionCost("JOB-1_002", 0.09))
+    assert report.sessions == (
+        SessionTotal("JOB-1_001", 0, 0, 0, 0, 0, 0.0, 0.43),
+        SessionTotal("JOB-1_002", 0, 0, 0, 0, 0, 0.0, 0.09),
+    )
     assert report.total_usd == 0.52
+
+
+def test_a_session_totals_its_turns_and_carries_its_cost_when_reported() -> None:
+    turns = FakeTurnStore(
+        [
+            TurnUsage("S1", 10, 2, None, "m", cache_read_tokens=100, duration_s=1.0),
+            TurnUsage("S1", 20, 3, None, "m", cache_creation_tokens=7, duration_s=2.0),
+            TurnUsage("S2", 5, 1, None, "m", duration_s=0.5),
+        ]
+    )
+    report = ExportUsageUseCase(FakeUsageStore({"S1": 0.25}), turns, InMemoryIncidentLog()).execute(
+        "JOB-1"
+    )
+    assert report.sessions == (
+        SessionTotal("S1", 2, 30, 5, 100, 7, 3.0, 0.25),
+        SessionTotal("S2", 1, 5, 1, 0, 0, 0.5, None),
+    )
+
+
+def test_the_report_narrows_to_the_sessions_asked_for() -> None:
+    turns = FakeTurnStore([TurnUsage("S1", 10, 1, None, "m"), TurnUsage("S2", 20, 2, None, "m")])
+    log = InMemoryIncidentLog([an_incident(session="S1"), an_incident(session="S2", at=2.0)])
+    report = ExportUsageUseCase(FakeUsageStore({"S1": 0.1, "S2": 0.2}), turns, log).execute(
+        "JOB-1", ["S2"]
+    )
+    assert report.sessions_filter == ("S2",)
+    assert [turn.session_id for turn in report.turns] == ["S2"]
+    assert report.input_tokens == 20
+    assert report.total_usd == 0.2
+    assert [incident.session_id for incident in report.incidents] == ["S2"]
 
 
 def test_turns_are_chronological_with_totals_by_model() -> None:
@@ -87,17 +121,14 @@ def test_turns_are_chronological_with_totals_by_model() -> None:
 
     assert [turn.turn_id for turn in report.turns] == ["t1", "t2", "t3"]  # chronological
     assert report.models == (
-        ModelTotal(
-            "gpt-a", calls=2, input_tokens=60, output_tokens=35, cache_tokens=5, duration_s=2.5
-        ),
-        ModelTotal(
-            "gpt-b", calls=1, input_tokens=100, output_tokens=20, cache_tokens=0, duration_s=1.0
-        ),
+        ModelTotal("gpt-a", 2, 60, 35, cache_read_tokens=5, cache_write_tokens=0, duration_s=2.5),
+        ModelTotal("gpt-b", 1, 100, 20, cache_read_tokens=0, cache_write_tokens=0, duration_s=1.0),
     )
     assert report.turn_count == 3
     assert report.input_tokens == 160
     assert report.output_tokens == 55
-    assert report.cache_tokens == 5
+    assert report.cache_read_tokens == 5
+    assert report.cache_write_tokens == 0
     assert report.duration_s == 3.5
     assert report.total_usd == 0.5
 
@@ -131,10 +162,10 @@ def test_agent_totals_put_main_first_then_unnamed_then_named_agents() -> None:
         ]
     )
     assert report.agents == (
-        AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 7, 2.0),
-        AgentTotal(agent, None, 1, 30, 3, 0, 0.5),
-        AgentTotal(agent, "alpha", 1, 40, 4, 0, 0.5),
-        AgentTotal(agent, "zeta", 2, 60, 6, 0, 2.5),
+        AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 7, 0, 2.0),
+        AgentTotal(agent, None, 1, 30, 3, 0, 0, 0.5),
+        AgentTotal(agent, "alpha", 1, 40, 4, 0, 0, 0.5),
+        AgentTotal(agent, "zeta", 2, 60, 6, 0, 0, 2.5),
     )
     assert [(row.role, row.agent) for row in report.turns][:2] == [
         (agent, "zeta"),
@@ -150,8 +181,8 @@ def test_the_main_turns_the_agents_caused_are_totalled_apart() -> None:
         ]
     )
     assert report.agents == (
-        AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 0, 2.0),
-        AgentTotal(TurnRole.MAIN, None, 1, 30, 3, 0, 1.0, caused_by_agent=True),
+        AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 0, 0, 2.0),
+        AgentTotal(TurnRole.MAIN, None, 1, 30, 3, 0, 0, 1.0, caused_by_agent=True),
     )
     assert [row.caused_by_agent for row in report.turns] == [False, True]
 
@@ -163,5 +194,5 @@ def test_the_export_totals_the_tools_and_lists_each_turns() -> None:
             TurnUsage("S", 1, 1, None, "m", tool_calls=ToolCalls.of(["Bash"])),
         ]
     )
-    assert report.tools == {"Bash": 2, "Read": 1}
+    assert report.tools == (ToolTotal("Bash", 2), ToolTotal("Read", 1))
     assert [row.tool_calls for row in report.turns] == [{"Bash": 1, "Read": 1}, {"Bash": 1}]

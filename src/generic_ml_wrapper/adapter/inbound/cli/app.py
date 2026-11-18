@@ -17,7 +17,7 @@ from collections.abc import Generator, Iterable, Sequence
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, ClassVar, cast
+from typing import TYPE_CHECKING, ClassVar, Protocol, cast
 
 from generic_ml_wrapper import __version__
 from generic_ml_wrapper.adapter.inbound.cli.analysis_view import format_analysis, home_relative
@@ -30,6 +30,7 @@ from generic_ml_wrapper.adapter.inbound.cli.help_topics import (
 from generic_ml_wrapper.adapter.inbound.cli.hints import next_hint
 from generic_ml_wrapper.adapter.inbound.cli.index import render_index
 from generic_ml_wrapper.adapter.inbound.cli.process_title import name_the_process
+from generic_ml_wrapper.adapter.inbound.cli.usage_view import usage_tables
 from generic_ml_wrapper.adapter.outbound.caller.status_line_config import SettingsUnreadableError
 from generic_ml_wrapper.adapter.outbound.credentials.filesystem_credentials_store import (
     CredentialsUnreadableError,
@@ -59,8 +60,10 @@ from generic_ml_wrapper.application.domain.model.migration import (
 )
 from generic_ml_wrapper.application.domain.model.persona import Persona
 from generic_ml_wrapper.application.domain.model.plugin import Plugin
+from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.service.attachment_context import modify_request
+from generic_ml_wrapper.application.domain.service.statusline_renderer import render_tokens
 from generic_ml_wrapper.application.port.inbound.analyze_session import (
     NothingToAnalyzeError,
     SessionFileUnavailableError,
@@ -82,7 +85,13 @@ from generic_ml_wrapper.application.port.inbound.delete_sessions import (
     NoSuchSessionError,
     SessionFootprint,
 )
-from generic_ml_wrapper.application.port.inbound.export_usage import UsageReport
+from generic_ml_wrapper.application.port.inbound.export_usage import (
+    AgentTotal,
+    ModelTotal,
+    SessionTotal,
+    ToolTotal,
+    UsageReport,
+)
 from generic_ml_wrapper.application.port.inbound.init import InitOutcome
 from generic_ml_wrapper.application.port.inbound.list_attachments import AttachmentListing
 from generic_ml_wrapper.application.port.inbound.list_clients import ClientStatus
@@ -393,6 +402,13 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
 
     export = sub.add_parser("export", help=i18n.t("cli.cmd.export"))
     export.add_argument("job", help=i18n.t("cli.arg.job"))
+    export.add_argument(
+        "--session",
+        action="append",
+        default=[],
+        help=i18n.t("cli.flag.export_session"),
+    )
+    export.add_argument("--by", choices=USAGE_GROUPS, help=i18n.t("cli.flag.export_by"))
     _add_json_flag(export)
 
     health = sub.add_parser("health", help=i18n.t("cli.cmd.health"))
@@ -741,12 +757,38 @@ def format_session_footprints(
     return "\n".join(lines)
 
 
-def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
-    """Render a job's usage report: per-turn rows, totals by model, cost, and totals.
+#: The groupings ``gmlw export --by`` can total a report by.
+USAGE_GROUPS = ("model", "agent", "session", "tool")
+
+
+def _usage_group(
+    report: UsageReport, by: str
+) -> (
+    tuple[ModelTotal, ...]
+    | tuple[AgentTotal, ...]
+    | tuple[SessionTotal, ...]
+    | tuple[ToolTotal, ...]
+):
+    """The report's totals for one grouping."""
+    groups = {
+        "model": report.models,
+        "agent": report.agents,
+        "session": report.sessions,
+        "tool": report.tools,
+    }
+    return groups[by]
+
+
+def format_usage(
+    report: UsageReport, loc: i18n.Localizer | None = None, by: str | None = None
+) -> str:
+    """Render a job's usage report: per-turn rows, totals by model, agent, tool and session.
 
     Args:
         report: The usage report to render.
         loc: The localiser to render through; defaults to the active language.
+        by: Render only this grouping's totals (one of :data:`USAGE_GROUPS`) and the
+            overall total, without the per-turn rows; ``None`` renders everything.
 
     Returns:
         The text to print (no trailing newline).
@@ -754,95 +796,160 @@ def format_usage(report: UsageReport, loc: i18n.Localizer | None = None) -> str:
     loc = loc or i18n.active()
     # A session can lose its connection before a single turn is metered; its incidents
     # are still worth showing.
-    if report.turn_count == 0 and not report.session_costs and not report.incidents:
+    if report.turn_count == 0 and not report.sessions and not report.incidents:
         return loc.t("usage.none", job=repr(report.job))
-    width = max(
-        (len(model.model) for model in report.models),
-        default=len(_UNKNOWN_LABEL),
-    )
     # Who made each turn, shown only once a job has agent turns to tell apart.
     who = {
         (a.role, a.agent, a.caused_by_agent): _who(a.role, a.agent, a.caused_by_agent, loc)
         for a in report.agents
     }
-    who_width = max((len(label) for label in who.values()), default=0)
-    lines = [loc.t("usage.header", job=report.job, count=report.turn_count), ""]
-    for turn in report.turns:
-        label = who.get((turn.role, turn.agent, turn.caused_by_agent))
-        lines.append(
-            loc.t(
-                "usage.turn_row",
-                clock=_clock(turn.timestamp),
-                model=(
-                    f"{turn.model:<{width}}"
-                    if label is None
-                    else f"{label:<{who_width}}  {turn.model:<{width}}"
-                ),
-                duration=f"{turn.duration_s:>5.1f}",
-                tokens=_tokens(turn.input_tokens, turn.output_tokens, turn.cache_tokens, loc),
-                turn_id=turn.turn_id or "-",
-            )
-        )
-    if report.models:
-        lines += ["", loc.t("usage.totals_by_model")]
-        lines += [
-            loc.t(
-                "usage.model_row",
-                model=f"{model.model:<{width}}",
-                calls=f"{model.calls:>3}",
-                tokens=_tokens(model.input_tokens, model.output_tokens, model.cache_tokens, loc),
-                duration=f"{model.duration_s:.1f}",
-            )
-            for model in report.models
-        ]
-    if report.agents:
-        lines += ["", loc.t("usage.totals_by_agent")]
-        lines += [
-            loc.t(
-                "usage.agent_row",
-                agent=f"{who[agent.role, agent.agent, agent.caused_by_agent]:<{who_width}}",
-                calls=f"{agent.calls:>3}",
-                tokens=_tokens(agent.input_tokens, agent.output_tokens, agent.cache_tokens, loc),
-                duration=f"{agent.duration_s:.1f}",
-            )
-            for agent in report.agents
-        ]
-    if report.tools:
-        tool_width = max(len(name) for name in report.tools)
-        lines += ["", loc.t("usage.totals_by_tool")]
-        lines += [
-            loc.t("usage.tool_row", tool=f"{name:<{tool_width}}", calls=f"{calls:>4}")
-            for name, calls in report.tools.items()
-        ]
-    if report.incidents:
-        lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
-        lines += [
-            "",
-            loc.t(
-                "usage.incidents",
-                count=len(report.incidents),
-                lost=lost,
-                cut=len(report.incidents) - lost,
-            ),
-        ]
-        lines += [format_incident(incident, loc) for incident in report.incidents]
-    if report.session_costs:
-        lines += ["", loc.t("usage.cost_by_session")]
-        lines += [
-            loc.t("usage.cost_row", session=cost.session_id, cost=f"{cost.cost_usd:.2f}")
-            for cost in report.session_costs
-        ]
+    lines = [loc.t("usage.header", job=report.job, count=report.turn_count)]
+    if report.sessions_filter:
+        lines.append(loc.t("usage.sessions_filter", sessions=", ".join(report.sessions_filter)))
+    if by is None:
+        lines += ["", *_turn_lines(report, who, loc)]
+    if by in {None, "model"}:
+        lines += _model_lines(report, loc)
+    if by in {None, "agent"}:
+        lines += _agent_lines(report, who, loc)
+    if by in {None, "tool"}:
+        lines += _tool_lines(report, loc)
+    if by is None:
+        lines += _incident_lines(report, loc)
+    if by in {None, "session"}:
+        lines += _session_lines(report, loc)
     lines += [
         "",
         loc.t(
             "usage.total",
             count=report.turn_count,
-            tokens=_tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
+            tokens=_tokens(report, loc),
             duration=f"{report.duration_s:.1f}",
             total=f"{report.total_usd:.2f}",
         ),
     ]
     return "\n".join(lines)
+
+
+# Who made a turn -- (role, agent, caused_by_agent) -- to the label the report shows.
+_Who = dict[tuple[TurnRole, str | None, bool], str]
+
+
+def _model_width(report: UsageReport) -> int:
+    return max((len(model.model) for model in report.models), default=len(_UNKNOWN_LABEL))
+
+
+def _turn_lines(report: UsageReport, who: _Who, loc: i18n.Localizer) -> list[str]:
+    """One line per turn: its time, who made it (once agents are about), model, tokens."""
+    width = _model_width(report)
+    who_width = max((len(label) for label in who.values()), default=0)
+    lines: list[str] = []
+    for turn in report.turns:
+        label = who.get((turn.role, turn.agent, turn.caused_by_agent))
+        model = (
+            f"{turn.model:<{width}}"
+            if label is None
+            else f"{label:<{who_width}}  {turn.model:<{width}}"
+        )
+        lines.append(
+            loc.t(
+                "usage.turn_row",
+                clock=_clock(turn.timestamp),
+                model=model,
+                duration=f"{turn.duration_s:>5.1f}",
+                tokens=_tokens(turn, loc),
+                turn_id=turn.turn_id or "-",
+            )
+        )
+    return lines
+
+
+def _model_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.models:
+        return []
+    width = _model_width(report)
+    return [
+        "",
+        loc.t("usage.totals_by_model"),
+        *(
+            loc.t(
+                "usage.model_row",
+                model=f"{model.model:<{width}}",
+                calls=f"{model.calls:>3}",
+                tokens=_tokens(model, loc),
+                duration=f"{model.duration_s:.1f}",
+            )
+            for model in report.models
+        ),
+    ]
+
+
+def _agent_lines(report: UsageReport, who: _Who, loc: i18n.Localizer) -> list[str]:
+    if not report.agents:
+        return []
+    who_width = max(len(label) for label in who.values())
+    return [
+        "",
+        loc.t("usage.totals_by_agent"),
+        *(
+            loc.t(
+                "usage.agent_row",
+                agent=f"{who[agent.role, agent.agent, agent.caused_by_agent]:<{who_width}}",
+                calls=f"{agent.calls:>3}",
+                tokens=_tokens(agent, loc),
+                duration=f"{agent.duration_s:.1f}",
+            )
+            for agent in report.agents
+        ),
+    ]
+
+
+def _tool_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.tools:
+        return []
+    width = max(len(tool.tool) for tool in report.tools)
+    return [
+        "",
+        loc.t("usage.totals_by_tool"),
+        *(
+            loc.t("usage.tool_row", tool=f"{tool.tool:<{width}}", calls=f"{tool.calls:>4}")
+            for tool in report.tools
+        ),
+    ]
+
+
+def _incident_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.incidents:
+        return []
+    lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
+    heading = loc.t(
+        "usage.incidents",
+        count=len(report.incidents),
+        lost=lost,
+        cut=len(report.incidents) - lost,
+    )
+    return ["", heading, *(format_incident(incident, loc) for incident in report.incidents)]
+
+
+def _session_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.sessions:
+        return []
+    width = max(len(session.session_id) for session in report.sessions)
+    return [
+        "",
+        loc.t("usage.totals_by_session"),
+        *(
+            loc.t(
+                "usage.session_row",
+                session=f"{session.session_id:<{width}}",
+                calls=f"{session.calls:>3}",
+                tokens=_tokens(session, loc),
+                duration=f"{session.duration_s:.1f}",
+                cost="-" if session.cost_usd is None else f"${session.cost_usd:.2f}",
+            )
+            for session in report.sessions
+        ),
+    ]
 
 
 _UNKNOWN_LABEL = "(unknown)"
@@ -867,10 +974,28 @@ def _clock(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).astimezone().strftime("%H:%M:%S")
 
 
-def _tokens(input_tokens: int, output_tokens: int, cache_tokens: int, loc: i18n.Localizer) -> str:
-    """Render a token triple as ``  <in>(+<cache> cache)+<out> tok`` for the report."""
-    cache = loc.t("usage.cache", cache=cache_tokens) if cache_tokens else ""
-    return loc.t("usage.tokens", input=input_tokens, cache=cache, output=output_tokens)
+class _TokenCounted(Protocol):
+    """Anything in the report that carries the four token counts."""
+
+    @property
+    def input_tokens(self) -> int: ...
+    @property
+    def output_tokens(self) -> int: ...
+    @property
+    def cache_read_tokens(self) -> int: ...
+    @property
+    def cache_write_tokens(self) -> int: ...
+
+
+def _tokens(counted: _TokenCounted, loc: i18n.Localizer) -> str:
+    """Render the four token counts as ``  ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k`` for the report."""
+    counts = TokenCounts(
+        counted.input_tokens,
+        counted.output_tokens,
+        counted.cache_read_tokens,
+        counted.cache_write_tokens,
+    )
+    return loc.t("usage.tokens", tokens=render_tokens(counts))
 
 
 def format_personas(personas: list[Persona], loc: i18n.Localizer | None = None) -> str:
@@ -1325,13 +1450,32 @@ def _view(args: argparse.Namespace) -> str | None:
             return _as_json([asdict(s) for s in sessions])
         return format_sessions(job, sessions)
     if args.command == "export":
-        job = JobId(args.job)
-        report = build_export_usage().execute(job)
-        return _as_json(asdict(report)) if as_json else format_usage(report)
+        return _export_view(args, as_json=as_json)
     if args.command == "clients":
         statuses = build_list_clients().execute()
         return _as_json([asdict(s) for s in statuses]) if as_json else format_clients(statuses)
     return None
+
+
+def _export_view(args: argparse.Namespace, *, as_json: bool) -> str:
+    """``gmlw export``: the job's report, or only its totals by one grouping (``--by``).
+
+    The JSON keeps every count a raw integer, for tools; with ``--by`` it is the grouping's
+    rows alone, each with the same fields as in the full report.
+    """
+    report = build_export_usage().execute(JobId(args.job), tuple(args.session))
+    if args.by is None:
+        return _as_json(asdict(report)) if as_json else format_usage(report)
+    if as_json:
+        return _as_json(
+            {
+                "job": report.job,
+                "sessions_filter": list(report.sessions_filter),
+                "by": args.by,
+                "rows": [asdict(row) for row in _usage_group(report, args.by)],
+            }
+        )
+    return format_usage(report, by=args.by)
 
 
 def _unique(values: Sequence[str]) -> list[str]:
@@ -1940,6 +2084,7 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
         SessionChoice,
         SwitchChoice,
         Switcher,
+        UsageTable,
         UsageView,
     )
 
@@ -2035,38 +2180,16 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
 
     def _usage_view(job: str) -> UsageView:  # runs on a worker thread: fresh store/connection
         report = build_export_usage().execute(JobId(job))
-        loc = i18n.active()
-        if report.turn_count == 0 and not report.session_costs:
+        if report.turn_count == 0 and not report.sessions:
             return UsageView(
-                job=job,
-                empty=True,
-                summary=loc.t("usage.none", job=repr(job)),
-                model_rows=(),
-                session_rows=(),
+                job=job, empty=True, summary=i18n.active().t("usage.none", job=repr(job))
             )
-        summary = loc.t(
-            "usage.total",
-            count=report.turn_count,
-            tokens=_tokens(report.input_tokens, report.output_tokens, report.cache_tokens, loc),
-            duration=f"{report.duration_s:.1f}",
-            total=f"{report.total_usd:.2f}",
-        )
-        model_rows = tuple(
-            (
-                model.model,
-                str(model.calls),
-                str(model.input_tokens),
-                str(model.output_tokens),
-                str(model.cache_tokens),
-                f"{model.duration_s:.1f}",
-            )
-            for model in report.models
-        )
-        session_rows = tuple(
-            (cost.session_id, f"{cost.cost_usd:.2f}") for cost in report.session_costs
-        )
+        summary, tables = usage_tables(report)
         return UsageView(
-            job=job, empty=False, summary=summary, model_rows=model_rows, session_rows=session_rows
+            job=job,
+            empty=False,
+            summary=summary,
+            tables=tuple(UsageTable(*table) for table in tables),
         )
 
     def _health_days() -> list[HealthDayView]:  # the Health screen: the last two weeks
@@ -2462,9 +2585,12 @@ def _print_exit_receipt(result: StartJobResult) -> None:
     loc = i18n.active()
     try:
         report = build_export_usage().execute(JobId(result.job))
-        session_cost = next(
-            (c.cost_usd for c in report.session_costs if c.session_id == result.session_id),
-            0.0,
+        session_cost = (
+            next(
+                (s.cost_usd for s in report.sessions if s.session_id == result.session_id),
+                None,
+            )
+            or 0.0
         )
         print(
             loc.t(

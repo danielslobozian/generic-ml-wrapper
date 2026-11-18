@@ -7,6 +7,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **`gmlw export` narrows and groups.** `--session` (repeatable) reports only those
+  sessions; `--by model|agent|session|tool` gives only that grouping's totals. In
+  `--json`, every grouping is a list of rows with the same raw-integer fields, ready for
+  a tool or a dashboard.
+- **The usage view reads at a glance.** `gmlw tui` → Job → Export → View summary shows a
+  totals line (turns, time, tokens by kind in k/M/G, the agents' share, cost), then a tab
+  each for model, agent, tool and session, with each row's share of all the tokens.
+
+### Changed
+- **The usage report keeps cache reads and writes apart.** They mean different things (the
+  cache working, or the cache being rebuilt), so `gmlw export` and its JSON now report
+  `cache_read_tokens` and `cache_write_tokens` where they had one `cache_tokens`; every
+  turn also carries its `session_id`. In the JSON, `session_costs` becomes `sessions`
+  (each session's tokens, time and reported cost) and `tools` becomes a list of
+  `{"tool", "calls"}` rows. The text report shows tokens as `↑ ↓ ⟲ ✎` in k/M/G.
+
+### Added
 - **The status line can be laid out.** `gmlw tui` → Config → Status line shows, hides and
   reorders its blocks, with a tab for the live line and one for the session and job
   rows; on the rows, the agents' share can be turned off field by field. The choice is
