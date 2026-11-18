@@ -21,7 +21,9 @@ permissions:
 # the gate -- can only move via a deliberate `uv lock --upgrade` or a SHA bump.
 # lint/typecheck/imports/coverage are version-independent (their own single jobs, no
 # --python filter, which would silently drop a session declaring no interpreter);
-# tests fan out across the interpreter matrix.
+# tests fan out across the interpreter matrix: every supported Python on Linux, and the
+# oldest and newest on macOS and Windows -- OS differences show at the ends of the range,
+# and hosted macOS runners are scarce enough that a full row stalls PRs in the queue.
 env:
   UV_CACHE_DIR: ${{ github.workspace }}/.uv-cache
 
@@ -34,6 +36,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12", "3.13", "3.14"]
+        exclude:
+          - { os: macos-latest, python-version: "3.12" }
+          - { os: macos-latest, python-version: "3.13" }
+          - { os: windows-latest, python-version: "3.12" }
+          - { os: windows-latest, python-version: "3.13" }
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
