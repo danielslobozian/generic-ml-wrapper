@@ -13,7 +13,7 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import
 )
 from generic_ml_wrapper.application.port.inbound.export_usage import (
     ModelTotal,
-    SessionCost,
+    SessionTotal,
     UsageReport,
 )
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
@@ -43,8 +43,8 @@ class _RecordingExporter:
 def _report() -> UsageReport:
     return UsageReport(
         job="alpha",
-        models=(ModelTotal("claude", 2, 100, 50, 10, 1.5),),
-        session_costs=(SessionCost("alpha_001", 0.8),),
+        models=(ModelTotal("claude", 2, 100, 50, 10, 0, 1.5),),
+        sessions=(SessionTotal("alpha_001", 2, 100, 50, 10, 0, 1.5, 0.8),),
         turn_count=2,
         total_usd=0.8,
     )

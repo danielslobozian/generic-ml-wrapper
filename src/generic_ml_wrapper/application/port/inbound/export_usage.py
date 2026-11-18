@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from generic_ml_wrapper.application.domain.model.incident import Incident
 
 
@@ -24,7 +26,9 @@ class TurnRow:
         duration_s: How long the turn took, in seconds.
         input_tokens: Fresh prompt tokens.
         output_tokens: Completion tokens.
-        cache_tokens: Cache creation + read prompt tokens.
+        cache_read_tokens: Prompt tokens read back from the cache.
+        cache_write_tokens: Prompt tokens written to the cache.
+        session_id: The session the turn belongs to.
         turn_id: The provider's id for the turn, or ``None``.
         role: Whether the main conversation or an agent made the turn.
         agent: The agent's name when the client gives one, else ``None``.
@@ -38,7 +42,9 @@ class TurnRow:
     duration_s: float
     input_tokens: int
     output_tokens: int
-    cache_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    session_id: str
     turn_id: str | None
     role: TurnRole = TurnRole.MAIN
     agent: str | None = None
@@ -55,7 +61,8 @@ class ModelTotal:
         calls: How many turns this model served.
         input_tokens: Total fresh prompt tokens.
         output_tokens: Total completion tokens.
-        cache_tokens: Total cache prompt tokens.
+        cache_read_tokens: Total prompt tokens read back from the cache.
+        cache_write_tokens: Total prompt tokens written to the cache.
         duration_s: Total duration, in seconds.
     """
 
@@ -63,7 +70,8 @@ class ModelTotal:
     calls: int
     input_tokens: int
     output_tokens: int
-    cache_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
     duration_s: float
 
 
@@ -78,7 +86,8 @@ class AgentTotal:
         calls: How many turns it made.
         input_tokens: Total fresh prompt tokens.
         output_tokens: Total completion tokens.
-        cache_tokens: Total cache prompt tokens.
+        cache_read_tokens: Total prompt tokens read back from the cache.
+        cache_write_tokens: Total prompt tokens written to the cache.
         duration_s: Total duration, in seconds.
         caused_by_agent: Whether these are the main conversation's turns the agents
             caused, counted apart from its others.
@@ -89,70 +98,108 @@ class AgentTotal:
     calls: int
     input_tokens: int
     output_tokens: int
-    cache_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
     duration_s: float
     caused_by_agent: bool = False
 
 
 @dataclass(frozen=True)
-class SessionCost:
-    """A session's recorded cost.
+class SessionTotal:
+    """A session's totals, and its cost as its client reported it.
 
     Attributes:
         session_id: The session's human-readable id.
-        cost_usd: The session's cumulative cost in USD.
+        calls: How many metered turns it made.
+        input_tokens: Total fresh prompt tokens.
+        output_tokens: Total completion tokens.
+        cache_read_tokens: Total prompt tokens read back from the cache.
+        cache_write_tokens: Total prompt tokens written to the cache.
+        duration_s: Total duration, in seconds.
+        cost_usd: The session's cumulative cost in USD, as its client reported it, or
+            ``None`` when it reported none.
     """
 
     session_id: str
-    cost_usd: float
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cache_read_tokens: int
+    cache_write_tokens: int
+    duration_s: float
+    cost_usd: float | None
+
+
+@dataclass(frozen=True)
+class ToolTotal:
+    """How often the job's turns called one tool.
+
+    Attributes:
+        tool: The tool's name, as the client calls it.
+        calls: How many times it was called.
+    """
+
+    tool: str
+    calls: int
 
 
 @dataclass(frozen=True)
 class UsageReport:
-    """A job's recorded usage: per-turn rows, totals by model, cost by session, totals.
+    """A job's recorded usage: per-turn rows, totals by model, agent, session and tool.
+
+    Every token count is a raw integer, so a tool reading the JSON export does its own
+    formatting. The report can be narrowed to some of the job's sessions; its totals are
+    then those sessions' totals.
 
     Attributes:
         job: The job identifier.
+        sessions_filter: The sessions the report was narrowed to; empty for all of them.
         turns: Every metered turn, chronological.
         models: Totals by model, sorted by model name.
         agents: Totals by agent -- the main conversation first, then each agent by
             name -- or empty when every turn was the main conversation's.
-        session_costs: Recorded cost per session, sorted by session id.
+        sessions: Totals by session, sorted by session id: every session with a metered
+            turn or a recorded cost.
+        tools: Calls by tool, most called first.
         turn_count: The number of metered turns.
         input_tokens: The job's total fresh prompt tokens.
         output_tokens: The job's total completion tokens.
-        cache_tokens: The job's total cache prompt tokens.
+        cache_read_tokens: The job's total prompt tokens read back from the cache.
+        cache_write_tokens: The job's total prompt tokens written to the cache.
         duration_s: The job's total metered duration, in seconds.
-        total_usd: The job's total cost across its sessions.
+        total_usd: The job's total cost across its sessions, as their clients reported it.
         incidents: The connection incidents seen in its sessions, chronological.
-        tools: The tools the job's turns called, ``{name: calls}``, most called first.
     """
 
     job: str
+    sessions_filter: tuple[str, ...] = ()
     turns: tuple[TurnRow, ...] = ()
     models: tuple[ModelTotal, ...] = ()
     agents: tuple[AgentTotal, ...] = ()
-    session_costs: tuple[SessionCost, ...] = ()
+    sessions: tuple[SessionTotal, ...] = ()
+    tools: tuple[ToolTotal, ...] = ()
     turn_count: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
-    cache_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
     duration_s: float = 0.0
     total_usd: float = 0.0
     incidents: tuple[Incident, ...] = ()
-    tools: dict[str, int] = field(default_factory=dict[str, int])
 
 
 class ExportUsage(ABC):
     """Report the usage recorded for a job."""
 
     @abstractmethod
-    def execute(self, job: str) -> UsageReport:
+    def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
         """Build a job's usage report.
 
         Args:
             job: The job identifier.
+            sessions: Narrow the report to these sessions; empty for all of them.
 
         Returns:
-            The job's per-turn rows, per-model totals, per-session cost, and totals.
+            The job's per-turn rows, its totals by model, agent, session and tool, and
+            its overall totals.
         """

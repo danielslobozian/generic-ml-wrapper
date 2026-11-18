@@ -93,8 +93,7 @@ def _context(status: ClientStatus) -> str | None:
         computed = round(100 * status.context_tokens / status.context_window_size)
         shown = pct if pct is not None else computed
         return (
-            f"ctx {_compact(status.context_tokens)}/"
-            f"{_compact(status.context_window_size)} ({shown}%)"
+            f"ctx {compact(status.context_tokens)}/{compact(status.context_window_size)} ({shown}%)"
         )
     return None if pct is None else f"ctx {pct}%"
 
@@ -108,7 +107,7 @@ _MILLION = 1_000_000
 _THOUSAND = 1_000
 
 
-def _compact(tokens: int) -> str:
+def compact(tokens: int) -> str:
     """A compact token count in SI units: ``200000`` -> ``200k``, ``1.2e9`` -> ``1.2G``.
 
     Scales through ``k`` (thousand), ``M`` (million), ``G`` (billion) so a heavy job's
@@ -270,7 +269,7 @@ def render_tokens(
     for kind in kinds:
         mark, count, part, extra = pairs[kind]
         share = _shares(part, extra, count) if kind in agent_kinds else ""
-        rendered.append(f"{mark} {_compact(count)}{share}")
+        rendered.append(f"{mark} {compact(count)}{share}")
     return "  ".join(rendered)
 
 
@@ -283,10 +282,10 @@ def render_tools(tools: ToolCalls) -> str:
 
     Commas inside the parenthesis, because the row's own ``·`` separates its fields.
     """
-    named = [f"{name} {_compact(calls)}" for name, calls in tools.counts[:_TOP_TOOLS]]
+    named = [f"{name} {compact(calls)}" for name, calls in tools.counts[:_TOP_TOOLS]]
     if len(tools.counts) > _TOP_TOOLS:
         named.append("…")
-    return f"⚒ {_compact(tools.total)} ({', '.join(named)})"
+    return f"⚒ {compact(tools.total)} ({', '.join(named)})"
 
 
 def _shares(own: int, caused: int, whole: int) -> str:

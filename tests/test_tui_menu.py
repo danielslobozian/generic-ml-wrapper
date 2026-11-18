@@ -16,7 +16,7 @@ from typing import cast
 
 import pytest
 from textual.pilot import Pilot
-from textual.widgets import DataTable, Input, ListItem, ListView, Markdown, Static
+from textual.widgets import DataTable, Input, ListItem, ListView, Markdown, Static, TabbedContent
 
 from generic_ml_wrapper.adapter.inbound.tui import menu_app
 from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
@@ -37,6 +37,7 @@ from generic_ml_wrapper.adapter.inbound.tui.menu_app import (
     Shelf,
     SwitchChoice,
     Switcher,
+    UsageTable,
     UsageView,
     _Row,
 )
@@ -693,8 +694,18 @@ _USAGE = UsageView(
     job="alpha",
     empty=False,
     summary="3 turns · $1.23",
-    model_rows=(("claude", "2", "100", "50", "10", "1.0"), ("codex", "1", "20", "5", "0", "0.5")),
-    session_rows=(("alpha_001", "0.80"), ("alpha_002", "0.43")),
+    tables=(
+        UsageTable(
+            "Model",
+            ("Model", "Calls", "Input"),
+            (("claude", "2", "100"), ("codex", "1", "20")),
+        ),
+        UsageTable(
+            "Session",
+            ("Session", "Calls", "Cost"),
+            (("alpha_001", "2", "$0.80"), ("alpha_002", "1", "$0.43"), ("alpha_003", "0", "-")),
+        ),
+    ),
 )
 
 
@@ -723,8 +734,8 @@ def test_job_export_offers_a_destination_chooser() -> None:
     assert "file" in str(seen["titles"])
 
 
-def test_job_export_view_renders_the_summary_tables() -> None:
-    """'View' loads the report on a worker and fills the summary + by-model/by-session tables."""
+def test_job_export_view_renders_one_tab_per_table() -> None:
+    """'View' loads the report on a worker, fills the summary, and gives each table a tab."""
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
@@ -733,20 +744,30 @@ def test_job_export_view_renders_the_summary_tables() -> None:
             await _open_export_dest(pilot)
             await pilot.press("enter")  # choose "View summary here"
             await _drain_workers(app)  # await the worker thread
-            await pilot.pause()  # let the SUCCESS handler populate the tables
+            await pilot.pause()  # let the SUCCESS handler populate the tabs
             seen["summary"] = str(app.screen.query_one("#summary", Static).render())
-            seen["models"] = app.screen.query_one("#models", DataTable).row_count
-            seen["sessions"] = app.screen.query_one("#sessions", DataTable).row_count
+            seen["rows"] = [
+                app.screen.query_one(f"#usage_table_{index}", DataTable).row_count
+                for index in range(2)
+            ]
+            tabs = app.screen.query_one("#usage_tabs", TabbedContent)
+            seen["first"] = tabs.active
+            await pilot.press("right")
+            seen["second"] = tabs.active
+            await pilot.press("right")  # wraps round
+            seen["wrapped"] = tabs.active
 
     asyncio.run(scenario())
     assert "3 turns" in str(seen["summary"])
-    assert seen["models"] == 2  # two model rows
-    assert seen["sessions"] == 2  # two session rows
+    assert seen["rows"] == [2, 3]
+    assert seen["first"] == "usage_tab_0"
+    assert seen["second"] == "usage_tab_1"
+    assert seen["wrapped"] == "usage_tab_0"
 
 
 def test_job_export_view_empty_report_has_no_rows() -> None:
     """A job with no usage shows the summary line but no table rows (no crash)."""
-    empty = UsageView(job="alpha", empty=True, summary="no usage", model_rows=(), session_rows=())
+    empty = UsageView(job="alpha", empty=True, summary="no usage")
     seen: dict[str, object] = {}
 
     async def scenario() -> None:
@@ -756,11 +777,11 @@ def test_job_export_view_empty_report_has_no_rows() -> None:
             await pilot.press("enter")  # View
             await _drain_workers(app)
             await pilot.pause()
-            seen["models"] = app.screen.query_one("#models", DataTable).row_count
+            seen["tables"] = len(app.screen.query("DataTable"))
             seen["summary"] = str(app.screen.query_one("#summary", Static).render())
 
     asyncio.run(scenario())
-    assert seen["models"] == 0
+    assert seen["tables"] == 0
     assert "no usage" in str(seen["summary"])
 
 

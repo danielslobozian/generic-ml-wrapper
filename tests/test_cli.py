@@ -59,7 +59,8 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     AgentTotal,
     ExportUsage,
     ModelTotal,
-    SessionCost,
+    SessionTotal,
+    ToolTotal,
     TurnRow,
     UsageReport,
 )
@@ -661,18 +662,19 @@ def _report() -> UsageReport:
     return UsageReport(
         "JOB-1",
         turns=(
-            TurnRow(0.0, "claude-opus-4-8", 2.4, 2714, 4, 35813, "msg_1"),
-            TurnRow(0.0, "claude-sonnet-5", 0.5, 2, 7, 100, "msg_2"),
+            TurnRow(0.0, "claude-opus-4-8", 2.4, 2714, 4, 35813, 0, "JOB-1_001", "msg_1"),
+            TurnRow(0.0, "claude-sonnet-5", 0.5, 2, 7, 100, 0, "JOB-1_001", "msg_2"),
         ),
         models=(
-            ModelTotal("claude-opus-4-8", 1, 2714, 4, 35813, 2.4),
-            ModelTotal("claude-sonnet-5", 1, 2, 7, 100, 0.5),
+            ModelTotal("claude-opus-4-8", 1, 2714, 4, 35813, 0, 2.4),
+            ModelTotal("claude-sonnet-5", 1, 2, 7, 100, 0, 0.5),
         ),
-        session_costs=(SessionCost("JOB-1_001", 0.99),),
+        sessions=(SessionTotal("JOB-1_001", 2, 2716, 11, 35913, 0, 2.9, 0.99),),
+        tools=(ToolTotal("Bash", 2),),
         turn_count=2,
         input_tokens=2716,
         output_tokens=11,
-        cache_tokens=35913,
+        cache_read_tokens=35913,
         duration_s=2.9,
         total_usd=0.99,
     )
@@ -687,11 +689,12 @@ def test_format_usage_renders_turns_models_costs_and_total() -> None:
     assert "JOB-1 — usage  (2 turn(s))" in text
     assert "claude-opus-4-8" in text
     assert "[msg_1]" in text  # per-turn id
-    assert "2714(+35813 cache)+4 tok" in text  # a turn row's tokens
+    assert "↑ 2.7k  ↓ 4  ⟲ 35.8k  ✎ 0" in text  # a turn row's tokens, compacted
     assert "── totals by model ──" in text
     assert "1 call(s)" in text
-    assert "── cost by session ──" in text
-    assert "JOB-1_001  $0.99" in text
+    assert "── totals by session ──" in text
+    assert "JOB-1_001    2 call(s)" in text
+    assert "$0.99" in text
     assert "── total ──  2 turn(s)" in text
     assert "$0.99" in text
 
@@ -707,15 +710,15 @@ def test_format_usage_names_who_made_each_turn_and_totals_by_agent() -> None:
     report = UsageReport(
         "JOB-1",
         turns=(
-            TurnRow(0.0, "gpt", 1.0, 10, 1, 0, "t1"),
-            TurnRow(0.0, "gpt", 1.0, 20, 2, 0, "t2", role=agent, agent="search_space"),
-            TurnRow(0.0, "gpt", 1.0, 30, 3, 0, "t3", role=agent),
+            TurnRow(0.0, "gpt", 1.0, 10, 1, 0, 0, "S", "t1"),
+            TurnRow(0.0, "gpt", 1.0, 20, 2, 0, 0, "S", "t2", role=agent, agent="search_space"),
+            TurnRow(0.0, "gpt", 1.0, 30, 3, 0, 0, "S", "t3", role=agent),
         ),
-        models=(ModelTotal("gpt", 3, 60, 6, 0, 3.0),),
+        models=(ModelTotal("gpt", 3, 60, 6, 0, 0, 3.0),),
         agents=(
-            AgentTotal(TurnRole.MAIN, None, 1, 10, 1, 0, 1.0),
-            AgentTotal(agent, None, 1, 30, 3, 0, 1.0),
-            AgentTotal(agent, "search_space", 1, 20, 2, 0, 1.0),
+            AgentTotal(TurnRole.MAIN, None, 1, 10, 1, 0, 0, 1.0),
+            AgentTotal(agent, None, 1, 30, 3, 0, 0, 1.0),
+            AgentTotal(agent, "search_space", 1, 20, 2, 0, 0, 1.0),
         ),
         turn_count=3,
     )
@@ -725,26 +728,26 @@ def test_format_usage_names_who_made_each_turn_and_totals_by_agent() -> None:
     assert any("search_space  gpt" in row and "[t2]" in row for row in rows)
     assert any("agent         gpt" in row and "[t3]" in row for row in rows)
     assert "── totals by agent ──" in text
-    assert "  search_space    1 call(s)  20+2 tok  1.0s" in rows
+    assert "  search_space    1 call(s)  ↑ 20  ↓ 2  ⟲ 0  ✎ 0  1.0s" in rows
 
 
 def test_format_usage_names_the_main_turns_the_agents_caused() -> None:
     report = UsageReport(
         "JOB-1",
         turns=(
-            TurnRow(0.0, "gpt", 1.0, 10, 1, 0, "t1"),
-            TurnRow(0.0, "gpt", 1.0, 20, 2, 0, "t2", caused_by_agent=True),
+            TurnRow(0.0, "gpt", 1.0, 10, 1, 0, 0, "S", "t1"),
+            TurnRow(0.0, "gpt", 1.0, 20, 2, 0, 0, "S", "t2", caused_by_agent=True),
         ),
-        models=(ModelTotal("gpt", 2, 30, 3, 0, 2.0),),
+        models=(ModelTotal("gpt", 2, 30, 3, 0, 0, 2.0),),
         agents=(
-            AgentTotal(TurnRole.MAIN, None, 1, 10, 1, 0, 1.0),
-            AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 0, 1.0, caused_by_agent=True),
+            AgentTotal(TurnRole.MAIN, None, 1, 10, 1, 0, 0, 1.0),
+            AgentTotal(TurnRole.MAIN, None, 1, 20, 2, 0, 0, 1.0, caused_by_agent=True),
         ),
         turn_count=2,
     )
     rows = app.format_usage(report).splitlines()
     assert any("main, for agents  gpt" in row and "[t2]" in row for row in rows)
-    assert "  main, for agents    1 call(s)  20+2 tok  1.0s" in rows
+    assert "  main, for agents    1 call(s)  ↑ 20  ↓ 2  ⟲ 0  ✎ 0  1.0s" in rows
 
 
 def test_format_usage_unmetered_timestamp_shows_dashes() -> None:
@@ -755,7 +758,7 @@ def test_export_command_prints_the_report(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ExportUsage):
-        def execute(self, job: str) -> UsageReport:
+        def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
@@ -769,7 +772,7 @@ def test_export_command_json_output(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     class FakeUseCase(ExportUsage):
-        def execute(self, job: str) -> UsageReport:
+        def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
             return _report()
 
     monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
@@ -778,9 +781,37 @@ def test_export_command_json_output(
     assert payload["job"] == "JOB-1"
     assert payload["turn_count"] == 2
     assert payload["total_usd"] == 0.99
+    assert payload["cache_read_tokens"] == 35913
     assert payload["turns"][0]["model"] == "claude-opus-4-8"
     assert payload["turns"][0]["turn_id"] == "msg_1"
-    assert payload["session_costs"] == [{"session_id": "JOB-1_001", "cost_usd": 0.99}]
+    assert payload["turns"][0]["session_id"] == "JOB-1_001"
+    assert payload["sessions"][0]["cost_usd"] == 0.99
+    assert payload["tools"] == [{"tool": "Bash", "calls": 2}]
+
+
+def test_export_by_a_grouping_gives_its_rows_alone(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[tuple[str, tuple[str, ...]]] = []
+
+    class FakeUseCase(ExportUsage):
+        def execute(self, job: str, sessions: Sequence[str] = ()) -> UsageReport:
+            seen.append((job, tuple(sessions)))
+            return _report()
+
+    monkeypatch.setattr(app, "build_export_usage", lambda: FakeUseCase())
+    argv = ["export", "JOB-1", "--session", "JOB-1_001", "--by", "model", "--json"]
+    assert app.main(argv) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert seen == [("JOB-1", ("JOB-1_001",))]
+    assert payload["by"] == "model"
+    assert [row["model"] for row in payload["rows"]] == ["claude-opus-4-8", "claude-sonnet-5"]
+    assert payload["rows"][0]["cache_read_tokens"] == 35813
+    assert app.main(["export", "JOB-1", "--by", "tool"]) == 0
+    text = capsys.readouterr().out
+    assert "── totals by tool ──" in text
+    assert "totals by model" not in text
+    assert "[msg_1]" not in text
 
 
 def test_build_export_usage_wires_a_real_use_case() -> None:
@@ -2693,10 +2724,14 @@ def test_a_new_job_gets_the_default_tag_unless_tags_are_given(
 def test_format_usage_totals_the_tools() -> None:
     report = UsageReport(
         "JOB-1",
-        turns=(TurnRow(0.0, "gpt", 1.0, 10, 1, 0, "t1", tool_calls={"Bash": 2, "WebSearch": 1}),),
-        models=(ModelTotal("gpt", 1, 10, 1, 0, 1.0),),
+        turns=(
+            TurnRow(
+                0.0, "gpt", 1.0, 10, 1, 0, 0, "S", "t1", tool_calls={"Bash": 2, "WebSearch": 1}
+            ),
+        ),
+        models=(ModelTotal("gpt", 1, 10, 1, 0, 0, 1.0),),
         turn_count=1,
-        tools={"Bash": 2, "WebSearch": 1},
+        tools=(ToolTotal("Bash", 2), ToolTotal("WebSearch", 1)),
     )
     rows = app.format_usage(report).splitlines()
     assert "  ── totals by tool ──" in rows

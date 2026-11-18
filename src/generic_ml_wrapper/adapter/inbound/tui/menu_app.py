@@ -33,7 +33,17 @@ from textual.binding import Binding
 from textual.containers import Container, VerticalScroll
 from textual.coordinate import Coordinate
 from textual.screen import Screen
-from textual.widgets import DataTable, Input, Label, ListItem, ListView, Markdown, Static
+from textual.widgets import (
+    DataTable,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Markdown,
+    Static,
+    TabbedContent,
+    TabPane,
+)
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
@@ -77,7 +87,7 @@ def _no_sessions(_job: str) -> list[SessionChoice]:
 
 def _no_usage_view(job: str) -> UsageView:
     """Default usage view when the app runs unwired (tests): an empty report."""
-    return UsageView(job=job, empty=True, summary="", model_rows=(), session_rows=())
+    return UsageView(job=job, empty=True, summary="")
 
 
 def _no_analysis(_target: str) -> str:
@@ -373,21 +383,32 @@ class RecentSessionView:
 
 
 @dataclass(frozen=True)
+class UsageTable:
+    """One grouping of a job's usage -- by model, agent, tool or session -- as a table.
+
+    ``title`` names its tab; ``columns`` head it; ``rows`` are its cells, every value already
+    rendered to a string by the wiring. The first column is a name, the others are figures.
+    """
+
+    title: str
+    columns: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+
+
+@dataclass(frozen=True)
 class UsageView:
     """A job's usage, pre-rendered for the Export summary view.
 
-    Structured so the screen can lay it out as tables without any formatting logic: ``summary``
-    is the totals line (already localised), and ``model_rows``/``session_rows`` are the cells of
-    the by-model and by-session-cost tables (all values pre-rendered to strings by the wiring).
-    ``empty`` means the job has no recorded usage. The full per-turn detail is deliberately not
-    here -- that is what the JSON file export carries.
+    Structured so the screen lays it out without any formatting logic: ``summary`` is the
+    totals line (already localised), and ``tables`` are the groupings, one tab each.
+    ``empty`` means the job has no recorded usage. The full per-turn detail is deliberately
+    not here -- that is what the JSON file export carries.
     """
 
     job: str
     empty: bool
     summary: str
-    model_rows: tuple[tuple[str, ...], ...]
-    session_rows: tuple[tuple[str, ...], ...]
+    tables: tuple[UsageTable, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -2478,15 +2499,19 @@ class ExportDestScreen(_MenuScreen):
 
 
 class UsageSummaryScreen(Screen[None]):
-    """A job's usage summary: totals, a by-model table, and a by-session-cost table.
+    """A job's usage summary: a totals line, then one tab per grouping (model, agent, ...).
 
     The slow ledger read runs in a background thread (so the UI never freezes), with a spinner
     over the report area until it lands. The tables are Textual ``DataTable``s -- virtualized, so
-    they stay responsive no matter how many rows. The full per-turn detail is not shown here; it
-    lives in the JSON file export.
+    they stay responsive no matter how many rows -- and ``←``/``→`` switch tabs. The full
+    per-turn detail is not shown here; it lives in the JSON file export.
     """
 
-    BINDINGS: ClassVar[list[Binding]] = [_key("escape", "back", "tui.key.back")]
+    BINDINGS: ClassVar[list[Binding]] = [
+        _key("escape", "back", "tui.key.back"),
+        _key("left", "tab(-1)", "tui.key.tab", priority=True),
+        _key("right", "tab(1)", "tui.key.tab", priority=True),
+    ]
 
     def __init__(self, job: str) -> None:
         """Bind the view to the job whose usage it summarises."""
@@ -2502,17 +2527,14 @@ class UsageSummaryScreen(Screen[None]):
         """A breadcrumb, the (initially loading) report area, and the key hints."""
         t = i18n.active().t
         yield Static(f"gmlw > {t('tui.job')} > {t('tui.job.export')} > {self._job}", id="crumb")
-        with VerticalScroll(id="report"):
+        with Container(id="report"):
             yield Static("", id="summary")
-            yield Static(t("export.by_model"), classes="section")
-            yield DataTable(id="models", cursor_type="row", zebra_stripes=True)
-            yield Static(t("export.by_session"), classes="section")
-            yield DataTable(id="sessions", cursor_type="row", zebra_stripes=True)
-        yield Static(t("tui.export.keys"), id="keys")
+            yield TabbedContent(id="usage_tabs")
+        yield Static(t("tui.usage.keys"), id="keys")
 
     def on_mount(self) -> None:
         """Show the spinner and kick the read onto a worker thread."""
-        self.query_one("#report", VerticalScroll).loading = True
+        self.query_one("#report", Container).loading = True
         self._load()
 
     @work(thread=True, exclusive=True)
@@ -2520,34 +2542,40 @@ class UsageSummaryScreen(Screen[None]):
         """Read + aggregate the report off the event loop (returns; never touches widgets)."""
         return self.menu_app.usage_view(self._job)
 
-    def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
-        """Populate the tables when the read lands; show a failure line if it errored."""
+    async def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
+        """Populate the tabs when the read lands; show a failure line if it errored."""
         if event.state is WorkerState.SUCCESS:
             result = cast("UsageView", event.worker.result)  # pyright: ignore[reportUnknownMemberType]
-            self._populate(result)
+            await self._populate(result)
         elif event.state is WorkerState.ERROR:
             self.query_one("#summary", Static).update(i18n.active().t("export.failed"))
-            self.query_one("#report", VerticalScroll).loading = False
+            self.query_one("#report", Container).loading = False
 
-    def _populate(self, view: UsageView) -> None:
-        """Fill the summary line and the two tables from the loaded view."""
-        t = i18n.active().t
+    async def _populate(self, view: UsageView) -> None:
+        """Fill the summary line, then one tab per table, figures aligned right."""
         self.query_one("#summary", Static).update(view.summary)
-        if not view.empty:
-            models = cast("DataTable[str]", self.query_one("#models", DataTable))
-            models.add_columns(
-                t("export.col.model"),
-                t("export.col.calls"),
-                t("export.col.input"),
-                t("export.col.output"),
-                t("export.col.cache"),
-                t("export.col.duration"),
+        tabs = self.query_one("#usage_tabs", TabbedContent)
+        for index, table in enumerate(view.tables):
+            grid: DataTable[str | Text] = DataTable(
+                id=f"usage_table_{index}", cursor_type="row", zebra_stripes=True
             )
-            models.add_rows(view.model_rows)
-            sessions = cast("DataTable[str]", self.query_one("#sessions", DataTable))
-            sessions.add_columns(t("export.col.session"), t("export.col.cost"))
-            sessions.add_rows(view.session_rows)
-        self.query_one("#report", VerticalScroll).loading = False
+            await tabs.add_pane(TabPane(table.title, grid, id=f"usage_tab_{index}"))
+            grid.add_column(table.columns[0])
+            for column in table.columns[1:]:
+                grid.add_column(Text(column, justify="right"))
+            grid.add_rows(
+                (row[0], *(Text(cell, justify="right") for cell in row[1:])) for row in table.rows
+            )
+        self.query_one("#report", Container).loading = False
+
+    def action_tab(self, step: int) -> None:
+        """Bring the next (``1``) or previous (``-1``) tab to the front, wrapping round."""
+        tabs = self.query_one("#usage_tabs", TabbedContent)
+        panes = [pane.id for pane in tabs.query(TabPane) if pane.id]
+        if not panes:
+            return
+        current = panes.index(tabs.active) if tabs.active in panes else 0
+        tabs.active = panes[(current + step) % len(panes)]
 
     def action_back(self) -> None:
         """Pop back to the destination chooser."""
@@ -3152,6 +3180,7 @@ class MenuApp(App[MenuChoice | None]):
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
     #sl_tabs { height: 1fr; }
+    #usage_tabs { height: 1fr; }
     ListItem { height: auto; padding: 0 1; background: transparent; }
     ListView > ListItem.-highlight { background: cyan 15%; }
     ListView:focus > ListItem.-highlight { background: cyan 25%; color: $text; }

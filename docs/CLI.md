@@ -18,7 +18,7 @@ gmlw jobs untag <job> <tag> [<tag>...]
 gmlw jobs delete <job> [<job>...] [--yes]      # removes the job and everything under it
 gmlw sessions <job> [--json]
 gmlw sessions <job> delete <session> [...] [--yes]
-gmlw export <job> [--json]
+gmlw export <job> [--session S]... [--by model|agent|session|tool] [--json]
 gmlw health [--days N] [--job J] [--json]   # connection incidents of recent sessions
 gmlw analyze <session | job | file> [--json]   # what a session did, from its client's file
 gmlw clients [--json]                    # supported clients + installed versions
@@ -301,9 +301,11 @@ gmlw sessions billing-api delete billing-api_002
 
 ## export
 
-Report a job's recorded usage: per-turn tokens and timing, totals by model, cost by
-session, and grand totals — then the job's connection incidents, if it had any (see
-[health](#health)).
+Report a job's recorded usage: per-turn tokens and timing, totals by model, agent, tool
+and session, and grand totals — then the job's connection incidents, if it had any (see
+[health](#health)). Tokens are counted by kind: `↑` input, `↓` output, `⟲` cache read,
+`✎` cache write. The cost is the one each session's client reported; gmlw keeps no price
+list.
 
 When agents (subagents) did part of the work, each turn also says who made it — `main`,
 the agent's name, or `agent` when the client does not name them — and a **totals by
@@ -317,20 +319,34 @@ started or reported back, each re-reading the whole main context — are named
 
 A **totals by tool** section counts the tools the model called, by name (claude, codex and
 vibe); only the name is recorded. In `--json`, every turn carries `tool_calls`
-(`{"Bash": 2}`), and `tools` holds the totals.
+(`{"Bash": 2}`), and `tools` holds the totals (`[{"tool": "Bash", "calls": 2}]`).
+
+**For tools and dashboards, use `--json`.** Every count is a raw integer, every turn
+carries its `session_id`, and each grouping is a list of rows with the same fields:
+`calls`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`,
+`duration_s` (and `cost_usd` for a session, `null` when its client reported none).
 
 ```
-gmlw export <job> [--json]
+gmlw export <job> [--session S]... [--by model|agent|session|tool] [--json]
 ```
 
 - `job` (positional, required) — the job identifier.
+- `--session S` — only this session; repeat it for several. The totals are then those
+  sessions' totals.
+- `--by` — only the totals by one grouping, without the per-turn rows. With `--json`
+  the output is `{"job", "sessions_filter", "by", "rows"}`.
 - `--json` — output as JSON instead of text.
 
-Example:
+Examples:
 
 ```
 gmlw export billing-api --json
+gmlw export billing-api --session billing-api_003 --by model --json
 ```
+
+In `gmlw tui`, Job → Export → *job* → View summary shows the same report for reading:
+a totals line, then a tab each for model, agent, tool and session (`←`/`→` to switch),
+with token counts in k/M/G and each row's share of all the tokens.
 
 ## health
 
