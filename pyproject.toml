@@ -80,7 +80,7 @@ dev = ["nox>=2026.4.10", "pre-commit>=4.6.0"]
 # Single source of truth for the uv version, local and CI: `astral-sh/setup-uv`
 # reads this when no explicit version is given, so the tool that resolves the lock
 # is pinned exactly. Bump deliberately alongside a `uv lock --upgrade`.
-required-version = "==0.11.32"
+required-version = "==0.12.5"
 
 [project.scripts]
 gmlw = "generic_ml_wrapper.adapter.inbound.cli.app:main"
