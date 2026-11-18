@@ -42,8 +42,10 @@ class TurnRow:
     duration_s: float
     input_tokens: int
     output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
+    # These count a model's tokens, not secrets: the scanner's hard-coded-token rule
+    # matches on the name alone.
+    cache_read_tokens: int  # nosemgrep
+    cache_write_tokens: int  # nosemgrep
     session_id: str
     turn_id: str | None
     role: TurnRole = TurnRole.MAIN

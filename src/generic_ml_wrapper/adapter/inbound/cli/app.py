@@ -798,94 +798,26 @@ def format_usage(
     # are still worth showing.
     if report.turn_count == 0 and not report.sessions and not report.incidents:
         return loc.t("usage.none", job=repr(report.job))
-    width = max(
-        (len(model.model) for model in report.models),
-        default=len(_UNKNOWN_LABEL),
-    )
     # Who made each turn, shown only once a job has agent turns to tell apart.
     who = {
         (a.role, a.agent, a.caused_by_agent): _who(a.role, a.agent, a.caused_by_agent, loc)
         for a in report.agents
     }
-    who_width = max((len(label) for label in who.values()), default=0)
     lines = [loc.t("usage.header", job=report.job, count=report.turn_count)]
     if report.sessions_filter:
         lines.append(loc.t("usage.sessions_filter", sessions=", ".join(report.sessions_filter)))
     if by is None:
-        lines.append("")
-        for turn in report.turns:
-            label = who.get((turn.role, turn.agent, turn.caused_by_agent))
-            lines.append(
-                loc.t(
-                    "usage.turn_row",
-                    clock=_clock(turn.timestamp),
-                    model=(
-                        f"{turn.model:<{width}}"
-                        if label is None
-                        else f"{label:<{who_width}}  {turn.model:<{width}}"
-                    ),
-                    duration=f"{turn.duration_s:>5.1f}",
-                    tokens=_tokens(turn, loc),
-                    turn_id=turn.turn_id or "-",
-                )
-            )
-    if report.models and by in {None, "model"}:
-        lines += ["", loc.t("usage.totals_by_model")]
-        lines += [
-            loc.t(
-                "usage.model_row",
-                model=f"{model.model:<{width}}",
-                calls=f"{model.calls:>3}",
-                tokens=_tokens(model, loc),
-                duration=f"{model.duration_s:.1f}",
-            )
-            for model in report.models
-        ]
-    if report.agents and by in {None, "agent"}:
-        lines += ["", loc.t("usage.totals_by_agent")]
-        lines += [
-            loc.t(
-                "usage.agent_row",
-                agent=f"{who[agent.role, agent.agent, agent.caused_by_agent]:<{who_width}}",
-                calls=f"{agent.calls:>3}",
-                tokens=_tokens(agent, loc),
-                duration=f"{agent.duration_s:.1f}",
-            )
-            for agent in report.agents
-        ]
-    if report.tools and by in {None, "tool"}:
-        tool_width = max(len(tool.tool) for tool in report.tools)
-        lines += ["", loc.t("usage.totals_by_tool")]
-        lines += [
-            loc.t("usage.tool_row", tool=f"{tool.tool:<{tool_width}}", calls=f"{tool.calls:>4}")
-            for tool in report.tools
-        ]
-    if report.incidents and by is None:
-        lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
-        lines += [
-            "",
-            loc.t(
-                "usage.incidents",
-                count=len(report.incidents),
-                lost=lost,
-                cut=len(report.incidents) - lost,
-            ),
-        ]
-        lines += [format_incident(incident, loc) for incident in report.incidents]
-    if report.sessions and by in {None, "session"}:
-        session_width = max(len(session.session_id) for session in report.sessions)
-        lines += ["", loc.t("usage.totals_by_session")]
-        lines += [
-            loc.t(
-                "usage.session_row",
-                session=f"{session.session_id:<{session_width}}",
-                calls=f"{session.calls:>3}",
-                tokens=_tokens(session, loc),
-                duration=f"{session.duration_s:.1f}",
-                cost="-" if session.cost_usd is None else f"${session.cost_usd:.2f}",
-            )
-            for session in report.sessions
-        ]
+        lines += ["", *_turn_lines(report, who, loc)]
+    if by in {None, "model"}:
+        lines += _model_lines(report, loc)
+    if by in {None, "agent"}:
+        lines += _agent_lines(report, who, loc)
+    if by in {None, "tool"}:
+        lines += _tool_lines(report, loc)
+    if by is None:
+        lines += _incident_lines(report, loc)
+    if by in {None, "session"}:
+        lines += _session_lines(report, loc)
     lines += [
         "",
         loc.t(
@@ -897,6 +829,127 @@ def format_usage(
         ),
     ]
     return "\n".join(lines)
+
+
+# Who made a turn -- (role, agent, caused_by_agent) -- to the label the report shows.
+_Who = dict[tuple[TurnRole, str | None, bool], str]
+
+
+def _model_width(report: UsageReport) -> int:
+    return max((len(model.model) for model in report.models), default=len(_UNKNOWN_LABEL))
+
+
+def _turn_lines(report: UsageReport, who: _Who, loc: i18n.Localizer) -> list[str]:
+    """One line per turn: its time, who made it (once agents are about), model, tokens."""
+    width = _model_width(report)
+    who_width = max((len(label) for label in who.values()), default=0)
+    lines: list[str] = []
+    for turn in report.turns:
+        label = who.get((turn.role, turn.agent, turn.caused_by_agent))
+        model = (
+            f"{turn.model:<{width}}"
+            if label is None
+            else f"{label:<{who_width}}  {turn.model:<{width}}"
+        )
+        lines.append(
+            loc.t(
+                "usage.turn_row",
+                clock=_clock(turn.timestamp),
+                model=model,
+                duration=f"{turn.duration_s:>5.1f}",
+                tokens=_tokens(turn, loc),
+                turn_id=turn.turn_id or "-",
+            )
+        )
+    return lines
+
+
+def _model_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.models:
+        return []
+    width = _model_width(report)
+    return [
+        "",
+        loc.t("usage.totals_by_model"),
+        *(
+            loc.t(
+                "usage.model_row",
+                model=f"{model.model:<{width}}",
+                calls=f"{model.calls:>3}",
+                tokens=_tokens(model, loc),
+                duration=f"{model.duration_s:.1f}",
+            )
+            for model in report.models
+        ),
+    ]
+
+
+def _agent_lines(report: UsageReport, who: _Who, loc: i18n.Localizer) -> list[str]:
+    if not report.agents:
+        return []
+    who_width = max(len(label) for label in who.values())
+    return [
+        "",
+        loc.t("usage.totals_by_agent"),
+        *(
+            loc.t(
+                "usage.agent_row",
+                agent=f"{who[agent.role, agent.agent, agent.caused_by_agent]:<{who_width}}",
+                calls=f"{agent.calls:>3}",
+                tokens=_tokens(agent, loc),
+                duration=f"{agent.duration_s:.1f}",
+            )
+            for agent in report.agents
+        ),
+    ]
+
+
+def _tool_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.tools:
+        return []
+    width = max(len(tool.tool) for tool in report.tools)
+    return [
+        "",
+        loc.t("usage.totals_by_tool"),
+        *(
+            loc.t("usage.tool_row", tool=f"{tool.tool:<{width}}", calls=f"{tool.calls:>4}")
+            for tool in report.tools
+        ),
+    ]
+
+
+def _incident_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.incidents:
+        return []
+    lost = sum(1 for i in report.incidents if i.kind is IncidentKind.CONNECTION_LOST)
+    heading = loc.t(
+        "usage.incidents",
+        count=len(report.incidents),
+        lost=lost,
+        cut=len(report.incidents) - lost,
+    )
+    return ["", heading, *(format_incident(incident, loc) for incident in report.incidents)]
+
+
+def _session_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
+    if not report.sessions:
+        return []
+    width = max(len(session.session_id) for session in report.sessions)
+    return [
+        "",
+        loc.t("usage.totals_by_session"),
+        *(
+            loc.t(
+                "usage.session_row",
+                session=f"{session.session_id:<{width}}",
+                calls=f"{session.calls:>3}",
+                tokens=_tokens(session, loc),
+                duration=f"{session.duration_s:.1f}",
+                cost="-" if session.cost_usd is None else f"${session.cost_usd:.2f}",
+            )
+            for session in report.sessions
+        ),
+    ]
 
 
 _UNKNOWN_LABEL = "(unknown)"

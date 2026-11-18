@@ -45,6 +45,29 @@ def usage_tables(
     """
     loc = loc or i18n.active()
     whole = _all_tokens(report)
+    tables = (
+        _counted_table(
+            loc.t("export.tab.model"),
+            loc.t("export.col.model"),
+            ((model.model, model) for model in report.models),
+            whole,
+            loc,
+        ),
+        _counted_table(
+            loc.t("export.tab.agent"),
+            loc.t("export.col.agent"),
+            ((_side(agent, loc), agent) for agent in report.agents),
+            whole,
+            loc,
+        ),
+        _tool_table(report, loc),
+        _session_table(report, whole, loc),
+    )
+    return _summary(report, whole, loc), tuple(table for table in tables if table[2])
+
+
+def _summary(report: UsageReport, whole: int, loc: i18n.Localizer) -> str:
+    """``412 turns · 1h12m · ↑ 1.2M  ↓ 340k  ⟲ 12.4M  ✎ 800k · agents 38% · $8.40``."""
     agents = sum(_all_tokens(agent) for agent in report.agents if agent.role is TurnRole.AGENT)
     parts = [
         loc.t("usage.view.turns", count=report.turn_count),
@@ -60,55 +83,37 @@ def usage_tables(
     if agents:
         parts.append(loc.t("usage.view.agents", share=_share(agents, whole)))
     parts.append(f"${report.total_usd:.2f}")
-    tables = [
-        _counted_table(
-            loc.t("export.tab.model"),
-            loc.t("export.col.model"),
-            ((model.model, model) for model in report.models),
-            whole,
-            loc,
-        )
-    ]
-    if report.agents:
-        tables.append(
-            _counted_table(
-                loc.t("export.tab.agent"),
-                loc.t("export.col.agent"),
-                ((_side(agent, loc), agent) for agent in report.agents),
-                whole,
-                loc,
-            )
-        )
-    if report.tools:
-        calls = sum(tool.calls for tool in report.tools)
-        tables.append(
-            (
-                loc.t("export.tab.tool"),
-                (loc.t("export.col.tool"), loc.t("export.col.calls"), loc.t("export.col.share")),
-                tuple(
-                    (tool.tool, str(tool.calls), _share(tool.calls, calls)) for tool in report.tools
-                ),
-            )
-        )
-    sessions = _counted_table(
+    return " · ".join(parts)
+
+
+def _tool_table(report: UsageReport, loc: i18n.Localizer) -> Table:
+    """Calls by tool, and each tool's share of all the calls."""
+    calls = sum(tool.calls for tool in report.tools)
+    return (
+        loc.t("export.tab.tool"),
+        (loc.t("export.col.tool"), loc.t("export.col.calls"), loc.t("export.col.share")),
+        tuple((tool.tool, str(tool.calls), _share(tool.calls, calls)) for tool in report.tools),
+    )
+
+
+def _session_table(report: UsageReport, whole: int, loc: i18n.Localizer) -> Table:
+    """The token table by session, with the cost its client reported (``-`` when none)."""
+    title, columns, rows = _counted_table(
         loc.t("export.tab.session"),
         loc.t("export.col.session"),
         ((session.session_id, session) for session in report.sessions),
         whole,
         loc,
     )
-    costs = tuple(
+    costs = (
         "-" if session.cost_usd is None else f"${session.cost_usd:.2f}"
         for session in report.sessions
     )
-    tables.append(
-        (
-            sessions[0],
-            (*sessions[1], loc.t("export.col.cost")),
-            tuple((*row, cost) for row, cost in zip(sessions[2], costs, strict=True)),
-        )
+    return (
+        title,
+        (*columns, loc.t("export.col.cost")),
+        tuple((*row, cost) for row, cost in zip(rows, costs, strict=True)),
     )
-    return " · ".join(parts), tuple(table for table in tables if table[2])
 
 
 def _counted_table(
