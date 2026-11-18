@@ -16,6 +16,8 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.incident import Incident
 
 
+# The ``cache_*_tokens`` fields carry ``# nosemgrep``: they count a model's tokens, not
+# secrets, and the scanner's hard-coded-token rule matches on the name alone.
 @dataclass(frozen=True)
 class TurnRow:
     """One metered turn, for the per-turn table.
@@ -42,8 +44,6 @@ class TurnRow:
     duration_s: float
     input_tokens: int
     output_tokens: int
-    # These count a model's tokens, not secrets: the scanner's hard-coded-token rule
-    # matches on the name alone.
     cache_read_tokens: int  # nosemgrep
     cache_write_tokens: int  # nosemgrep
     session_id: str
@@ -72,8 +72,8 @@ class ModelTotal:
     calls: int
     input_tokens: int
     output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
+    cache_read_tokens: int  # nosemgrep
+    cache_write_tokens: int  # nosemgrep
     duration_s: float
 
 
@@ -100,8 +100,8 @@ class AgentTotal:
     calls: int
     input_tokens: int
     output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
+    cache_read_tokens: int  # nosemgrep
+    cache_write_tokens: int  # nosemgrep
     duration_s: float
     caused_by_agent: bool = False
 
@@ -126,8 +126,8 @@ class SessionTotal:
     calls: int
     input_tokens: int
     output_tokens: int
-    cache_read_tokens: int
-    cache_write_tokens: int
+    cache_read_tokens: int  # nosemgrep
+    cache_write_tokens: int  # nosemgrep
     duration_s: float
     cost_usd: float | None
 
@@ -183,8 +183,8 @@ class UsageReport:
     turn_count: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
+    cache_read_tokens: int = 0  # nosemgrep
+    cache_write_tokens: int = 0  # nosemgrep
     duration_s: float = 0.0
     total_usd: float = 0.0
     incidents: tuple[Incident, ...] = ()

@@ -27,6 +27,8 @@ if TYPE_CHECKING:
 
     from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
+# The ``cache_*_tokens`` fields carry ``# nosemgrep``: they count a model's tokens, not
+# secrets, and the scanner's hard-coded-token rule matches on the name alone.
 _UNKNOWN_MODEL = "(unknown)"
 
 
@@ -103,8 +105,8 @@ class _Sum:
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
-    cache_read_tokens: int = 0
-    cache_write_tokens: int = 0
+    cache_read_tokens: int = 0  # nosemgrep
+    cache_write_tokens: int = 0  # nosemgrep
     duration_s: float = 0.0
 
     @classmethod
