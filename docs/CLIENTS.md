@@ -44,11 +44,19 @@ and cost to the ledger. `gmlw export <job>` reports it.
 The context block turns yellow, then red, as the context fills the window or grows long;
 see [`[statusline]`](CONFIGURATION.md#statusline) for the thresholds.
 
-Below the live line, the status line shows the session's usage (and the whole job's, once
-it spans several sessions), with the tokens broken down by kind:
+The live line reads model, context, quota and cost first, then git and the folder:
 
 ```
-  session PAY-1_003 (57m) · 86 turns · ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k · $2.50
+Opus 4.8  ·  ctx 155.6k/1M (16%)  ·  quota wk 41% (↻ 3d)  ·  $2.50  ·  git app/main abc1234 dirty:3  ·  📁 ~/dev/app
+```
+
+Below it, the status line shows the session's usage (and the whole job's, once it spans
+several sessions), its cost first, then the tokens broken down by kind. The two rows are
+padded to one width, so the job's fields sit under the session's:
+
+```
+  session PAY-1_003 (57m) · $2.50 · 86 turns · ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k
+  job     PAY-1 (2d)      · $9.80 · 310 turns · ↑ 610k  ↓ 302k  ⟲ 31M  ✎ 1.1M
 ```
 
 `↑` input, `↓` output, `⟲` cache read, `✎` cache write. They do not overlap. A cache read
@@ -59,7 +67,7 @@ Once subagents have made turns, the turn count and each kind they used are follo
 their share of it:
 
 ```
-  session PAY-1_003 (57m) · 86 turns (70%) · ↑ 182k (22%)  ↓ 96k (8%)  ⟲ 8.6M (60%)  ✎ 240k (31%) · $2.50
+  session PAY-1_003 (57m) · $2.50 · 86 turns (70%) · ↑ 182k (22%)  ↓ 96k (8%)  ⟲ 8.6M (60%)  ✎ 240k (31%)
 ```
 
 Here the subagents made seven turns in ten, and three fifths of the cache read was theirs. A share that is there but under a
@@ -73,7 +81,7 @@ re-reads 160M tokens of cache for them. The share of those turns follows the sub
 own, after a `+`:
 
 ```
-  session PAY-1_003 (57m) · 86 turns (70% +12%) · ↑ 182k (22% +5%)  ↓ 96k (8% +3%)  ⟲ 8.6M (60% +25%)  ✎ 240k (31% +4%) · $2.50
+  session PAY-1_003 (57m) · $2.50 · 86 turns (70% +12%) · ↑ 182k (22% +5%)  ↓ 96k (8% +3%)  ⟲ 8.6M (60% +25%)  ✎ 240k (31% +4%)
 ```
 
 A main turn counts as caused by a subagent when the newest message is the result of a
@@ -87,7 +95,7 @@ Once the model has called tools, the row also counts them: the total, then the t
 called.
 
 ```
-  session PAY-1_003 (57m) · 86 turns · ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k · ⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …) · $2.50
+  session PAY-1_003 (57m) · $2.50 · 86 turns · ↑ 182k  ↓ 96k  ⟲ 8.6M  ✎ 240k · ⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …)
 ```
 
 Only the tool's name is recorded, never what it was asked or what it returned. The names

@@ -26,8 +26,9 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 
 BINARY = "codex"
-# Codex's status-line items, chosen to mirror gmlw's own two lines block for block and in
-# the same left-to-right order, on codex's single line:
+# Codex's status-line items, chosen to mirror gmlw's own two lines block for block, on
+# codex's single line. The order is gmlw's earlier one and stays: codex shows only its
+# built-in items, so gmlw's own layout changes are made for the clients it draws for.
 #
 #   git <repo>/<branch>  ·  folder  ·  model  ·  ctx …/<window> (<pct>%)  ·  quota 5h · wk
 #   project-name,git-branch current-dir model  context-window-size,context-used
