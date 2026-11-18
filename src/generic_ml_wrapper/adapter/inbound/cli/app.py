@@ -129,6 +129,7 @@ from generic_ml_wrapper.application.wiring.composition import (
     build_save_usage_report,
     build_set_credential,
     build_start_job,
+    build_statusline_layout_settings,
     build_tag_jobs,
     build_whats_new,
 )
@@ -150,6 +151,7 @@ if TYPE_CHECKING:
         RecentSessionView,
         Shelf,
     )
+    from generic_ml_wrapper.adapter.inbound.tui.statusline_screen import StatuslineSettings
     from generic_ml_wrapper.application.domain.model.release_note import ReleaseNote
     from generic_ml_wrapper.application.domain.model.update_check import UpdateCheck
 
@@ -2248,6 +2250,7 @@ def _run_menu(news: str = "") -> MenuChoice | None:  # noqa: PLR0915  (menu + pr
         reload_jobs=_job_choices,
         retag_job=_retag_job,
         shelf=shelf,
+        statusline=_statusline_settings(),
         launch_clients=_launch_clients,
         default_tag=_default_tag(),
         validate_tags=_validate_tags,
@@ -2735,6 +2738,16 @@ def _attachment_delete(name: str, version: str, *, assume_yes: bool) -> int:
     build_delete_attachment().execute(name, version)
     print(i18n.t("delete.attachment.done", name=name, version=version), file=sys.stderr)
     return 0
+
+
+def _statusline_settings() -> StatuslineSettings:
+    """The status line's layout, loaded and saved through config, for Config > Status line."""
+    from generic_ml_wrapper.adapter.inbound.tui.statusline_screen import (  # noqa: PLC0415  lazy: tui adapter
+        StatuslineSettings,
+    )
+
+    settings = build_statusline_layout_settings()
+    return StatuslineSettings(load=settings.load, save=settings.save)
 
 
 def _shelf() -> Shelf:

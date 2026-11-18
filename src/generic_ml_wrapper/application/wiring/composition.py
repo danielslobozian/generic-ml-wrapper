@@ -99,6 +99,7 @@ from generic_ml_wrapper.adapter.outbound.workspace.local_workspace_inspector imp
 )
 from generic_ml_wrapper.application.domain.model.context_thresholds import ContextThresholds
 from generic_ml_wrapper.application.domain.model.installation import PACKAGE
+from generic_ml_wrapper.application.domain.model.statusline_layout import StatuslineLayout
 from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
@@ -131,6 +132,9 @@ from generic_ml_wrapper.application.port.inbound.report_health import ReportHeal
 from generic_ml_wrapper.application.port.inbound.save_usage_report import SaveUsageReport
 from generic_ml_wrapper.application.port.inbound.set_credential import SetCredential
 from generic_ml_wrapper.application.port.inbound.start_job import StartJob
+from generic_ml_wrapper.application.port.inbound.statusline_layout_settings import (
+    StatuslineLayoutSettings,
+)
 from generic_ml_wrapper.application.port.inbound.tag_jobs import TagJobs
 from generic_ml_wrapper.application.port.inbound.whats_new import WhatsNew
 from generic_ml_wrapper.application.port.outbound.artifact_purge import ArtifactPurgePort
@@ -175,6 +179,9 @@ from generic_ml_wrapper.application.usecase.report_health import ReportHealthUse
 from generic_ml_wrapper.application.usecase.save_usage_report import SaveUsageReportUseCase
 from generic_ml_wrapper.application.usecase.set_credential import SetCredentialUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
+from generic_ml_wrapper.application.usecase.statusline_layout_settings import (
+    StatuslineLayoutSettingsUseCase,
+)
 from generic_ml_wrapper.application.usecase.tag_jobs import TagJobsUseCase
 from generic_ml_wrapper.application.usecase.update_config import UpdateConfigUseCase
 from generic_ml_wrapper.application.usecase.whats_new import WhatsNewUseCase
@@ -626,6 +633,17 @@ def build_config_commands() -> ConfigCommands:
     return UpdateConfigUseCase(writer=TomlkitConfigWriter(), config_file=config.config_path)
 
 
+def build_statusline_layout_settings() -> StatuslineLayoutSettings:
+    """Build the status-line layout settings, wired to the tomlkit config writer.
+
+    Returns:
+        A ready-to-run StatuslineLayoutSettings, reading and writing ``~/.gmlw/config.toml``.
+    """
+    return StatuslineLayoutSettingsUseCase(
+        writer=TomlkitConfigWriter(), config_file=config.config_path
+    )
+
+
 def build_create_axis() -> CreateAxis:
     """Build the CreateAxis use case wired to the filesystem catalog and config writer.
 
@@ -792,6 +810,7 @@ def build_render_statusline(client: str | None = None) -> RenderStatusline:
         workspace=LocalGitWorkspaceInspector(),
         turns=SqlitePerTurnStore(_ledger()),
         thresholds=_context_thresholds(),
+        layout=StatuslineLayout.of(*config.statusline_layout()),
     )
 
 

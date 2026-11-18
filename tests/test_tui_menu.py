@@ -920,8 +920,8 @@ def test_config_setup_exits_with_the_init_choice() -> None:
         app = MenuApp(_JOBS)
         async with app.run_test(size=(90, 30)) as pilot:
             await pilot.press("down", "down", "enter")  # → Config
-            # list get set persona environment role clients setup(7)
-            await pilot.press("down", "down", "down", "down", "down", "down", "down", "enter")
+            # list get set persona environment role clients statusline setup(8)
+            await pilot.press(*["down"] * 8, "enter")
         result["value"] = app.return_value
 
     asyncio.run(scenario())

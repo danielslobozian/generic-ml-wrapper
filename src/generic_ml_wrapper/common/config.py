@@ -165,6 +165,43 @@ def statusline_color(path: Path | None = None) -> bool:
     return value if isinstance(value, bool) else True
 
 
+#: The ``[statusline]`` keys that lay the status line out, in the order
+#: ``statusline_layout`` returns them: the live line's blocks, the session/job rows'
+#: fields, and the row fields followed by the agents' share.
+STATUSLINE_LAYOUT_KEYS = ("line", "rows", "agents")
+
+
+def statusline_layout(
+    path: Path | None = None,
+) -> tuple[tuple[str, ...] | None, tuple[str, ...] | None, tuple[str, ...] | None]:
+    """Return the status line's configured layout (``[statusline] line``, ``rows``, ``agents``).
+
+    Each is a list of block names, shown in the order listed. Which names are known is the
+    status line's business, not the reader's, so they are returned as written.
+
+    Args:
+        path: An explicit config file (for tests); defaults to ``~/.gmlw/config.toml``.
+
+    Returns:
+        ``(line, rows, agents)``, each ``None`` when unset or not a list of strings -- the
+        caller then takes its default.
+    """
+    table = _table(_load(path), "statusline")
+    found: list[tuple[str, ...] | None] = []
+    for key in STATUSLINE_LAYOUT_KEYS:
+        value = table.get(key)
+        if isinstance(value, list):
+            items = cast("list[object]", value)
+            found.append(
+                tuple(cast("list[str]", items))
+                if all(isinstance(item, str) for item in items)
+                else None
+            )
+        else:
+            found.append(None)
+    return found[0], found[1], found[2]
+
+
 # The ``[statusline]`` context thresholds, in the order ``context_thresholds`` returns them.
 _CONTEXT_THRESHOLD_KEYS = (
     "context_warn_percent",
