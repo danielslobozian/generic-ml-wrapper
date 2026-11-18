@@ -716,7 +716,16 @@ class AttachScreen(_MenuScreen):
     starts -- one job can run a feature method today and a review checklist tomorrow. It
     opens on "Nothing attached", so a plain start is still ``⏎``. Nothing is remembered:
     this is ``--attach`` for one launch, exactly as on the CLI.
+
+    ``⏎`` on an attachment starts with its latest version, as ``--attach <name>`` does;
+    ``→`` opens its versions to pick another.
     """
+
+    BINDINGS: ClassVar[list[Binding]] = [
+        *_MenuScreen.BINDINGS,
+        _key("right", "versions", "tui.key.versions"),
+    ]
+    keys_key = "tui.attach.keys"
 
     def __init__(self, pending: MenuChoice) -> None:
         """Bind the picker to the launch it is completing."""
@@ -737,40 +746,33 @@ class AttachScreen(_MenuScreen):
         t = i18n.active().t
         items = [_Item("○", t("tui.attach.none"), t("tui.attach.none.d"), "attach:pick")]
         for name, versions in _by_name(self.menu_app.attachment_rows()).items():
-            usable = [row for row in versions if row.intact]
-            top = usable[0] if usable else versions[0]
-            subtitle = t("tui.att.versions", version=top.version, count=len(versions))
-            items.append(
-                _Item(
-                    "📎",
-                    name,
-                    f"{subtitle} · {top.description}" if top.description else subtitle,
-                    "attach:attachment",
-                    f"gmlw start <job> --attach {name}",
-                    payload=name,
-                    disabled=not usable,
-                )
+            item = _attachment_name_item(
+                name,
+                versions,
+                "attach:attachment",
+                f"gmlw start <job> --attach {name}",
+                payload=name,
             )
+            items.append(replace(item, disabled=not any(row.intact for row in versions)))
         return items
 
     def handle(self, item: _Item) -> None:
-        """Exit plain, or with the attachment; one with several versions asks which."""
+        """Exit plain, or with the attachment's latest usable version."""
         if item.action == "attach:pick":
             self.menu_app.exit(self._pending)
         elif item.action == "attach:attachment":
-            versions = [
+            latest = next(
                 row for row in _by_name(self.menu_app.attachment_rows())[item.payload] if row.intact
-            ]
-            if len(versions) == 1:
-                self.menu_app.exit(
-                    replace(
-                        self._pending,
-                        attachment=item.payload,
-                        attachment_version=versions[0].version,
-                    )
-                )
-            else:
-                self.menu_app.push_screen(AttachmentVersionScreen(self._pending, item.payload))
+            )
+            self.menu_app.exit(
+                replace(self._pending, attachment=item.payload, attachment_version=latest.version)
+            )
+
+    def action_versions(self) -> None:
+        """``→``: open the highlighted attachment's versions, to pick one other than the latest."""
+        item = self._highlighted()
+        if item is not None and item.action == "attach:attachment" and not item.disabled:
+            self.menu_app.push_screen(AttachmentVersionScreen(self._pending, item.payload))
 
 
 class AttachmentVersionScreen(_MenuScreen):
@@ -2934,11 +2936,10 @@ def _attachment_item(row: AttachmentRow, action: str, example: str) -> _Item:
 
 
 class AttachmentPickerScreen(_MenuScreen):
-    """Pick a stored version, to read it (``list``), export it, or modify it.
+    """Pick an attachment by name, to read (``list``), export, or modify one of its versions.
 
-    List is read-only: the detail panel is the view. Export writes the zip in place and
-    stays, so a second export is one keypress away. Modify opens the new-job form with a
-    name proposed for the work and the session's opening request already set.
+    One row per attachment, its highest version and how many there are under it; ``⏎``
+    opens its versions in :class:`AttachmentVersionPickerScreen`, where the mode acts.
     """
 
     empty_key = "tui.att.none"
@@ -2954,7 +2955,57 @@ class AttachmentPickerScreen(_MenuScreen):
         return f"gmlw > {t('tui.attachment')} > {t(f'tui.att.{self._mode}')}"
 
     def menu_items(self) -> list[_Item]:
-        """One row per stored version, by name then version."""
+        """One row per attachment; one whose every version changed is marked."""
+        return [
+            _attachment_name_item(name, versions, "att:name", payload=name)
+            for name, versions in _by_name(self.menu_app.attachment_rows()).items()
+        ]
+
+    def handle(self, item: _Item) -> None:
+        """Open the chosen attachment's versions."""
+        if item.action == "att:name":
+            self.menu_app.push_screen(AttachmentVersionPickerScreen(self._mode, item.payload))
+
+
+def _attachment_name_item(
+    name: str, versions: list[AttachmentRow], action: str, example: str = "", payload: str = ""
+) -> _Item:
+    """An attachment's row: its name, then its highest usable version and its count."""
+    t = i18n.active().t
+    usable = [row for row in versions if row.intact]
+    top = usable[0] if usable else versions[0]
+    subtitle = t("tui.att.versions", version=top.version, count=len(versions))
+    return _Item(
+        "📎" if usable else "✗",
+        name,
+        f"{subtitle} · {top.description}" if top.description else subtitle,
+        action,
+        example,
+        payload=payload,
+    )
+
+
+class AttachmentVersionPickerScreen(_MenuScreen):
+    """One attachment's versions, highest first: read one, export it, or modify it.
+
+    List is read-only: the detail panel is the view. Export writes the zip in place and
+    stays, so a second export is one keypress away. Modify opens the new-job form with a
+    name proposed for the work and the session's opening request already set.
+    """
+
+    def __init__(self, mode: str, name: str) -> None:
+        """Bind the picker to its mode and the attachment chosen."""
+        super().__init__()
+        self._mode = mode
+        self._name = name
+
+    def header_text(self) -> str:
+        """Breadcrumb: gmlw > Attachments > List|Export|Modify > <name>."""
+        t = i18n.active().t
+        return f"gmlw > {t('tui.attachment')} > {t(f'tui.att.{self._mode}')} > {self._name}"
+
+    def menu_items(self) -> list[_Item]:
+        """One row per stored version of the attachment, highest first."""
         examples = {
             "list": "gmlw start <job> --attach {key}",
             "export": "gmlw attachment export {name} {version}",
@@ -2968,7 +3019,7 @@ class AttachmentPickerScreen(_MenuScreen):
                     key=row.key, name=row.name, version=row.version, job=modify_job(row)
                 ),
             )
-            for row in self.menu_app.attachment_rows()
+            for row in _by_name(self.menu_app.attachment_rows()).get(self._name, [])
         ]
 
     def handle(self, item: _Item) -> None:

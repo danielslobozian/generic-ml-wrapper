@@ -18,6 +18,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cost, then git and the folder. On the session and job rows the cost follows the name
   instead of closing the row, and the two rows are padded to one width so the job's
   fields sit under the session's.
+- **Attachments are picked by name, then version.** In `gmlw tui`, Attachments → List,
+  Export and Modify show each attachment once, with its highest version and how many it
+  has; `⏎` opens its versions. Delete still lists every version, to tick several. When a
+  new session asks what to attach, `⏎` starts the latest version, as `--attach <name>`
+  does, and `→` opens the versions to pick another.
 
 ## [0.13.2] - 2026-10-24
 
