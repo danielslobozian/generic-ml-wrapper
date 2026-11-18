@@ -37,6 +37,10 @@ from textual.widgets import DataTable, Input, Label, ListItem, ListView, Markdow
 from textual.worker import Worker, WorkerState
 
 from generic_ml_wrapper.adapter.inbound.tui.banner import boxed_banner
+from generic_ml_wrapper.adapter.inbound.tui.statusline_screen import (
+    StatuslineScreen,
+    StatuslineSettings,
+)
 from generic_ml_wrapper.application.domain.model.rule_catalog import RuleAxis, RuleGroup
 from generic_ml_wrapper.common import i18n
 
@@ -465,6 +469,7 @@ _CONFIG_MENU = (
     ),
     ("🎩", "tui.cfg.role", "cfg:role", "gmlw config set profile.default_role <slug>"),
     ("🔌", "tui.cfg.clients", "cfg:clients", "gmlw clients"),
+    ("📟", "tui.cfg.statusline", "cfg:statusline", "[statusline] line / rows / agents"),
     ("🔁", "tui.cfg.setup", "cfg:setup", "gmlw init"),
 )
 _TOP_MENU = (
@@ -1087,6 +1092,8 @@ class ConfigMenuScreen(_MenuScreen):
             self.menu_app.push_screen(ConfigListScreen())
         elif item.action == "cfg:clients" and self.menu_app.clients is not None:
             self.menu_app.push_screen(ClientsScreen())
+        elif item.action == "cfg:statusline" and self.menu_app.statusline is not None:
+            self.menu_app.push_screen(StatuslineScreen(self.menu_app.statusline))
         elif item.action == "cfg:setup":  # a launcher: exit, the wiring re-runs init after teardown
             self.menu_app.exit(MenuChoice(action="init"))
         else:
@@ -3093,6 +3100,7 @@ class MenuApp(App[MenuChoice | None]):
     #status { dock: bottom; height: auto; }
     #detail { padding: 1 1; min-height: 2; height: auto; color: $text-muted; }
     #keys   { padding: 0 1; color: $text-muted; }
+    #sl_tabs { height: 1fr; }
     ListItem { height: auto; padding: 0 1; background: transparent; }
     ListView > ListItem.-highlight { background: cyan 15%; }
     ListView:focus > ListItem.-highlight { background: cyan 25%; color: $text; }
@@ -3123,6 +3131,7 @@ class MenuApp(App[MenuChoice | None]):
         retag_job: Callable[[str, str], str | None] | None = None,
         launch_clients: Callable[[], list[ClientChoice]] | None = None,
         shelf: Shelf | None = None,
+        statusline: StatuslineSettings | None = None,
         default_tag: str | None = None,
         validate_tags: Callable[[Sequence[str]], str | None] | None = None,
         whats_new: Callable[[], str] | None = None,
@@ -3175,6 +3184,8 @@ class MenuApp(App[MenuChoice | None]):
                 default -- the behaviour before the picker existed.
             shelf: The attachment store's calls, for the Attachments menu and the attach
                 step of a new session; ``None`` leaves both without attachments.
+            statusline: Loads and saves the status line's layout, for Config > Status line;
+                ``None`` leaves that entry a stub.
             default_tag: The tag the job list opens filtered on and a new job's tags start
                 with, or ``None``.
             validate_tags: Validates a new job's typed tags, returning an error message or
@@ -3217,6 +3228,7 @@ class MenuApp(App[MenuChoice | None]):
         self.retag_job = retag_job
         self.launch_clients = launch_clients or _no_clients
         self.shelf = shelf
+        self.statusline = statusline
         self.default_tag = default_tag
         self.validate_tags = validate_tags or _accept_any_tags
         self.whats_new: Callable[[], str] = whats_new or str

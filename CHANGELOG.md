@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **The status line can be laid out.** `gmlw tui` → Config → Status line shows, hides and
+  reorders its blocks, with a tab for the live line and one for the session and job
+  rows; on the rows, the agents' share can be turned off field by field. The choice is
+  saved in `[statusline] line`, `rows` and `agents`, and applies to Claude Code and
+  Cursor.
+
 ### Changed
 - **The status line reads cost first.** The live line now runs model, context, quota and
   cost, then git and the folder. On the session and job rows the cost follows the name

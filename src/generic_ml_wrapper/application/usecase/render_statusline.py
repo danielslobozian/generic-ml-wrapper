@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
 
 from generic_ml_wrapper.application.domain.model.agent_usage import AgentUsage
+from generic_ml_wrapper.application.domain.model.statusline_layout import StatuslineLayout
 from generic_ml_wrapper.application.domain.model.token_counts import TokenCounts
 from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
@@ -43,6 +44,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         *,
         clock: Callable[[], float] = time.time,
         thresholds: ContextThresholds | None = None,
+        layout: StatuslineLayout | None = None,
     ) -> None:
         """Wire the use case to its outbound ports.
 
@@ -55,6 +57,7 @@ class RenderStatuslineUseCase(RenderStatusline):
                 injectable so tests are deterministic.
             thresholds: When to colour the context yellow, then red; ``None`` for no
                 colour.
+            layout: Which blocks show, in which order; ``None`` for the full line.
         """
         self._parser = parser
         self._usage = usage
@@ -62,6 +65,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         self._turns = turns
         self._clock = clock
         self._thresholds = thresholds
+        self._layout = layout or StatuslineLayout()
 
     def execute(self, payload_json: str, job: str | None, session: str | None) -> str:
         """Parse the payload, record usage, and render the status line.
@@ -80,7 +84,7 @@ class RenderStatuslineUseCase(RenderStatusline):
         status = self._parser.parse(_decode(payload_json))
         if job and session and status.session_cost_usd is not None:
             self._usage.record_session_cost(job, session, status.session_cost_usd)
-        line = render_statusline(status, self._workspace.inspect(), self._thresholds)
+        line = render_statusline(status, self._workspace.inspect(), self._thresholds, self._layout)
         footer = self._usage_footer(job, session) if job else ""
         if not footer:
             return line
@@ -147,6 +151,7 @@ class RenderStatuslineUseCase(RenderStatusline):
             tools=ToolCalls.summed(turn.tool_calls for turn in turns),
             label_width=label_width,
             head_width=head_width,
+            layout=self._layout,
         )
 
     def _age(self, turns: Sequence[TurnUsage]) -> float | None:

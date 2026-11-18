@@ -443,6 +443,29 @@ context_warn_tokens = 150000
 context_alert_tokens = 300000
 ```
 
+### Which blocks show, and in which order
+
+Three more keys lay the status line out, for the clients gmlw draws it for (Claude Code
+and Cursor; codex shows only its own built-in items). Each is a list: a block shows when
+it is listed, in the order listed. `gmlw tui` → Config → Status line edits them, with a
+tab per list.
+
+| Key | Blocks | Default |
+| --- | --- | --- |
+| `line` | the live line: `model`, `context`, `quota`, `cost`, `git`, `folder` | all, in that order |
+| `rows` | the session and job rows: `cost`, `turns`, `input`, `output`, `cache_read`, `cache_write`, `tools` | all, in that order |
+| `agents` | the row fields followed by the agents' share: `turns`, `input`, `output`, `cache_read`, `cache_write` | all |
+
+Token kinds next to each other in `rows` read as one group (`↑ 182k  ↓ 96k`). An unknown
+name is ignored; a key that is not a list of names takes its default.
+
+```toml
+[statusline]
+line = ["model", "context", "quota", "cost", "git"]
+rows = ["cost", "turns", "input", "output", "tools"]
+agents = ["turns", "output"]
+```
+
 ```toml
 [update]
 check = false
