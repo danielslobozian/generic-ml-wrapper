@@ -33,6 +33,7 @@ from generic_ml_wrapper.adapter.outbound.gateway.anthropic_sse import read_usage
 from generic_ml_wrapper.application.domain.model.incident import Incident, IncidentKind
 from generic_ml_wrapper.application.domain.model.turn_origin import MAIN
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
+from generic_ml_wrapper.application.domain.service.execution_tag_reader import read_execution_tags
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall
 from generic_ml_wrapper.common import i18n
@@ -356,6 +357,7 @@ class MeteringRelay:
                 agent=origin.agent,
                 caused_by_agent=origin.caused_by_agent,
                 tool_calls=usage.tool_calls,
+                execution_tags=read_execution_tags(request),
             )
             self._metering.record(self._job, turn)
         if self._transcript is not None:

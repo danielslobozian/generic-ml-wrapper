@@ -8,6 +8,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     AgentTotal,
     ModelTotal,
     SessionTotal,
+    TagTotal,
     ToolTotal,
     UsageReport,
 )
@@ -72,3 +73,21 @@ def test_a_job_without_agents_or_tools_has_no_such_tabs() -> None:
     summary, tables = usage_tables(report)
     assert [title for title, _, _ in tables] == ["Model", "Session"]
     assert "agents" not in summary
+
+
+def test_the_tags_tab_lists_each_value_and_the_untagged_turns() -> None:
+    report = UsageReport(
+        "JOB-1",
+        models=_REPORT.models,
+        execution_tags=(
+            TagTotal("step", "1", 2, 1_000, 0, 0, 0, 60.0),
+            TagTotal("step", None, 1, 500, 0, 0, 0, 30.0),
+        ),
+        input_tokens=1_500,
+    )
+    _, tables = usage_tables(report)
+    title, columns, rows = tables[-1]
+    assert title == "Tags"
+    assert columns[0] == "Tag"
+    assert [row[0] for row in rows] == ["step=1", "step (untagged)"]
+    assert [row[6] for row in rows] == ["67%", "33%"]

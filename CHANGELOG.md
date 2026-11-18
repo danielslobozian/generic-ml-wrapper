@@ -7,6 +7,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Usage by step.** Write `gmlw-execution: {"pipeline": "release", "step": "build"}`
+  into a conversation and every turn after it is tagged with those key/value
+  pairs, until a later object replaces it (`{}` ends it). `gmlw export` totals by tag
+  (`--by tag`, or `--by tag:<key>` for one key), narrows to tagged turns (`--tag
+  key=value`), and carries each turn's `execution_tags` in `--json`; the TUI's usage view
+  gets a Tags tab.
 - **`gmlw export` narrows and groups.** `--session` (repeatable) reports only those
   sessions; `--by model|agent|session|tool` gives only that grouping's totals. In
   `--json`, every grouping is a list of rows with the same raw-integer fields, ready for

@@ -4,6 +4,7 @@
 
 from _conformance import InMemoryIncidentLog, an_incident
 
+from generic_ml_wrapper.application.domain.model.execution_tags import ExecutionTags
 from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 from generic_ml_wrapper.application.domain.model.turn_usage import TurnUsage
@@ -11,6 +12,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     AgentTotal,
     ModelTotal,
     SessionTotal,
+    TagTotal,
     ToolTotal,
     UsageReport,
 )
@@ -196,3 +198,48 @@ def test_the_export_totals_the_tools_and_lists_each_turns() -> None:
     )
     assert report.tools == (ToolTotal("Bash", 2), ToolTotal("Read", 1))
     assert [row.tool_calls for row in report.turns] == [{"Bash": 1, "Read": 1}, {"Bash": 1}]
+
+
+def _tagged(session: str, tokens: int, **tags: str) -> TurnUsage:
+    return TurnUsage(session, tokens, 1, None, "m", execution_tags=ExecutionTags.from_mapping(tags))
+
+
+def test_each_tag_key_is_totalled_by_value_then_its_untagged_turns() -> None:
+    report = _export(
+        [
+            _tagged("S", 10, pipeline="review", step="2"),
+            _tagged("S", 20, pipeline="review", step="1"),
+            _tagged("S", 40, step="1"),
+            _tagged("S", 80),
+        ]
+    )
+    assert report.execution_tags == (
+        TagTotal("pipeline", "review", 2, 30, 2, 0, 0, 0.0),
+        TagTotal("pipeline", None, 2, 120, 2, 0, 0, 0.0),
+        TagTotal("step", "1", 2, 60, 2, 0, 0, 0.0),
+        TagTotal("step", "2", 1, 10, 1, 0, 0, 0.0),
+        TagTotal("step", None, 1, 80, 1, 0, 0, 0.0),
+    )
+    assert report.turns[0].execution_tags == {"pipeline": "review", "step": "2"}
+
+
+def test_a_job_without_tags_has_no_tag_totals() -> None:
+    assert _export([_tagged("S", 10)]).execution_tags == ()
+
+
+def test_the_report_narrows_to_the_turns_carrying_every_tag_asked_for() -> None:
+    turns = FakeTurnStore(
+        [
+            _tagged("S", 10, pipeline="review", step="1"),
+            _tagged("S", 20, pipeline="review", step="2"),
+            _tagged("S", 40, pipeline="build", step="1"),
+        ]
+    )
+    report = ExportUsageUseCase(FakeUsageStore({"S": 1.0}), turns, InMemoryIncidentLog()).execute(
+        "JOB-1", tags=[("pipeline", "review"), ("step", "1")]
+    )
+    assert report.tags_filter == ("pipeline=review", "step=1")
+    assert report.input_tokens == 10
+    # A cost is a whole session's: none for some of its turns.
+    assert report.total_usd == 0.0
+    assert [session.cost_usd for session in report.sessions] == [None]

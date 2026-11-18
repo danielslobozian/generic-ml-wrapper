@@ -819,3 +819,17 @@ def test_an_incident_that_cannot_be_recorded_does_not_become_a_second_failure(
 ) -> None:
     assert _run_once(_exploding_forwarder, _BrokenLog()) == 502
     assert capsys.readouterr().err == ""
+
+
+def test_relay_records_the_execution_tags_the_request_ran_under() -> None:
+    store = _FakeStore()
+    relay = MeteringRelay(
+        job="JOB-1", session="JOB-1_001", metering=store, forwarder=_echo_forwarder, clock=_zero
+    )
+    relay.start()
+    try:
+        _post(relay, body=b'{"messages": [{"content": "gmlw-execution: {\\"step\\": \\"1\\"}"}]}')
+    finally:
+        relay.stop()
+
+    assert store.recorded[0][1].execution_tags.as_dict() == {"step": "1"}

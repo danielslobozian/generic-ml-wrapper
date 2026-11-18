@@ -89,6 +89,7 @@ from generic_ml_wrapper.application.port.inbound.export_usage import (
     AgentTotal,
     ModelTotal,
     SessionTotal,
+    TagTotal,
     ToolTotal,
     UsageReport,
 )
@@ -408,7 +409,14 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
         default=[],
         help=i18n.t("cli.flag.export_session"),
     )
-    export.add_argument("--by", choices=USAGE_GROUPS, help=i18n.t("cli.flag.export_by"))
+    export.add_argument(
+        "--tag",
+        action="append",
+        default=[],
+        type=_tag_pair,
+        help=i18n.t("cli.flag.export_tag"),
+    )
+    export.add_argument("--by", type=_usage_grouping, help=i18n.t("cli.flag.export_by"))
     _add_json_flag(export)
 
     health = sub.add_parser("health", help=i18n.t("cli.cmd.health"))
@@ -758,7 +766,29 @@ def format_session_footprints(
 
 
 #: The groupings ``gmlw export --by`` can total a report by.
-USAGE_GROUPS = ("model", "agent", "session", "tool")
+USAGE_GROUPS = ("model", "agent", "session", "tool", "tag")
+# ``--by tag:<key>`` totals by one tag key alone.
+_TAG_GROUP = "tag:"
+
+
+def _usage_grouping(value: str) -> str:
+    """``--by``: one of :data:`USAGE_GROUPS`, or ``tag:<key>``."""
+    if value in USAGE_GROUPS or (value.startswith(_TAG_GROUP) and value[len(_TAG_GROUP) :]):
+        return value
+    raise argparse.ArgumentTypeError(i18n.t("cli.error.export_by", value=value))
+
+
+def _tag_pair(value: str) -> tuple[str, str]:
+    """``--tag key=value``: a tag the report's turns must carry."""
+    key, equals, tag_value = value.partition("=")
+    if not equals or not key:
+        raise argparse.ArgumentTypeError(i18n.t("cli.error.export_tag", value=value))
+    return key, tag_value
+
+
+def _tag_key(by: str | None) -> str | None:
+    """The key ``--by tag:<key>`` names, or ``None`` for every key (or no tag grouping)."""
+    return by[len(_TAG_GROUP) :] if by is not None and by.startswith(_TAG_GROUP) else None
 
 
 def _usage_group(
@@ -768,8 +798,12 @@ def _usage_group(
     | tuple[AgentTotal, ...]
     | tuple[SessionTotal, ...]
     | tuple[ToolTotal, ...]
+    | tuple[TagTotal, ...]
 ):
     """The report's totals for one grouping."""
+    if by == "tag" or by.startswith(_TAG_GROUP):
+        key = _tag_key(by)
+        return tuple(tag for tag in report.execution_tags if key in {None, tag.key})
     groups = {
         "model": report.models,
         "agent": report.agents,
@@ -806,6 +840,8 @@ def format_usage(
     lines = [loc.t("usage.header", job=report.job, count=report.turn_count)]
     if report.sessions_filter:
         lines.append(loc.t("usage.sessions_filter", sessions=", ".join(report.sessions_filter)))
+    if report.tags_filter:
+        lines.append(loc.t("usage.tags_filter", tags=", ".join(report.tags_filter)))
     if by is None:
         lines += ["", *_turn_lines(report, who, loc)]
     if by in {None, "model"}:
@@ -818,16 +854,17 @@ def format_usage(
         lines += _incident_lines(report, loc)
     if by in {None, "session"}:
         lines += _session_lines(report, loc)
-    lines += [
-        "",
-        loc.t(
-            "usage.total",
-            count=report.turn_count,
-            tokens=_tokens(report, loc),
-            duration=f"{report.duration_s:.1f}",
-            total=f"{report.total_usd:.2f}",
-        ),
-    ]
+    if by is None or by == "tag" or by.startswith(_TAG_GROUP):
+        lines += _tag_lines(report, _tag_key(by), loc)
+    total = {
+        "count": report.turn_count,
+        "tokens": _tokens(report, loc),
+        "duration": f"{report.duration_s:.1f}",
+    }
+    if report.tags_filter:  # a cost is a whole session's: none for some of its turns
+        lines += ["", loc.t("usage.total_without_cost", **total)]
+    else:
+        lines += ["", loc.t("usage.total", total=f"{report.total_usd:.2f}", **total)]
     return "\n".join(lines)
 
 
@@ -929,6 +966,32 @@ def _incident_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
         cut=len(report.incidents) - lost,
     )
     return ["", heading, *(format_incident(incident, loc) for incident in report.incidents)]
+
+
+def _tag_lines(report: UsageReport, key: str | None, loc: i18n.Localizer) -> list[str]:
+    """Totals by tag: ``key=value`` rows, then the key's untagged turns; one key or all."""
+    tags = [tag for tag in report.execution_tags if key in {None, tag.key}]
+    if not tags:
+        return []
+    labels = [
+        f"{tag.key}={tag.value}" if tag.value is not None else loc.t("usage.untagged", key=tag.key)
+        for tag in tags
+    ]
+    width = max(len(label) for label in labels)
+    return [
+        "",
+        loc.t("usage.totals_by_tag"),
+        *(
+            loc.t(
+                "usage.tag_row",
+                tag=f"{label:<{width}}",
+                calls=f"{tag.calls:>3}",
+                tokens=_tokens(tag, loc),
+                duration=f"{tag.duration_s:.1f}",
+            )
+            for label, tag in zip(labels, tags, strict=True)
+        ),
+    ]
 
 
 def _session_lines(report: UsageReport, loc: i18n.Localizer) -> list[str]:
@@ -1463,7 +1526,7 @@ def _export_view(args: argparse.Namespace, *, as_json: bool) -> str:
     The JSON keeps every count a raw integer, for tools; with ``--by`` it is the grouping's
     rows alone, each with the same fields as in the full report.
     """
-    report = build_export_usage().execute(JobId(args.job), tuple(args.session))
+    report = build_export_usage().execute(JobId(args.job), tuple(args.session), tuple(args.tag))
     if args.by is None:
         return _as_json(asdict(report)) if as_json else format_usage(report)
     if as_json:
@@ -1471,6 +1534,7 @@ def _export_view(args: argparse.Namespace, *, as_json: bool) -> str:
             {
                 "job": report.job,
                 "sessions_filter": list(report.sessions_filter),
+                "tags_filter": list(report.tags_filter),
                 "by": args.by,
                 "rows": [asdict(row) for row in _usage_group(report, args.by)],
             }

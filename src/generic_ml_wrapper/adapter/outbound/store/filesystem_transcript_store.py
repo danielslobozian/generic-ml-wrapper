@@ -62,4 +62,5 @@ def _usage_dict(usage: TurnUsage | None) -> dict[str, object]:
         "timestamp": usage.timestamp,
         "duration_s": usage.duration_s,
         "turn_id": usage.turn_id,
+        "execution_tags": usage.execution_tags.as_dict(),
     }

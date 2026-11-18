@@ -24,6 +24,7 @@ if TYPE_CHECKING:
         AgentTotal,
         ModelTotal,
         SessionTotal,
+        TagTotal,
         UsageReport,
     )
 
@@ -34,7 +35,7 @@ Table = tuple[str, tuple[str, ...], tuple[tuple[str, ...], ...]]
 def usage_tables(
     report: UsageReport, loc: i18n.Localizer | None = None
 ) -> tuple[str, tuple[Table, ...]]:
-    """The report's totals line and its tables: by model, agent (if any), tool, session.
+    """The report's totals line and its tables: by model, agent, tool, session and tag.
 
     Args:
         report: The job's usage report.
@@ -62,6 +63,13 @@ def usage_tables(
         ),
         _tool_table(report, loc),
         _session_table(report, whole, loc),
+        _counted_table(
+            loc.t("export.tab.tag"),
+            loc.t("export.col.tag"),
+            ((_tag_label(tag, loc), tag) for tag in report.execution_tags),
+            whole,
+            loc,
+        ),
     )
     return _summary(report, whole, loc), tuple(table for table in tables if table[2])
 
@@ -119,7 +127,7 @@ def _session_table(report: UsageReport, whole: int, loc: i18n.Localizer) -> Tabl
 def _counted_table(
     title: str,
     name: str,
-    totals: Iterable[tuple[str, ModelTotal | AgentTotal | SessionTotal]],
+    totals: Iterable[tuple[str, ModelTotal | AgentTotal | SessionTotal | TagTotal]],
     whole: int,
     loc: i18n.Localizer,
 ) -> Table:
@@ -150,7 +158,12 @@ def _counted_table(
     return title, columns, rows
 
 
-def _all_tokens(total: ModelTotal | AgentTotal | SessionTotal | UsageReport) -> int:
+def _tag_label(tag: TagTotal, loc: i18n.Localizer) -> str:
+    """``key=value``, or the key's untagged turns."""
+    return loc.t("usage.untagged", key=tag.key) if tag.value is None else f"{tag.key}={tag.value}"
+
+
+def _all_tokens(total: ModelTotal | AgentTotal | SessionTotal | TagTotal | UsageReport) -> int:
     return (
         total.input_tokens
         + total.output_tokens

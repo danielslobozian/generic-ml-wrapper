@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from generic_ml_wrapper.application.domain.model.execution_tags import ExecutionTags
 from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.model.turn_origin import TurnRole
 
@@ -34,6 +35,7 @@ class TurnUsage:
         caused_by_agent: Whether this main-conversation turn was made only because an
             agent was started or reported back (see ``TurnOrigin``).
         tool_calls: The tools the turn's response called, by name.
+        execution_tags: The tags of the ``gmlw-execution`` object the request ran under.
     """
 
     session_id: str
@@ -50,6 +52,7 @@ class TurnUsage:
     agent: str | None = None
     caused_by_agent: bool = False
     tool_calls: ToolCalls = field(default_factory=ToolCalls)
+    execution_tags: ExecutionTags = field(default_factory=ExecutionTags)
 
     def __post_init__(self) -> None:
         """Reject impossible usage: negative counts, or non-finite/negative amounts."""
