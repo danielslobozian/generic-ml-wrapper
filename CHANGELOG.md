@@ -7,6 +7,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- **Old transcripts can be archived.** `gmlw transcripts archive` packs each session
+  folder not written to for a week (`--older-than DAYS` to change it, `--dry-run` to see
+  what would go) into a `tar.xz` archive about forty times smaller, checked before the
+  folder is removed. Resuming an archived session starts a fresh folder, numbered on from
+  the archive.
+
+### Fixed
+- **Resuming a session no longer overwrites its transcript.** Each run numbered its calls
+  from `call_001` again, so a resumed session's calls replaced the first run's. Numbers now
+  run on from the last call already kept.
+
+### Added
 - **Usage by step.** Write `gmlw-execution: {"pipeline": "release", "step": "build"}`
   into a conversation and every turn after it is tagged with those key/value
   pairs, until a later object replaces it (`{}` ends it). `gmlw export` totals by tag

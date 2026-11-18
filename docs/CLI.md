@@ -20,6 +20,7 @@ gmlw sessions <job> [--json]
 gmlw sessions <job> delete <session> [...] [--yes]
 gmlw export <job> [--session S]... [--tag K=V]... [--by model|agent|session|tool|tag|tag:K] [--json]
 gmlw health [--days N] [--job J] [--json]   # connection incidents of recent sessions
+gmlw transcripts archive [--older-than DAYS] [--dry-run]   # pack old transcript folders
 gmlw analyze <session | job | file> [--json]   # what a session did, from its client's file
 gmlw clients [--json]                    # supported clients + installed versions
 gmlw update [--check]                    # a newer gmlw? upgrade it once you agree
@@ -393,6 +394,31 @@ gmlw health [--days N] [--job J] [--json]
 `gmlw export <job>` lists them. In `gmlw tui`, **Health** shows the last two weeks one
 day per row (✅ quiet, ⚠ incidents); a bad day opens its incidents as a table. Incidents are recorded from this version on; earlier
 ones are only in `~/.gmlw/logs/gmlw.log`.
+
+## transcripts
+
+Pack the transcript folders no longer written to (see [`[transcript]`](CONFIGURATION.md#transcript))
+into archives, to save space. Run it when you want; nothing archives on its own.
+
+```
+gmlw transcripts archive [--older-than DAYS] [--dry-run]
+```
+
+- `--older-than DAYS` — only the session folders not written to for this many days
+  (default: 7).
+- `--dry-run` — only list the folders that would be archived, and their size.
+
+Each session folder `<job>/<session>/` becomes `<job>/<session>.calls-<first>-<last>.tar.xz`
+beside where it was, named by the calls it holds. One `tar.xz` stream over the folder finds
+what every call repeats of the conversation, so an archive is about forty times smaller
+than its folder (a zip, compressing each file apart, manages under three). Before its folder
+is removed, an archive is read back and checked file by file; a folder written to while it
+was being packed is left as it was. A long pass prints each folder as it is done.
+
+An archive is never reopened. Resuming an archived session writes its new calls into a
+fresh folder, numbered on from the archive's last call, and a later pass archives that
+folder on its own. Read an archive with any tar tool: `tar -xJf <archive>`. Deleting a
+session or a job removes its archives too.
 
 ## analyze
 

@@ -11,13 +11,21 @@ Each metered call writes three files under ``<root>/<job>/<session>/``::
 The folder is self-identifying, so it can be copied out and analysed with no
 knowledge of the ledger. ``usage.json`` deliberately duplicates the metering row --
 that is what makes the folder portable.
+
+The numbers run on across runs: a resumed session's first call takes the number after
+the last one already kept, in its folder or in its archives, so it never writes over a
+call an earlier run recorded.
 """
 
 from __future__ import annotations
 
 import json
+import threading
 from typing import TYPE_CHECKING
 
+from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_archive import (
+    next_call_number,
+)
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptCall, TranscriptPort
 
 if TYPE_CHECKING:
@@ -36,12 +44,21 @@ class FilesystemTranscriptStore(TranscriptPort):
             root: The directory under which ``<job>/<session>/`` folders are written.
         """
         self._root = root
+        # Per session: the calls already kept when this run first recorded one. The relay
+        # numbers its own calls from 1, and the server is threaded, hence the lock.
+        self._kept: dict[tuple[str, str], int] = {}
+        self._lock = threading.Lock()
 
     def record(self, call: TranscriptCall) -> None:
         """Write the call's request, response, and usage as the three trio files."""
         directory = self._root / call.job / call.session
+        with self._lock:
+            key = (call.job, call.session)
+            if key not in self._kept:
+                self._kept[key] = next_call_number(directory.parent, call.session) - 1
+            number = self._kept[key] + call.call_seq
         directory.mkdir(parents=True, exist_ok=True)
-        stem = f"call_{call.call_seq:03d}"
+        stem = f"call_{number:03d}"
         (directory / f"{stem}.in.json").write_bytes(call.request)
         (directory / f"{stem}.out.sse").write_bytes(call.response)
         (directory / f"{stem}.usage.json").write_text(

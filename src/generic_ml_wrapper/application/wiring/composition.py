@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import getpass
 import os
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -78,6 +79,9 @@ from generic_ml_wrapper.adapter.outbound.store.filesystem_artifact_purge import 
 from generic_ml_wrapper.adapter.outbound.store.filesystem_report_exporter import (
     FilesystemReportExporter,
 )
+from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_archive import (
+    FilesystemTranscriptArchive,
+)
 from generic_ml_wrapper.adapter.outbound.store.filesystem_transcript_store import (
     FilesystemTranscriptStore,
 )
@@ -104,6 +108,7 @@ from generic_ml_wrapper.application.domain.service.hook import HookPhase
 from generic_ml_wrapper.application.domain.service.hook_runner import HookRunner
 from generic_ml_wrapper.application.domain.service.interceptor_chain import InterceptorChain
 from generic_ml_wrapper.application.port.inbound.analyze_session import AnalyzeSession
+from generic_ml_wrapper.application.port.inbound.archive_transcripts import ArchiveTranscripts
 from generic_ml_wrapper.application.port.inbound.bootstrap import Bootstrap
 from generic_ml_wrapper.application.port.inbound.check_client_ready import CheckClientReady
 from generic_ml_wrapper.application.port.inbound.check_for_update import CheckForUpdate
@@ -146,6 +151,7 @@ from generic_ml_wrapper.application.port.outbound.hook import HookPort
 from generic_ml_wrapper.application.port.outbound.interceptor import InterceptorPort
 from generic_ml_wrapper.application.port.outbound.transcript import TranscriptPort
 from generic_ml_wrapper.application.usecase.analyze_session import AnalyzeSessionUseCase
+from generic_ml_wrapper.application.usecase.archive_transcripts import ArchiveTranscriptsUseCase
 from generic_ml_wrapper.application.usecase.bootstrap import BootstrapUseCase
 from generic_ml_wrapper.application.usecase.check_client_ready import CheckClientReadyUseCase
 from generic_ml_wrapper.application.usecase.check_for_update import CheckForUpdateUseCase
@@ -760,6 +766,18 @@ def build_check_client_ready() -> CheckClientReady:
     return CheckClientReadyUseCase(
         overrides=config.caller_overrides(),
         detector=PathClientDetector(),
+    )
+
+
+def build_archive_transcripts() -> ArchiveTranscripts:
+    """Build the ArchiveTranscripts use case over the transcript root.
+
+    Returns:
+        A ready-to-run ArchiveTranscripts, packing folders under the configured root (the
+        default one when ``[transcript] root`` is unset).
+    """
+    return ArchiveTranscriptsUseCase(
+        FilesystemTranscriptArchive(_transcript_root()), clock=time.time
     )
 
 

@@ -305,6 +305,10 @@ Persists the request, response, and usage of each **metered** call under
 > model's replies — a local data-at-rest surface you own; nothing manages retention.
 > See [SECURITY.md](../SECURITY.md).
 
+Every call repeats the conversation so far, so transcripts grow fast. `gmlw transcripts
+archive` packs the session folders not written to for a while into `tar.xz` archives,
+about forty times smaller (see [CLI.md](CLI.md#transcripts)).
+
 ```toml
 [transcript]
 enabled = true

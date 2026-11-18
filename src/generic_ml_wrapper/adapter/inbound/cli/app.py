@@ -105,8 +105,13 @@ from generic_ml_wrapper.application.port.inbound.start_job import (
     StartJobCommand,
     StartJobResult,
 )
+from generic_ml_wrapper.application.port.outbound.transcript_archive import (
+    ArchivedFolder,
+    TranscriptFolder,
+)
 from generic_ml_wrapper.application.wiring.composition import (
     build_analyze_session,
+    build_archive_transcripts,
     build_axis_catalog,
     build_bootstrap,
     build_check_client_ready,
@@ -239,6 +244,7 @@ _COMMANDS = frozenset(
         "role",
         "help",
         "update",
+        "transcripts",
     }
 )
 
@@ -252,6 +258,7 @@ _SUBACTIONS = {
     "config": "config_command",
     "environment": "environment_command",
     "role": "role_command",
+    "transcripts": "transcripts_command",
 }
 
 
@@ -486,7 +493,31 @@ def build_parser() -> argparse.ArgumentParser:  # noqa: PLR0915  (declarative pa
     _add_config_parser(sub)
     _add_axis_parsers(sub)
     _add_help_parser(sub)
+    _add_transcripts_parser(sub)
     return parser
+
+
+#: How long a transcript folder must go unwritten before ``transcripts archive`` packs it.
+ARCHIVE_AFTER_DAYS = 7
+
+
+def _add_transcripts_parser(sub: _SubParsers) -> None:
+    """``gmlw transcripts archive``: pack the transcript folders no longer written to."""
+    transcripts = sub.add_parser("transcripts", help=i18n.t("cli.cmd.transcripts"))
+    transcripts_sub = transcripts.add_subparsers(
+        dest="transcripts_command", metavar=i18n.t("cli.metavar.action")
+    )
+    archive = transcripts_sub.add_parser("archive", help=i18n.t("cli.cmd.transcripts_archive"))
+    archive.add_argument(
+        "--older-than",
+        type=int,
+        default=ARCHIVE_AFTER_DAYS,
+        metavar=i18n.t("cli.metavar.days"),
+        help=i18n.t("cli.flag.transcripts_older_than"),
+    )
+    archive.add_argument(
+        "--dry-run", action="store_true", help=i18n.t("cli.flag.transcripts_dry_run")
+    )
 
 
 def _add_axis_parsers(sub: _SubParsers) -> None:
@@ -1296,6 +1327,8 @@ def _dispatch(resolved: list[str]) -> int:  # noqa: PLR0911, PLR0912  (a per-com
             return _tui()
         if args.command == "attachment":
             return _attachment(args)
+        if args.command == "transcripts":
+            return _transcripts(args)
         if args.command == "persona":
             return _persona(args)
         if args.command == "plugins":
@@ -2854,6 +2887,69 @@ def _persona(args: argparse.Namespace) -> int:
             print(format_personas(personas))
         return 0
     return 0
+
+
+def _transcripts(args: argparse.Namespace) -> int:
+    """``gmlw transcripts archive``: pack each folder not written to, as it goes."""
+    loc = i18n.active()
+
+    def done(folder: TranscriptFolder, archived: ArchivedFolder | None) -> None:
+        name = f"{folder.job}/{folder.session}"
+        if archived is None:
+            print(loc.t("transcripts.changed", folder=name), flush=True)
+            return
+        print(
+            loc.t(
+                "transcripts.archived",
+                folder=name,
+                before=_size(folder.size),
+                after=_size(archived.archive_size),
+            ),
+            flush=True,
+        )
+
+    outcome = build_archive_transcripts().execute(
+        int(args.older_than), dry_run=bool(args.dry_run), on_each=done
+    )
+    if args.dry_run:
+        for folder in outcome.due:
+            print(
+                loc.t(
+                    "transcripts.due",
+                    folder=f"{folder.job}/{folder.session}",
+                    size=_size(folder.size),
+                )
+            )
+        total = sum(folder.size for folder in outcome.due)
+        print(loc.t("transcripts.due_total", count=len(outcome.due), size=_size(total)))
+        return 0
+    before = sum(item.folder.size for item in outcome.archived)
+    after = sum(item.archive_size for item in outcome.archived)
+    print(
+        loc.t(
+            "transcripts.total",
+            count=len(outcome.archived),
+            before=_size(before),
+            after=_size(after),
+        )
+    )
+    return 0
+
+
+_SIZE_UNITS = ("kB", "MB", "GB", "TB")
+_KILO = 1000
+
+
+def _size(size: int) -> str:
+    """A size in bytes as ``8.9 MB``: powers of 1000, one decimal."""
+    if size < _KILO:
+        return f"{size} B"
+    scaled = size / _KILO
+    for unit in _SIZE_UNITS[:-1]:
+        if scaled < _KILO:
+            return f"{scaled:.1f} {unit}"
+        scaled /= _KILO
+    return f"{scaled:.1f} {_SIZE_UNITS[-1]}"
 
 
 def _attachment(args: argparse.Namespace) -> int:
