@@ -22,6 +22,7 @@ from generic_ml_wrapper.application.domain.model.tool_calls import ToolCalls
 from generic_ml_wrapper.application.domain.service.statusline_renderer import (
     render_statusline,
     render_usage_row,
+    usage_row_head,
 )
 from generic_ml_wrapper.application.port.inbound.render_statusline import RenderStatusline
 from generic_ml_wrapper.application.port.outbound.client_status import ClientStatusParserPort
@@ -89,45 +90,64 @@ class RenderStatuslineUseCase(RenderStatusline):
         """The usage rows below the live line: session, then job total across sessions.
 
         The current session's usage comes first; the whole-job total is added only when
-        the job spans other sessions. Empty when the job has no recorded activity.
+        the job spans other sessions. When both show, their labels and heads are padded to
+        one width, so the job row's fields sit under the session row's. Empty when the
+        job has no recorded activity.
         """
         turns = self._turns.turns_for_job(job)
         costs = self._usage.session_costs(job)
         if not turns and not costs:
             return ""
-        rows: list[str] = []
+        scopes: list[tuple[str, str, Sequence[TurnUsage], float, float | None]] = []
         if session is not None:
             session_turns = [turn for turn in turns if turn.session_id == session]
-            rows.append(
-                render_usage_row(
+            scopes.append(
+                (
                     "session",
                     session,
-                    len(session_turns),
-                    TokenCounts.of(session_turns),
+                    session_turns,
                     costs.get(session, 0.0),
                     self._age(session_turns),
-                    AgentUsage.of(session_turns),
-                    tools=ToolCalls.summed(turn.tool_calls for turn in session_turns),
                 )
             )
             spans_other_sessions = any(turn.session_id != session for turn in turns) or any(
                 other != session for other in costs
             )
             if not spans_other_sessions:
-                return rows[0]
-        rows.append(
-            render_usage_row(
-                "job",
-                job,
-                len(turns),
-                TokenCounts.of(turns),
-                round(sum(costs.values()), 2),
-                self._age(turns),
-                AgentUsage.of(turns),
-                tools=ToolCalls.summed(turn.tool_calls for turn in turns),
-            )
+                return self._row(*scopes[0])
+        scopes.append(("job", job, turns, round(sum(costs.values()), 2), self._age(turns)))
+        label_width = max(len(label) for label, *_ in scopes)
+        head_width = max(
+            len(usage_row_head(label, name, age, label_width)) for label, name, _, _, age in scopes
         )
-        return "\n".join(rows)
+        return "\n".join(
+            self._row(*scope, label_width=label_width, head_width=head_width) for scope in scopes
+        )
+
+    def _row(  # noqa: PLR0913  (one row's scope, plus its alignment)
+        self,
+        label: str,
+        name: str,
+        turns: Sequence[TurnUsage],
+        cost_usd: float,
+        age_s: float | None,
+        *,
+        label_width: int = 0,
+        head_width: int = 0,
+    ) -> str:
+        """One footer row for a scope's turns and cost."""
+        return render_usage_row(
+            label,
+            name,
+            len(turns),
+            TokenCounts.of(turns),
+            cost_usd,
+            age_s,
+            AgentUsage.of(turns),
+            tools=ToolCalls.summed(turn.tool_calls for turn in turns),
+            label_width=label_width,
+            head_width=head_width,
+        )
 
     def _age(self, turns: Sequence[TurnUsage]) -> float | None:
         """How long ago this scope's first recorded turn was, or ``None`` when it has none.

@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+- **The status line reads cost first.** The live line now runs model, context, quota and
+  cost, then git and the folder. On the session and job rows the cost follows the name
+  instead of closing the row, and the two rows are padded to one width so the job's
+  fields sit under the session's.
+
 ## [0.13.2] - 2026-10-24
 
 ### Added

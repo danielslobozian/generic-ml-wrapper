@@ -30,11 +30,11 @@ def render_statusline(
 ) -> str:
     """Render the working environment and client status as a single line.
 
-    The wrapper's own facts (git, folder) come first, then the common client
-    fields (model, context), then any client-specific ``extras`` (already
-    formatted, e.g. Claude's quota), then cost. Blocks the environment or client
-    did not provide are omitted, so a bare environment with an empty status yields
-    an empty line.
+    The client's fields lead -- model, context, any client-specific ``extras``
+    (already formatted, e.g. Claude's quota), then cost -- and the wrapper's own
+    facts (git, folder) close the line, so what is spent is read before where the
+    work happens. Blocks the environment or client did not provide are omitted, so a
+    bare environment with an empty status yields an empty line.
 
     Args:
         status: The parsed client status.
@@ -46,12 +46,12 @@ def render_statusline(
         The status line (no trailing newline).
     """
     blocks = [
-        _git(workspace),
-        _folder(workspace),
         status.model,
         _painted(_context(status), status, thresholds),
         *status.extras,
         None if status.session_cost_usd is None else f"${status.session_cost_usd:.2f}",
+        _git(workspace),
+        _folder(workspace),
     ]
     return _SEPARATOR.join(block for block in blocks if block)
 
@@ -153,12 +153,15 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
     agents: AgentUsage | None = None,
     *,
     tools: ToolCalls | None = None,
+    label_width: int = 0,
+    head_width: int = 0,
 ) -> str:
-    """Render one usage footer row -- ``<label> <name> (age) · N turns · ↑ ↓ ⟲ ✎ · ⚒ · $``.
+    """Render one usage footer row -- ``<label> <name> (age) · $ · N turns · ↑ ↓ ⟲ ✎ · ⚒``.
 
     Used for both the current-session row (``label="session"``) and the whole-job
     total (``label="job"``). Turns/tokens show only when deep-metered (``turns`` > 0);
-    the cost always shows. The leading indent sets the footer apart from the live line.
+    the cost always shows, right after the name, so it is read first. The leading indent
+    sets the footer apart from the live line.
 
     The age is bound to the name in parentheses rather than added as another
     ``·``-separated field: the separators read as a list of measurements -- turns,
@@ -178,20 +181,33 @@ def render_usage_row(  # noqa: PLR0913, PLR0917  (one row's worth of fields)
             when they had none; the turn count and each kind then show their share.
         tools: The tools those turns called, or ``None``; shown as their total and the
             most called (``⚒ 48 (Bash 30, Read 12, WebSearch 6, …)``) once there is one.
+        label_width: The width the label is padded to, so stacked rows start their names
+            in one column; ``0`` pads nothing.
+        head_width: The width the ``<label> <name> (age)`` head is padded to, so stacked
+            rows line up their ``·`` fields (see :func:`usage_row_head`); ``0`` pads nothing.
 
     Returns:
         The footer row (no trailing newline).
     """
-    head = f"{label} {name}" if age_s is None else f"{label} {name} ({format_age(age_s)})"
-    parts = [head]
+    head = usage_row_head(label, name, age_s, label_width)
+    parts = [head.ljust(head_width), f"${cost_usd:.2f}"]
     if turns:
         own, caused = (0, 0) if agents is None else (agents.turns, agents.caused_turns)
         parts.append(f"{turns} turns{_shares(own, caused, turns)}")
         parts.append(render_tokens(tokens, agents))
         if tools is not None and tools.total:
             parts.append(render_tools(tools))
-    parts.append(f"${cost_usd:.2f}")
     return "  " + " · ".join(parts)
+
+
+def usage_row_head(label: str, name: str, age_s: float | None = None, label_width: int = 0) -> str:
+    """A footer row's head, ``<label> <name> (age)``, with the label padded to ``label_width``.
+
+    Exposed so whoever stacks rows can measure the widest head and pass it back as
+    ``head_width``.
+    """
+    head = f"{label.ljust(label_width)} {name}"
+    return head if age_s is None else f"{head} ({format_age(age_s)})"
 
 
 def render_tokens(tokens: TokenCounts, agents: AgentUsage | None = None) -> str:

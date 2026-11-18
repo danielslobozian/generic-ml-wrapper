@@ -168,6 +168,16 @@ def test_render_full_line() -> None:
     assert "$0.43" in line
 
 
+def test_render_leads_with_the_client_and_closes_with_the_workspace() -> None:
+    status = _status(
+        model="Opus 4.8", context_pct=34, extras=("quota wk 47%",), session_cost_usd=0.43
+    )
+    assert render_statusline(status, _REPO) == (
+        "Opus 4.8  ·  ctx 34%  ·  quota wk 47%  ·  $0.43  ·  "
+        "git app/main abc1234 dirty:3  ·  📁 ~/dev/app"
+    )
+
+
 def test_render_places_extras_between_context_and_cost() -> None:
     status = _status(context_pct=34, extras=("quota 5h 12%", "plan auto 8%"), session_cost_usd=0.43)
     line = render_statusline(status, _NO_WORKSPACE)
@@ -191,7 +201,7 @@ _TOKENS = TokenCounts(input=182_000, output=96_400, cache_read=8_600_000, cache_
 def test_render_usage_row_with_turns() -> None:
     assert (
         render_usage_row("job", "JOB-1", 3, _TOKENS, 0.43)
-        == "  job JOB-1 · 3 turns · ↑ 182k  ↓ 96.4k  ⟲ 8.6M  ✎ 240k · $0.43"
+        == "  job JOB-1 · $0.43 · 3 turns · ↑ 182k  ↓ 96.4k  ⟲ 8.6M  ✎ 240k"
     )
 
 
@@ -228,7 +238,7 @@ def test_a_share_is_a_whole_percentage_that_never_misleads(
 
 def test_the_agents_share_of_the_turns_follows_the_turn_count() -> None:
     row = render_usage_row("job", "JOB-1", 412, _TOKENS, 0.43, agents=AgentUsage(292, _TOKENS))
-    assert row.startswith("  job JOB-1 · 412 turns (71%) · ")
+    assert row.startswith("  job JOB-1 · $0.43 · 412 turns (71%) · ")
 
 
 def test_no_agent_turns_leaves_the_turn_count_bare() -> None:
@@ -244,8 +254,8 @@ def test_the_main_turns_the_agents_caused_follow_their_own_share() -> None:
     row = render_usage_row("session", "PAY-1_003", 86, tokens, 2.5, agents=agents)
     # output untouched by the agents themselves: only what they caused
     assert row == (
-        "  session PAY-1_003 · 86 turns (70% +12%) · "
-        "↑ 182k (22% +5%)  ↓ 96k (+3%)  ⟲ 8.6M (60% +25%)  ✎ 240k · $2.50"
+        "  session PAY-1_003 · $2.50 · 86 turns (70% +12%) · "
+        "↑ 182k (22% +5%)  ↓ 96k (+3%)  ⟲ 8.6M (60% +25%)  ✎ 240k"
     )
 
 
@@ -256,7 +266,7 @@ def test_render_usage_row_without_turns_shows_only_cost() -> None:
 def test_render_usage_row_session_label() -> None:
     assert (
         render_usage_row("session", "JOB-1_002", 2, TokenCounts(80, 20), 0.10)
-        == "  session JOB-1_002 · 2 turns · ↑ 80  ↓ 20  ⟲ 0  ✎ 0 · $0.10"
+        == "  session JOB-1_002 · $0.10 · 2 turns · ↑ 80  ↓ 20  ⟲ 0  ✎ 0"
     )
 
 
@@ -294,7 +304,7 @@ def test_use_case_shows_only_the_session_row_for_a_single_session() -> None:
     )
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
     # one session → just the current-session row (no separate job total)
-    assert out == "  session JOB-1_001 · 1 turns · ↑ 3.1k  ↓ 7  ⟲ 0  ✎ 42.1k · $0.00"
+    assert out == "  session JOB-1_001 · $0.00 · 1 turns · ↑ 3.1k  ↓ 7  ⟲ 0  ✎ 42.1k"
 
 
 def test_use_case_shows_session_then_job_row_across_sessions() -> None:
@@ -306,10 +316,10 @@ def test_use_case_shows_session_then_job_row_across_sessions() -> None:
         ]
     )
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
-    # current session first, then the job total across both sessions
+    # current session first, then the job total across both sessions, aligned under it
     assert out == (
-        "  session JOB-1_002 · 2 turns · ↑ 310  ↓ 45  ⟲ 0  ✎ 0 · $0.00\n"
-        "  job JOB-1 · 3 turns · ↑ 410  ↓ 65  ⟲ 0  ✎ 0 · $0.00"
+        "  session JOB-1_002 · $0.00 · 2 turns · ↑ 310  ↓ 45  ⟲ 0  ✎ 0\n"
+        "  job     JOB-1     · $0.00 · 3 turns · ↑ 410  ↓ 65  ⟲ 0  ✎ 0"
     )
 
 
@@ -324,8 +334,8 @@ def test_use_case_shows_the_agents_share_on_each_row_that_has_agent_turns() -> N
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_002")
     # the session had no agent turns: today's line; the job did: shares
     assert out == (
-        "  session JOB-1_002 · 1 turns · ↑ 300  ↓ 40  ⟲ 0  ✎ 0 · $0.00\n"
-        "  job JOB-1 · 2 turns (50%) · ↑ 400 (25%)  ↓ 60 (33%)  ⟲ 0  ✎ 0 · $0.00"
+        "  session JOB-1_002 · $0.00 · 1 turns · ↑ 300  ↓ 40  ⟲ 0  ✎ 0\n"
+        "  job     JOB-1     · $0.00 · 2 turns (50%) · ↑ 400 (25%)  ↓ 60 (33%)  ⟲ 0  ✎ 0"
     )
 
 
@@ -337,8 +347,8 @@ def test_use_case_shows_the_share_of_the_main_turns_the_agents_caused() -> None:
         ]
     )
     out = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns).execute("{}", "JOB-1", "JOB-1_001")
-    assert (
-        out == "  session JOB-1_001 · 2 turns (+50%) · ↑ 400 (+25%)  ↓ 60 (+33%)  ⟲ 0  ✎ 0 · $0.00"
+    assert out == (
+        "  session JOB-1_001 · $0.00 · 2 turns (+50%) · ↑ 400 (+25%)  ↓ 60 (+33%)  ⟲ 0  ✎ 0"
     )
 
 
@@ -412,8 +422,8 @@ def test_the_footer_shows_how_long_the_session_and_job_have_been_going() -> None
     line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 24 * hour).execute(
         "{}", "JOB-1", "JOB-1_002"
     )
-    assert "session JOB-1_002 (4h)" in line
-    assert "job JOB-1 (1d)" in line
+    assert "session JOB-1_002 (4h) · " in line
+    assert "job     JOB-1 (1d)     · " in line
 
 
 def test_a_session_with_no_turns_yet_shows_no_age() -> None:
@@ -421,7 +431,7 @@ def test_a_session_with_no_turns_yet_shows_no_age() -> None:
     line = _use_case(FakeUsageStore(), _NO_WORKSPACE, turns, now=_EPOCH + 3600.0).execute(
         "{}", "JOB-1", "JOB-1_002"
     )
-    assert "session JOB-1_002 · " in line  # named, but no parenthesised age
+    assert "session JOB-1_002  · " in line  # named (padded to the job row), no age
     assert "session JOB-1_002 (" not in line
 
 
@@ -517,8 +527,8 @@ def test_the_tools_show_their_total_and_the_three_most_called() -> None:
     tools = ToolCalls.from_counts({"Bash": 640, "WebSearch": 310, "Read": 180, "Edit": 9})
     row = render_usage_row("job", "JOB-1", 3, TokenCounts(1, 1), 0.5, tools=tools)
     assert row == (
-        "  job JOB-1 · 3 turns · ↑ 1  ↓ 1  ⟲ 0  ✎ 0 · "
-        "⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …) · $0.50"
+        "  job JOB-1 · $0.50 · 3 turns · ↑ 1  ↓ 1  ⟲ 0  ✎ 0 · "
+        "⚒ 1.1k (Bash 640, WebSearch 310, Read 180, …)"
     )
 
 
