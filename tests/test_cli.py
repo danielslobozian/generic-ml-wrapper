@@ -200,6 +200,7 @@ def test_command_set_entries_are_real_parseable_commands() -> None:
         "role": ["role"],
         "help": ["help"],
         "update": ["update"],
+        "transcripts": ["transcripts"],
     }
     assert set(samples) == app._COMMANDS  # every command has a sample, and vice versa
     for command, argv in samples.items():
