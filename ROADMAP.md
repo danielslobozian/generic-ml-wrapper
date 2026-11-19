@@ -481,6 +481,23 @@ latest work, and every job and session says when it was last worked on.
 Job → New and Job → Resume now open on the default tag, filter by another, and take `s` to
 switch and keep the job order -- as Job → List already did.
 
+### 0.14.0 — usage by step, a status line you lay out, and lighter transcripts
+The usage report becomes two: raw rows for tools and dashboards, a tabbed view for reading.
+Turns can be tagged by step, the status line is laid out from the menu, and old transcripts
+pack down to a fortieth of their size.
+
+- **Usage by step** — a `gmlw-execution: {...}` object in the conversation tags every turn
+  after it; `gmlw export --by tag:<key>` and the TUI's Tags tab total them.
+- **A report for tools** — `gmlw export --session`, `--tag`, `--by`; cache reads and writes
+  apart; every grouping a list of raw-integer rows in `--json`.
+- **A report for reading** — Job → Export → View summary: a totals line and a tab per
+  grouping, tokens in k/M/G.
+- **The status line** — cost first; Config → Status line shows, hides and reorders its
+  blocks, and turns the agents' share off field by field.
+- **Attachments by name** — then version; `⏎` attaches the latest, `→` picks another.
+- **`gmlw transcripts archive`** — old session folders packed into checked `tar.xz`
+  archives; a resumed session no longer overwrites its transcript.
+
 ## Planned
 
 _Next milestone not yet chosen._
