@@ -25,7 +25,7 @@ session: nothing else about it changes.
 | import, store, export, list and delete attachments | create or modify them |
 | check that a stored version is unchanged before using it | read or interpret any file other than the manifest and the main file |
 | deliver the main file and let the session reach the rest | load the other files into the context |
-| record which attachment and version each session ran | run the attachment's scripts |
+| record which attachment and version each session ran | run the attachment's scripts, apart from its pre-flight (§6) |
 
 ## 2. The format
 
@@ -45,6 +45,7 @@ main_md_file: main.md
 | `description` | no | One line, shown in listings. |
 | `version` | yes | Exactly `MAJOR.MINOR.PATCH`, three numbers without leading zeros: `1.0.0`, `2.1.0`, `2.10.3`. Refused: `2`, `2.1`, `v1.0.0`, `1.0.0-beta`, `1.02.0`. |
 | `main_md_file` | yes | The file delivered into the context, relative to the zip's root. It must exist in the zip. |
+| `pre_flight_py_file` | no | A Python script run before each new session's client starts (§6), relative to the zip's root. It must exist in the zip. |
 
 Everything else in the zip is the attachment's own business, in any layout. gmlw never
 reads it.
@@ -116,9 +117,16 @@ help the user change it. The result comes back through import, as a new version.
    and vibe. Some clients grant write access with it; the read-only files and the hash
    check (§4) still keep a stored version from changing unnoticed.
 3. **Environment.** The attachment's credentials, if the user set any (below).
-4. **Opening.** The session starts with a short message naming the attachment and its
+4. **Pre-flight.** If the manifest names a `pre_flight_py_file`, gmlw runs it with its own
+   Python, from the stored folder, in the session's folder, with the environment the client
+   gets: the user's, the attachment's credentials, and `GMLW_JOB`, `GMLW_SESSION` and
+   `GMLW_CLIENT`. Its input is closed and its output goes to the terminal. gmlw waits for it
+   to exit: on `0` the client starts; on anything else the start stops, and no session is
+   recorded. What the script starts and leaves running (a server, a dashboard) is its own:
+   gmlw does not know about it and does not stop it. It does not run on a resume.
+5. **Opening.** The session starts with a short message naming the attachment and its
    version. What the session does next is the attachment's business.
-5. **Record.** The session records the attachment's name, version and hash.
+6. **Record.** The session records the attachment's name, version and hash.
 
 A session's own output, an attachment being written included, goes to the job's folder.
 
@@ -129,7 +137,9 @@ that attachment. It is not part of the attachment, so it never travels with an e
 [SECURITY.md](../SECURITY.md).
 
 **Scripts.** An attachment may carry scripts; its text tells the session when to run them,
-by their path inside the attachment. gmlw never runs them itself.
+by their path inside the attachment. gmlw itself runs only the pre-flight, and only at the
+start of a new session. An imported attachment with a pre-flight runs code as the user, so
+import only attachments you trust; see [SECURITY.md](../SECURITY.md).
 
 ## 7. The provided attachment
 

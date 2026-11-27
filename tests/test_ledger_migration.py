@@ -156,6 +156,7 @@ def test_v6_gains_an_empty_attachments_table(tmp_path: Path) -> None:
         "main_md_file",
         "content_hash",
         "imported_at",
+        "pre_flight_py_file",
     ]
     assert count == 0
 
@@ -217,6 +218,21 @@ def _drop_columns_added_after_v9(connection: sqlite3.Connection) -> None:
     )
     connection.execute("DROP TABLE turns")
     connection.execute("ALTER TABLE turns_v9 RENAME TO turns")
+    _drop_columns_added_after_v12(connection)
+
+
+def _drop_columns_added_after_v12(connection: sqlite3.Connection) -> None:
+    """Take a fresh database's attachments table back to v12's columns.
+
+    Rebuilt rather than altered: SQLite refuses to drop a column ending in a comment.
+    """
+    connection.execute("DROP TABLE attachments")
+    connection.execute(
+        "CREATE TABLE attachments (name TEXT NOT NULL, version TEXT NOT NULL, "
+        "description TEXT NOT NULL DEFAULT '', main_md_file TEXT NOT NULL, "
+        "content_hash TEXT NOT NULL, imported_at TEXT NOT NULL DEFAULT (datetime('now')), "
+        "PRIMARY KEY (name, version))"
+    )
 
 
 def test_v9_turns_were_not_caused_by_an_agent(tmp_path: Path) -> None:
@@ -234,4 +250,22 @@ def test_v9_turns_were_not_caused_by_an_agent(tmp_path: Path) -> None:
         version = connection.execute("PRAGMA user_version").fetchone()[0]
 
     assert caused == [0]
+    assert version == SCHEMA_VERSION
+
+
+def test_v12_attachments_have_no_pre_flight(tmp_path: Path) -> None:
+    db = tmp_path / "ledger.db"
+    with Ledger(db).connect() as connection:
+        _drop_columns_added_after_v12(connection)
+        connection.execute(
+            "INSERT INTO attachments (name, version, main_md_file, content_hash) "
+            "VALUES ('notes', '1.0.0', 'main.md', 'h')"
+        )
+        connection.execute("PRAGMA user_version = 12")
+
+    with Ledger(db).connect() as connection:
+        rows = connection.execute("SELECT pre_flight_py_file FROM attachments").fetchall()
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+
+    assert [row["pre_flight_py_file"] for row in rows] == [None]
     assert version == SCHEMA_VERSION

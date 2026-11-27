@@ -45,6 +45,9 @@ class ImportAttachmentUseCase(ImportAttachment):
             manifest = parse_manifest(staged.manifest_text)
             if manifest.main_md_file not in staged.files:
                 raise AttachmentError("error.attachment.main_missing", file=manifest.main_md_file)
+            pre_flight = manifest.pre_flight_py_file
+            if pre_flight is not None and pre_flight not in staged.files:
+                raise AttachmentError("error.attachment.pre_flight_missing", file=pre_flight)
             if self._store.exists(manifest.name, manifest.version):
                 raise AttachmentError(
                     "error.attachment.exists", name=manifest.name, version=str(manifest.version)

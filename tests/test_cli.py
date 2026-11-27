@@ -2509,6 +2509,7 @@ def test_attachment_list_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]
             "version": "1.0.0",
             "description": "My notes.",
             "main_md_file": "main.md",
+            "pre_flight_py_file": None,
             "intact": True,
         }
     ]

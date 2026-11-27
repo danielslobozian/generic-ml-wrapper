@@ -216,7 +216,7 @@ change is a full store reset). Tables:
 | `sessions` | `session_id` (`<job>_NNN`), `job`, `client`, `uuid`, the attachment's name, version and hash |
 | `turns` | one row per metered turn: tokens (incl. cache), `cost_usd`, `model`, timing |
 | `session_costs` | per-session cumulative cost (monotonic upsert — highest wins) |
-| `attachments` | one row per imported version: name, version, description, main file, SHA-256 |
+| `attachments` | one row per imported version: name, version, description, main file, pre-flight script, SHA-256 |
 
 **Context** — the exact compiled context a session launched with is written to
 `~/.gmlw/contexts/<job>/<session>.context.md` (atomic write). A durable, inspectable
@@ -266,7 +266,8 @@ compression is an opt-in plug-in bound to a target, not a fork of the engine.
 - **Attachment (optional, verbatim):** the main file of the chosen version, introduced by a
   paragraph naming it, its version and its folder; its other files stay in the store, opened
   to the client with `--add-dir` (codex reads it without), and are read when the text sends the session there. The
-  version's hash is checked before it is used. See [ATTACHMENTS.md](ATTACHMENTS.md).
+  version's hash is checked before it is used. Its optional pre-flight script runs before the
+  client starts, and a failure stops the start. See [ATTACHMENTS.md](ATTACHMENTS.md).
 - **Writing one** is an ordinary session with the shipped `workflow-creator` attachment,
   imported into the store like any other at every start.
 

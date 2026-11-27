@@ -21,7 +21,7 @@ from generic_ml_wrapper.application.domain.model.identifiers import AttachmentNa
 MANIFEST = "manifest.yaml"
 
 _REQUIRED = ("name", "version", "main_md_file")
-_KEYS = frozenset({*_REQUIRED, "description"})
+_KEYS = frozenset({*_REQUIRED, "description", "pre_flight_py_file"})
 _QUOTES = ("'", '"')
 _BOM = "﻿"
 
@@ -37,8 +37,8 @@ def parse_manifest(text: str) -> AttachmentManifest:
 
     Raises:
         AttachmentError: If a line is not ``key: value``, a key is unknown or repeated, a
-            required key is missing or empty, or the main file's path leaves the
-            attachment.
+            required key is missing or empty, or the main file's or the
+            pre-flight script's path leaves the attachment.
         IdentifierError: If the name is not lowercase kebab.
         AttachmentVersionError: If the version is not ``MAJOR.MINOR.PATCH``.
     """
@@ -62,11 +62,15 @@ def parse_manifest(text: str) -> AttachmentManifest:
     main = values["main_md_file"]
     if not _inside(main):
         raise AttachmentError("error.attachment.main_path", file=main)
+    pre_flight = values.get("pre_flight_py_file") or None
+    if pre_flight is not None and not _inside(pre_flight):
+        raise AttachmentError("error.attachment.pre_flight_path", file=pre_flight)
     return AttachmentManifest(
         name=AttachmentName(values["name"]),
         version=AttachmentVersion.parse(values["version"]),
         description=values.get("description", ""),
         main_md_file=main,
+        pre_flight_py_file=pre_flight,
     )
 
 

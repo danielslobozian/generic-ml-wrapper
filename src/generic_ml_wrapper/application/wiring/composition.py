@@ -21,6 +21,9 @@ from generic_ml_wrapper.adapter.outbound.attachment.filesystem_legacy_workflows 
 from generic_ml_wrapper.adapter.outbound.attachment.packaged_attachments import (
     PackagedAttachments,
 )
+from generic_ml_wrapper.adapter.outbound.attachment.subprocess_pre_flight_runner import (
+    SubprocessPreFlightRunner,
+)
 from generic_ml_wrapper.adapter.outbound.bootstrap.filesystem_axis_catalog import (
     FilesystemAxisCatalog,
 )
@@ -504,6 +507,7 @@ def build_start_job() -> StartJob:
         greeting=lambda: build_render_greeting().execute(),
         capability_card=_capability_card,
         tags=SqliteJobTagStore(_ledger()),
+        pre_flight=SubprocessPreFlightRunner(),
         client_args=config.client_args_for,
         attachments=_attachment_store(),
     )
