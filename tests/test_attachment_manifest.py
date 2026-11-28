@@ -30,6 +30,22 @@ def test_reads_the_four_keys() -> None:
     assert manifest.main_md_file == "main.md"
 
 
+def test_pre_flight_is_optional() -> None:
+    assert parse_manifest(_FULL).pre_flight_py_file is None
+
+
+def test_reads_the_pre_flight_script() -> None:
+    manifest = parse_manifest(_FULL + "pre_flight_py_file: tools/pre_flight.py\n")
+    assert manifest.pre_flight_py_file == "tools/pre_flight.py"
+
+
+@pytest.mark.parametrize("script", ["/tmp/x.py", "../x.py", "a\\x.py"])
+def test_pre_flight_must_stay_inside_the_attachment(script: str) -> None:
+    with pytest.raises(AttachmentError) as raised:
+        parse_manifest(_FULL + f"pre_flight_py_file: {script}\n")
+    assert raised.value.catalogue_key == "error.attachment.pre_flight_path"
+
+
 def test_description_is_optional() -> None:
     manifest = parse_manifest("name: a\nversion: 0.1.0\nmain_md_file: docs/a.md\n")
     assert manifest.description == ""

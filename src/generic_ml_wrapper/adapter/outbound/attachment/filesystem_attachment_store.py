@@ -106,18 +106,20 @@ class FilesystemAttachmentStore(AttachmentStorePort):
                 description=manifest.description,
                 main_md_file=manifest.main_md_file,
                 content_hash=folder_hash(target),
+                pre_flight_py_file=manifest.pre_flight_py_file,
             )
             with self._ledger.connect() as connection:
                 connection.execute(
                     "INSERT INTO attachments "
-                    "(name, version, description, main_md_file, content_hash) "
-                    "VALUES (?, ?, ?, ?, ?)",
+                    "(name, version, description, main_md_file, content_hash, "
+                    "pre_flight_py_file) VALUES (?, ?, ?, ?, ?, ?)",
                     (
                         attachment.name,
                         str(attachment.version),
                         attachment.description,
                         attachment.main_md_file,
                         attachment.content_hash,
+                        attachment.pre_flight_py_file,
                     ),
                 )
         except BaseException:
@@ -129,7 +131,8 @@ class FilesystemAttachmentStore(AttachmentStorePort):
         """Every recorded version, by name then version (as numbers)."""
         with self._ledger.connect() as connection:
             rows = connection.execute(
-                "SELECT name, version, description, main_md_file, content_hash FROM attachments"
+                "SELECT name, version, description, main_md_file, content_hash, "
+                "pre_flight_py_file FROM attachments"
             ).fetchall()
         found = [
             Attachment(
@@ -138,6 +141,7 @@ class FilesystemAttachmentStore(AttachmentStorePort):
                 description=row["description"],
                 main_md_file=row["main_md_file"],
                 content_hash=row["content_hash"],
+                pre_flight_py_file=row["pre_flight_py_file"],
             )
             for row in rows
         ]

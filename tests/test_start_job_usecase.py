@@ -4,6 +4,7 @@
 
 import os
 import zipfile
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ from generic_ml_wrapper.application.port.outbound.attachment_store import Attach
 from generic_ml_wrapper.application.port.outbound.cli_caller import CliCaller, CliCallerProvider
 from generic_ml_wrapper.application.port.outbound.context_compiler import ContextCompilerPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
+from generic_ml_wrapper.application.port.outbound.pre_flight_runner import PreFlightRunnerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.usecase.import_attachment import ImportAttachmentUseCase
 from generic_ml_wrapper.application.usecase.start_job import StartJobUseCase
@@ -115,6 +117,20 @@ class FakeCredentials(CredentialsStorePort):
         raise NotImplementedError
 
 
+class FakePreFlight(PreFlightRunnerPort):
+    """Records each script it is asked to run, in the shared log, and answers ``code``."""
+
+    def __init__(self, log: list[str] | None = None, *, code: int = 0) -> None:
+        self.log = log if log is not None else []
+        self.calls: list[tuple[Path, str | None, dict[str, str]]] = []
+        self._code = code
+
+    def run(self, script: Path, cwd: str | None, env: Mapping[str, str]) -> int:
+        self.log.append("pre_flight")
+        self.calls.append((script, cwd, dict(env)))
+        return self._code
+
+
 class FakeProvider(CliCallerProvider):
     def __init__(self, log: list[str] | None = None, *, can_resume: bool = True) -> None:
         self.log = log if log is not None else []
@@ -147,6 +163,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
     client_args: dict[str, str] | None = None,
     tags: InMemoryJobTagStore | None = None,
     attachments: AttachmentStorePort | None = None,
+    pre_flight: FakePreFlight | None = None,
 ) -> StartJobUseCase:
     return StartJobUseCase(
         store=store,
@@ -159,6 +176,7 @@ def _use_case(  # noqa: PLR0913, PLR0917  (mirrors the use case's full port set,
         greeting=lambda: greeting,
         capability_card=lambda: capability_card,
         tags=tags or InMemoryJobTagStore(),
+        pre_flight=pre_flight or FakePreFlight(),
         # configured per client; a client with no entry has no arguments
         client_args=lambda client: (client_args or {}).get(client, ""),
         attachments=attachments,
@@ -681,3 +699,100 @@ def test_a_note_alone_opens_a_plain_session() -> None:
 
     assert provider.run is not None
     assert provider.run.kickoff == "Modify x."
+
+
+# ── the attachment's pre-flight script ──
+def _store_with_pre_flight(tmp_path: Path) -> FilesystemAttachmentStore:
+    store = FilesystemAttachmentStore(tmp_path / "attachments", Ledger(tmp_path / "ledger.db"))
+    archive = tmp_path / "notes.zip"
+    with zipfile.ZipFile(archive, "w") as zipped:
+        zipped.writestr(
+            "manifest.yaml",
+            "name: notes\nversion: 1.0.0\nmain_md_file: main.md\n"
+            "pre_flight_py_file: tools/pre_flight.py\n",
+        )
+        zipped.writestr("main.md", "Notes.\n")
+        zipped.writestr("tools/pre_flight.py", "pass\n")
+    ImportAttachmentUseCase(store).execute(str(archive))
+    return store
+
+
+def test_the_pre_flight_runs_in_the_session_folder_before_the_client(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+    pre_flight = FakePreFlight(provider.log)
+    credentials = FakeCredentials({"notes": {"NOTES_TOKEN": "t"}})
+
+    _use_case(
+        store,
+        provider,
+        credentials=credentials,
+        attachments=_store_with_pre_flight(tmp_path),
+        pre_flight=pre_flight,
+    ).execute(StartJobCommand(job="JOB-1", client="claude", attachment="notes"))
+
+    folder = tmp_path / "attachments" / "notes" / "1.0.0"
+    assert pre_flight.calls == [
+        (
+            folder / "tools" / "pre_flight.py",
+            "/work/svc-a",
+            {
+                "NOTES_TOKEN": "t",
+                "GMLW_JOB": "JOB-1",
+                "GMLW_SESSION": "JOB-1_001",
+                "GMLW_CLIENT": "claude",
+            },
+        )
+    ]
+    assert provider.log[:2] == ["pre_flight", "start_metering"]
+    assert len(store.recorded) == 1
+
+
+def test_a_failed_pre_flight_stops_the_start_before_a_session_is_spent(tmp_path: Path) -> None:
+    store = FakeStore(ids=[])
+    provider = FakeProvider()
+
+    with pytest.raises(AttachmentError) as raised:
+        _use_case(
+            store,
+            provider,
+            attachments=_store_with_pre_flight(tmp_path),
+            pre_flight=FakePreFlight(code=3),
+        ).execute(StartJobCommand(job="JOB-1", client="claude", attachment="notes"))
+
+    assert raised.value.catalogue_key == "error.attachment.pre_flight_failed"
+    assert raised.value.params == {
+        "name": "notes",
+        "version": "1.0.0",
+        "file": "tools/pre_flight.py",
+        "code": 3,
+    }
+    assert store.recorded == []
+    assert provider.log == []
+
+
+def test_the_pre_flight_does_not_run_on_a_resume(tmp_path: Path) -> None:
+    latest = Session("JOB-1_003", "JOB-1", "claude", "uuid-3")
+    pre_flight = FakePreFlight()
+
+    _use_case(
+        FakeStore(latest=latest),
+        FakeProvider(),
+        attachments=_store_with_pre_flight(tmp_path),
+        pre_flight=pre_flight,
+    ).execute(StartJobCommand(job="JOB-1", client="claude", resume_latest=True, attachment="notes"))
+
+    assert pre_flight.calls == []
+
+
+def test_an_attachment_without_a_pre_flight_runs_none(tmp_path: Path) -> None:
+    pre_flight = FakePreFlight()
+
+    _use_case(
+        FakeStore(ids=[]),
+        FakeProvider(),
+        attachments=_store_with(tmp_path, "1.0.0"),
+        pre_flight=pre_flight,
+    ).execute(StartJobCommand(job="JOB-1", client="claude", attachment="notes"))
+
+    assert pre_flight.calls == []

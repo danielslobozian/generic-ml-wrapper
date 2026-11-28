@@ -76,6 +76,34 @@ def test_import_stores_the_version_read_only_with_its_hash(
     assert list((tmp_path / "attachments" / ".staging").iterdir()) == []
 
 
+def test_a_pre_flight_script_is_recorded_with_its_version(
+    tmp_path: Path, store: FilesystemAttachmentStore
+) -> None:
+    manifest = _MANIFEST.format(version="1.0.0") + "pre_flight_py_file: tools/pre_flight.py\n"
+    archive = _zip(
+        tmp_path / "notes.zip",
+        {"manifest.yaml": manifest, "main.md": "Main.\n", "tools/pre_flight.py": "pass\n"},
+    )
+
+    attachment = ImportAttachmentUseCase(store).execute(str(archive))
+
+    assert attachment.pre_flight_py_file == "tools/pre_flight.py"
+    assert store.all() == [attachment]
+
+
+def test_a_pre_flight_script_missing_from_the_zip_is_refused(
+    tmp_path: Path, store: FilesystemAttachmentStore
+) -> None:
+    manifest = _MANIFEST.format(version="1.0.0") + "pre_flight_py_file: pre_flight.py\n"
+    archive = _zip(tmp_path / "notes.zip", {"manifest.yaml": manifest, "main.md": "Main.\n"})
+
+    with pytest.raises(AttachmentError) as raised:
+        ImportAttachmentUseCase(store).execute(str(archive))
+
+    assert raised.value.catalogue_key == "error.attachment.pre_flight_missing"
+    assert store.all() == []
+
+
 def test_importing_a_stored_version_again_stops(
     tmp_path: Path, store: FilesystemAttachmentStore
 ) -> None:

@@ -83,12 +83,15 @@ class AttachmentManifest:
         version: The version its author gave it.
         description: One line shown in listings, or empty.
         main_md_file: The file delivered into the context, relative to the attachment's root.
+        pre_flight_py_file: The Python script run before each new session's client
+            launches, relative to the attachment's root, or ``None`` when it has none.
     """
 
     name: AttachmentName
     version: AttachmentVersion
     description: str
     main_md_file: str
+    pre_flight_py_file: str | None = None
 
 
 @dataclass(frozen=True)
@@ -101,6 +104,8 @@ class Attachment:
         description: One line shown in listings, or empty.
         main_md_file: The file delivered into the context, relative to the version's folder.
         content_hash: The SHA-256 of the version's folder, recorded at import.
+        pre_flight_py_file: The Python script run before each new session's client
+            launches, relative to the version's folder, or ``None`` when it has none.
     """
 
     name: AttachmentName
@@ -108,6 +113,7 @@ class Attachment:
     description: str
     main_md_file: str
     content_hash: str
+    pre_flight_py_file: str | None = None
 
 
 def highest(versions: Iterable[AttachmentVersion]) -> AttachmentVersion | None:

@@ -35,6 +35,7 @@ from generic_ml_wrapper.application.port.outbound.cli_caller import CliCallerPro
 from generic_ml_wrapper.application.port.outbound.context_compiler import ContextCompilerPort
 from generic_ml_wrapper.application.port.outbound.credentials_store import CredentialsStorePort
 from generic_ml_wrapper.application.port.outbound.job_tag_store import JobTagStorePort
+from generic_ml_wrapper.application.port.outbound.pre_flight_runner import PreFlightRunnerPort
 from generic_ml_wrapper.application.port.outbound.session_store import SessionStorePort
 from generic_ml_wrapper.application.usecase.launch import run_with_hooks
 from generic_ml_wrapper.common.client_args import split as split_client_args
@@ -55,6 +56,7 @@ class StartJobUseCase(StartJob):
         greeting: Callable[[], str | None],
         capability_card: Callable[[], str | None],
         tags: JobTagStorePort,
+        pre_flight: PreFlightRunnerPort,
         client_args: Callable[[str], str] = lambda _client: "",
         attachments: AttachmentStorePort | None = None,
     ) -> None:
@@ -75,6 +77,7 @@ class StartJobUseCase(StartJob):
                 (off-by-default) ambient card is disabled — appended to a new session's
                 context so the client can answer gmlw questions mid-session.
             tags: Where a start's ``--tag`` values are put on the job.
+            pre_flight: Runs a new session's attachment pre-flight script, when it has one.
             client_args: Returns the configured passthrough launch arguments for a client.
                 Consulted with the *run's* client, which on a resume comes from the stored
                 session rather than the command — so a resumed codex session never receives
@@ -93,6 +96,7 @@ class StartJobUseCase(StartJob):
         self._capability_card = capability_card
         self._client_args = client_args
         self._tags = tags
+        self._pre_flight = pre_flight
         self._attachments = attachments
 
     def execute(self, command: StartJobCommand) -> StartJobResult:
@@ -111,6 +115,7 @@ class StartJobUseCase(StartJob):
             ResumeNotSupportedError: If resume was requested for a client whose
                 caller cannot resume a session.
             IdentifierError: If a requested tag is not a valid tag name.
+            AttachmentError: If the attachment's pre-flight script exits with an error.
         """
         # Checked before anything happens, so a typo in a tag never costs a session.
         new_job = not self._store.ids_for_job(command.job)
@@ -142,8 +147,11 @@ class StartJobUseCase(StartJob):
             raise ResumeNotSupportedError(
                 "error.resume.lost", session_id=run.session_id, client=run.client
             )
-        # Persist only once every precondition (attachment, caller, resume) has passed, so
-        # a rejected start never leaves a ghost session that burns an id and could be resumed.
+        if attached is not None and session is not None:
+            self._run_pre_flight(run, attached, session.cwd)
+        # Persist only once every precondition (attachment, caller, resume, pre-flight) has
+        # passed, so a rejected start never leaves a ghost session that burns an id and
+        # could be resumed.
         if session is not None:
             # Whether a session can be reopened is the *caller's* answer, not a property
             # of its name: a caller supplied through `[callers]` or a plugin is absent
@@ -166,6 +174,33 @@ class StartJobUseCase(StartJob):
             self._tags.add(run.job, tags)
         exit_code = run_with_hooks(caller, run, self._hooks)
         return StartJobResult(exit_code=exit_code, job=run.job, session_id=run.session_id)
+
+    def _run_pre_flight(self, run: RunContext, attachment: Attachment, cwd: str | None) -> None:
+        """Run the attachment's pre-flight script, if it has one; stop the start if it fails.
+
+        It runs in ``cwd``, the session's folder, with the environment the client gets: the
+        attachment's credentials and the session's identity. What it leaves running is its
+        own business.
+        """
+        script = attachment.pre_flight_py_file
+        if script is None or self._attachments is None:
+            return
+        env = {
+            **dict(run.env),
+            "GMLW_JOB": run.job,
+            "GMLW_SESSION": run.session_id,
+            "GMLW_CLIENT": run.client,
+        }
+        folder = self._attachments.folder(attachment)
+        code = self._pre_flight.run(folder / script, cwd, env)
+        if code != 0:
+            raise AttachmentError(
+                "error.attachment.pre_flight_failed",
+                name=attachment.name,
+                version=str(attachment.version),
+                file=script,
+                code=code,
+            )
 
     def _with_client_args(self, run: RunContext, override: str | None) -> RunContext:
         """Attach the passthrough launch arguments for this run's client.

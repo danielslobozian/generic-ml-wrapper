@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
 
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 
 _SCHEMA = """
 CREATE TABLE jobs (
@@ -101,6 +101,7 @@ CREATE TABLE attachments (
     main_md_file TEXT NOT NULL,                 -- relative to the version's folder
     content_hash TEXT NOT NULL,                 -- SHA-256 of the folder, taken at import
     imported_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    pre_flight_py_file TEXT,                    -- relative to the version's folder, or NULL
     PRIMARY KEY (name, version)
 );
 """
@@ -195,6 +196,9 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
     11: ("ALTER TABLE turns ADD COLUMN tool_calls TEXT NOT NULL DEFAULT '{}'",),
     # The gmlw-execution tags each turn ran under. Existing turns carry none.
     12: ("ALTER TABLE turns ADD COLUMN execution_tags TEXT NOT NULL DEFAULT '{}'",),
+    # The script an attachment version runs before a new session. Versions imported
+    # earlier could not declare one, so they have none.
+    13: ("ALTER TABLE attachments ADD COLUMN pre_flight_py_file TEXT",),
 }
 
 

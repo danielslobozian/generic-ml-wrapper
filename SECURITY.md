@@ -64,6 +64,12 @@ cron, `PATH`), so such a check would be security theater. Instead, `~/.gmlw` is 
 owner-only (`0700`), and a configured-but-unloadable spec fails loudly rather than
 silently doing nothing.
 
+An imported attachment can also run code as you: a `pre_flight_py_file` in its manifest is a Python script
+gmlw runs **with your full permissions** before every new session started with that
+attachment ([ATTACHMENTS.md §6](docs/ATTACHMENTS.md#6-what-gmlw-does-at-session-start)).
+Importing an attachment is the trust decision; the hash check only proves the stored script
+has not changed since. Import attachments the way you would install a package.
+
 ### 3. The metering relay: outbound traffic and the loopback key
 
 For a metered client the wrapper starts a proxy on `127.0.0.1:<ephemeral>` and points

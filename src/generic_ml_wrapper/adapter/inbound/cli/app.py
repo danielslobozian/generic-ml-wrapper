@@ -2970,6 +2970,7 @@ def _attachment(args: argparse.Namespace) -> int:
                 "version": str(item.attachment.version),
                 "description": item.attachment.description,
                 "main_md_file": item.attachment.main_md_file,
+                "pre_flight_py_file": item.attachment.pre_flight_py_file,
                 "intact": item.intact,
             }
             for item in listings

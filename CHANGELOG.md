@@ -6,6 +6,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- **An attachment can prepare the session's folder.** A `pre_flight_py_file` in its
+  manifest names a Python script gmlw runs before each new session's client starts: in the
+  session's folder, with the attachment's credentials and `GMLW_JOB` / `GMLW_SESSION` /
+  `GMLW_CLIENT`, without input. It can configure agents, initialise git, put files in place
+  or start a dashboard. If it exits with an error, the session is not started. It does not
+  run on a resume.
+
 ## [0.14.0] - 2026-11-19
 
 ### Added
