@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404
 import sys
 from typing import TYPE_CHECKING
 
@@ -34,8 +34,12 @@ class SubprocessPreFlightRunner(PreFlightRunnerPort):
         Returns:
             The script's exit code, or ``1`` if it could not be started.
         """
+        # Running the attachment's script is this adapter's job, and importing the attachment
+        # is the user's trust decision (SECURITY.md); the argv is gmlw's own interpreter and
+        # the script's path in the hash-checked store, with no shell. The scanners' markers
+        # here and on ``import subprocess`` say so.
         try:
-            completed = subprocess.run(  # noqa: S603  (gmlw's interpreter and a stored script, no shell)
+            completed = subprocess.run(  # noqa: S603  # nosec B603  # nosemgrep
                 [sys.executable, str(script)],
                 check=False,
                 cwd=cwd,
