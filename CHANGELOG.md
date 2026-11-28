@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-28
+
 ### Added
 - **An attachment can prepare the session's folder.** A `pre_flight_py_file` in its
   manifest names a Python script gmlw runs before each new session's client starts: in the
@@ -1015,7 +1017,8 @@ First public release — a metering wrapper around ML coding CLIs.
   over `src` and `tests`; `nox` gates mirrored by CI across Python 3.11–3.14; a
   server-side no-AI-attribution check and branch protection.
 
-[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/danielslobozian/generic-ml-wrapper/compare/v0.13.0...v0.13.1

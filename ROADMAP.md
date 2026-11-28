@@ -498,6 +498,14 @@ pack down to a fortieth of their size.
 - **`gmlw transcripts archive`** — old session folders packed into checked `tar.xz`
   archives; a resumed session no longer overwrites its transcript.
 
+### 0.15.0 — an attachment prepares its session
+An attachment can bring the setup it needs along with its text.
+
+- **Pre-flight script** — a `pre_flight_py_file` in the manifest runs before each new
+  session's client starts, in the session's folder with the attachment's credentials and
+  the session's identity: it can configure agents, initialise git, put files in place or
+  start a dashboard. A failure stops the start; a resume never runs it.
+
 ## Planned
 
 _Next milestone not yet chosen._
